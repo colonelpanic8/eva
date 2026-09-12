@@ -21,7 +21,7 @@ features.
 - Package/application ID: =com.colonelpanic.eva=
 - AGP 9.4.0 built-in Kotlin with Compose compiler 2.4.20
 - Gradle 9.7.1 and stable Compose BOM 2026.09.00
-- compile/target SDK 37, minimum SDK 26, JDK 17
+- compile/target SDK 37, minimum SDK 23, JDK 17
 - Stock Android APIs and documented intents are the intended useful baseline
 - Paseo is the first planned substantial remote adapter
 - Provider and privileged-extension libraries are intentionally absent
