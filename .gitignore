@@ -1,0 +1,15 @@
+.direnv/
+.gradle/
+.idea/
+.kotlin/
+*.iml
+*.jks
+*.keystore
+*.p12
+app/build/
+build/
+dist/
+local.properties
+target/
+.envrc.local
+.envrc.override

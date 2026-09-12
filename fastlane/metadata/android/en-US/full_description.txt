@@ -1,0 +1,3 @@
+EVA (Extensible Voice Assistant) is an open native Android assistant project.
+
+The initial release is a foundation for replaceable voice providers, stock Android capabilities, and remote adapters such as Paseo. Voice and tool execution are not implemented in the scaffold release.

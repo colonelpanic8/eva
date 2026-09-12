@@ -1,0 +1,82 @@
+#+TITLE: EVA — Extensible Voice Assistant
+#+OPTIONS: toc:2
+
+* Status
+
+EVA is an open, extensible Android assistant project. This repository currently
+contains a minimal native Kotlin and Jetpack Compose application shell plus its
+development, CI, signing, release, and self-hosted F-Droid foundation.
+
+The app does *not* yet listen to audio, call a model, execute Android actions,
+or connect to Paseo. No microphone, assistant-role, package-query, accessibility,
+or Shizuku permissions are requested by the scaffold. Shizuku and AppFunctions
+are unverified, optional experiments rather than baseline dependencies.
+
+The proposed product direction and acceptance scenarios live in
+[[file:docs/design.md][docs/design.md]]. That document is an outline, not a description of working
+features.
+
+* Foundation
+
+- Package/application ID: =com.colonelpanic.eva=
+- AGP 9.4.0 built-in Kotlin with Compose compiler 2.4.20
+- Gradle 9.7.1 and stable Compose BOM 2026.09.00
+- compile/target SDK 37, minimum SDK 26, JDK 17
+- Stock Android APIs and documented intents are the intended useful baseline
+- Paseo is the first planned substantial remote adapter
+- Provider and privileged-extension libraries are intentionally absent
+
+* Development
+
+The checked-in Nix flake supplies JDK 17 and Android SDK 37. Enter it through
+direnv or explicitly:
+
+#+begin_src sh
+direnv allow
+# Or without a direnv hook:
+direnv exec . just check
+# Equivalent direct shell:
+nix develop .#android --command just check
+#+end_src
+
+Useful commands:
+
+#+begin_src sh
+just format        # apply Kotlin formatting
+just check         # format check, lint, tests, debug APK
+just build         # debug APK only
+just install       # adb-install the debug APK
+#+end_src
+
+The debug APK is =app/build/outputs/apk/debug/app-debug.apk= and installs as
+=com.colonelpanic.eva.debug=, allowing it to coexist with a production build.
+
+* Installation
+
+From a checkout after a debug build:
+
+#+begin_src sh
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+#+end_src
+
+Once the external repository and first release exist, production APKs are
+expected at:
+
+- https://github.com/colonelpanic8/eva/releases/latest
+- =https://colonelpanic8.github.io/eva/fdroid/repo= for the self-hosted F-Droid source
+
+The latter is an independently published binary repository; it does not mean
+EVA has been accepted into F-Droid's official catalog. See
+[[file:docs/fdroid.md][docs/fdroid.md]].
+
+* Release operations
+
+Release builds fail closed unless all signing inputs are present. Version codes
+are derived from semantic versions as =major * 1,000,000 + minor * 1,000 + patch=.
+See [[file:docs/release.md][docs/release.md]] for the release procedure and
+[[file:docs/external-setup.md][docs/external-setup.md]] for the one-time GitHub and signing setup that has
+not been performed by this scaffold.
+
+* License
+
+Apache License 2.0. See [[file:LICENSE][LICENSE]].

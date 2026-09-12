@@ -1,0 +1,2 @@
+* Added: Initial native Kotlin and Jetpack Compose application shell.
+* Added: Reproducible Android development environment, validation, release, and self-hosted F-Droid workflows.

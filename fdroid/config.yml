@@ -1,0 +1,12 @@
+repo_url: https://colonelpanic8.github.io/eva/fdroid/repo
+repo_name: EVA
+repo_icon: icon.png
+repo_description: >-
+  Official self-hosted binary repository for EVA, the Extensible Voice Assistant.
+  APKs are copied unchanged from GitHub releases.
+archive_older: 0
+keystore: keystore.jks
+repo_keyalias: {env: FDROID_KEY_ALIAS}
+keystorepass: {env: FDROID_KEYSTORE_PASSWORD}
+keypass: {env: FDROID_KEY_PASSWORD}
+make_current_version_link: false

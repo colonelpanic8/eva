@@ -1,0 +1,13 @@
+Categories:
+  - System
+License: Apache-2.0
+AuthorName: Ivan Malison
+SourceCode: https://github.com/colonelpanic8/eva
+IssueTracker: https://github.com/colonelpanic8/eva/issues
+
+AutoName: EVA
+Summary: Open, extensible Android assistant foundation
+Description: |-
+  EVA is an open Android assistant project designed around replaceable voice
+  providers and capability adapters. The current release is an early native
+  shell and does not yet provide working voice or tool integrations.
