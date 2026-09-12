@@ -1,6 +1,10 @@
 # EVA proof-of-concept strategy
 
-Status: proposed experiments; no live subscription voice test performed.
+Status: first browser subscription voice/action experiment implemented and
+live-tested with synthetic speech on 2026-09-12. See the
+[runnable harness](../experiments/voice-poc/README.md) and
+[recorded results](../experiments/voice-poc/RESULTS.md). Android and natural
+human interruption remain unverified; the remaining experiments below are plans.
 Evidence reviewed: 2026-09-12. Parent design: [design.md](design.md).
 
 ## What we need to learn first

@@ -1,0 +1,524 @@
+{
+  "status": "PASS",
+  "inputSource": "synthetic WAV through Chrome fake capture",
+  "finalCounterAndCustomInstructionsConfirmed": true,
+  "localInterruptMuted": true,
+  "events": [
+    {
+      "browserAtMs": 387,
+      "kind": "authorized"
+    },
+    {
+      "browserAtMs": 540,
+      "kind": "client",
+      "atMs": 151,
+      "userAgent": "eva-voice-poc/0.154.0 (NixOS 26.11.0; x86_64) unknown (eva-voice-poc; 0.1.0)"
+    },
+    {
+      "browserAtMs": 546,
+      "kind": "auth",
+      "atMs": 157,
+      "type": "chatgpt",
+      "planType": "pro"
+    },
+    {
+      "browserAtMs": 767,
+      "kind": "thread",
+      "atMs": 377,
+      "model": "gpt-5.6-luna",
+      "inheritedMcpServersDisabled": 5
+    },
+    {
+      "browserAtMs": 1501,
+      "kind": "started",
+      "atMs": 1112,
+      "version": "v3",
+      "audio": "browser-provider WebRTC"
+    },
+    {
+      "browserAtMs": 1501,
+      "kind": "answer",
+      "atMs": 1112
+    },
+    {
+      "browserAtMs": 1515,
+      "kind": "webrtc-state",
+      "state": "connecting",
+      "setupMs": 1315
+    },
+    {
+      "browserAtMs": 1671,
+      "kind": "webrtc-state",
+      "state": "connected",
+      "setupMs": 1470
+    },
+    {
+      "browserAtMs": 1726,
+      "kind": "data-channel-open"
+    },
+    {
+      "browserAtMs": 1780,
+      "kind": "data-channel-event",
+      "type": "session.started",
+      "bytes": 116
+    },
+    {
+      "browserAtMs": 8535,
+      "kind": "data-channel-event",
+      "type": "input_transcript.added",
+      "bytes": 153
+    },
+    {
+      "browserAtMs": 8536,
+      "kind": "data-channel-event",
+      "type": "turn.created",
+      "bytes": 137
+    },
+    {
+      "browserAtMs": 8710,
+      "kind": "data-channel-event",
+      "type": "input_transcript.added",
+      "bytes": 155
+    },
+    {
+      "browserAtMs": 8713,
+      "kind": "data-channel-event",
+      "type": "turn.delta",
+      "bytes": 114
+    },
+    {
+      "browserAtMs": 8918,
+      "kind": "data-channel-event",
+      "type": "input_transcript.added",
+      "bytes": 154
+    },
+    {
+      "browserAtMs": 8918,
+      "kind": "data-channel-event",
+      "type": "turn.delta",
+      "bytes": 113
+    },
+    {
+      "browserAtMs": 9046,
+      "kind": "data-channel-event",
+      "type": "input_transcript.added",
+      "bytes": 152
+    },
+    {
+      "browserAtMs": 9048,
+      "kind": "data-channel-event",
+      "type": "turn.delta",
+      "bytes": 111
+    },
+    {
+      "browserAtMs": 9867,
+      "kind": "data-channel-event",
+      "type": "input_transcript.added",
+      "bytes": 148
+    },
+    {
+      "browserAtMs": 9869,
+      "kind": "data-channel-event",
+      "type": "turn.delta",
+      "bytes": 107
+    },
+    {
+      "browserAtMs": 10076,
+      "kind": "data-channel-event",
+      "type": "input_transcript.added",
+      "bytes": 147
+    },
+    {
+      "browserAtMs": 10077,
+      "kind": "data-channel-event",
+      "type": "turn.delta",
+      "bytes": 106
+    },
+    {
+      "browserAtMs": 10223,
+      "kind": "data-channel-event",
+      "type": "input_transcript.added",
+      "bytes": 146
+    },
+    {
+      "browserAtMs": 10225,
+      "kind": "data-channel-event",
+      "type": "turn.delta",
+      "bytes": 105
+    },
+    {
+      "browserAtMs": 10836,
+      "kind": "data-channel-event",
+      "type": "input_transcript.added",
+      "bytes": 150
+    },
+    {
+      "browserAtMs": 10836,
+      "kind": "data-channel-event",
+      "type": "turn.delta",
+      "bytes": 109
+    },
+    {
+      "browserAtMs": 11222,
+      "kind": "data-channel-event",
+      "type": "input_transcript.added",
+      "bytes": 153
+    },
+    {
+      "browserAtMs": 11230,
+      "kind": "data-channel-event",
+      "type": "turn.delta",
+      "bytes": 112
+    },
+    {
+      "browserAtMs": 11656,
+      "kind": "data-channel-event",
+      "type": "input_transcript.added",
+      "bytes": 147
+    },
+    {
+      "browserAtMs": 11658,
+      "kind": "data-channel-event",
+      "type": "turn.delta",
+      "bytes": 106
+    },
+    {
+      "browserAtMs": 12034,
+      "kind": "data-channel-event",
+      "type": "input_transcript.added",
+      "bytes": 148
+    },
+    {
+      "browserAtMs": 12036,
+      "kind": "data-channel-event",
+      "type": "turn.delta",
+      "bytes": 107
+    },
+    {
+      "browserAtMs": 12486,
+      "kind": "data-channel-event",
+      "type": "input_transcript.added",
+      "bytes": 148
+    },
+    {
+      "browserAtMs": 12486,
+      "kind": "data-channel-event",
+      "type": "turn.delta",
+      "bytes": 107
+    },
+    {
+      "browserAtMs": 12692,
+      "kind": "data-channel-event",
+      "type": "input_transcript.added",
+      "bytes": 149
+    },
+    {
+      "browserAtMs": 12694,
+      "kind": "data-channel-event",
+      "type": "turn.delta",
+      "bytes": 108
+    },
+    {
+      "browserAtMs": 12896,
+      "kind": "data-channel-event",
+      "type": "input_transcript.added",
+      "bytes": 147
+    },
+    {
+      "browserAtMs": 12897,
+      "kind": "data-channel-event",
+      "type": "turn.delta",
+      "bytes": 106
+    },
+    {
+      "browserAtMs": 13043,
+      "kind": "data-channel-event",
+      "type": "input_transcript.added",
+      "bytes": 149
+    },
+    {
+      "browserAtMs": 13044,
+      "kind": "data-channel-event",
+      "type": "turn.delta",
+      "bytes": 108
+    },
+    {
+      "browserAtMs": 13445,
+      "kind": "data-channel-event",
+      "type": "input_transcript.added",
+      "bytes": 150
+    },
+    {
+      "browserAtMs": 13446,
+      "kind": "data-channel-event",
+      "type": "turn.delta",
+      "bytes": 109
+    },
+    {
+      "browserAtMs": 13446,
+      "kind": "data-channel-event",
+      "type": "delegation.created",
+      "bytes": 358
+    },
+    {
+      "browserAtMs": 13472,
+      "kind": "backend-turn",
+      "atMs": 13083,
+      "count": 1,
+      "threads": 1
+    },
+    {
+      "browserAtMs": 13981,
+      "kind": "data-channel-event",
+      "type": "output_transcript.added",
+      "bytes": 153
+    },
+    {
+      "browserAtMs": 14161,
+      "kind": "data-channel-event",
+      "type": "output_transcript.added",
+      "bytes": 152
+    },
+    {
+      "browserAtMs": 14400,
+      "kind": "data-channel-event",
+      "type": "output_transcript.added",
+      "bytes": 152
+    },
+    {
+      "browserAtMs": 14401,
+      "kind": "data-channel-event",
+      "type": "turn.done",
+      "bytes": 237
+    },
+    {
+      "browserAtMs": 14401,
+      "kind": "data-channel-event",
+      "type": "turn.created",
+      "bytes": 146
+    },
+    {
+      "browserAtMs": 14402,
+      "kind": "data-channel-event",
+      "type": "turn.delta",
+      "bytes": 109
+    },
+    {
+      "browserAtMs": 14410,
+      "kind": "transcript",
+      "atMs": 14021,
+      "role": "user",
+      "inputToTranscriptMs": null
+    },
+    {
+      "browserAtMs": 15650,
+      "kind": "dispatch",
+      "atMs": 15261,
+      "requestId": "exec-18ca8cb8-a26d-4ea8-a41b-b6794c411059",
+      "success": true,
+      "value": 7,
+      "tool": "eva_counter_set",
+      "transport": "codex-stdio-dynamic-tool",
+      "dispatchMs": 0.11455600000044797,
+      "inputToActionMs": null,
+      "speechTranscriptToActionMs": 1240,
+      "backendTurns": 1
+    },
+    {
+      "browserAtMs": 15651,
+      "kind": "dispatch",
+      "atMs": 15262,
+      "requestId": "exec-71cf52f4-8666-4349-9540-fd5c5975a074",
+      "success": true,
+      "value": 7,
+      "tool": "eva_counter_get",
+      "transport": "codex-stdio-dynamic-tool",
+      "dispatchMs": 0.013745999996899627,
+      "inputToActionMs": null,
+      "speechTranscriptToActionMs": 1241,
+      "backendTurns": 1
+    },
+    {
+      "browserAtMs": 15663,
+      "kind": "usage",
+      "atMs": 15273,
+      "total": 7838
+    },
+    {
+      "browserAtMs": 16438,
+      "kind": "data-channel-event",
+      "type": "turn.done",
+      "bytes": 149
+    },
+    {
+      "browserAtMs": 16445,
+      "kind": "transcript",
+      "atMs": 16056,
+      "role": "assistant",
+      "inputToTranscriptMs": null
+    },
+    {
+      "browserAtMs": 16494,
+      "kind": "data-channel-event",
+      "type": "session.usage.updated",
+      "bytes": 144
+    },
+    {
+      "browserAtMs": 16921,
+      "kind": "backend-output",
+      "atMs": 16532
+    },
+    {
+      "browserAtMs": 16955,
+      "kind": "usage",
+      "atMs": 16566,
+      "total": 15794
+    },
+    {
+      "browserAtMs": 16956,
+      "kind": "backend-completed",
+      "atMs": 16567,
+      "status": "completed"
+    },
+    {
+      "browserAtMs": 17007,
+      "kind": "data-channel-event",
+      "type": "delegation.context.appended",
+      "bytes": 120
+    },
+    {
+      "browserAtMs": 17551,
+      "kind": "data-channel-event",
+      "type": "output_transcript.added",
+      "bytes": 150
+    },
+    {
+      "browserAtMs": 17552,
+      "kind": "data-channel-event",
+      "type": "turn.created",
+      "bytes": 137
+    },
+    {
+      "browserAtMs": 17759,
+      "kind": "data-channel-event",
+      "type": "output_transcript.added",
+      "bytes": 155
+    },
+    {
+      "browserAtMs": 17760,
+      "kind": "data-channel-event",
+      "type": "turn.delta",
+      "bytes": 112
+    },
+    {
+      "browserAtMs": 18177,
+      "kind": "data-channel-event",
+      "type": "output_transcript.added",
+      "bytes": 154
+    },
+    {
+      "browserAtMs": 18180,
+      "kind": "data-channel-event",
+      "type": "turn.delta",
+      "bytes": 111
+    },
+    {
+      "browserAtMs": 18368,
+      "kind": "data-channel-event",
+      "type": "output_transcript.added",
+      "bytes": 154
+    },
+    {
+      "browserAtMs": 18368,
+      "kind": "data-channel-event",
+      "type": "turn.delta",
+      "bytes": 111
+    },
+    {
+      "browserAtMs": 18573,
+      "kind": "data-channel-event",
+      "type": "output_transcript.added",
+      "bytes": 152
+    },
+    {
+      "browserAtMs": 18575,
+      "kind": "data-channel-event",
+      "type": "turn.delta",
+      "bytes": 109
+    },
+    {
+      "browserAtMs": 18960,
+      "kind": "data-channel-event",
+      "type": "output_transcript.added",
+      "bytes": 150
+    },
+    {
+      "browserAtMs": 18963,
+      "kind": "data-channel-event",
+      "type": "turn.delta",
+      "bytes": 107
+    },
+    {
+      "browserAtMs": 19137,
+      "kind": "data-channel-event",
+      "type": "output_transcript.added",
+      "bytes": 148
+    },
+    {
+      "browserAtMs": 19138,
+      "kind": "data-channel-event",
+      "type": "turn.delta",
+      "bytes": 105
+    },
+    {
+      "browserAtMs": 21247,
+      "kind": "data-channel-event",
+      "type": "turn.done",
+      "bytes": 171
+    },
+    {
+      "browserAtMs": 21255,
+      "kind": "transcript",
+      "atMs": 20866,
+      "role": "assistant",
+      "inputToTranscriptMs": null
+    },
+    {
+      "browserAtMs": 21332,
+      "kind": "local-interrupt",
+      "muteMs": 0,
+      "providerCancelVerified": false
+    },
+    {
+      "browserAtMs": 21349,
+      "kind": "input",
+      "atMs": 20944,
+      "characters": 44,
+      "route": "realtime-context"
+    }
+  ],
+  "audio": [
+    {
+      "browserAtMs": 20385,
+      "kind": "webrtc-audio",
+      "direction": "inbound-rtp",
+      "packets": 878,
+      "bytes": 37762,
+      "energy": 0.28609048223100025
+    },
+    {
+      "browserAtMs": 20385,
+      "kind": "webrtc-audio",
+      "direction": "outbound-rtp",
+      "packets": 942,
+      "bytes": 49305
+    }
+  ],
+  "selectedPair": {
+    "browserAtMs": 20384,
+    "kind": "selected-pair",
+    "protocol": "udp",
+    "candidateType": "host",
+    "rttSeconds": 0.048
+  }
+}
