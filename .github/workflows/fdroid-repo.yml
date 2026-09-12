@@ -68,7 +68,7 @@ jobs:
             echo "Repository: \`https://colonelpanic8.github.io/eva/fdroid/repo\`"
             echo "Fingerprint: \`$(cat target/fdroid/fingerprint.txt)\`"
             echo
-            find site/fdroid/repo -maxdepth 1 -name '*.apk' -printf -- "- \`%f\`\n"
+            find site/fdroid/repo -maxdepth 1 -name '*.apk' -printf "- \`%f\`\n"
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-pages-artifact@v5.0.0
         with:
