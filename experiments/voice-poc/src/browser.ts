@@ -1,3 +1,4 @@
+import { CounterDisplay } from "./counter-display.ts";
 import { Lifetime, waitForState } from "./lifetime.ts";
 
 function element<T extends HTMLElement>(id: string): T {
@@ -21,6 +22,7 @@ let lastInputAt: number | undefined;
 let firstAudioSeen = false;
 let setupAt = 0;
 let generation = 0;
+let counterDisplay = new CounterDisplay();
 const accessToken = location.hash.slice(1);
 history.replaceState(null, "", location.pathname);
 element<HTMLInputElement>("access").value = accessToken;
@@ -71,6 +73,7 @@ async function start(): Promise<void> {
   const scope = new Lifetime();
   lifetime = scope;
   setupAt = performance.now();
+  counterDisplay = new CounterDisplay();
   element("counter").textContent = "0";
   element("turns").textContent = "0";
   element("action").textContent = "No tool has executed in this session.";
@@ -209,7 +212,7 @@ async function start(): Promise<void> {
         } else if (data.kind === "transcript") message(data.role, data.text);
         else if (data.kind === "backend-output") message("executor", data.text);
         else if (data.kind === "dispatch") {
-          if (data.success) element("counter").textContent = String(data.value);
+          element("counter").textContent = String(counterDisplay.apply(data));
           element("action").textContent = JSON.stringify(data, null, 2);
         } else if (data.kind === "backend-turn") element("turns").textContent = String(data.count);
         else if (data.kind === "error" || data.kind === "turn-error") showError(data.message);

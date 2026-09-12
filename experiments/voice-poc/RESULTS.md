@@ -84,20 +84,22 @@ direct audio connection does not eliminate the tool-event/model path.
 
 ## Checks and handoff
 
-`npm run check` passed formatting/lint, strict TypeScript checking, eight
+`npm run check` passed formatting/lint, strict TypeScript checking, nine
 focused deterministic tests, and browser bundling. Tests cover argument
 validation, duplicate receipts, conflicting IDs, RPC timeout/exit behavior,
 redaction, late capture cleanup, canceled ICE waits, early SDP notification,
-session cleanup/reconnection, and API-auth refusal. `npm audit` reported zero
+session cleanup/reconnection, replayed receipts preserving the current display,
+and API-auth refusal. `npm audit` reported zero
 vulnerabilities after updating `ws` to 8.21.3. The final browser page loaded,
 rendered its controls, and had no reported browser errors.
 
-The repository-wide `direnv exec . just check` was attempted and **blocked by
-the inherited scaffold environment**, outside this experiment's files: the
-pinned nixpkgs lacks Android command-line tools 23.0; root `.envrc` also has a
-`source_url` hash mismatch in the fallback load; without that environment,
-Gradle reports no `JAVA_HOME`/Java. No Kotlin or scaffold files were edited.
-The self-contained experiment environment and all of its checks work.
+The pushed final scaffold `0c0d74f` was merged from `origin/main` into
+`voice-poc` as `8ea49a8`, without conflicts. After that merge,
+`direnv exec . just check` **passed**: Kotlin formatting checks, fatal Android
+lint, and debug APK assembly. The Android unit-test target reported NO-SOURCE.
+The first attempt before this merge had been blocked by unavailable Android
+command-line tools 23.0 and an `.envrc` hash mismatch; the final scaffold fixed
+both. No extra Kotlin or scaffold edits were made for the experiment.
 
 Next: a native Android screen with the same WebRTC lifecycle and one
 EVA-dispatched Android intent, followed by one read-only Paseo status action.
