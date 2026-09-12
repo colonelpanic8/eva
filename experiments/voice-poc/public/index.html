@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>EVA · Voice laboratory</title>
+<style>
+  :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #10191c; color: #e1eeed; }
+  body { max-width: 1040px; margin: 40px auto; padding: 0 24px; } h1 { font-size: 42px; margin-bottom: 8px; }
+  p { line-height: 1.5; } .muted { color: #9bb6b6; } .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
+  section { background: #19262b; border: 1px solid #30444b; border-radius: 14px; padding: 22px; margin: 18px 0; }
+  label { display: block; margin: 12px 0 6px; } input:not([type=checkbox]), textarea { box-sizing: border-box; width: 100%; background: #10191c; color: inherit; border: 1px solid #486269; border-radius: 6px; padding: 12px; font: inherit; }
+  button { border: 1px solid #65868b; border-radius: 8px; background: #224148; color: inherit; padding: 11px 16px; margin: 8px 5px 0 0; cursor: pointer; } button:disabled { opacity: .4; cursor: default; } #connect { background: #73ddc5; color: #122d2e; }
+  #errors { color: #ffba9e; white-space: pre-wrap; } #counter { display: block; font-size: 80px; color: #73ddc5; } pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; max-height: 330px; overflow: auto; } #transcript { max-height: 350px; overflow: auto; }
+  @media(max-width:700px) { .grid { grid-template-columns: 1fr; } body { margin: 20px auto; } }
+</style></head>
+<body>
+<p class="muted">EVA / EXPERIMENT 01</p><h1>Voice that does something.</h1>
+<p class="muted">Subscription login stays on this host. Audio uses WebRTC. Counter actions use an EVA dispatcher through Codex backend delegation.</p>
+<div class="grid"><div><section>
+<strong id="status" role="status">Disconnected</strong><p id="errors" role="alert"></p>
+<label for="access">Host access code (from the startup link)</label><input id="access" type="password" autocomplete="off">
+<label for="instructions">Custom assistant instructions</label><textarea id="instructions" rows="3" maxlength="4000">Keep replies to one short sentence. Identify yourself as EVA.</textarea>
+<label><input type="checkbox" id="mic"> Enable microphone when connecting</label>
+<p class="muted">Unchecked: silent input track for typed testing. Microphone activates only after Connect. Speak over EVA to test natural barge-in.</p>
+<button id="connect" type="button">Connect voice</button><button id="disconnect" type="button" disabled>Disconnect</button>
+<div><button id="mute" type="button">Mute microphone</button><button id="interrupt" type="button">Interrupt: mute + ask to stop</button><button id="resume" type="button">Resume speaker</button></div>
+<audio id="audio" autoplay></audio>
+</section><section><h2>Conversation</h2><div id="transcript" aria-live="polite"></div>
+<form id="text-form"><label for="text-route">Text route</label><select id="text-route"><option value="backend">Backend turn · result shown below</option><option value="realtime-context">Realtime context · response not guaranteed</option></select><label for="text">Say it with text</label><input id="text" maxlength="4000" placeholder="Set the counter to 7, then tell me its value" required><button id="send" disabled>Send</button></form>
+</section></div><div><section><h2>Observable state</h2><output id="counter">0</output><p>Backend turns observed: <strong id="turns">0</strong></p><pre id="action">No tool has executed.</pre><p class="muted">Fresh connection = fresh counter. Replayed request IDs return their original result. Nothing changes from speech alone.</p></section>
+<section><h2>Experiment boundaries</h2><p>One browser at a time. Ten-minute session limit. No API fallback. No audio recording.</p><p class="muted">The interrupt button immediately mutes playback and asks the provider to stop; provider cancellation and natural barge-in still require verification.</p></section></div></div>
+<section><h2>Transport & timing</h2><button type="button" id="export">Export metadata</button><p class="muted">Export excludes transcripts, SDP, account credentials and network addresses. Counters and protocol errors remain.</p><pre id="events"></pre></section>
+<script type="module" src="/app.js"></script></body></html>
