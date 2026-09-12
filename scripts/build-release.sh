@@ -30,7 +30,7 @@ fi
 
 export EVA_VERSION_NAME="$version"
 export EVA_VERSION_CODE="$version_code"
-./gradlew --no-daemon ktlintCheck :app:lintRelease :app:testReleaseUnitTest :app:assembleRelease
+./gradlew --no-daemon ktlintCheck :app:lintRelease :app:test :app:assembleRelease
 
 apk="app/build/outputs/apk/release/app-release.apk"
 if [[ ! -f "$apk" ]]; then

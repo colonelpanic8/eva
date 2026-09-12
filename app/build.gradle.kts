@@ -22,10 +22,11 @@ require(configuredSigningValues.isEmpty() || configuredSigningValues.size == rel
 android {
     namespace = "com.colonelpanic.eva"
     compileSdk = 37
+    buildToolsVersion = "37.0.0"
 
     defaultConfig {
         applicationId = "com.colonelpanic.eva"
-        minSdk = 26
+        minSdk = 23
         targetSdk = 37
         versionCode = providers.environmentVariable("EVA_VERSION_CODE").orNull?.toInt() ?: 1
         versionName = providers.environmentVariable("EVA_VERSION_NAME").orNull ?: "0.1.0-dev"

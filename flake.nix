@@ -20,7 +20,8 @@
         };
       };
       buildToolsVersion = "37.0.0";
-      cmdLineToolsVersion = "23.0";
+      # Latest version available in the pinned nixpkgs Android package set.
+      cmdLineToolsVersion = "22.0";
       androidComposition = pkgs.androidenv.composeAndroidPackages {
         cmdLineToolsVersion = cmdLineToolsVersion;
         toolsVersion = "26.1.1";
