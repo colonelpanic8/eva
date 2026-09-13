@@ -1,6 +1,6 @@
 # Implementation status and next slice
 
-Updated: 2026-09-12. Architecture: [architecture.md](architecture.md).
+Updated: 2026-09-13. Architecture: [architecture.md](architecture.md).
 
 ## Android provider and action runtime
 
@@ -11,12 +11,14 @@ actual dispatcher outcomes. The development `/device` WebSocket uses an ephemera
 broker code and localhost forwarding. Subscription credentials stay on the host;
 there is no native OpenAI login or API-key fallback.
 
-Thirteen bundled capabilities are described by `CapabilityDefinition` records with
+Sixteen bundled capabilities are described by `CapabilityDefinition` records with
 closed JSON Schemas: map search, driving navigation, message drafting, alarms,
 timers, dialing, web search, opening a URL, email drafting, calendar events,
-launching an installed app, opening a settings screen, and contacts search. All
-but the first three and contacts search share one generic `IntentBackend`.
-Contacts search is the one query capability: it reads phone numbers matching a
+launching an installed app, opening a settings screen, contacts search, and three
+typed device-state operations. The intent operations other than map search,
+navigation, and message drafting share one generic `IntentBackend`; contacts and
+device state have query-specific backends.
+Contacts search reads phone numbers matching a
 name through `ContactsContract`, requests `READ_CONTACTS` on first use through
 the resumed Activity, and completes with the matches in its outcome message so
 the model can pass an explicit number to the message or dialer action. The registry and UI do not switch on
@@ -27,6 +29,81 @@ Backends still receive flat string arguments, so `ToolSchema.coerce` restores
 each property's declared scalar type before the dispatcher revalidates. Integer
 and boolean parameters therefore work end to end; structured object arguments at
 the execution boundary and a package importer remain follow-up work.
+
+## Settings AppFunctions through Shizuku
+
+On Android 17/API 37, EVA now exposes three typed Settings operations:
+`eva.android.device.state.get`, `eva.android.device.state.metadata`, and
+`eva.android.device.state.set`. The read operation accepts only the six categories
+implemented by Settings on the test phone: battery, storage, notifications, apps,
+mobile data, and uncategorized. Metadata returns only writable items matching a
+bounded search term. Set accepts a bounded `screen/item` key and scalar string
+value. State and metadata output is reduced to useful item lines and capped at
+4,000 characters before it is returned to the model.
+
+These capabilities are registered only on API 37 or later. A resumed EVA Activity
+owns Shizuku permission requests. After permission is granted, a non-daemon
+Shizuku UserService runs as shell UID 2000 and invokes `/system/bin/cmd` with an
+argument array; no shell interpreter is involved. The service itself rejects
+anything except `app_function execute-app-function`, the Settings package, the
+eight implemented function IDs, and EVA's fixed flag layout. It returns bounded
+stdout/stderr, exit status, execution UID, and a host-enforced timeout. Missing,
+stopped, and denied Shizuku states produce `NOT_EXECUTED` results rather than an
+attempt under EVA's ordinary UID.
+
+The Settings item schemas are nested rather than flat. The working setter input is:
+
+```json
+{
+  "setDeviceStateItemParams": {
+    "key": "dark_ui_mode/dark_ui_activated",
+    "itemizationKeys": [],
+    "value": "true",
+    "requestInitiatedWhileUnlocked": true
+  }
+}
+```
+
+The corresponding getter shape is
+`{"getDeviceStateItemParams":{"key":"dark_ui_mode/dark_ui_activated","itemizationKeys":[]}}`.
+It parses on the phone, but `getDeviceStateItem` is disabled on this production
+build: `ro.debuggable` is `0`, the
+`com.android.settings.APP_FUNCTION_ITEM_GETTER_AVAILABLE` global setting is
+absent, and Settings logs `No valid executor found for GET_DEVICE_STATE`. The
+command exited 255 in 173 ms. EVA therefore does not expose the item getter.
+Category reads provide current values; the setter's structured response provides
+its `currentValue`.
+
+Hardware verification used device `67091FDDJ0007B`, a Pixel 11 Pro Fold running
+Android 17/API 37, build `CD1A.260905.001.B1` with fingerprint
+`google/yogi/yogi:17/CD1A.260905.001.B1/16238327:user/release-keys`. Shizuku
+`13.6.0.r1086.2650830c` was running as shell. The read-only command
+`cmd app_function list-app-functions --package com.android.settings` returned 11
+functions before any setting was changed.
+
+The debug app and instrumentation APK were installed with `adb install` from this
+checkout. Focused AndroidJUnit/UI Automator tests drove the real Shizuku permission
+dialog and the registered typed backends. A fresh install followed by the denial
+test passed in 2.606 s and returned `NOT_EXECUTED: Shizuku access was denied. Allow
+EVA in Shizuku before trying again.` A second fresh install followed by the allowed
+test passed in 7.362 s. Warm operation timings recorded in that test were:
+
+- writable metadata filtered by `dark`: 1,378 ms;
+- uncategorized state: 629 ms;
+- set dark theme to `true`: 216 ms, returning `Current value: true`;
+- restore dark theme to `false`: 183 ms, returning `Current value: false`;
+- a 1 ms host deadline: 182 ms including teardown, `timedOut=true`, exit `-1`, UID 2000.
+
+A further typed read test passed in 5.563 s: storage took 1,160 ms,
+notifications 414 ms, apps 2,236 ms, and mobile data 321 ms. The permission-grant
+bootstrap also completed a battery read and returned live battery state. A direct
+cross-check set dark theme to `true` in 231 ms, read it back as `true` through the
+uncategorized category in 291 ms, and restored it to `false` in 247 ms.
+
+Stopping the Shizuku server was not tested because there was no non-disruptive
+way to do so without affecting other sessions on the phone. The stopped-server
+mapping is implemented, but remains hardware-unverified. The server was not killed
+from ADB.
 
 EVA declares `ACTION_ASSIST` and `ACTION_VOICE_COMMAND`, so it can be selected as
 the system digital assistant and launched by the assistant gesture. `MainActivity`
@@ -230,7 +307,7 @@ a completed remote-pairing or production authentication flow.
 
 ## Verification
 
-The integrated provider/voice build passes `just check`: 78 JVM tests, ktlint,
+The integrated app build passes `just check`: 86 JVM tests, ktlint,
 fatal Android lint, and APK assembly. The broker passes 17 tests, including
 empty-catalog voice negotiation and unconditional voice tool rejection.
 The latest focused emulator run passed four tests: receive-only/live offer

@@ -301,6 +301,9 @@ The adapter must expose typed operations rather than a model-controlled shell.
 Keep function identifiers and parameter serialization separate from command
 syntax; do not interpolate spoken text into shell scripts.
 
+The 2026-09-13 Pixel hardware results for this experiment, including the one
+untested restart case, are recorded in [implementation.md](implementation.md#settings-appfunctions-through-shizuku).
+
 ## 10. Execution correctness and user control
 
 Use explicit authority and evidence instead of expecting a system prompt to
