@@ -15,6 +15,7 @@ import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.colonelpanic.eva.audio.MicrophonePermission
+import com.colonelpanic.eva.providers.openai.ModelKind
 import com.colonelpanic.eva.ui.EvaApp
 import com.colonelpanic.eva.ui.VoiceAccessModel
 import com.colonelpanic.eva.ui.VoiceStart
@@ -73,10 +74,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        eva.refreshModels()
         val controller = eva.controller
         setContent {
             val state by controller.state.collectAsStateWithLifecycle()
             val hasApiKey by eva.settings.hasApiKey.collectAsStateWithLifecycle()
+            val textModel by eva.settings.textModelFlow.collectAsStateWithLifecycle()
+            val realtimeModel by eva.settings.realtimeModelFlow.collectAsStateWithLifecycle()
+            val models by eva.availableModels.collectAsStateWithLifecycle()
             EvaTheme {
                 EvaApp(
                     state = state,
@@ -85,8 +90,19 @@ class MainActivity : ComponentActivity() {
                     onDisconnect = controller::disconnect,
                     onVoice = ::startVoice,
                     hasApiKey = hasApiKey,
-                    onSaveApiKey = { key -> runCatching { eva.settings.saveApiKey(key) } },
-                    onClearApiKey = eva.settings::clearApiKey,
+                    onSaveApiKey = { key ->
+                        runCatching { eva.settings.saveApiKey(key) }.onSuccess { eva.refreshModels() }
+                    },
+                    onClearApiKey = {
+                        eva.settings.clearApiKey()
+                        eva.refreshModels()
+                    },
+                    textModel = textModel,
+                    realtimeModel = realtimeModel,
+                    availableTextModels = models[ModelKind.TEXT].orEmpty(),
+                    availableRealtimeModels = models[ModelKind.REALTIME].orEmpty(),
+                    onSelectTextModel = { model -> runCatching { eva.settings.saveTextModel(model) } },
+                    onSelectRealtimeModel = { model -> runCatching { eva.settings.saveRealtimeModel(model) } },
                     onToggleMicrophone = controller::toggleMicrophone,
                     onTogglePlayback = controller::togglePlayback,
                     denial = voice.denial,

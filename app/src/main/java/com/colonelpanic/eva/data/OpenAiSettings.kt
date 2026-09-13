@@ -1,6 +1,7 @@
 package com.colonelpanic.eva.data
 
 import android.content.Context
+import androidx.core.content.edit
 import com.colonelpanic.eva.providers.openai.OpenAiModels
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -13,9 +14,33 @@ class OpenAiSettings(
     private val prefs = context.applicationContext.getSharedPreferences("eva.settings", Context.MODE_PRIVATE)
     private val mutableHasKey = MutableStateFlow(secrets.read(API_KEY) != null)
     val hasApiKey = mutableHasKey.asStateFlow()
+    private val mutableTextModel = MutableStateFlow(prefs.getString(TEXT_MODEL, null) ?: OpenAiModels.TEXT)
+    private val mutableRealtimeModel = MutableStateFlow(prefs.getString(REALTIME_MODEL, null) ?: OpenAiModels.REALTIME)
 
-    val realtimeModel: String get() = prefs.getString(REALTIME_MODEL, null) ?: OpenAiModels.REALTIME
-    val textModel: String get() = prefs.getString(TEXT_MODEL, null) ?: OpenAiModels.TEXT
+    /** Model used for typed turns. Changing it applies to the next connection. */
+    val textModelFlow = mutableTextModel.asStateFlow()
+    val realtimeModelFlow = mutableRealtimeModel.asStateFlow()
+
+    val realtimeModel: String get() = mutableRealtimeModel.value
+    val textModel: String get() = mutableTextModel.value
+
+    fun saveTextModel(value: String) = saveModel(TEXT_MODEL, value, OpenAiModels.TEXT, mutableTextModel)
+
+    fun saveRealtimeModel(value: String) = saveModel(REALTIME_MODEL, value, OpenAiModels.REALTIME, mutableRealtimeModel)
+
+    /** A blank value restores the built-in default rather than storing an unusable name. */
+    private fun saveModel(
+        key: String,
+        value: String,
+        fallback: String,
+        target: MutableStateFlow<String>,
+    ) {
+        val trimmed = value.trim()
+        require(trimmed.isEmpty() || (trimmed.length <= 100 && trimmed.none { it.isWhitespace() })) { "That is not a model name." }
+        val resolved = trimmed.ifEmpty { fallback }
+        prefs.edit { if (trimmed.isEmpty()) remove(key) else putString(key, trimmed) }
+        target.value = resolved
+    }
 
     fun apiKey(): String? = secrets.read(API_KEY)
 

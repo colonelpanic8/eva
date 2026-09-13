@@ -18,11 +18,15 @@ import com.colonelpanic.eva.data.OpenAiSettings
 import com.colonelpanic.eva.data.SqliteInvocationRepository
 import com.colonelpanic.eva.providers.BrokerConversationProvider
 import com.colonelpanic.eva.providers.BrokerEndpoint
+import com.colonelpanic.eva.providers.openai.ModelKind
+import com.colonelpanic.eva.providers.openai.OpenAiModelCatalog
 import com.colonelpanic.eva.providers.openai.OpenAiRealtimeProvider
 import com.colonelpanic.eva.providers.openai.OpenAiResponsesProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -39,6 +43,24 @@ class EvaApplication : Application() {
     private val mediaFactory by lazy { WebRtcMediaSessionFactory(this) }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val settings by lazy { OpenAiSettings(this) }
+    private val catalog = OpenAiModelCatalog()
+    private val mutableModels = MutableStateFlow<Map<ModelKind, List<String>>>(emptyMap())
+
+    /** Models this account can use, empty until a key is present and the list loads. */
+    val availableModels = mutableModels.asStateFlow()
+
+    /** Best effort: the picker still accepts a typed model name when this fails. */
+    fun refreshModels() {
+        val key =
+            settings.apiKey() ?: run {
+                mutableModels.value = emptyMap()
+                return
+            }
+        scope.launch {
+            mutableModels.value = runCatching { catalog.load(key) }.getOrDefault(emptyMap())
+        }
+    }
+
     val registry by lazy {
         CapabilityRegistry(
             mapOf(

@@ -36,6 +36,12 @@ internal fun ProviderConnection(
     hasApiKey: Boolean = false,
     onSaveApiKey: (String) -> Unit = {},
     onClearApiKey: () -> Unit = {},
+    textModel: String = "",
+    realtimeModel: String = "",
+    availableTextModels: List<String> = emptyList(),
+    availableRealtimeModels: List<String> = emptyList(),
+    onSelectTextModel: (String) -> Unit = {},
+    onSelectRealtimeModel: (String) -> Unit = {},
     denial: MicrophoneDenial? = null,
     onRetryMicrophone: () -> Unit = {},
     onListenOnlyInstead: () -> Unit = {},
@@ -55,6 +61,8 @@ internal fun ProviderConnection(
                         Text("OpenAI API key saved on this phone", style = MaterialTheme.typography.bodySmall)
                         TextButton(onClick = onClearApiKey) { Text("Remove") }
                     }
+                    ModelPicker("Text model", textModel, availableTextModels, onSelectTextModel)
+                    ModelPicker("Voice model", realtimeModel, availableRealtimeModels, onSelectRealtimeModel)
                 } else {
                     OutlinedTextField(
                         value = apiKey,

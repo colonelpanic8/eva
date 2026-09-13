@@ -40,4 +40,20 @@ class SecretStoreTest {
         settings.clearApiKey()
         assertFalse(settings.hasApiKey.value)
     }
+
+    @Test
+    fun chosenModelsPersistAndBlankRestoresTheDefault() {
+        val settings = OpenAiSettings(context)
+        settings.saveTextModel("")
+        val default = settings.textModel
+        settings.saveTextModel("gpt-5.6-luna")
+        assertEquals("gpt-5.6-luna", settings.textModel)
+        assertEquals("gpt-5.6-luna", settings.textModelFlow.value)
+        assertEquals("gpt-5.6-luna", OpenAiSettings(context).textModel)
+        runCatching { settings.saveTextModel("not a model") }.also { assertTrue(it.isFailure) }
+        assertEquals("gpt-5.6-luna", settings.textModel)
+        settings.saveTextModel("")
+        assertEquals(default, settings.textModel)
+        assertEquals(default, OpenAiSettings(context).textModel)
+    }
 }

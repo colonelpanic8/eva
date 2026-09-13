@@ -1,0 +1,2 @@
+* Added: The text and voice models are selectable. The picker lists the models your own account can use and also accepts a typed name, so a new model works without an app update.
+* Fixed: A rejected OpenAI request now shows the provider's own message instead of the raw response body.

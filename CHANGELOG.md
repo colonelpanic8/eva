@@ -2,6 +2,16 @@
 
 All notable changes to EVA will be documented here.
 
+## [0.3.1] - 2026-09-13
+
+### Added
+
+- The text and voice models are selectable. The picker lists the models your own account can use and also accepts a typed name, so a new model works without an app update.
+
+### Fixed
+
+- A rejected OpenAI request now shows the provider's own message instead of the raw response body.
+
 ## [0.3.0] - 2026-09-13
 
 ### Added

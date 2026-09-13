@@ -128,8 +128,13 @@ The key is encrypted with a non-exportable Android Keystore key and stored in a
 preferences file excluded from backup and device transfer. It is billed per
 token by OpenAI; it is not covered by a ChatGPT subscription. The paired host
 bridge remains available as the subscription-backed alternative and is now
-optional. Default models are `gpt-realtime-2.1` for speech and `gpt-6-astra`
-for text, with `gpt-4o-transcribe` for input transcription.
+optional. Both models are selectable in the app and stored per device. The picker lists
+what the account can actually use, fetched from `/v1/models` and split by name
+into speech-capable and text-capable, and also accepts a typed name so a model
+released after the app still works. Blank restores the default. Defaults are
+`gpt-realtime-2.1` for speech and `gpt-6-astra` for text, with
+`gpt-4o-transcribe` for input transcription. A chosen model applies to the next
+connection.
 
 Coverage: JVM tests drive both adapters with canned HTTP and data-channel
 traffic, including a tool call held open across the follow-up response. The
