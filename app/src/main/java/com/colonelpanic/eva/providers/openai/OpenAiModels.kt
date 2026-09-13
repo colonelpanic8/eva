@@ -4,6 +4,7 @@ import com.colonelpanic.eva.providers.ProviderToolDefinition
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 
 object OpenAiModels {
@@ -41,3 +42,20 @@ internal fun functionTools(
 internal fun JsonObject.str(key: String): String? = (get(key) as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it.isString }?.content
 
 internal fun JsonObject.obj(key: String): JsonObject? = get(key) as? JsonObject
+
+/** OpenAI error bodies carry the useful text under error.message; fall back to the raw body. */
+internal fun openAiErrorMessage(
+    code: Int,
+    body: String,
+    what: String,
+): String {
+    val message =
+        runCatching {
+            kotlinx.serialization.json.Json
+                .parseToJsonElement(body)
+                .jsonObject
+                .obj("error")
+                ?.str("message")
+        }.getOrNull()
+    return "OpenAI rejected $what ($code): ${(message ?: body).trim().take(300)}"
+}

@@ -172,7 +172,7 @@ private class OpenAiResponsesSession(
                     .build()
             client.newCall(http).execute().use { response ->
                 val text = response.body.string()
-                check(response.isSuccessful) { "OpenAI rejected the request (${response.code}): ${text.take(300)}" }
+                check(response.isSuccessful) { openAiErrorMessage(response.code, text, "the request") }
                 json.parseToJsonElement(text).jsonObject
             }
         }

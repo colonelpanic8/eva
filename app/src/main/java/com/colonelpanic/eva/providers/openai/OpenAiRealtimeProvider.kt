@@ -91,7 +91,7 @@ class OpenAiRealtimeProvider(
                         .build()
                 client.newCall(http).execute().use { response ->
                     val text = response.body.string()
-                    check(response.isSuccessful) { "OpenAI rejected the voice session (${response.code}): ${text.take(300)}" }
+                    check(response.isSuccessful) { openAiErrorMessage(response.code, text, "the voice session") }
                     check(text.startsWith("v=")) { "OpenAI returned an unexpected answer." }
                     text
                 }

@@ -58,6 +58,42 @@ class OpenAiResponsesProviderTest {
             }.build()
 
     @Test
+    fun `a rejected request surfaces the provider's own message`() =
+        runTest {
+            replies.clear()
+            replies.addLast(
+                """{"error":{"message":"Incorrect API key provided: sk-test-***","type":"invalid_request_error","code":"invalid_api_key"}}""",
+            )
+            val failing =
+                OkHttpClient
+                    .Builder()
+                    .addInterceptor { chain ->
+                        Response
+                            .Builder()
+                            .request(chain.request())
+                            .protocol(Protocol.HTTP_1_1)
+                            .code(401)
+                            .message("Unauthorized")
+                            .body(replies.removeFirst().toResponseBody("application/json".toMediaType()))
+                            .build()
+                    }.build()
+            val session =
+                OpenAiResponsesProvider("sk-test", "gpt-test", failing, "https://example.test", StandardTestDispatcher(testScheduler))
+                    .open(SessionOpenRequest("You are EVA.", catalog))
+            val events = mutableListOf<ProviderEvent>()
+            val collector = launch { session.events.collect { events += it } }
+            advanceUntilIdle()
+            session.submit(ConversationInput("input-1", "Hello"))
+            session.requestResponse(ResponseRequest("input-1"))
+            advanceUntilIdle()
+            assertEquals(
+                "OpenAI rejected the request (401): Incorrect API key provided: sk-test-***",
+                events.filterIsInstance<ProviderEvent.Failure>().single().message,
+            )
+            collector.cancel()
+        }
+
+    @Test
     fun `a typed turn round-trips a function call and continues from the previous response`() =
         runTest {
             val session =
