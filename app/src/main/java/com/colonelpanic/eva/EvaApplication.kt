@@ -1,13 +1,16 @@
 package com.colonelpanic.eva
 
 import android.app.Application
+import android.os.Build
 import com.colonelpanic.eva.adapters.android.AndroidIntentHost
+import com.colonelpanic.eva.adapters.android.AppFunctionsBackend
 import com.colonelpanic.eva.adapters.android.ContactsQueryBackend
 import com.colonelpanic.eva.adapters.android.IntentBackend
 import com.colonelpanic.eva.adapters.android.MapIntentBackend
 import com.colonelpanic.eva.adapters.android.MessageIntentBackend
 import com.colonelpanic.eva.adapters.android.NativeIntents
 import com.colonelpanic.eva.adapters.android.NavigationIntentBackend
+import com.colonelpanic.eva.adapters.android.ShizukuShellHost
 import com.colonelpanic.eva.audio.RealtimeMediaConfig
 import com.colonelpanic.eva.audio.VoiceSessionService
 import com.colonelpanic.eva.audio.webrtc.WebRtcMediaSessionFactory
@@ -40,6 +43,7 @@ import kotlinx.coroutines.launch
 
 class EvaApplication : Application() {
     val intentHost = AndroidIntentHost()
+    val shizukuShellHost by lazy { if (Build.VERSION.SDK_INT >= 37) ShizukuShellHost(this) else null }
 
     private fun intent(
         success: String,
@@ -102,34 +106,54 @@ class EvaApplication : Application() {
 
     val registry by lazy {
         CapabilityRegistry(
-            mapOf(
-                CapabilityRegistry.MAP_SEARCH to MapIntentBackend(intentHost),
-                CapabilityRegistry.NAVIGATE to NavigationIntentBackend(intentHost),
-                CapabilityRegistry.SMS_COMPOSE to MessageIntentBackend(intentHost),
-                CapabilityRegistry.CONTACTS_SEARCH to ContactsQueryBackend(this, intentHost),
-                CapabilityRegistry.SET_ALARM to
-                    intent("Alarm set.", "No clock app accepted this alarm.", NativeIntents::alarm),
-                CapabilityRegistry.SET_TIMER to
-                    intent("Timer started.", "No clock app accepted this timer.", NativeIntents::timer),
-                CapabilityRegistry.DIAL to
-                    intent("Dialer opened.", "No phone app is available.", NativeIntents::dial),
-                CapabilityRegistry.WEB_SEARCH to
-                    intent("Web search opened.", "No browser or search app is available.", NativeIntents::webSearch),
-                CapabilityRegistry.OPEN_URL to
-                    intent("Web page opened.", "No browser is available.", NativeIntents::openUrl),
-                CapabilityRegistry.EMAIL_COMPOSE to
-                    intent("Email draft opened. Send it from your mail app.", "No email app is available.", NativeIntents::email),
-                CapabilityRegistry.CALENDAR_EVENT to
-                    intent(
-                        "Calendar event opened. Save it in your calendar.",
-                        "No calendar app is available.",
-                        NativeIntents::calendarEvent,
+            buildMap {
+                putAll(
+                    mapOf(
+                        CapabilityRegistry.MAP_SEARCH to MapIntentBackend(intentHost),
+                        CapabilityRegistry.NAVIGATE to NavigationIntentBackend(intentHost),
+                        CapabilityRegistry.SMS_COMPOSE to MessageIntentBackend(intentHost),
+                        CapabilityRegistry.CONTACTS_SEARCH to ContactsQueryBackend(this@EvaApplication, intentHost),
+                        CapabilityRegistry.SET_ALARM to
+                            intent("Alarm set.", "No clock app accepted this alarm.", NativeIntents::alarm),
+                        CapabilityRegistry.SET_TIMER to
+                            intent("Timer started.", "No clock app accepted this timer.", NativeIntents::timer),
+                        CapabilityRegistry.DIAL to
+                            intent("Dialer opened.", "No phone app is available.", NativeIntents::dial),
+                        CapabilityRegistry.WEB_SEARCH to
+                            intent("Web search opened.", "No browser or search app is available.", NativeIntents::webSearch),
+                        CapabilityRegistry.OPEN_URL to
+                            intent("Web page opened.", "No browser is available.", NativeIntents::openUrl),
+                        CapabilityRegistry.EMAIL_COMPOSE to
+                            intent("Email draft opened. Send it from your mail app.", "No email app is available.", NativeIntents::email),
+                        CapabilityRegistry.CALENDAR_EVENT to
+                            intent(
+                                "Calendar event opened. Save it in your calendar.",
+                                "No calendar app is available.",
+                                NativeIntents::calendarEvent,
+                            ),
+                        CapabilityRegistry.OPEN_APP to
+                            intent("App opened.", "No installed app matches that name.") {
+                                NativeIntents.launchApp(this@EvaApplication, it)
+                            },
+                        CapabilityRegistry.OPEN_SETTINGS to
+                            intent("Settings opened.", "That settings screen is unavailable on this device.", NativeIntents::settings),
                     ),
-                CapabilityRegistry.OPEN_APP to
-                    intent("App opened.", "No installed app matches that name.") { NativeIntents.launchApp(this, it) },
-                CapabilityRegistry.OPEN_SETTINGS to
-                    intent("Settings opened.", "That settings screen is unavailable on this device.", NativeIntents::settings),
-            ),
+                )
+                shizukuShellHost?.let { host ->
+                    put(
+                        CapabilityRegistry.DEVICE_STATE_GET,
+                        AppFunctionsBackend(host, AppFunctionsBackend.Operation.GET),
+                    )
+                    put(
+                        CapabilityRegistry.DEVICE_STATE_SET,
+                        AppFunctionsBackend(host, AppFunctionsBackend.Operation.SET),
+                    )
+                    put(
+                        CapabilityRegistry.DEVICE_STATE_METADATA,
+                        AppFunctionsBackend(host, AppFunctionsBackend.Operation.METADATA),
+                    )
+                }
+            },
         )
     }
     val controller by lazy {

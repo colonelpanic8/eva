@@ -202,6 +202,49 @@ object BundledCapabilities {
             """,
                 ),
             ),
+            CapabilityDefinition(
+                CapabilityRegistry.DEVICE_STATE_GET,
+                "Read device state",
+                "Read one category of Android device state through Settings AppFunctions. " +
+                    "Returns current values without opening Settings.",
+                schema(
+                    """
+                {"type":"object","properties":{"category":{"type":"string","enum":[
+                "battery","storage","notifications","apps","mobile_data","uncategorized"]}},
+                "required":["category"],"additionalProperties":false}
+            """,
+                ),
+            ),
+            CapabilityDefinition(
+                CapabilityRegistry.DEVICE_STATE_SET,
+                "Change a device setting",
+                "Change one writable Android setting through Settings AppFunctions. " +
+                    "Find its exact key and accepted values with the writable-settings search first.",
+                schema(
+                    """
+                {"type":"object","properties":{
+                "key":{"type":"string","minLength":3,"maxLength":200},
+                "value":{"type":"string","minLength":1,"maxLength":200}},
+                "required":["key","value"],"additionalProperties":false}
+            """,
+                ),
+            ) { args -> validateDeviceStateSet(args) },
+            CapabilityDefinition(
+                CapabilityRegistry.DEVICE_STATE_METADATA,
+                "Find writable device settings",
+                "Search writable Android settings exposed by Settings AppFunctions. " +
+                    "Returns exact keys, purposes, and accepted-value descriptions for a later change.",
+                schema(
+                    """
+                {"type":"object","properties":{
+                "search":{"type":"string","minLength":1,"maxLength":100}},
+                "required":["search"],"additionalProperties":false}
+            """,
+                ),
+            ) { args ->
+                val search = args.getValue("search")
+                if (search.isBlank() || search.any(Char::isISOControl)) "Enter a setting name or key to search for." else null
+            },
         )
 
     private fun List<String>.quoted() = joinToString(",", "[", "]") { "\"$it\"" }
@@ -231,5 +274,17 @@ object BundledCapabilities {
             null
         }
 
+    private fun validateDeviceStateSet(args: Map<String, String>): String? {
+        val key = args.getValue("key")
+        val value = args.getValue("value")
+        return when {
+            !DEVICE_STATE_KEY.matches(key) -> "Use an exact setting key returned by the writable-settings search."
+            value.isBlank() || value.any(Char::isISOControl) -> "Enter a bounded setting value without control characters."
+            else -> null
+        }
+    }
+
     private fun schema(value: String) = Json.parseToJsonElement(value).jsonObject
+
+    private val DEVICE_STATE_KEY = Regex("[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 }

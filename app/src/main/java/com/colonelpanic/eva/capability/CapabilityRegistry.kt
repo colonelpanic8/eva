@@ -38,7 +38,10 @@ class CapabilityRegistry(
         const val OPEN_APP = "eva.android.app.open"
         const val OPEN_SETTINGS = "eva.android.settings.open"
         const val CONTACTS_SEARCH = "eva.android.contacts.search"
-        const val REVISION = 4
+        const val DEVICE_STATE_GET = "eva.android.device.state.get"
+        const val DEVICE_STATE_SET = "eva.android.device.state.set"
+        const val DEVICE_STATE_METADATA = "eva.android.device.state.metadata"
+        const val REVISION = 5
         const val MAX_DESTINATION_LENGTH = 500
     }
 }
