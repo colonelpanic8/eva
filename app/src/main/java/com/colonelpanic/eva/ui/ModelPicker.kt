@@ -110,3 +110,53 @@ internal fun ModelPicker(
         }
     }
 }
+
+/**
+ * A closed choice for the Responses `reasoning.effort` level. Unlike [ModelPicker] this
+ * offers no free text: only a value the provider accepts can be stored.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun ReasoningEffortPicker(
+    selected: String,
+    available: List<String>,
+    onSelect: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    fun commit(value: String) {
+        expanded = false
+        onSelect(value)
+    }
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        OutlinedTextField(
+            value = selected,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Reasoning effort") },
+            singleLine = true,
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                    .semantics { contentDescription = "Reasoning effort" },
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            available.forEach { effort ->
+                DropdownMenuItem(
+                    text = { Text(effort) },
+                    onClick = { commit(effort) },
+                )
+            }
+        }
+    }
+}

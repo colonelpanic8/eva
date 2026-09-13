@@ -169,7 +169,7 @@ class EvaApplication : Application() {
             providerFactory = { link ->
                 if (link.isBlank()) {
                     val access = access() ?: error("Sign in with ChatGPT, add an API key, or paste a paired host link.")
-                    OpenAiResponsesProvider(access, settings.textModel)
+                    OpenAiResponsesProvider(access, settings.textModel, reasoningEffort = settings.reasoningEffort)
                 } else {
                     BrokerConversationProvider(BrokerEndpoint.parse(link))
                 }

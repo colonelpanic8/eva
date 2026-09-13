@@ -54,6 +54,8 @@ internal fun ProviderConnection(
     availableRealtimeModels: List<String> = emptyList(),
     onSelectTextModel: (String) -> Unit = {},
     onSelectRealtimeModel: (String) -> Unit = {},
+    reasoningEffort: String = OpenAiModels.REASONING_EFFORT,
+    onSelectReasoningEffort: (String) -> Unit = {},
     voiceLookupRetries: Int = 5,
     onVoiceLookupRetriesChange: (Int) -> Unit = {},
     denial: MicrophoneDenial? = null,
@@ -89,6 +91,7 @@ internal fun ProviderConnection(
                 if (account != null || hasApiKey) {
                     ModelPicker("Text model", textModel, availableTextModels, OpenAiModels.TEXT, onSelectTextModel)
                     ModelPicker("Voice model", realtimeModel, availableRealtimeModels, OpenAiModels.REALTIME, onSelectRealtimeModel)
+                    ReasoningEffortPicker(reasoningEffort, OpenAiModels.REASONING_EFFORTS, onSelectReasoningEffort)
                 }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,

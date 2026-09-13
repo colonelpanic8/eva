@@ -38,6 +38,7 @@ class OpenAiResponsesProvider(
     private val client: OkHttpClient = OkHttpClient(),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val catalog: OpenAiModelCatalog = OpenAiModelCatalog(client, ioDispatcher),
+    private val reasoningEffort: String = OpenAiModels.REASONING_EFFORT,
 ) : ConversationProvider {
     /**
      * Unlike a realtime session, a typed session has nothing to negotiate, so "connected"
@@ -51,7 +52,7 @@ class OpenAiResponsesProvider(
         check(known.isEmpty() || model in known) {
             "This account cannot use $model. Choose another text model."
         }
-        return OpenAiResponsesSession(access, model, client, request, toolNames(request.catalog.tools), ioDispatcher)
+        return OpenAiResponsesSession(access, model, reasoningEffort, client, request, toolNames(request.catalog.tools), ioDispatcher)
     }
 }
 
@@ -68,6 +69,7 @@ private sealed interface Command {
 private class OpenAiResponsesSession(
     private val access: OpenAiAccess,
     private val model: String,
+    private val reasoningEffort: String,
     private val client: OkHttpClient,
     private val request: SessionOpenRequest,
     private val tools: Map<String, ProviderToolDefinition>,
@@ -185,6 +187,7 @@ private class OpenAiResponsesSession(
                 buildJsonObject {
                     put("model", model)
                     put("instructions", request.instructions)
+                    put("reasoning", buildJsonObject { put("effort", reasoningEffort) })
                     put("input", if (access.serverKeepsHistory) input else JsonArray(history + input))
                     put("store", access.serverKeepsHistory)
                     put("stream", !access.serverKeepsHistory)

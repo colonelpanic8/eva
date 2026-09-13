@@ -84,6 +84,7 @@ class MainActivity : ComponentActivity() {
             val hasApiKey by eva.settings.hasApiKey.collectAsStateWithLifecycle()
             val textModel by eva.settings.textModelFlow.collectAsStateWithLifecycle()
             val realtimeModel by eva.settings.realtimeModelFlow.collectAsStateWithLifecycle()
+            val reasoningEffort by eva.settings.reasoningEffortFlow.collectAsStateWithLifecycle()
             val voiceLookupRetries by eva.settings.voiceLookupRetriesFlow.collectAsStateWithLifecycle()
             val models by eva.availableModels.collectAsStateWithLifecycle()
             val account by eva.chatGpt.account.collectAsStateWithLifecycle()
@@ -114,6 +115,8 @@ class MainActivity : ComponentActivity() {
                     availableRealtimeModels = models[ModelKind.REALTIME].orEmpty(),
                     onSelectTextModel = { model -> runCatching { eva.settings.saveTextModel(model) } },
                     onSelectRealtimeModel = { model -> runCatching { eva.settings.saveRealtimeModel(model) } },
+                    reasoningEffort = reasoningEffort,
+                    onSelectReasoningEffort = { effort -> runCatching { eva.settings.saveReasoningEffort(effort) } },
                     voiceLookupRetries = voiceLookupRetries,
                     onVoiceLookupRetriesChange = eva.settings::saveVoiceLookupRetries,
                     onToggleMicrophone = controller::toggleMicrophone,

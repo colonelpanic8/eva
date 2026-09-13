@@ -12,7 +12,13 @@ object OpenAiModels {
     const val REALTIME = "gpt-realtime-2.1"
 
     /** Text model for typed turns over the Responses API. */
-    const val TEXT = "gpt-6-astra"
+    const val TEXT = "gpt-5.6"
+
+    /** Default reasoning effort for typed turns; small routing tasks favor speed. */
+    const val REASONING_EFFORT = "low"
+
+    /** Closed set the Responses API accepts across the current reasoning models. */
+    val REASONING_EFFORTS = listOf("none", "minimal", "low", "medium", "high", "xhigh")
 
     const val TRANSCRIPTION = "gpt-transcribe"
 

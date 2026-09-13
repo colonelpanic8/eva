@@ -16,20 +16,34 @@ class OpenAiSettings(
     val hasApiKey = mutableHasKey.asStateFlow()
     private val mutableTextModel = MutableStateFlow(prefs.getString(TEXT_MODEL, null) ?: OpenAiModels.TEXT)
     private val mutableRealtimeModel = MutableStateFlow(prefs.getString(REALTIME_MODEL, null) ?: OpenAiModels.REALTIME)
+    private val mutableReasoningEffort =
+        MutableStateFlow(
+            prefs.getString(REASONING_EFFORT, null)?.takeIf { it in OpenAiModels.REASONING_EFFORTS } ?: OpenAiModels.REASONING_EFFORT,
+        )
     private val mutableVoiceLookupRetries = MutableStateFlow(prefs.getInt(VOICE_LOOKUP_RETRIES, DEFAULT_VOICE_LOOKUP_RETRIES))
 
     /** Model used for typed turns. Changing it applies to the next connection. */
     val textModelFlow = mutableTextModel.asStateFlow()
     val realtimeModelFlow = mutableRealtimeModel.asStateFlow()
+    val reasoningEffortFlow = mutableReasoningEffort.asStateFlow()
     val voiceLookupRetriesFlow = mutableVoiceLookupRetries.asStateFlow()
 
     val realtimeModel: String get() = mutableRealtimeModel.value
     val textModel: String get() = mutableTextModel.value
+    val reasoningEffort: String get() = mutableReasoningEffort.value
     val voiceLookupRetries: Int get() = mutableVoiceLookupRetries.value
 
     fun saveTextModel(value: String) = saveModel(TEXT_MODEL, value, OpenAiModels.TEXT, mutableTextModel)
 
     fun saveRealtimeModel(value: String) = saveModel(REALTIME_MODEL, value, OpenAiModels.REALTIME, mutableRealtimeModel)
+
+    /** Reasoning effort is a closed set, so only a known value is stored. */
+    fun saveReasoningEffort(value: String) {
+        val trimmed = value.trim()
+        require(trimmed in OpenAiModels.REASONING_EFFORTS) { "Unknown reasoning effort." }
+        prefs.edit { putString(REASONING_EFFORT, trimmed) }
+        mutableReasoningEffort.value = trimmed
+    }
 
     fun saveVoiceLookupRetries(value: Int) {
         require(value in MIN_VOICE_LOOKUP_RETRIES..MAX_VOICE_LOOKUP_RETRIES) { "Voice lookup retries must be between 0 and 10." }
@@ -71,6 +85,7 @@ class OpenAiSettings(
         const val API_KEY = "openai.apiKey"
         const val REALTIME_MODEL = "openai.realtimeModel"
         const val TEXT_MODEL = "openai.textModel"
+        const val REASONING_EFFORT = "openai.reasoningEffort"
         const val VOICE_LOOKUP_RETRIES = "voice.lookupRetries"
         const val DEFAULT_VOICE_LOOKUP_RETRIES = 5
         const val MIN_VOICE_LOOKUP_RETRIES = 0

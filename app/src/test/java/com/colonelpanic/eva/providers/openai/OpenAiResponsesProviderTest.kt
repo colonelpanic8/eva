@@ -153,4 +153,53 @@ class OpenAiResponsesProviderTest {
             assertEquals(ProviderEvent.Closed, events.last())
             collector.cancel()
         }
+
+    @Test
+    fun `the chosen reasoning effort is sent with a typed turn`() =
+        runTest {
+            val session =
+                OpenAiResponsesProvider(
+                    access,
+                    "gpt-test",
+                    client,
+                    StandardTestDispatcher(testScheduler),
+                    reasoningEffort = "medium",
+                ).open(SessionOpenRequest("You are EVA.", catalog))
+            val events = mutableListOf<ProviderEvent>()
+            val collector = launch { session.events.collect { events += it } }
+            advanceUntilIdle()
+            session.submit(ConversationInput("input-1", "Find the Ferry Building"))
+            session.requestResponse(ResponseRequest("input-1"))
+            advanceUntilIdle()
+            val call = events.filterIsInstance<ProviderEvent.ToolCallReady>().single()
+            session.submitToolResult(CorrelatedToolResult(call.call, "HANDED_OFF", "Map search opened."))
+            advanceUntilIdle()
+            val first = Json.parseToJsonElement(requests[0]).jsonObject
+            assertEquals(JsonPrimitive("medium"), first.getValue("reasoning").jsonObject.getValue("effort"))
+            session.close()
+            advanceUntilIdle()
+            collector.cancel()
+        }
+
+    @Test
+    fun `a typed turn defaults to low reasoning effort`() =
+        runTest {
+            val session =
+                OpenAiResponsesProvider(access, "gpt-test", client, StandardTestDispatcher(testScheduler))
+                    .open(SessionOpenRequest("You are EVA.", catalog))
+            val events = mutableListOf<ProviderEvent>()
+            val collector = launch { session.events.collect { events += it } }
+            advanceUntilIdle()
+            session.submit(ConversationInput("input-1", "Find the Ferry Building"))
+            session.requestResponse(ResponseRequest("input-1"))
+            advanceUntilIdle()
+            val call = events.filterIsInstance<ProviderEvent.ToolCallReady>().single()
+            session.submitToolResult(CorrelatedToolResult(call.call, "HANDED_OFF", "Map search opened."))
+            advanceUntilIdle()
+            val first = Json.parseToJsonElement(requests[0]).jsonObject
+            assertEquals(JsonPrimitive("low"), first.getValue("reasoning").jsonObject.getValue("effort"))
+            session.close()
+            advanceUntilIdle()
+            collector.cancel()
+        }
 }

@@ -247,8 +247,10 @@ optional. Both models are selectable in the app and stored per device. The picke
 what the account can actually use, fetched from `/v1/models` and split by name
 into speech-capable and text-capable, and also accepts a typed name so a model
 released after the app still works. Blank restores the default. Defaults are
-`gpt-realtime-2.1` for speech and `gpt-6-astra` for text, with
-`gpt-transcribe` for input transcription. A chosen model applies to the next
+`gpt-realtime-2.1` for speech and `gpt-5.6` for text, with
+`gpt-transcribe` for input transcription. Typed turns send the chosen reasoning
+effort as `reasoning.effort` (`none`, `minimal`, `low`, `medium`, `high`, or
+`xhigh`; default `low`). A chosen model applies to the next
 connection.
 
 Input transcription is a second model pass that produces only the on-screen
