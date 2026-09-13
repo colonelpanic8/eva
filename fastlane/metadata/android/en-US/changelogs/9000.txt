@@ -1,0 +1,2 @@
+* Added: The conversations already on your phone are now targets. EVA can list them, say who is in each one, and read a thread's recent messages back to you, so "what did the group say?" and "reply to that thread" both work.
+* ...see CHANGELOG.md for the rest.

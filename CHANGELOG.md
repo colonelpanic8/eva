@@ -2,7 +2,7 @@
 
 All notable changes to EVA will be documented here.
 
-## [Unreleased]
+## [0.9.0] - 2026-09-13
 
 ### Added
 
@@ -10,6 +10,11 @@ All notable changes to EVA will be documented here.
 - Group texts. Sending to several people at once, or to a group conversation, goes out as one MMS so everyone stays in a single thread instead of receiving separate one-to-one texts. When a carrier has group messaging switched off, EVA says so and offers a draft rather than quietly texting people one by one. Group messages EVA sends itself travel as MMS, because Android gives no third-party app a way to send RCS; opening a draft instead hands the group to your messaging app, which may send it over RCS.
 - Reading conversations asks for the text-message permission the first time; declining leaves texting by name and number exactly as it was.
 - Chats that have moved to RCS are only partly visible: EVA can read their older text-message history but not anything sent over RCS, and it says so when reading a conversation instead of presenting a stale thread as the whole story.
+- A reasoning effort setting for typed conversations, next to the model picker.
+
+### Changed
+
+- Typed conversations default to `gpt-5.6`.
 
 ## [0.8.0] - 2026-09-13
 
