@@ -1,0 +1,4 @@
+* Added: Model-backed conversation: EVA sends its capability catalog to a provider, which chooses structured tool calls that EVA validates and executes.
+* Added: Twelve native capabilities: map search, driving navigation, text drafts, alarms, timers, dialing, web search, opening a URL, email drafts, calendar events, launching an app, and settings screens.
+* Added: Native realtime WebRTC voice conversation with microphone permission handling and a listen-only mode.
+* ...see CHANGELOG.md for the rest.
