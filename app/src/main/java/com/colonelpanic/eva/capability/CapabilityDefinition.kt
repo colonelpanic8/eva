@@ -51,8 +51,18 @@ object BundledCapabilities {
                 CapabilityRegistry.SMS_COMPOSE,
                 "Prepare a text message",
                 "Open a text message draft addressed to one explicit phone number. " +
-                    "When the user names a person instead, find the number with the contacts search first. " +
-                    "The user sends it in their messaging app. Does not send an SMS.",
+                    "The user sends it in their messaging app, so use this only when they ask to review the text first " +
+                    "or when sending directly is unavailable. Does not send an SMS.",
+                messageSchema,
+                ::validateMessage,
+            ),
+            CapabilityDefinition(
+                CapabilityRegistry.SMS_SEND,
+                "Send a text message",
+                "Send a text message to one explicit phone number without opening another app. " +
+                    "Use this for hands-free requests to text someone. " +
+                    "When the user names a person, find the number with the contacts search first and use the best match. " +
+                    "Sending cannot be undone, so confirm the wording first when the user has not dictated it.",
                 messageSchema,
                 ::validateMessage,
             ),
@@ -178,8 +188,10 @@ object BundledCapabilities {
                 CapabilityRegistry.CONTACTS_SEARCH,
                 "Search contacts",
                 "Find phone numbers in the user's contacts by name. Use this when the user names a person " +
-                    "to text or call, then pass the returned number to the message or dialer action. " +
-                    "Returns matches only; it opens nothing. If several people match, ask which one.",
+                    "to text or call, then pass the returned number to the send, message, or dialer action. " +
+                    "Returns matches only; it opens nothing. Results are ranked, and a heard name may be spelled or " +
+                    "shortened differently, so judge which match the user most plausibly meant and act on it. " +
+                    "Ask which person only when two matches are equally plausible.",
                 schema(
                     """
                 {"type":"object","properties":{

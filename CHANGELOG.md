@@ -2,6 +2,16 @@
 
 All notable changes to EVA will be documented here.
 
+## [Unreleased]
+
+### Added
+
+- EVA can send a text message itself, so a spoken request finishes without opening a messaging app. Drafting is still available when you want to read the text first.
+
+### Changed
+
+- Contact lookups return one ranked best match and ask you to choose only when two contacts fit equally well.
+
 ## [0.7.0] - 2026-09-13
 
 ### Changed

@@ -28,6 +28,7 @@ class CapabilityRegistry(
         const val MAP_SEARCH = "eva.android.maps.search"
         const val NAVIGATE = "eva.android.maps.navigate"
         const val SMS_COMPOSE = "eva.android.messages.compose"
+        const val SMS_SEND = "eva.android.messages.send"
         const val SET_ALARM = "eva.android.alarm.set"
         const val SET_TIMER = "eva.android.timer.set"
         const val DIAL = "eva.android.phone.dial"
@@ -41,7 +42,7 @@ class CapabilityRegistry(
         const val DEVICE_STATE_GET = "eva.android.device.state.get"
         const val DEVICE_STATE_SET = "eva.android.device.state.set"
         const val DEVICE_STATE_METADATA = "eva.android.device.state.metadata"
-        const val REVISION = 5
+        const val REVISION = 6
         const val MAX_DESTINATION_LENGTH = 500
     }
 }

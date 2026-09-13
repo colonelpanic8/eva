@@ -11,17 +11,22 @@ actual dispatcher outcomes. The development `/device` WebSocket uses an ephemera
 broker code and localhost forwarding. Subscription credentials stay on the host;
 there is no native OpenAI login or API-key fallback.
 
-Sixteen bundled capabilities are described by `CapabilityDefinition` records with
-closed JSON Schemas: map search, driving navigation, message drafting, alarms,
-timers, dialing, web search, opening a URL, email drafting, calendar events,
-launching an installed app, opening a settings screen, contacts search, and three
-typed device-state operations. The intent operations other than map search,
-navigation, and message drafting share one generic `IntentBackend`; contacts and
-device state have query-specific backends.
+Seventeen bundled capabilities are described by `CapabilityDefinition` records with
+closed JSON Schemas: map search, driving navigation, message drafting, sending a
+text message, alarms, timers, dialing, web search, opening a URL, email drafting,
+calendar events, launching an installed app, opening a settings screen, contacts
+search, and three typed device-state operations. The intent operations other than
+map search, navigation, and message drafting share one generic `IntentBackend`;
+contacts, SMS sending, and device state have query-specific backends.
 Contacts search reads phone numbers matching a
 name through `ContactsContract`, requests `READ_CONTACTS` on first use through
 the resumed Activity, and completes with the matches in its outcome message so
-the model can pass an explicit number to the message or dialer action. The registry and UI do not switch on
+the model can pass an explicit number to the send, message, or dialer action.
+`ContactMatches` ranks those matches by how the query lines up with the stored
+name — exact name, whole word, name prefix, word prefix, substring — and lists
+each contact's most callable number first, so the outcome message names one best
+match. It asks the model to act on that match and to ask the user only when two
+matches score the same. The registry and UI do not switch on
 capability IDs. Generic schema validation covers closed/nested objects, bounded
 scalars, and enums; arrays and nullable values are rejected.
 
@@ -29,6 +34,21 @@ Backends still receive flat string arguments, so `ToolSchema.coerce` restores
 each property's declared scalar type before the dispatcher revalidates. Integer
 and boolean parameters therefore work end to end; structured object arguments at
 the execution boundary and a package importer remain follow-up work.
+
+## Sending a text message
+
+`eva.android.messages.send` sends an SMS through `SmsManager` without opening
+another app, so a spoken request can finish hands free; `eva.android.messages.compose`
+remains for the case where the user wants to review the text first. The backend
+requests `SEND_SMS` on first use through the resumed Activity, splits long bodies
+with `divideMessage`, and waits up to 30 seconds for the platform's per-part sent
+broadcast on a package-scoped, non-exported receiver before reporting. A confirmed
+send completes with the recipient and a flattened 80-character preview; a platform
+error code becomes a stated reason and fails; no confirmation within the window
+returns `UNKNOWN` and tells the model the text may still have been delivered
+rather than claiming a send. The capability is unavailable below Android 12 or on
+a device without a cellular radio, and `android.hardware.telephony` is declared
+as not required.
 
 ## Settings AppFunctions through Shizuku
 

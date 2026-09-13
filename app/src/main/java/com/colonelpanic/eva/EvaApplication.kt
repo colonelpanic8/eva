@@ -12,6 +12,7 @@ import com.colonelpanic.eva.adapters.android.MessageIntentBackend
 import com.colonelpanic.eva.adapters.android.NativeIntents
 import com.colonelpanic.eva.adapters.android.NavigationIntentBackend
 import com.colonelpanic.eva.adapters.android.ShizukuShellHost
+import com.colonelpanic.eva.adapters.android.SmsSendBackend
 import com.colonelpanic.eva.audio.RealtimeMediaConfig
 import com.colonelpanic.eva.audio.VoiceSessionService
 import com.colonelpanic.eva.audio.webrtc.WebRtcMediaSessionFactory
@@ -113,6 +114,7 @@ class EvaApplication : Application() {
                         CapabilityRegistry.MAP_SEARCH to MapIntentBackend(intentHost),
                         CapabilityRegistry.NAVIGATE to NavigationIntentBackend(intentHost),
                         CapabilityRegistry.SMS_COMPOSE to MessageIntentBackend(intentHost),
+                        CapabilityRegistry.SMS_SEND to SmsSendBackend(this@EvaApplication, intentHost),
                         CapabilityRegistry.CONTACTS_SEARCH to ContactsQueryBackend(this@EvaApplication, intentHost),
                         CapabilityRegistry.SET_ALARM to
                             intent("Alarm set.", "No clock app accepted this alarm.", NativeIntents::alarm),

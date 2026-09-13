@@ -10,23 +10,66 @@ data class ContactMatch(
     val phones: List<ContactPhone>,
 )
 
-/** Renders lookup results as one line the model can read back or act on. */
+/**
+ * Orders lookup results by how well they match what was asked for and renders them as one line,
+ * so the model can act on the likeliest person instead of asking about every near miss.
+ */
 object ContactMatches {
     const val MAX_CONTACTS = 5
     const val MAX_PHONES = 3
+    const val PICK_BEST =
+        "Text or call the best match when it plainly fits what the user said; ask only if another match fits just as well."
+    const val AMBIGUOUS = "Several contacts match equally well; ask which one before acting."
+
+    private val kindOrder = listOf("mobile", "work mobile", "main", "home", "work")
 
     fun describe(
         query: String,
         matches: List<ContactMatch>,
     ): String {
-        val shown = matches.take(MAX_CONTACTS)
-        if (shown.isEmpty()) return "No contact with a phone number matches \"$query\"."
-        val listing =
-            shown.joinToString("; ") { match ->
-                match.name + ": " + match.phones.take(MAX_PHONES).joinToString(", ") { "${it.kind} ${it.number}" }
-            }
-        val count = if (matches.size > shown.size) "first ${shown.size} of ${matches.size}" else "${shown.size}"
-        val noun = if (matches.size == 1) "contact" else "contacts"
-        return "Found $count $noun matching \"$query\": $listing."
+        val ranked = rank(query, matches)
+        if (ranked.isEmpty()) return "No contact with a phone number matches \"$query\"."
+        val shown = ranked.take(MAX_CONTACTS)
+        val best = shown.first()
+        val others = shown.drop(1)
+        val tied = others.any { score(query, it.name) == score(query, best.name) }
+        return buildString {
+            append("Best match for \"$query\": ${line(best)}.")
+            if (others.isNotEmpty()) append(" Other matches: ${others.joinToString("; ", transform = ::line)}.")
+            if (ranked.size > shown.size) append(" ${ranked.size - shown.size} further matches were not listed.")
+            append(" ")
+            append(if (tied) AMBIGUOUS else PICK_BEST)
+        }
     }
+
+    /** Exact and word-leading matches come first; each contact's most callable number leads its line. */
+    fun rank(
+        query: String,
+        matches: List<ContactMatch>,
+    ): List<ContactMatch> =
+        matches
+            .sortedWith(compareByDescending<ContactMatch> { score(query, it.name) }.thenBy { it.name.lowercase() })
+            .map { match -> match.copy(phones = match.phones.sortedBy { phoneRank(it.kind) }) }
+
+    private fun score(
+        query: String,
+        name: String,
+    ): Int {
+        val needle = query.trim().lowercase()
+        val haystack = name.lowercase()
+        val words = haystack.split(' ', '-', '.').filter(String::isNotBlank)
+        return when {
+            haystack == needle -> 5
+            words.any { it == needle } -> 4
+            haystack.startsWith(needle) -> 3
+            words.any { it.startsWith(needle) } -> 2
+            haystack.contains(needle) -> 1
+            else -> 0
+        }
+    }
+
+    private fun phoneRank(kind: String) = kindOrder.indexOf(kind).takeIf { it >= 0 } ?: kindOrder.size
+
+    private fun line(match: ContactMatch) =
+        match.name + ": " + match.phones.take(MAX_PHONES).joinToString(", ") { "${it.kind} ${it.number}" }
 }
