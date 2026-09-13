@@ -1,0 +1,2 @@
+* Added: EVA can send a text message itself, so a spoken request finishes without opening a messaging app. Drafting is still available when you want to read the text first.
+* Changed: Contact lookups return one ranked best match, merge the same person duplicated across accounts, and ask you to choose only when two contacts fit equally well. EVA can also search first or last names specifically when a full name is stored differently than it was spoken.

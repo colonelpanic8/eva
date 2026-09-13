@@ -56,6 +56,14 @@ rather than claiming a send. The capability is unavailable below Android 12 or o
 a device without a cellular radio, and `android.hardware.telephony` is declared
 as not required.
 
+Verified on the Pixel 11 Pro Fold (Android 17, API 37) from the registered
+backend: one text to the tester's own number completed in 1,030 ms with the
+platform's sent confirmation, and the message appears in `content://sms/sent`.
+Contacts search ran in the same pass at 14 ms for the whole displayed name, 13 ms
+for first names, and 9 ms for last names; searching a surname as a first name
+correctly returned no match, which shows the field is honoured rather than
+widened.
+
 ## Settings AppFunctions through Shizuku
 
 On Android 17/API 37, EVA now exposes three typed Settings operations:

@@ -2,7 +2,7 @@
 
 All notable changes to EVA will be documented here.
 
-## [Unreleased]
+## [0.8.0] - 2026-09-13
 
 ### Added
 
