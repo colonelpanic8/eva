@@ -50,6 +50,10 @@ sealed interface ProviderEvent {
     data class Connected(
         val sessionId: String,
         val catalogRevision: String,
+        /** Model the provider reports for this session, when it names one. */
+        val model: String? = null,
+        /** Model that runs tool-selecting turns when a speech model fronts the session. */
+        val backendModel: String? = null,
     ) : ProviderEvent
 
     data class Account(

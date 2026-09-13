@@ -73,6 +73,17 @@ Typed mode remains the verified model-to-phone action path. No background
 microphone service, assistant role, automatic reconnect, requirement tokens,
 provider history seeding, or physical audio quality claim is included.
 
+## Models in use
+
+The broker runs backend turns on `gpt-5.6-luna` at low reasoning effort and
+realtime voice on `gpt-live-1-codex`, both through the host's existing ChatGPT
+subscription. It reports the model it actually opened in the session-started
+frame, and the phone shows that name under the connection status, labelled as
+the voice model when a speech model fronts the session.
+
+In voice mode the speech model carries conversation and delegates tool-selecting
+turns to the backend model. Typed mode runs the backend model alone.
+
 ## Development connection
 
 1. Start `direnv exec . npm start` in `experiments/voice-poc`. Each broker gets a

@@ -10,6 +10,7 @@ data class ConversationState(
     val errorMessage: String? = null,
     val providerStatus: ProviderStatus = ProviderStatus.DISCONNECTED,
     val providerMessage: String? = null,
+    val providerModel: String? = null,
     val voiceMode: Boolean = false,
     val mediaState: RealtimeMediaState = RealtimeMediaState.Idle,
     val mediaControls: MediaControls = MediaControls(),

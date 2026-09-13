@@ -1,0 +1,1 @@
+* Added: The connection status line names the model in use, so it is visible whether a session runs on the text model or the realtime speech model.

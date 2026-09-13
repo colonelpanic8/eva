@@ -2,6 +2,12 @@
 
 All notable changes to EVA will be documented here.
 
+## [0.2.1] - 2026-09-12
+
+### Added
+
+- The connection status line names the model in use, so it is visible whether a session runs on the text model or the realtime speech model.
+
 ## [0.2.0] - 2026-09-12
 
 ### Added

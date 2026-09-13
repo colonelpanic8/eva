@@ -183,7 +183,14 @@ private class BrokerSession(
                         "started" -> {
                             check(sessionId == null && message.string("catalogRevision") == request.catalog.revision)
                             sessionId = message.string("sessionId").also { check(it.isNotBlank()) }
-                            emit(ProviderEvent.Connected(checkNotNull(sessionId), request.catalog.revision))
+                            emit(
+                                ProviderEvent.Connected(
+                                    checkNotNull(sessionId),
+                                    request.catalog.revision,
+                                    message.optionalString("model"),
+                                    message.optionalString("backendModel"),
+                                ),
+                            )
                         }
 
                         "backend-turn" -> {
@@ -317,6 +324,9 @@ private class BrokerSession(
         check(!closed.get() && socket.send(value.toString())) { "Provider connection is unavailable" }
     }
 }
+
+private fun JsonObject.optionalString(key: String) =
+    (get(key) as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull?.takeIf { it.isNotBlank() }
 
 private fun JsonObject.string(key: String): String =
     (get(key) as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull ?: error("Missing provider field: $key")

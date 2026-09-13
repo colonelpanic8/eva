@@ -18,10 +18,16 @@ export type SessionRuntime = {
     args: unknown,
   ) => Promise<RecordValue & { success: boolean }>;
 };
+/** Text and reasoning model that runs backend turns and chooses tools. */
+export const BACKEND_MODEL = "gpt-5.6-luna";
+/** Speech-to-speech model that carries realtime voice conversation. */
+export const REALTIME_MODEL = "gpt-live-1-codex";
+
 export class Session {
   readonly dispatcher = new Dispatcher();
   private rpc?: Rpc;
   private cwd?: string;
+  private threadModel = BACKEND_MODEL;
   private threadId?: string;
   private startedAt = performance.now();
   private closed = false;
@@ -121,7 +127,7 @@ export class Session {
       );
       const thread = record(
         await rpc.request("thread/start", {
-          model: "gpt-5.6-luna",
+          model: BACKEND_MODEL,
           cwd: this.cwd,
           ephemeral: true,
           approvalPolicy: "never",
@@ -138,6 +144,7 @@ export class Session {
           },
         }),
       );
+      this.threadModel = String(thread.model ?? BACKEND_MODEL);
       this.threadId = String(record(thread.thread).id ?? "");
       if (!this.threadId) throw new Error("Codex returned no thread ID");
       this.event("thread", {
@@ -147,7 +154,7 @@ export class Session {
       if (!this.realtime) {
         this.active = true;
         clearTimeout(this.setupTimer);
-        this.event("started", { mode: "text" });
+        this.event("started", { mode: "text", model: this.threadModel });
         return;
       }
       await rpc.request("thread/realtime/start", {
@@ -155,7 +162,7 @@ export class Session {
         realtimeSessionId: randomUUID(),
         outputModality: "audio",
         version: "v3",
-        model: "gpt-live-1-codex",
+        model: REALTIME_MODEL,
         transport: { type: "webrtc", sdp },
         includeStartupContext: false,
         prompt: `${sessionInstructions}\n${custom}`,
@@ -252,7 +259,12 @@ export class Session {
     } else if (method === "thread/realtime/started") {
       this.active = true;
       clearTimeout(this.setupTimer);
-      this.event("started", { version: params.version ?? "v3", audio: "browser-provider WebRTC" });
+      this.event("started", {
+        version: params.version ?? "v3",
+        audio: "browser-provider WebRTC",
+        model: REALTIME_MODEL,
+        backendModel: this.threadModel,
+      });
     } else if (method === "thread/realtime/transcript/done") {
       if (params.role === "user") this.lastSpeechTranscriptAt = performance.now();
       this.event("transcript", {

@@ -82,6 +82,13 @@ internal fun ProviderConnection(
             Button(onClick = onDisconnect) {
                 Text(if (state.providerStatus == ProviderStatus.CONNECTING) "Connecting… Cancel" else "Connected · Disconnect")
             }
+            state.providerModel?.let {
+                Text(
+                    if (state.voiceMode) "Voice model: $it" else "Model: $it",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         state.providerMessage?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
     }

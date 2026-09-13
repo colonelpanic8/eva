@@ -165,7 +165,17 @@ class ProviderSessionController(
                         when (event) {
                             is ProviderEvent.Connected -> {
                                 check(event.catalogRevision == connectionCatalog.revision)
-                                mutableState.update { it.copy(providerStatus = ProviderStatus.CONNECTED, providerMessage = null) }
+                                mutableState.update {
+                                    it.copy(
+                                        providerStatus = ProviderStatus.CONNECTED,
+                                        providerMessage = null,
+                                        providerModel =
+                                            listOfNotNull(event.model, event.backendModel)
+                                                .distinct()
+                                                .joinToString(" · ")
+                                                .ifBlank { null },
+                                    )
+                                }
                                 append(
                                     ConversationEntry("boundary:${opened.connectionEpoch}", "", "New model session", EntryStatus.SESSION),
                                 )
@@ -264,7 +274,7 @@ class ProviderSessionController(
                         media?.close()
                         media = null
                         finishInput("The connection ended before the response completed.")
-                        mutableState.update { it.copy(providerStatus = ProviderStatus.DISCONNECTED) }
+                        mutableState.update { it.copy(providerStatus = ProviderStatus.DISCONNECTED, providerModel = null) }
                     }
                     withContext(NonCancellable) {
                         try {
@@ -289,7 +299,7 @@ class ProviderSessionController(
         actionJobs.toList().forEach { it.cancel() }
         session = null
         finishInput("Disconnected before the response completed.")
-        mutableState.update { it.copy(providerStatus = ProviderStatus.DISCONNECTED) }
+        mutableState.update { it.copy(providerStatus = ProviderStatus.DISCONNECTED, providerModel = null) }
     }
 
     fun submit(text: String) {
