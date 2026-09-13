@@ -1,0 +1,2 @@
+* Added: Headset voice buttons start a voice session, which stays on the headset that started it.
+* ...see CHANGELOG.md for the rest.

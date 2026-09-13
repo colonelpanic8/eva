@@ -2,6 +2,22 @@
 
 All notable changes to EVA will be documented here.
 
+## [0.10.0] - 2026-09-13
+
+### Added
+
+- Headset voice buttons start a voice session. A long-press or Bluetooth voice-recognition request opens EVA straight into voice instead of parking on the connect screen, and a locked phone shows transport controls over the keyguard.
+- Voice sessions stay on the headset that started them. Requests made through headphones now answer and listen on the headphones instead of forcing the phone's speaker and microphone.
+
+### Changed
+
+- Typed conversations default to `gpt-5.6-sol`, verified live against the account's own model list, instead of a model name the account does not carry.
+- The reasoning effort choices match what the account's models actually accept (`low` through `ultra`), and the model picker lists the account's real text and voice models again instead of coming back empty.
+
+### Fixed
+
+- The subscription model list request now clears the backend's client-version floor, so connect-time validation checks the chosen model against what the account can actually use.
+
 ## [0.9.0] - 2026-09-13
 
 ### Added
