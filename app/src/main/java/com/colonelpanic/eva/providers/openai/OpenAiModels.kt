@@ -12,13 +12,16 @@ object OpenAiModels {
     const val REALTIME = "gpt-realtime-2.1"
 
     /** Text model for typed turns over the Responses API. */
-    const val TEXT = "gpt-5.6"
+    const val TEXT = "gpt-5.6-sol"
 
     /** Default reasoning effort for typed turns; small routing tasks favor speed. */
     const val REASONING_EFFORT = "low"
 
-    /** Closed set the Responses API accepts across the current reasoning models. */
-    val REASONING_EFFORTS = listOf("none", "minimal", "low", "medium", "high", "xhigh")
+    /**
+     * Efforts the account's models confirm they accept, verified against the live model
+     * list. Offer nothing else: an unsupported effort is a rejected turn.
+     */
+    val REASONING_EFFORTS = listOf("low", "medium", "high", "xhigh", "max", "ultra")
 
     const val TRANSCRIPTION = "gpt-transcribe"
 

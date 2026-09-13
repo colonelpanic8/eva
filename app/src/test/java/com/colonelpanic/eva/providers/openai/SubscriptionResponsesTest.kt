@@ -149,7 +149,20 @@ class SubscriptionResponsesTest {
         }
 
     @Test
-    fun `the backend's own version requirement keeps a debug suffix out of the model list URL`() {
-        assertTrue(access.modelsUrl.endsWith("/models?client_version=0.4.0"))
+    fun `the model list URL keeps a debug suffix out and stays above the backend floor`() {
+        assertTrue(access.modelsUrl.endsWith("/models?client_version=$MIN_MODELS_CLIENT_VERSION"))
+    }
+
+    @Test
+    fun `a client newer than the floor lists models as itself`() {
+        val newer = SubscriptionAccess({ tokens }, "2.3.4", "https://backend.test")
+        assertTrue(newer.modelsUrl.endsWith("/models?client_version=2.3.4"))
+    }
+
+    @Test
+    fun `client versions compare numerically, not lexicographically`() {
+        assertTrue(compareSemantic("0.8.0", "1.0.0") < 0)
+        assertTrue(compareSemantic("0.100.0", "0.99.9") > 0)
+        assertTrue(compareSemantic("1.0.0", "1.0.0") == 0)
     }
 }

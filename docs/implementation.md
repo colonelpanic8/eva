@@ -303,10 +303,10 @@ optional. Both models are selectable in the app and stored per device. The picke
 what the account can actually use, fetched from `/v1/models` and split by name
 into speech-capable and text-capable, and also accepts a typed name so a model
 released after the app still works. Blank restores the default. Defaults are
-`gpt-realtime-2.1` for speech and `gpt-5.6` for text, with
+`gpt-realtime-2.1` for speech and `gpt-5.6-sol` for text, with
 `gpt-transcribe` for input transcription. Typed turns send the chosen reasoning
-effort as `reasoning.effort` (`none`, `minimal`, `low`, `medium`, `high`, or
-`xhigh`; default `low`). A chosen model applies to the next
+effort as `reasoning.effort` (`low`, `medium`, `high`, `xhigh`, `max`, or
+`ultra`; default `low`). A chosen model applies to the next
 connection.
 
 Input transcription is a second model pass that produces only the on-screen
@@ -357,7 +357,14 @@ by the phone resending the conversation, and it answers as an event stream, so
 output items are collected from `response.output_item.done` into the shape the
 stored path returns. The model list is `models[].slug` from
 `{base}/models?client_version=`, which requires a plain three-part version and
-lists text models only. `SubscriptionAccess` and `ApiKeyAccess` differ only in
+lists text models only. The backend answers an empty list below version 1.0.0
+(verified live: the app's own 0.8.0 returns nothing, 1.0.0 returns the full
+list), so the phone clamps the request to that floor until its own version
+passes it; it reads only slugs. Live slugs on the test account are
+`gpt-6-astra`, `gpt-reserve`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`,
+`gpt-daybreak-blue-latest`, `gpt-5.5`, `gpt-5.3-codex-spark`, and
+`codex-auto-review`, each carrying its own supported reasoning levels and
+default. `SubscriptionAccess` and `ApiKeyAccess` differ only in
 URL, headers, and those two flags; the session, controller, dispatcher, and
 journal are unchanged.
 

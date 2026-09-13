@@ -47,7 +47,7 @@ class SubscriptionAccess(
 ) : OpenAiAccess {
     override val label = ChatGpt.ACCOUNT_LABEL
     override val responsesUrl = "$baseUrl/responses"
-    override val modelsUrl = "$baseUrl/models?client_version=${semanticVersion(clientVersion)}"
+    override val modelsUrl = "$baseUrl/models?client_version=${modelsClientVersion(clientVersion)}"
 
     /**
      * Typed turns go to the account's backend, but a realtime call is taken by the public
@@ -69,3 +69,28 @@ class SubscriptionAccess(
 
 /** The backend requires a plain three-part version, which a debug suffix would not satisfy. */
 internal fun semanticVersion(raw: String?): String = Regex("""\d+\.\d+\.\d+""").find(raw.orEmpty())?.value ?: "1.0.0"
+
+/**
+ * The backend lists no models for clients older than this floor, verified live: 0.8.0
+ * returns an empty list while 1.0.0 returns the full one. EVA reads only slugs, so it
+ * asks as a current client until its own version passes the floor on its own.
+ */
+internal const val MIN_MODELS_CLIENT_VERSION = "1.0.0"
+
+internal fun modelsClientVersion(raw: String?): String {
+    val have = semanticVersion(raw)
+    return if (compareSemantic(have, MIN_MODELS_CLIENT_VERSION) < 0) MIN_MODELS_CLIENT_VERSION else have
+}
+
+internal fun compareSemantic(
+    a: String,
+    b: String,
+): Int {
+    val pa = a.split(".").map { it.toIntOrNull() ?: 0 }
+    val pb = b.split(".").map { it.toIntOrNull() ?: 0 }
+    for (i in 0 until maxOf(pa.size, pb.size)) {
+        val diff = pa.getOrElse(i) { 0 } - pb.getOrElse(i) { 0 }
+        if (diff != 0) return diff
+    }
+    return 0
+}
