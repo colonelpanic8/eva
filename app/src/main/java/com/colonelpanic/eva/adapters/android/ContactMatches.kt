@@ -47,9 +47,19 @@ object ContactMatches {
         query: String,
         matches: List<ContactMatch>,
     ): List<ContactMatch> =
-        matches
+        merge(matches)
             .sortedWith(compareByDescending<ContactMatch> { score(query, it.name) }.thenBy { it.name.lowercase() })
             .map { match -> match.copy(phones = match.phones.sortedBy { phoneRank(it.kind) }) }
+
+    /** One person often has an entry per account, and listing them twice only invites a needless question. */
+    private fun merge(matches: List<ContactMatch>): List<ContactMatch> {
+        val byName = linkedMapOf<String, Pair<String, LinkedHashMap<String, ContactPhone>>>()
+        for (match in matches) {
+            val entry = byName.getOrPut(match.name.lowercase()) { match.name to linkedMapOf() }
+            match.phones.forEach { phone -> entry.second.getOrPut(phone.number.filter(Char::isDigit)) { phone } }
+        }
+        return byName.values.map { (name, phones) -> ContactMatch(name, phones.values.toList()) }
+    }
 
     private fun score(
         query: String,

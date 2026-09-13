@@ -10,7 +10,7 @@ All notable changes to EVA will be documented here.
 
 ### Changed
 
-- Contact lookups return one ranked best match and ask you to choose only when two contacts fit equally well.
+- Contact lookups return one ranked best match, merge the same person duplicated across accounts, and ask you to choose only when two contacts fit equally well. EVA can also search first or last names specifically when a full name is stored differently than it was spoken.
 
 ## [0.7.0] - 2026-09-13
 

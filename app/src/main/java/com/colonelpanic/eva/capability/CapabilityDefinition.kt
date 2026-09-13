@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.capability
 
+import com.colonelpanic.eva.adapters.android.ContactField
 import com.colonelpanic.eva.adapters.android.NativeIntents
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -189,13 +190,19 @@ object BundledCapabilities {
                 "Search contacts",
                 "Find phone numbers in the user's contacts by name. Use this when the user names a person " +
                     "to text or call, then pass the returned number to the send, message, or dialer action. " +
-                    "Returns matches only; it opens nothing. Results are ranked, and a heard name may be spelled or " +
+                    "Returns matches only; it opens nothing. Choose what to match with field: name searches the whole " +
+                    "displayed name, given searches first names, family searches last names. Search a single name part " +
+                    "when the full name may be stored in another order or with a nickname, and search again with a " +
+                    "different field or spelling instead of settling for a poor match. " +
+                    "Results are ranked, and a heard name may be spelled or " +
                     "shortened differently, so judge which match the user most plausibly meant and act on it. " +
                     "Ask which person only when two matches are equally plausible.",
                 schema(
                     """
                 {"type":"object","properties":{
-                "query":{"type":"string","minLength":1,"maxLength":100,"description":"All or part of a person's name"}},
+                "query":{"type":"string","minLength":1,"maxLength":100,"description":"All or part of a person's name"},
+                "field":{"type":"string","enum":${ContactField.arguments.quoted()},
+                "description":"Which stored name to match; defaults to the whole displayed name"}},
                 "required":["query"],"additionalProperties":false}
             """,
                 ),

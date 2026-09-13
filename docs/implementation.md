@@ -22,8 +22,14 @@ Contacts search reads phone numbers matching a
 name through `ContactsContract`, requests `READ_CONTACTS` on first use through
 the resumed Activity, and completes with the matches in its outcome message so
 the model can pass an explicit number to the send, message, or dialer action.
-`ContactMatches` ranks those matches by how the query lines up with the stored
-name — exact name, whole word, name prefix, word prefix, substring — and lists
+The model chooses what a search matches with an optional `field`: the whole
+displayed name through `ContactsContract.CommonDataKinds.Phone`, or first or last
+names through the `StructuredName` data rows, whose contact IDs are then resolved
+to phone numbers in one bounded `IN` query. Only the whole-name search falls back
+to the query's first word; a name-part search runs exactly as asked, so the model
+can retry with another field or spelling instead of accepting a poor match.
+`ContactMatches` merges entries that repeat one person across accounts and ranks
+the rest by how the query lines up with the stored name — exact name, whole word, name prefix, word prefix, substring — and lists
 each contact's most callable number first, so the outcome message names one best
 match. It asks the model to act on that match and to ask the user only when two
 matches score the same. The registry and UI do not switch on

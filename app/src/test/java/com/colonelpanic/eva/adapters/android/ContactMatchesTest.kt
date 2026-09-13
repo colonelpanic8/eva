@@ -50,4 +50,17 @@ class ContactMatchesTest {
         assertTrue(described.contains("2 further matches were not listed."))
         assertEquals(false, described.contains("Sam 6"))
     }
+
+    @Test
+    fun `one person duplicated across accounts is listed once with both numbers`() {
+        val matches =
+            listOf(
+                ContactMatch("Ivan Malison", listOf(ContactPhone("301-244-8534", "mobile"))),
+                ContactMatch("Ivan Malison", listOf(ContactPhone("(301) 244-8534", "home"), ContactPhone("4155550100", "work"))),
+            )
+        assertEquals(
+            "Best match for \"Ivan\": Ivan Malison: mobile 301-244-8534, work 4155550100. " + ContactMatches.PICK_BEST,
+            ContactMatches.describe("Ivan", matches),
+        )
+    }
 }

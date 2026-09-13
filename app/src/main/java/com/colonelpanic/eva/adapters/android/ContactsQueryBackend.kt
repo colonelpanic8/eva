@@ -3,6 +3,8 @@ package com.colonelpanic.eva.adapters.android
 import android.Manifest
 import android.content.Context
 import android.provider.ContactsContract.CommonDataKinds.Phone
+import android.provider.ContactsContract.CommonDataKinds.StructuredName
+import android.provider.ContactsContract.Data
 import com.colonelpanic.eva.capability.ExecutionBackend
 import com.colonelpanic.eva.capability.ExecutionOutcome
 import com.colonelpanic.eva.capability.InvocationStatus
@@ -19,41 +21,74 @@ class ContactsQueryBackend(
 
     override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome {
         val query = arguments.getValue("query").trim()
+        val field = ContactField.of(arguments["field"])
         if (!host.ensurePermission(Manifest.permission.READ_CONTACTS)) {
             return ExecutionOutcome(InvocationStatus.NOT_EXECUTED, PERMISSION_DENIED)
         }
-        val matches = withContext(Dispatchers.IO) { lookup(query).ifEmpty { lookupByToken(query) } }
+        val matches = withContext(Dispatchers.IO) { lookup(query, field) }
         return ExecutionOutcome(InvocationStatus.COMPLETED, ContactMatches.describe(query, matches))
     }
 
-    /** A full name may not match how the contact is stored, so fall back to its first useful word. */
-    private fun lookupByToken(query: String): List<ContactMatch> =
+    private fun lookup(
+        query: String,
+        field: ContactField,
+    ): List<ContactMatch> =
+        when (val column = field.column) {
+            null -> byDisplayName(query).ifEmpty { byFirstWord(query) }
+            else -> byNamePart(query, column)
+        }
+
+    /** Only the whole-name search guesses: a dictated full name may not match how the contact is stored. */
+    private fun byFirstWord(query: String): List<ContactMatch> =
         query
             .split(' ')
             .filter { it.length > 1 }
-            .firstNotNullOfOrNull { token -> lookup(token).ifEmpty { null } }
+            .firstNotNullOfOrNull { token -> byDisplayName(token).ifEmpty { null } }
             .orEmpty()
 
-    private fun lookup(query: String): List<ContactMatch> {
-        val escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    private fun byDisplayName(query: String): List<ContactMatch> =
+        phones("${Phone.DISPLAY_NAME_PRIMARY} LIKE ? ESCAPE '\\'", arrayOf(ContactLookups.contains(query)))
+
+    private fun byNamePart(
+        query: String,
+        column: String,
+    ): List<ContactMatch> {
+        val ids = linkedSetOf<Long>()
+        resolver
+            .query(
+                Data.CONTENT_URI,
+                arrayOf(Data.CONTACT_ID),
+                "${Data.MIMETYPE} = ? AND $column LIKE ? ESCAPE '\\'",
+                arrayOf(StructuredName.CONTENT_ITEM_TYPE, ContactLookups.contains(query)),
+                null,
+            )?.use { cursor -> while (cursor.moveToNext()) ids.add(cursor.getLong(0)) }
+        if (ids.isEmpty()) return emptyList()
+        val (selection, arguments) = ContactLookups.idSelection(Phone.CONTACT_ID, ids)
+        return phones(selection, arguments)
+    }
+
+    private fun phones(
+        selection: String,
+        arguments: Array<String>,
+    ): List<ContactMatch> {
         val cursor =
             resolver.query(
                 Phone.CONTENT_URI,
                 arrayOf(Phone.CONTACT_ID, Phone.DISPLAY_NAME_PRIMARY, Phone.NUMBER, Phone.TYPE, Phone.LABEL),
-                "${Phone.DISPLAY_NAME_PRIMARY} LIKE ? ESCAPE '\\'",
-                arrayOf("%$escaped%"),
+                selection,
+                arguments,
                 "${Phone.DISPLAY_NAME_PRIMARY} COLLATE NOCASE ASC",
             ) ?: return emptyList()
-        val phones = linkedMapOf<Long, Pair<String, LinkedHashMap<String, ContactPhone>>>()
+        val found = linkedMapOf<Long, Pair<String, LinkedHashMap<String, ContactPhone>>>()
         cursor.use {
             while (it.moveToNext()) {
                 val name = it.getString(1)?.takeIf(String::isNotBlank) ?: continue
                 val number = it.getString(2)?.trim()?.takeIf(String::isNotBlank) ?: continue
-                val entry = phones.getOrPut(it.getLong(0)) { name to linkedMapOf() }
+                val entry = found.getOrPut(it.getLong(0)) { name to linkedMapOf() }
                 entry.second.getOrPut(number.filter(Char::isDigit)) { ContactPhone(number, kind(it.getInt(3), it.getString(4))) }
             }
         }
-        return phones.values.map { (name, numbers) -> ContactMatch(name, numbers.values.toList()) }
+        return found.values.map { (name, numbers) -> ContactMatch(name, numbers.values.toList()) }
     }
 
     private fun kind(
