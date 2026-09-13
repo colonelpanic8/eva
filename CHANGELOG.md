@@ -2,6 +2,12 @@
 
 All notable changes to EVA will be documented here.
 
+## [0.5.1] - 2026-09-13
+
+### Added
+
+- A Copy code button on the ChatGPT sign-in screen, for approving the code in a browser on this phone.
+
 ## [0.5.0] - 2026-09-13
 
 ### Added

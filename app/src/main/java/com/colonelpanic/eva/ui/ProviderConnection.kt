@@ -1,5 +1,8 @@
 package com.colonelpanic.eva.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -20,6 +23,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -148,11 +152,17 @@ private fun ChatGptSignIn(
         }
 
         is SignInState.Waiting -> {
+            val context = LocalContext.current
+            // A fresh code deserves a fresh button, so the label cannot claim a stale copy.
+            var copied by remember(signIn.userCode) { mutableStateOf(false) }
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Open the sign-in page and enter this code:", style = MaterialTheme.typography.bodySmall)
                 Text(signIn.userCode, style = MaterialTheme.typography.headlineSmall)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { uriHandler.openUri(signIn.verificationUrl) }) { Text("Open sign-in page") }
+                    OutlinedButton(
+                        onClick = { copied = copyToClipboard(context, signIn.userCode) },
+                    ) { Text(if (copied) "Copied" else "Copy code") }
                     TextButton(onClick = onCancel) { Text("Cancel") }
                 }
                 Text(
@@ -181,6 +191,19 @@ private fun ChatGptSignIn(
             }
         }
     }
+}
+
+/**
+ * Approving the code usually happens on another device, where the phone's clipboard cannot
+ * help, but copying still saves retyping when the browser is this phone's own.
+ */
+private fun copyToClipboard(
+    context: Context,
+    code: String,
+): Boolean {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return false
+    clipboard.setPrimaryClip(ClipData.newPlainText("EVA sign-in code", code))
+    return true
 }
 
 /** The metered alternative, kept out of the way until it is asked for. */

@@ -1,0 +1,1 @@
+* Added: A Copy code button on the ChatGPT sign-in screen, for approving the code in a browser on this phone.
