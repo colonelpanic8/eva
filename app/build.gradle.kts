@@ -19,6 +19,14 @@ require(configuredSigningValues.isEmpty() || configuredSigningValues.size == rel
     "Release signing is partially configured; provide every ANDROID_KEYSTORE_* and ANDROID_KEY_* value."
 }
 
+// Minification is off for release builds. R8 leaves every org.webrtc class present
+// and correctly named, yet the minified APK aborts inside WebRTC's JNI_OnLoad with
+// "JNI DETECTED ERROR IN APPLICATION: java_class == null" the moment
+// PeerConnectionFactory.initialize loads libjingle_peerconnection_so. The same
+// source runs correctly unminified, so voice is unusable in a minified build.
+// Re-enable with -Peva.minifyRelease=true only alongside a device voice test.
+val minifyRelease = (providers.gradleProperty("eva.minifyRelease").orNull ?: "false").toBoolean()
+
 android {
     namespace = "com.colonelpanic.eva"
     compileSdk = 37
@@ -49,8 +57,8 @@ android {
             versionNameSuffix = "-debug"
         }
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            isMinifyEnabled = minifyRelease
+            isShrinkResources = minifyRelease
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

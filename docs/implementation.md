@@ -75,13 +75,24 @@ provider history seeding, or physical audio quality claim is included.
 
 ## Release build constraints
 
-WebRTC's native library resolves its Java classes by name through JNI, which R8
-cannot see. Without keep rules the minified release build aborts with
-`JNI DETECTED ERROR IN APPLICATION: java_class == null` the moment a peer
-connection is created, while the unminified debug build works. `app/proguard-rules.pro`
-keeps `org.webrtc`, and the release script greps the shipped dex for
-`PeerConnectionFactory` and `JavaAudioDeviceModule` so the guarantee is checked
-against the artifact rather than the rule file.
+Release builds are not minified. A minified APK aborts with
+`JNI DETECTED ERROR IN APPLICATION: java_class == null`, raised by
+`GetStaticMethodID` inside WebRTC's `JNI_OnLoad`, as soon as
+`PeerConnectionFactory.initialize` loads `libjingle_peerconnection_so`.
+
+Keep rules for `org.webrtc` are necessary but not sufficient. With them applied,
+a dex comparison against the debug build showed every real `org.webrtc` class
+present and unrenamed, with the 79 differences all desugaring artifacts, and
+`WebRtcClassLoader` retaining its `getClassLoader` method. The abort persisted,
+and also persisted with R8 full mode disabled. The same source is fine
+unminified, which was confirmed on a physical phone for both the debug build and
+an unminified signed release.
+
+The measured cost of disabling it is about 7.5 MB on a roughly 50 MB APK, which
+is dominated by native libraries that R8 does not touch. `-Peva.minifyRelease=true`
+restores minification for anyone re-attempting it; it must be paired with a
+device voice test, because no JVM or instrumentation test covers the release
+variant.
 
 ## Models in use
 

@@ -2,6 +2,12 @@
 
 All notable changes to EVA will be documented here.
 
+## [0.2.3] - 2026-09-12
+
+### Fixed
+
+- Voice works in published builds. Minification left every WebRTC class present and correctly named, yet still aborted the process inside the library's native load, so release builds are no longer minified.
+
 ## [0.2.2] - 2026-09-12
 
 ### Fixed
