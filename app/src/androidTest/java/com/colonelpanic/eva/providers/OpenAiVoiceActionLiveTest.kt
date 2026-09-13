@@ -23,6 +23,7 @@ import com.colonelpanic.eva.conversation.EntryStatus
 import com.colonelpanic.eva.conversation.ProviderSessionController
 import com.colonelpanic.eva.conversation.ProviderStatus
 import com.colonelpanic.eva.data.SqliteInvocationRepository
+import com.colonelpanic.eva.providers.openai.ApiKeyAccess
 import com.colonelpanic.eva.providers.openai.OpenAiRealtimeProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -110,7 +111,7 @@ class OpenAiVoiceActionLiveTest {
                                 this,
                             )
                         },
-                        voiceProviderFactory = { _, audio -> OpenAiRealtimeProvider(checkNotNull(apiKey), audio) },
+                        voiceProviderFactory = { _, audio -> OpenAiRealtimeProvider(ApiKeyAccess(checkNotNull(apiKey)), audio) },
                     )
                 VoiceSessionService.start(context)
                 try {

@@ -59,9 +59,6 @@ internal fun ProviderConnection(
     var showApiKey by remember { mutableStateOf(false) }
     val usable = !state.isLoading && state.errorMessage == null
     val ready = (account != null || hasApiKey || link.isNotBlank()) && usable
-
-    /** Speech has no subscription path yet, so voice needs its own readiness. */
-    val voiceReady = (hasApiKey || link.isNotBlank()) && usable
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (state.providerStatus == ProviderStatus.DISCONNECTED) {
             if (denial != null) {
@@ -84,7 +81,7 @@ internal fun ProviderConnection(
                 )
                 if (account != null || hasApiKey) {
                     ModelPicker("Text model", textModel, availableTextModels, onSelectTextModel)
-                    if (hasApiKey) ModelPicker("Voice model", realtimeModel, availableRealtimeModels, onSelectRealtimeModel)
+                    ModelPicker("Voice model", realtimeModel, availableRealtimeModels, onSelectRealtimeModel)
                 }
                 OutlinedTextField(
                     value = link,
@@ -106,15 +103,8 @@ internal fun ProviderConnection(
                             onVoice(link, listenOnly)
                             link = ""
                         },
-                        enabled = voiceReady,
+                        enabled = ready,
                     ) { Text(if (listenOnly) "Start listen-only" else "Start voice") }
-                }
-                if (account != null && !hasApiKey && link.isBlank()) {
-                    Text(
-                        "Your subscription covers typed chat. Voice needs an API key or a paired host.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(

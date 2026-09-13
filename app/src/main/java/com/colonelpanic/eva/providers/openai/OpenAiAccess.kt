@@ -17,6 +17,9 @@ sealed interface OpenAiAccess {
     val responsesUrl: String
     val modelsUrl: String
 
+    /** Realtime calls are served by the public API host whichever credential pays for them. */
+    val realtimeCallsUrl: String
+
     /** Whether the provider retains the turn, or the phone must resend the conversation. */
     val serverKeepsHistory: Boolean
 
@@ -30,6 +33,7 @@ class ApiKeyAccess(
     override val label = OpenAiModels.ACCOUNT_LABEL
     override val responsesUrl = "$baseUrl/v1/responses"
     override val modelsUrl = "$baseUrl/v1/models"
+    override val realtimeCallsUrl = "$baseUrl/v1/realtime/calls"
     override val serverKeepsHistory = true
 
     override suspend fun authorize(builder: Request.Builder): Request.Builder = builder.header("Authorization", "Bearer $key")
@@ -39,10 +43,17 @@ class SubscriptionAccess(
     private val tokens: ChatGptTokenSource,
     clientVersion: String,
     baseUrl: String = ChatGpt.BASE_URL,
+    realtimeBaseUrl: String = OpenAiModels.BASE_URL,
 ) : OpenAiAccess {
     override val label = ChatGpt.ACCOUNT_LABEL
     override val responsesUrl = "$baseUrl/responses"
     override val modelsUrl = "$baseUrl/models?client_version=${semanticVersion(clientVersion)}"
+
+    /**
+     * Typed turns go to the account's backend, but a realtime call is taken by the public
+     * host against the same subscription token, so voice needs no second credential.
+     */
+    override val realtimeCallsUrl = "$realtimeBaseUrl/v1/realtime/calls"
 
     /** The subscription backend rejects stored responses, so continuity is the phone's job. */
     override val serverKeepsHistory = false

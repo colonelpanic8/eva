@@ -147,11 +147,8 @@ class EvaApplication : Application() {
             mediaFactory = { mode -> mediaFactory.create(RealtimeMediaConfig(mode)) },
             voiceProviderFactory = { link, audio ->
                 if (link.isBlank()) {
-                    // A subscription sign-in carries typed turns only; speech still needs a key or a host.
-                    val key =
-                        settings.apiKey()
-                            ?: error("Voice needs an OpenAI API key on this phone, or a paired host link.")
-                    OpenAiRealtimeProvider(key, audio, settings.realtimeModel)
+                    val access = access() ?: error("Sign in with ChatGPT, add an API key, or paste a paired host link.")
+                    OpenAiRealtimeProvider(access, audio, settings.realtimeModel)
                 } else {
                     val endpoint = BrokerEndpoint.parse(link)
                     BrokerConversationProvider(endpoint, offerSdp = audio.createOffer(), onAnswer = audio::acceptAnswer)

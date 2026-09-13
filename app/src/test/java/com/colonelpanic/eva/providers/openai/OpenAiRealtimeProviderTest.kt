@@ -41,12 +41,14 @@ class OpenAiRealtimeProviderTest {
     private val catalog =
         ProviderToolCatalog("rev-1", listOf(ProviderToolDefinition("eva.android.timer.set", "Set a timer", "Start a timer", schema)))
     private val requests = mutableListOf<String>()
+    private val calls = mutableListOf<okhttp3.Request>()
     private val client =
         OkHttpClient
             .Builder()
             .addInterceptor { chain ->
                 val buffer = Buffer().also { chain.request().body?.writeTo(it) }
                 requests += buffer.readUtf8()
+                calls += chain.request()
                 Response
                     .Builder()
                     .request(chain.request())
@@ -63,11 +65,10 @@ class OpenAiRealtimeProviderTest {
             val media = FakeMedia()
             val provider =
                 OpenAiRealtimeProvider(
-                    "sk-test",
+                    ApiKeyAccess("sk-test", "https://example.test"),
                     media,
                     "gpt-realtime-2.1",
                     client,
-                    "https://example.test",
                     ioDispatcher = StandardTestDispatcher(testScheduler),
                 )
             val session = provider.open(SessionOpenRequest("You are EVA.", catalog))
@@ -132,16 +133,35 @@ class OpenAiRealtimeProviderTest {
             collector.cancel()
         }
 
+    /**
+     * A subscription takes a realtime call on the public host against the same token that
+     * pays for typed turns, so voice needs no second credential.
+     */
+    @Test
+    fun `a signed-in subscription opens the voice call on its own token`() =
+        runTest {
+            val tokens = ChatGptTokens("id", "access-1", "refresh-1", "acct-1", "eva@example.test", "pro", 0)
+            OpenAiRealtimeProvider(
+                SubscriptionAccess({ tokens }, "0.5.0", "https://backend.test", "https://example.test"),
+                FakeMedia(),
+                client = client,
+                ioDispatcher = StandardTestDispatcher(testScheduler),
+            ).open(SessionOpenRequest("You are EVA.", catalog))
+            val call = calls.single()
+            assertEquals("https://example.test/v1/realtime/calls", call.url.toString())
+            assertEquals("Bearer access-1", call.header("Authorization"))
+            assertEquals("acct-1", call.header("chatgpt-account-id"))
+        }
+
     @Test
     fun `typed input over the channel keeps the phone input ID`() =
         runTest {
             val media = FakeMedia()
             val session =
                 OpenAiRealtimeProvider(
-                    "sk-test",
+                    ApiKeyAccess("sk-test", "https://example.test"),
                     media,
                     client = client,
-                    baseUrl = "https://example.test",
                     ioDispatcher = StandardTestDispatcher(testScheduler),
                 ).open(SessionOpenRequest("You are EVA.", catalog))
             val events = mutableListOf<ProviderEvent>()

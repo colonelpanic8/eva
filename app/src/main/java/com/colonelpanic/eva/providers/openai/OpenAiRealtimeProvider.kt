@@ -36,11 +36,10 @@ import java.util.UUID
  * The speech model calls EVA's tools itself; there is no host and no second model.
  */
 class OpenAiRealtimeProvider(
-    private val apiKey: String,
+    private val access: OpenAiAccess,
     private val media: RealtimeMediaSession,
     private val model: String = OpenAiModels.REALTIME,
     private val client: OkHttpClient = OkHttpClient(),
-    private val baseUrl: String = OpenAiModels.BASE_URL,
     private val voice: String = "marin",
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ConversationProvider {
@@ -83,10 +82,8 @@ class OpenAiRealtimeProvider(
                         .addFormDataPart("session", session.toString())
                         .build()
                 val http =
-                    Request
-                        .Builder()
-                        .url("$baseUrl/v1/realtime/calls")
-                        .header("Authorization", "Bearer $apiKey")
+                    access
+                        .authorize(Request.Builder().url(access.realtimeCallsUrl))
                         .post(body)
                         .build()
                 client.newCall(http).execute().use { response ->

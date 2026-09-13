@@ -177,19 +177,35 @@ lists text models only. `SubscriptionAccess` and `ApiKeyAccess` differ only in
 URL, headers, and those two flags; the session, controller, dispatcher, and
 journal are unchanged.
 
-Speech is not covered. The account's realtime path is a WebRTC call joined by a
-separate sideband WebSocket rather than the `oai-events` data channel EVA
-speaks, and no speech model appears in the subscription model list, so voice
-still needs an API key or the paired host and the app says so rather than
-failing at connect.
+Voice runs on the subscription as well, and needs no second credential. The
+realtime call is taken by the public API host rather than the account backend,
+and that host accepts the subscription's own access token: posting EVA's
+existing multipart offer to `api.openai.com/v1/realtime/calls` with the
+subscription bearer returns an answer, opens the `oai-events` data channel, and
+delivers `session.created` with EVA's instructions, tools, transcription model,
+and voice intact. So the realtime adapter changed only in where its
+authorization comes from; the event protocol, correlation, and media path are
+untouched. `gpt-realtime-2.1`, `gpt-realtime`, and `gpt-realtime-mini` were all
+accepted on this account.
 
-Verification: the device-code request and the subscription responses call,
-including a custom EVA tool being selected and its arguments returned, were
-exercised against the live services from a workstation before the adapter was
-written; the token endpoint rejects a bogus code with the structured error the
-app surfaces. The approval-to-token exchange and refresh are covered by JVM
-tests against canned traffic, not by a live approval. Signing in on a phone,
-and a subscription-backed conversation from the app itself, are unverified.
+The account's own Codex realtime route is a different thing and is not used.
+`chatgpt.com/backend-api/codex/realtime/calls` demands
+`openai-alpha: quicksilver=v2` and then rejects every session shape sent to it,
+including an empty one, with "Field `session.model` is not allowed for this
+Codex realtime session"; its quicksilver variant on the public host answers
+"Voice session access denied". That route carries Codex's own delegated
+architecture and a sideband control socket, neither of which EVA needs.
+
+Verification: the device-code request, the subscription responses call
+(including a custom EVA tool being selected and its arguments returned), and a
+full subscription-authorized realtime call were exercised against the live
+services from a workstation before the adapters were written. The realtime run
+completed the WebRTC handshake, opened the data channel, received
+`session.created`/`session.updated` for EVA's session payload, and received the
+remote audio track. The token endpoint rejects a bogus code with the structured
+error the app surfaces. The approval-to-token exchange and refresh are covered
+by JVM tests against canned traffic, not by a live approval. Signing in on a
+phone, and a conversation of either kind from the app itself, are unverified.
 
 ## Development connection
 

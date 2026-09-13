@@ -2,6 +2,12 @@
 
 All notable changes to EVA will be documented here.
 
+## [0.5.0] - 2026-09-13
+
+### Added
+
+- Voice runs on your ChatGPT subscription. A signed-in account opens the realtime call itself, so speaking to EVA no longer needs an API key or a paired workstation.
+
 ## [0.4.0] - 2026-09-13
 
 ### Added
@@ -11,7 +17,7 @@ All notable changes to EVA will be documented here.
 ### Changed
 
 - A ChatGPT sign-in is used first when both it and an API key are present, and the key now sits behind "Use an API key instead".
-- Voice still needs an API key or a paired host. A subscription covers typed conversation only.
+- Voice still needs an API key or a paired host. A subscription covers typed conversation only. (Superseded in 0.5.0.)
 
 ## [0.3.2] - 2026-09-13
 
