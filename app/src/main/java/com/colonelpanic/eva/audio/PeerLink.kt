@@ -13,6 +13,9 @@ internal sealed interface PeerEvent {
 
     data object RemoteAudioTrack : PeerEvent
 
+    /** The `oai-events` data channel is open; provider events may now be exchanged. */
+    data object EventsChannelOpen : PeerEvent
+
     data class Error(
         val message: String,
     ) : PeerEvent
@@ -21,6 +24,12 @@ internal sealed interface PeerEvent {
 /** One peer connection with its local audio leg and event channel already attached. */
 internal interface PeerLink {
     val events: Flow<PeerEvent>
+
+    /** Text messages received on the provider event channel, in arrival order. */
+    val messages: Flow<String>
+
+    /** Sends one text message on the provider event channel; false if it is not open. */
+    fun send(text: String): Boolean
 
     /** Creates and applies the local offer; ICE gathering completes asynchronously via [events]. */
     suspend fun createLocalOffer()

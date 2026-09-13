@@ -107,6 +107,36 @@ foreground service and its notification. The physical phone dropped off USB
 during the first attempt and had not returned, so nothing here is a hardware
 result yet.
 
+## Direct provider on the phone
+
+The phone no longer needs a workstation. With an OpenAI API key saved on the
+device, voice opens its own WebRTC session against the Realtime API: the phone
+posts its SDP offer and session configuration to `/v1/realtime/calls`, speaks
+the event protocol over the `oai-events` data channel, and the speech model
+calls EVA's tools directly. Typed turns go over the Responses API with function
+calling and `previous_response_id` continuity. Both adapters implement the same
+provider contract as the broker, so the controller, dispatcher, and journal are
+unchanged; a blank host link selects the direct path.
+
+Correlation follows the voice convention already in place: a response is the
+unit of correlation (`voice:<responseId>`), a tool-calling response's completion
+is held until the phone's result is returned, and the follow-up response keeps
+the same input. Interrupted responses finish as "Interrupted." rather than as
+failures.
+
+The key is encrypted with a non-exportable Android Keystore key and stored in a
+preferences file excluded from backup and device transfer. It is billed per
+token by OpenAI; it is not covered by a ChatGPT subscription. The paired host
+bridge remains available as the subscription-backed alternative and is now
+optional. Default models are `gpt-realtime-2.1` for speech and `gpt-6-astra`
+for text, with `gpt-4o-transcribe` for input transcription.
+
+Coverage: JVM tests drive both adapters with canned HTTP and data-channel
+traffic, including a tool call held open across the follow-up response. The
+opt-in `OpenAiVoiceActionLiveTest` runs the spoken-timer scenario against the
+real API when given `evaOpenAiKey`; no key was available on this machine, so
+that run is pending.
+
 ## Development connection
 
 1. Start `direnv exec . npm start` in `experiments/voice-poc`. Each broker gets a

@@ -25,6 +25,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -294,7 +295,11 @@ class ProviderVoiceLifecycleTest {
         override val state = MutableStateFlow<RealtimeMediaState>(RealtimeMediaState.Connected(true))
         override val controls = MutableStateFlow(MediaControls())
         override val timeline = MutableStateFlow(MediaTimeline())
+        override val events = emptyFlow<String>()
+        override val eventsReady = MutableStateFlow(false)
         var closed = false
+
+        override fun send(event: String) = Unit
 
         override suspend fun createOffer() = "test-offer"
 

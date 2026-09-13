@@ -76,6 +76,7 @@ class MainActivity : ComponentActivity() {
         val controller = eva.controller
         setContent {
             val state by controller.state.collectAsStateWithLifecycle()
+            val hasApiKey by eva.settings.hasApiKey.collectAsStateWithLifecycle()
             EvaTheme {
                 EvaApp(
                     state = state,
@@ -83,6 +84,9 @@ class MainActivity : ComponentActivity() {
                     onConnect = controller::connect,
                     onDisconnect = controller::disconnect,
                     onVoice = ::startVoice,
+                    hasApiKey = hasApiKey,
+                    onSaveApiKey = { key -> runCatching { eva.settings.saveApiKey(key) } },
+                    onClearApiKey = eva.settings::clearApiKey,
                     onToggleMicrophone = controller::toggleMicrophone,
                     onTogglePlayback = controller::togglePlayback,
                     denial = voice.denial,

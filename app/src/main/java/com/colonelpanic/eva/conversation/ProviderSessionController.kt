@@ -228,12 +228,10 @@ class ProviderSessionController(
                             is ProviderEvent.ResponseEnded -> {
                                 check(event.inputId == currentInput?.id)
                                 finishInput(
-                                    if (event.status ==
-                                        "completed"
-                                    ) {
-                                        "Response completed."
-                                    } else {
-                                        "The model could not complete this response."
+                                    when (event.status) {
+                                        "completed" -> "Response completed."
+                                        "cancelled" -> "Interrupted."
+                                        else -> "The model could not complete this response."
                                     },
                                 )
                             }

@@ -2,6 +2,16 @@
 
 All notable changes to EVA will be documented here.
 
+## [0.3.0] - 2026-09-13
+
+### Added
+
+- EVA runs without a workstation. Save an OpenAI API key on the phone and voice opens its own Realtime session, with the speech model calling phone actions directly; typed turns use the Responses API. The key is encrypted with the Android Keystore and excluded from backups.
+
+### Changed
+
+- The paired host link is now optional and only needed for subscription-backed access through a host.
+
 ## [0.2.4] - 2026-09-12
 
 ### Added

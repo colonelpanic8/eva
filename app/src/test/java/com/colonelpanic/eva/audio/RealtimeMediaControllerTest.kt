@@ -6,6 +6,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -19,6 +20,10 @@ import org.junit.Test
 private class FakePeerLink : PeerLink {
     val channel = Channel<PeerEvent>(Channel.UNLIMITED)
     override val events = channel.receiveAsFlow()
+    override val messages = emptyFlow<String>()
+
+    override fun send(text: String) = true
+
     var sdp: String? = null
     var remoteAnswer: String? = null
     var microphoneEnabled: Boolean? = null

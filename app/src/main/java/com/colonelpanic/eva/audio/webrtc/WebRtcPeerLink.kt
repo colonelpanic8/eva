@@ -19,6 +19,7 @@ import org.webrtc.PeerConnectionFactory
 import org.webrtc.RtpTransceiver
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
+import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -34,6 +35,8 @@ internal class WebRtcPeerLink(
 ) : PeerLink {
     private val eventChannel = Channel<PeerEvent>(Channel.BUFFERED)
     override val events = eventChannel.receiveAsFlow()
+    private val messageChannel = Channel<String>(Channel.UNLIMITED)
+    override val messages = messageChannel.receiveAsFlow()
     private val closed = AtomicBoolean(false)
     private val native = Any()
 
@@ -123,7 +126,33 @@ internal class WebRtcPeerLink(
             }
         }
         dataChannel = connection.createDataChannel(EVENTS_CHANNEL, DataChannel.Init())
+        dataChannel.registerObserver(
+            object : DataChannel.Observer {
+                override fun onBufferedAmountChange(previousAmount: Long) = Unit
+
+                override fun onStateChange() {
+                    val open =
+                        synchronized(native) {
+                            !closed.get() && dataChannel.state() == DataChannel.State.OPEN
+                        }
+                    if (open) emit(PeerEvent.EventsChannelOpen)
+                }
+
+                override fun onMessage(buffer: DataChannel.Buffer) {
+                    if (buffer.binary || closed.get()) return
+                    val bytes = ByteArray(buffer.data.remaining())
+                    buffer.data.get(bytes)
+                    messageChannel.trySend(String(bytes, Charsets.UTF_8))
+                }
+            },
+        )
     }
+
+    override fun send(text: String): Boolean =
+        synchronized(native) {
+            if (closed.get() || dataChannel.state() != DataChannel.State.OPEN) return false
+            dataChannel.send(DataChannel.Buffer(ByteBuffer.wrap(text.toByteArray(Charsets.UTF_8)), false))
+        }
 
     override suspend fun createLocalOffer() {
         val offer = createDescription { connection.createOffer(it, MediaConstraints()) }
@@ -166,6 +195,8 @@ internal class WebRtcPeerLink(
             source = null
         }
         eventChannel.close()
+        messageChannel.close()
+        dataChannel.unregisterObserver()
         dataChannel.close()
         dataChannel.dispose()
         connection.close()

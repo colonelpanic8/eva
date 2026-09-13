@@ -33,6 +33,9 @@ internal fun ProviderConnection(
     onConnect: (String) -> Unit,
     onDisconnect: () -> Unit,
     onVoice: (String, Boolean) -> Unit,
+    hasApiKey: Boolean = false,
+    onSaveApiKey: (String) -> Unit = {},
+    onClearApiKey: () -> Unit = {},
     denial: MicrophoneDenial? = null,
     onRetryMicrophone: () -> Unit = {},
     onListenOnlyInstead: () -> Unit = {},
@@ -40,16 +43,39 @@ internal fun ProviderConnection(
 ) {
     var listenOnly by remember { mutableStateOf(false) }
     var link by remember { mutableStateOf("") }
-    val ready = link.isNotBlank() && !state.isLoading && state.errorMessage == null
+    var apiKey by remember { mutableStateOf("") }
+    val ready = (hasApiKey || link.isNotBlank()) && !state.isLoading && state.errorMessage == null
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (state.providerStatus == ProviderStatus.DISCONNECTED) {
             if (denial != null) {
                 MicrophoneDenied(denial, onRetryMicrophone, onListenOnlyInstead, onDismissDenial)
             } else {
+                if (hasApiKey) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("OpenAI API key saved on this phone", style = MaterialTheme.typography.bodySmall)
+                        TextButton(onClick = onClearApiKey) { Text("Remove") }
+                    }
+                } else {
+                    OutlinedTextField(
+                        value = apiKey,
+                        onValueChange = { apiKey = it },
+                        label = { Text("OpenAI API key") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            onSaveApiKey(apiKey)
+                            apiKey = ""
+                        },
+                        enabled = apiKey.isNotBlank(),
+                    ) { Text("Save key on this phone") }
+                }
                 OutlinedTextField(
                     value = link,
                     onValueChange = { link = it },
-                    label = { Text("Broker connection link") },
+                    label = { Text(if (hasApiKey) "Paired host link (optional)" else "Paired host link") },
                     visualTransformation = PasswordVisualTransformation(),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),

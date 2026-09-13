@@ -58,6 +58,9 @@ fun EvaApp(
     onConnect: (String) -> Unit = {},
     onDisconnect: () -> Unit = {},
     onVoice: (String, Boolean) -> Unit = { _, _ -> },
+    hasApiKey: Boolean = false,
+    onSaveApiKey: (String) -> Unit = {},
+    onClearApiKey: () -> Unit = {},
     onToggleMicrophone: () -> Unit = {},
     onTogglePlayback: () -> Unit = {},
     denial: MicrophoneDenial? = null,
@@ -100,7 +103,19 @@ fun EvaApp(
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
                 )
-                ProviderConnection(state, onConnect, onDisconnect, onVoice, denial, onRetryMicrophone, onListenOnlyInstead, onDismissDenial)
+                ProviderConnection(
+                    state,
+                    onConnect,
+                    onDisconnect,
+                    onVoice,
+                    hasApiKey,
+                    onSaveApiKey,
+                    onClearApiKey,
+                    denial,
+                    onRetryMicrophone,
+                    onListenOnlyInstead,
+                    onDismissDenial,
+                )
                 if (state.voiceMode && state.providerStatus != ProviderStatus.DISCONNECTED) {
                     Text(
                         text = voiceSessionLabel(state.mediaControls.microphoneAvailable),

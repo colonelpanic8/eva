@@ -14,7 +14,7 @@ data class ConversationState(
     val voiceMode: Boolean = false,
     val mediaState: RealtimeMediaState = RealtimeMediaState.Idle,
     val mediaControls: MediaControls = MediaControls(),
-    val providerLabel: String = "ChatGPT through paired host",
+    val providerLabel: String = "Not connected",
 )
 
 data class ConversationEntry(

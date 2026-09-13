@@ -14,9 +14,12 @@ import com.colonelpanic.eva.capability.CapabilityDispatcher
 import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.conversation.ProviderSessionController
 import com.colonelpanic.eva.conversation.ProviderStatus
+import com.colonelpanic.eva.data.OpenAiSettings
 import com.colonelpanic.eva.data.SqliteInvocationRepository
 import com.colonelpanic.eva.providers.BrokerConversationProvider
 import com.colonelpanic.eva.providers.BrokerEndpoint
+import com.colonelpanic.eva.providers.openai.OpenAiRealtimeProvider
+import com.colonelpanic.eva.providers.openai.OpenAiResponsesProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -35,6 +38,7 @@ class EvaApplication : Application() {
 
     private val mediaFactory by lazy { WebRtcMediaSessionFactory(this) }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    val settings by lazy { OpenAiSettings(this) }
     val registry by lazy {
         CapabilityRegistry(
             mapOf(
@@ -71,11 +75,22 @@ class EvaApplication : Application() {
         ProviderSessionController(
             registry = registry,
             dispatcher = CapabilityDispatcher(registry, repository),
-            providerFactory = { link -> BrokerConversationProvider(BrokerEndpoint.parse(link)) },
+            // A blank link means the phone talks to OpenAI itself; a link means the paired host bridge.
+            providerFactory = { link ->
+                if (link.isBlank()) {
+                    OpenAiResponsesProvider(settings.requireApiKey(), settings.textModel)
+                } else {
+                    BrokerConversationProvider(BrokerEndpoint.parse(link))
+                }
+            },
             mediaFactory = { mode -> mediaFactory.create(RealtimeMediaConfig(mode)) },
             voiceProviderFactory = { link, audio ->
-                val endpoint = BrokerEndpoint.parse(link)
-                BrokerConversationProvider(endpoint, offerSdp = audio.createOffer(), onAnswer = audio::acceptAnswer)
+                if (link.isBlank()) {
+                    OpenAiRealtimeProvider(settings.requireApiKey(), audio, settings.realtimeModel)
+                } else {
+                    val endpoint = BrokerEndpoint.parse(link)
+                    BrokerConversationProvider(endpoint, offerSdp = audio.createOffer(), onAnswer = audio::acceptAnswer)
+                }
             },
             repository = repository,
             scope = scope,

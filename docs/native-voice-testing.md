@@ -111,3 +111,17 @@ adb -s DEVICE shell am instrument -w \
 
 The test waits for journal recovery before connecting; `connectVoice` is a
 no-op while history is loading, which is why the UI disables the button then.
+
+## Direct OpenAI voice action test
+
+`OpenAiVoiceActionLiveTest` is the workstation-free variant: no broker, the
+phone opens its own Realtime session. Supply the key as an instrumentation
+argument; it is not read from disk.
+
+```sh
+adb -s DEVICE shell am instrument -w \
+  -e class com.colonelpanic.eva.providers.OpenAiVoiceActionLiveTest \
+  -e evaSpeechPcmPath /data/local/tmp/eva-voice-timer.pcm \
+  -e evaOpenAiKey "$OPENAI_API_KEY" \
+  com.colonelpanic.eva.debug.test/androidx.test.runner.AndroidJUnitRunner
+```

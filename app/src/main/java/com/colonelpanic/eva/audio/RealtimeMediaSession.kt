@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.audio
 
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
 /** How the local audio leg is negotiated. */
@@ -98,6 +99,15 @@ interface RealtimeMediaSession : AutoCloseable {
     val state: StateFlow<RealtimeMediaState>
     val controls: StateFlow<MediaControls>
     val timeline: StateFlow<MediaTimeline>
+
+    /** Provider event messages received on the negotiated data channel. Completes when the session ends. */
+    val events: Flow<String>
+
+    /** True once the provider event channel is open and [send] can succeed. */
+    val eventsReady: StateFlow<Boolean>
+
+    /** Sends one provider event message. Throws if the channel is not open. */
+    fun send(event: String)
 
     /** Idle → Preparing → OfferReady. Throws [MediaException] and moves to Failed on error. */
     suspend fun createOffer(): String

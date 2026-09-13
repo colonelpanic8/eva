@@ -7,9 +7,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -52,6 +54,16 @@ class RealtimeMediaController internal constructor(
     override val state = mutableState.asStateFlow()
     override val controls = mutableControls.asStateFlow()
     override val timeline = mutableTimeline.asStateFlow()
+    private val messageChannel = Channel<String>(Channel.UNLIMITED)
+    override val events = messageChannel.receiveAsFlow()
+    private val mutableEventsReady = MutableStateFlow(false)
+    override val eventsReady = mutableEventsReady.asStateFlow()
+    private var messagesJob: Job? = null
+
+    override fun send(event: String) {
+        val sent = link?.send(event) ?: false
+        check(sent) { "The provider event channel is not open." }
+    }
 
     override suspend fun createOffer(): String =
         signaling.withLock {
@@ -128,6 +140,7 @@ class RealtimeMediaController internal constructor(
             }
             link = opened
             eventsJob = scope.launch { opened.events.collect { onPeerEvent(it, gathered) } }
+            messagesJob = scope.launch { opened.messages.collect { messageChannel.send(it) } }
         }
         applyControls()
     }
@@ -193,6 +206,7 @@ class RealtimeMediaController internal constructor(
         synchronized(resources) {
             graceJob?.cancel()
             eventsJob?.cancel()
+            messagesJob?.cancel()
             peer = link
             link = null
             heldRoute = routeHeld
@@ -200,6 +214,8 @@ class RealtimeMediaController internal constructor(
         }
         peer?.close()
         if (heldRoute) route.release()
+        mutableEventsReady.value = false
+        messageChannel.close()
         mutableControls.update { it.copy(focus = AudioFocusState.NONE) }
         scope.cancel()
     }
@@ -216,6 +232,10 @@ class RealtimeMediaController internal constructor(
             is PeerEvent.Error -> {
                 val failure = MediaFailure.Rejected(event.message)
                 if (!gathered.completeExceptionally(MediaException(failure))) fail(failure)
+            }
+
+            PeerEvent.EventsChannelOpen -> {
+                mutableEventsReady.value = true
             }
 
             PeerEvent.RemoteAudioTrack -> {
