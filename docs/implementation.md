@@ -73,6 +73,16 @@ Typed mode remains the verified model-to-phone action path. No background
 microphone service, assistant role, automatic reconnect, requirement tokens,
 provider history seeding, or physical audio quality claim is included.
 
+## Release build constraints
+
+WebRTC's native library resolves its Java classes by name through JNI, which R8
+cannot see. Without keep rules the minified release build aborts with
+`JNI DETECTED ERROR IN APPLICATION: java_class == null` the moment a peer
+connection is created, while the unminified debug build works. `app/proguard-rules.pro`
+keeps `org.webrtc`, and the release script greps the shipped dex for
+`PeerConnectionFactory` and `JavaAudioDeviceModule` so the guarantee is checked
+against the artifact rather than the rule file.
+
 ## Models in use
 
 The broker runs backend turns on `gpt-5.6-luna` at low reasoning effort and

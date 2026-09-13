@@ -52,6 +52,16 @@ else
 fi
 "$apksigner_bin" verify --verbose --print-certs "$apk"
 
+# WebRTC's native library resolves these Java classes by name through JNI, so
+# R8 cannot see the references. Losing them only fails at runtime, when a voice
+# call starts, so check the shipped artifact rather than trusting the keep rules.
+for required in org/webrtc/PeerConnectionFactory org/webrtc/audio/JavaAudioDeviceModule; do
+  if ! unzip -p "$apk" 'classes*.dex' | grep -qaF "$required"; then
+    echo "Minified release APK is missing $required; check app/proguard-rules.pro" >&2
+    exit 1
+  fi
+done
+
 mkdir -p dist
 cp "$apk" dist/eva.apk
 echo "Built dist/eva.apk ($version, versionCode $version_code)"

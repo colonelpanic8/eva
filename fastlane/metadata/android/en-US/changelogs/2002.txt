@@ -1,0 +1,1 @@
+* Fixed: Voice no longer crashes the release build. Minification stripped the WebRTC classes its native library resolves by name through JNI, which aborted the process as soon as a call started.

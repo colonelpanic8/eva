@@ -2,6 +2,12 @@
 
 All notable changes to EVA will be documented here.
 
+## [0.2.2] - 2026-09-12
+
+### Fixed
+
+- Voice no longer crashes the release build. Minification stripped the WebRTC classes its native library resolves by name through JNI, which aborted the process as soon as a call started.
+
 ## [0.2.1] - 2026-09-12
 
 ### Added
