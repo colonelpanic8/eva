@@ -5,6 +5,7 @@ import android.media.AudioDeviceInfo
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
+import androidx.annotation.RequiresApi
 
 /** Voice-call focus, communication mode, and speaker routing for one session. */
 internal class AndroidAudioRoute(
@@ -39,7 +40,7 @@ internal class AndroidAudioRoute(
         try {
             previousMode = audioManager.mode
             audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-            if (speakerphone) routeToSpeaker()
+            applyRoute(speakerphone)
         } catch (error: RuntimeException) {
             release()
             throw error
@@ -85,12 +86,12 @@ internal class AndroidAudioRoute(
         }
     }
 
-    private fun routeToSpeaker() {
+    private fun applyRoute(speakerphone: Boolean) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            audioManager.availableCommunicationDevices
-                .firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
-                ?.let { audioManager.setCommunicationDevice(it) }
-        } else {
+            val available = audioManager.availableCommunicationDevices
+            val wanted = preferredCommunicationDevice(available.map { it.type }, speakerphone) ?: return
+            available.firstOrNull { it.type == wanted }?.let { audioManager.setCommunicationDevice(it) }
+        } else if (speakerphone && !legacyWiredHeadset()) {
             legacySpeakerphone(true)
         }
     }
@@ -114,8 +115,32 @@ internal class AndroidAudioRoute(
     }
 
     @Suppress("DEPRECATION")
+    private fun legacyWiredHeadset(): Boolean = audioManager.isWiredHeadsetOn
+
+    @Suppress("DEPRECATION")
     private fun legacySpeakerphone(enabled: Boolean) {
         if (previousSpeakerphone == null) previousSpeakerphone = audioManager.isSpeakerphoneOn
         audioManager.isSpeakerphoneOn = enabled
     }
+}
+
+/**
+ * A session that a headset opened has to stay on that headset, so anything worn beats the
+ * speaker; [speakerphone] only decides what happens when nothing is plugged in or paired.
+ */
+@RequiresApi(Build.VERSION_CODES.S)
+internal fun preferredCommunicationDevice(
+    available: List<Int>,
+    speakerphone: Boolean,
+): Int? {
+    val worn =
+        listOf(
+            AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+            AudioDeviceInfo.TYPE_BLE_HEADSET,
+            AudioDeviceInfo.TYPE_USB_HEADSET,
+            AudioDeviceInfo.TYPE_WIRED_HEADSET,
+            AudioDeviceInfo.TYPE_HEARING_AID,
+        )
+    worn.firstOrNull { it in available }?.let { return it }
+    return AudioDeviceInfo.TYPE_BUILTIN_SPEAKER.takeIf { speakerphone && it in available }
 }
