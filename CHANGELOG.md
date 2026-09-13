@@ -2,6 +2,12 @@
 
 All notable changes to EVA will be documented here.
 
+## [0.6.0] - 2026-09-13
+
+### Added
+
+- Voice contact lookups assess transcription ambiguity, try ranked spelling and name-part variants, and expose a configurable retry budget.
+
 ## [0.5.1] - 2026-09-13
 
 ### Added

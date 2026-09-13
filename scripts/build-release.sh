@@ -57,7 +57,8 @@ fi
 # artifact. This passes trivially while minification is off and exists as a
 # tripwire for anyone who turns it back on.
 for required in org/webrtc/PeerConnectionFactory org/webrtc/audio/JavaAudioDeviceModule; do
-  if ! unzip -p "$apk" 'classes*.dex' | grep -qaF "$required"; then
+  # DEX stores class descriptors with a leading L and trailing semicolon.
+  if ! grep -qaF "L${required};" < <(unzip -p "$apk" 'classes*.dex'); then
     echo "Minified release APK is missing $required; check app/proguard-rules.pro" >&2
     exit 1
   fi

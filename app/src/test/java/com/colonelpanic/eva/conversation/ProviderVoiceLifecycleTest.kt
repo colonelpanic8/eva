@@ -63,6 +63,9 @@ class ProviderVoiceLifecycleTest {
             )
             assertFalse(provider.request.instructions.contains("No phone actions"))
             assertTrue(provider.request.instructions.contains("supplied tools"))
+            assertTrue(provider.request.instructions.contains("5 additional lookup queries"))
+            assertTrue(provider.request.instructions.contains("first name or last name by itself"))
+            assertTrue(provider.request.instructions.contains("generate and rank the plausible spellings"))
             controller.submit("Open a map")
             advanceUntilIdle()
             assertEquals(0, provider.submissions)
@@ -87,6 +90,21 @@ class ProviderVoiceLifecycleTest {
             assertTrue(media.closed)
             assertEquals(1, provider.closes)
             assertEquals(ProviderStatus.DISCONNECTED, controller.state.value.providerStatus)
+        }
+
+    @Test
+    fun `voice lookup retry setting is included when the session opens`() =
+        runTest {
+            val provider = VoiceProvider()
+            val controller = controller(provider, { VoiceMedia() }, voiceLookupRetries = { 8 })
+            advanceUntilIdle()
+
+            controller.connectVoice("test", listenOnly = false)
+            advanceUntilIdle()
+
+            assertTrue(provider.request.instructions.contains("8 additional lookup queries"))
+            controller.disconnect()
+            advanceUntilIdle()
         }
 
     @Test
@@ -241,6 +259,7 @@ class ProviderVoiceLifecycleTest {
         provider: VoiceProvider,
         mediaFactory: (MicrophoneMode) -> RealtimeMediaSession,
         voiceProviderFactory: suspend (String, RealtimeMediaSession) -> ConversationProvider = { _, _ -> provider },
+        voiceLookupRetries: () -> Int = { 5 },
     ): ProviderSessionController {
         val registry = CapabilityRegistry(emptyMap(), emptyList())
         val repository = MemoryInvocationRepository()
@@ -252,6 +271,7 @@ class ProviderVoiceLifecycleTest {
             { provider },
             mediaFactory,
             voiceProviderFactory,
+            voiceLookupRetries,
         )
     }
 

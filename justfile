@@ -3,6 +3,10 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 default:
     @just --list
 
+# Generate Paseo, F-Droid, and Android icons from the canonical SVG.
+icons:
+    python3 scripts/generate-icons.py
+
 # Run formatting checks, Android lint, unit tests, and a debug build.
 check:
     ./gradlew --no-daemon ktlintCheck :app:lintDebug :app:testDebugUnitTest :app:assembleDebug

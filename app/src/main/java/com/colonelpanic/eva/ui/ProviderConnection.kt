@@ -31,6 +31,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.colonelpanic.eva.conversation.ConversationState
 import com.colonelpanic.eva.conversation.ProviderStatus
+import com.colonelpanic.eva.providers.openai.OpenAiModels
 import com.colonelpanic.eva.providers.openai.SignInState
 
 @Composable
@@ -53,6 +54,8 @@ internal fun ProviderConnection(
     availableRealtimeModels: List<String> = emptyList(),
     onSelectTextModel: (String) -> Unit = {},
     onSelectRealtimeModel: (String) -> Unit = {},
+    voiceLookupRetries: Int = 5,
+    onVoiceLookupRetriesChange: (Int) -> Unit = {},
     denial: MicrophoneDenial? = null,
     onRetryMicrophone: () -> Unit = {},
     onListenOnlyInstead: () -> Unit = {},
@@ -84,8 +87,22 @@ internal fun ProviderConnection(
                     onClearApiKey = onClearApiKey,
                 )
                 if (account != null || hasApiKey) {
-                    ModelPicker("Text model", textModel, availableTextModels, onSelectTextModel)
-                    ModelPicker("Voice model", realtimeModel, availableRealtimeModels, onSelectRealtimeModel)
+                    ModelPicker("Text model", textModel, availableTextModels, OpenAiModels.TEXT, onSelectTextModel)
+                    ModelPicker("Voice model", realtimeModel, availableRealtimeModels, OpenAiModels.REALTIME, onSelectRealtimeModel)
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text("Extra voice lookup attempts: $voiceLookupRetries", style = MaterialTheme.typography.bodySmall)
+                    OutlinedButton(
+                        onClick = { onVoiceLookupRetriesChange(voiceLookupRetries - 1) },
+                        enabled = voiceLookupRetries > 0,
+                    ) { Text("−") }
+                    OutlinedButton(
+                        onClick = { onVoiceLookupRetriesChange(voiceLookupRetries + 1) },
+                        enabled = voiceLookupRetries < 10,
+                    ) { Text("+") }
                 }
                 OutlinedTextField(
                     value = link,

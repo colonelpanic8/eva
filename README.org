@@ -75,6 +75,7 @@ Useful commands:
 #+begin_src sh
 just format        # apply Kotlin formatting
 just check         # format check, lint, tests, debug APK
+just icons         # regenerate app, F-Droid, and Paseo icons from the source SVG
 just build         # debug APK only
 just install       # adb-install the debug APK
 #+end_src

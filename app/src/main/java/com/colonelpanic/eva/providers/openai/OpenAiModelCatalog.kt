@@ -44,7 +44,9 @@ class OpenAiModelCatalog(
         /**
          * Realtime sessions only accept speech-to-speech models; offering a text model there
          * produces a confusing server rejection at connect time. Names are matched rather than
-         * enumerated so new models appear without an app update.
+         * enumerated so new models appear without an app update. The text list keeps every
+         * actual candidate that is not speech-only or a known non-chat model, so account
+         * backends that list slugs outside the `gpt-`/`o` families still show up.
          */
         fun classify(ids: List<String>): Map<ModelKind, List<String>> {
             val realtime =
@@ -52,17 +54,29 @@ class OpenAiModelCatalog(
                     .filter { it.contains("realtime") || it.startsWith("gpt-live") || it.contains("-audio") }
                     .filterNot { it.contains("transcribe") || it.contains("tts") }
             val text =
-                ids
-                    .filter { it.startsWith("gpt-") || it.startsWith("o1") || it.startsWith("o3") || it.startsWith("o4") }
-                    .filterNot { id ->
-                        id in realtime ||
-                            listOf("transcribe", "tts", "audio", "image", "embedding", "moderation", "search", "instruct", "dall-e")
-                                .any { id.contains(it) }
-                    }
+                ids.filterNot { id ->
+                    id in realtime || NON_TEXT_HINTS.any { id.contains(it) }
+                }
             return mapOf(
                 ModelKind.TEXT to text.sorted().distinct(),
                 ModelKind.REALTIME to realtime.sorted().distinct(),
             )
         }
+
+        private val NON_TEXT_HINTS =
+            listOf(
+                "transcribe",
+                "tts",
+                "whisper",
+                "audio",
+                "image",
+                "embedding",
+                "moderation",
+                "search",
+                "instruct",
+                "dall-e",
+                "realtime",
+                "live",
+            )
     }
 }

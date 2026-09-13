@@ -52,6 +52,21 @@ class OpenAiModelCatalogTest {
     }
 
     @Test
+    fun `text candidates outside the gpt and o families are kept`() {
+        val kinds =
+            OpenAiModelCatalog.classify(
+                listOf(
+                    "chatgpt-4o-latest",
+                    "codex-mini-latest",
+                    "whisper-1",
+                    "gpt-6-astra",
+                ),
+            )
+        assertEquals(listOf("chatgpt-4o-latest", "codex-mini-latest", "gpt-6-astra"), kinds[ModelKind.TEXT])
+        assertTrue(kinds[ModelKind.REALTIME].orEmpty().isEmpty())
+    }
+
+    @Test
     fun `the account's own model list is used`() =
         runTest {
             val catalog =

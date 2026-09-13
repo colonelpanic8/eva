@@ -42,6 +42,7 @@
           androidComposition.androidsdk
           gh
           git
+          inkscape
           jdk17
           just
           python3

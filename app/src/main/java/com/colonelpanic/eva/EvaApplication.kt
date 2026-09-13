@@ -182,6 +182,7 @@ class EvaApplication : Application() {
             },
             repository = repository,
             scope = scope,
+            voiceLookupRetries = { settings.voiceLookupRetries },
         ).also { controller ->
             scope.launch {
                 controller.state

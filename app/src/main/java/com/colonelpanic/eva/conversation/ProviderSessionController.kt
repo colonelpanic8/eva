@@ -47,6 +47,7 @@ class ProviderSessionController(
     private val providerFactory: (String) -> ConversationProvider,
     private val mediaFactory: ((MicrophoneMode) -> RealtimeMediaSession)? = null,
     private val voiceProviderFactory: (suspend (String, RealtimeMediaSession) -> ConversationProvider)? = null,
+    private val voiceLookupRetries: () -> Int = { 5 },
 ) {
     private val mutableState = MutableStateFlow(ConversationState())
     val state = mutableState.asStateFlow()
@@ -156,6 +157,19 @@ class ProviderSessionController(
                                     "You are EVA, a voice assistant running on the user's Android phone. " +
                                         "Keep spoken replies short. Use the supplied tools for phone actions and say " +
                                         "what the tool result reports. Never claim sending a message when only a draft was opened. " +
+                                        "Spoken names may be transcribed with the wrong spelling. For read-only lookups such as " +
+                                        "contacts search, first assess how ambiguous the name you heard is. If it could reasonably " +
+                                        "have multiple spellings, generate and rank the plausible spellings and phonetic variants, " +
+                                        "deduplicate them, and proactively search the most likely variants. After the initial lookup, " +
+                                        "make up to ${voiceLookupRetries()} additional lookup queries in total. Use that budget for " +
+                                        "the best spelling variants and, when a full name does not find a clear match, the first name " +
+                                        "or last name by itself. Do not spend queries on implausible variations. " +
+                                        "Use only query forms supported by the tool; do not put several alternatives into one query " +
+                                        "unless the tool supports it. Respect spellings explicitly supplied by the user. " +
+                                        "Use returned records to identify matches; never invent a person or contact detail. " +
+                                        "If different people plausibly match, ask which one the user means before acting. " +
+                                        "If these lookups still find nothing, ask for the spelling or another identifying detail. " +
+                                        "Apply these retries only to read-only lookups, never to sending, calling, or opening apps. " +
                                         clock()
                                 },
                                 connectionCatalog,
