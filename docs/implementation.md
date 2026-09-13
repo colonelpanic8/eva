@@ -214,8 +214,19 @@ what the account can actually use, fetched from `/v1/models` and split by name
 into speech-capable and text-capable, and also accepts a typed name so a model
 released after the app still works. Blank restores the default. Defaults are
 `gpt-realtime-2.1` for speech and `gpt-6-astra` for text, with
-`gpt-4o-transcribe` for input transcription. A chosen model applies to the next
+`gpt-transcribe` for input transcription. A chosen model applies to the next
 connection.
+
+Input transcription is a second model pass that produces only the on-screen
+captions; the speech model hears the audio itself, so caption errors never
+reach it. That pass starts with no knowledge of the session, which is what made
+its output poor, so it is given the setting as a prompt, `en` as the expected
+language, `delay: high` to trade caption latency for word accuracy, and the
+user's contact display names as `keywords`. Nothing is racing the captions, so
+the added delay costs nothing the user sees. Contact names are read only when
+contacts access has already been granted for an earlier lookup; the read never
+prompts, is skipped entirely for typed sessions, and is bounded to the 200
+most-contacted names.
 
 A typed session has nothing to negotiate, so opening one lists the account's
 models first: that proves the key works and the chosen model exists before the

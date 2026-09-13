@@ -62,7 +62,7 @@ class OpenAiRealtimeProvider(
                 put(
                     "audio",
                     buildJsonObject {
-                        put("input", buildJsonObject { put("transcription", buildJsonObject { put("model", OpenAiModels.TRANSCRIPTION) }) })
+                        put("input", buildJsonObject { put("transcription", transcription(request.keywords)) })
                         put("output", buildJsonObject { put("voice", voice) })
                     },
                 )
@@ -264,3 +264,19 @@ private class OpenAiRealtimeSession(
 
     override suspend fun close() = Unit
 }
+
+/**
+ * The transcriber runs beside the speech model rather than in front of it, so it starts with no
+ * knowledge of the session. Giving it the setting, the expected vocabulary and a fixed language
+ * is what keeps captions readable; the extra delay buys word accuracy the captions are never
+ * racing anything to deliver.
+ */
+private fun transcription(keywords: List<String>): JsonObject =
+    buildJsonObject {
+        put("model", OpenAiModels.TRANSCRIPTION)
+        put("prompt", OpenAiModels.TRANSCRIPTION_PROMPT)
+        put("delay", OpenAiModels.TRANSCRIPTION_DELAY)
+        put("languages", JsonArray(OpenAiModels.TRANSCRIPTION_LANGUAGES.map(::JsonPrimitive)))
+        val bounded = keywords.filter { it.isNotBlank() }.distinct().take(OpenAiModels.TRANSCRIPTION_KEYWORD_LIMIT)
+        if (bounded.isNotEmpty()) put("keywords", JsonArray(bounded.map(::JsonPrimitive)))
+    }

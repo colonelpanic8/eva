@@ -18,6 +18,11 @@ data class ProviderToolCatalog(
 data class SessionOpenRequest(
     val instructions: String,
     val catalog: ProviderToolCatalog,
+    /**
+     * Literal terms the speech transcriber should expect, such as contact and app names. Only
+     * affects the displayed captions; providers without input transcription ignore them.
+     */
+    val keywords: List<String> = emptyList(),
 )
 
 data class ConversationInput(

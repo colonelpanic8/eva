@@ -48,6 +48,7 @@ class ProviderSessionController(
     private val mediaFactory: ((MicrophoneMode) -> RealtimeMediaSession)? = null,
     private val voiceProviderFactory: (suspend (String, RealtimeMediaSession) -> ConversationProvider)? = null,
     private val voiceLookupRetries: () -> Int = { 5 },
+    private val voiceKeywords: suspend () -> List<String> = { emptyList() },
 ) {
     private val mutableState = MutableStateFlow(ConversationState())
     val state = mutableState.asStateFlow()
@@ -173,6 +174,8 @@ class ProviderSessionController(
                                         clock()
                                 },
                                 connectionCatalog,
+                                // Captions only; a typed session has no audio to transcribe.
+                                if (microphone == null) emptyList() else voiceKeywords(),
                             ),
                         )
                     openedSession = opened

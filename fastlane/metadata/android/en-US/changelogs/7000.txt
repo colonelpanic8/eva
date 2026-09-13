@@ -1,0 +1,2 @@
+* Changed: Spoken captions are noticeably more accurate. Voice sessions now transcribe with `gpt-transcribe`, tell it what it is listening to, pin the language, and trade caption latency for word accuracy. The speech model always heard the audio itself, so this changes what you read, not what EVA understands. The new model also costs less per minute than the one it replaces.
+* ...see CHANGELOG.md for the rest.
