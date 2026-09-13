@@ -1,0 +1,133 @@
+{
+  "provider": "codex-cli 0.154.0",
+  "probe": "Synthetic browser counter speech; separate from Android no-tools voice test",
+  "ids": "Consistent pseudonyms across both streams; not actual account or provider identifiers",
+  "text": "Transcript and instruction contents omitted; lengths retained",
+  "eventsInObservedOrder": [
+    {
+      "media": {
+        "type": "turn.created",
+        "turn": {
+          "id": "id6",
+          "end_ms": 6400,
+          "role": "user",
+          "start_ms": 6200,
+          "transcript": "<12chars>"
+        }
+      }
+    },
+    {
+      "media": {
+        "type": "delegation.created",
+        "item": {
+          "id": "id23",
+          "type": "delegation",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "<111chars>"
+            }
+          ],
+          "handoff_id": "id24",
+          "target": "client",
+          "user_bidi_turn_id": "id6"
+        },
+        "offset_ms": 11200
+      }
+    },
+    {
+      "method": "thread/realtime/itemAdded",
+      "params": {
+        "threadId": "id1",
+        "item": {
+          "type": "handoff_request",
+          "handoff_id": "id23",
+          "item_id": "id23",
+          "input_transcript": "<111chars>",
+          "active_transcript": [
+            {
+              "role": "user",
+              "text": "<112chars>"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "method": "turn/started",
+      "params": {
+        "threadId": "id1",
+        "turn": {
+          "id": "id25",
+          "items": [],
+          "itemsView": "notLoaded",
+          "status": "inProgress",
+          "error": null,
+          "startedAt": 1789266537,
+          "completedAt": null,
+          "durationMs": null
+        }
+      }
+    },
+    {
+      "method": "thread/realtime/transcript/done",
+      "params": {
+        "threadId": "id1",
+        "role": "user",
+        "text": "<112chars>"
+      }
+    },
+    {
+      "request": "item/tool/call",
+      "params": {
+        "threadId": "id1",
+        "turnId": "id25",
+        "callId": "id29",
+        "namespace": null,
+        "tool": "eva_counter_set",
+        "arguments": {
+          "value": 7
+        }
+      }
+    },
+    {
+      "request": "item/tool/call",
+      "params": {
+        "threadId": "id1",
+        "turnId": "id25",
+        "callId": "id30",
+        "namespace": null,
+        "tool": "eva_counter_get",
+        "arguments": {}
+      }
+    },
+    {
+      "method": "turn/completed",
+      "params": {
+        "threadId": "id1",
+        "turn": {
+          "id": "id25",
+          "items": [
+            {
+              "type": "agentMessage",
+              "id": "id31",
+              "text": "<43chars>",
+              "phase": "final_answer",
+              "memoryCitation": null,
+              "delivery": null,
+              "questions": null
+            }
+          ],
+          "itemsView": "summary",
+          "status": "completed",
+          "error": null,
+          "startedAt": 1789266537,
+          "completedAt": 1789266542,
+          "durationMs": 4802
+        }
+      }
+    }
+  ],
+  "conclusion": "The finalized user transcript followed its own handoff and backend turn start. Transcript arrival cannot identify a new utterance. Backend turn events did not include handoff identity.",
+  "scope": "One observed request with two counter calls; overlap, interruption and reconnect not established. No phone tools enabled."
+}

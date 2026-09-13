@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { tools } from "../src/dispatcher.ts";
 import { type Event, Session } from "../src/session.ts";
 
 async function waitFor(probe: () => boolean): Promise<void> {
@@ -62,6 +63,51 @@ test("API authentication fails closed before a realtime session or tool can star
   } finally {
     await session.close();
     delete process.env.EVA_TEST_AUTH;
+    if (original === undefined) delete process.env.EVA_CODEX_BIN;
+    else process.env.EVA_CODEX_BIN = original;
+  }
+});
+
+test("text-only session advertises supplied tools and returns asynchronous phone evidence to the model", async () => {
+  const original = process.env.EVA_CODEX_BIN;
+  process.env.EVA_CODEX_BIN = fileURLToPath(new URL("./fake-codex.mjs", import.meta.url));
+  const events: Event[] = [];
+  let release!: () => void;
+  const waiting = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const session = new Session((event) => events.push(event), {
+    tools,
+    instructions: "Use phone tools",
+    execute: async (callId, name, args) => {
+      assert.equal(callId, "device-call");
+      assert.equal(name, tools[0].name);
+      assert.deepEqual(args, { destination: "Ferry Building" });
+      await waiting;
+      return { success: true, status: "HANDED_OFF", message: "Phone opened map" };
+    },
+  });
+  try {
+    await session.start(undefined, "");
+    assert.equal(
+      events.some((event) => event.kind === "answer"),
+      false,
+    );
+    assert.equal(events.find((event) => event.kind === "started")?.mode, "text");
+    await session.text("Show the Ferry Building on a map");
+    assert.equal(
+      events.some((event) => event.kind === "backend-output"),
+      false,
+    );
+    release();
+    await waitFor(() => events.some((event) => event.kind === "backend-output"));
+    assert.match(
+      String(events.find((event) => event.kind === "backend-output")?.text),
+      /Phone opened map/,
+    );
+  } finally {
+    release();
+    await session.close();
     if (original === undefined) delete process.env.EVA_CODEX_BIN;
     else process.env.EVA_CODEX_BIN = original;
   }

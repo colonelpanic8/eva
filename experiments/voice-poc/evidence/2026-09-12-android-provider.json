@@ -1,0 +1,43 @@
+{
+  "device": "Android 16 API 36 Google Play x86_64 emulator, no host audio",
+  "authentication": "Host Codex account/read verified ChatGPT subscription; no API key used or subscription credential copied to Android",
+  "typed": {
+    "prompt": "Reply with EVA account connection verified and compute 37 plus 58",
+    "response": "EVA account connection verified. 37 + 58 = 95.",
+    "verifiedInNativeUi": true
+  },
+  "tool": {
+    "prompt": "Please find Golden Gate Park on the map.",
+    "selected": "eva.android.maps.search",
+    "androidResult": "Maps displayed Golden Gate Park",
+    "receipt": "HANDED_OFF / Map search opened.",
+    "modelFollowup": "Map search opened for Golden Gate Park.",
+    "receiptSurvivedAppReplacement": true
+  },
+  "voice": {
+    "mode": "receive-only / no tools",
+    "sdpOffer": "native org.webrtc",
+    "providerAnswerApplied": true,
+    "peerConnected": true,
+    "remoteAudioTrackObserved": true,
+    "survivedRotation": true,
+    "backgroundClosedConnection": true,
+    "physicalMicrophoneVerified": false,
+    "audiblePlaybackVerified": false,
+    "voiceToolExecutionVerified": false
+  },
+  "checks": {
+    "jvm": 46,
+    "broker": 17,
+    "androidLint": "pass",
+    "ktlint": "pass",
+    "assembleDebug": "pass",
+    "focusedEmulatorInstrumentation": 6
+  },
+  "limitations": [
+    "Native OpenAI login and remote pairing not implemented",
+    "Host broker and existing subscription login required",
+    "Voice no-tools only; typed mode performs phone actions",
+    "No emulator host audio, so real speech/transcript/audio quality not tested"
+  ]
+}

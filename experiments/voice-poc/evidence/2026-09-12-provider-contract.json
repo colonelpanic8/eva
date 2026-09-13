@@ -1,0 +1,16 @@
+{
+  "scenario": "Typed provider contract probe with an in-memory tool and nested object arguments",
+  "authentication": "existing ChatGPT subscription login",
+  "nestedSchemaAccepted": true,
+  "toolCallPassedActiveThreadAndTurnGuard": true,
+  "generationReported": true,
+  "structuredResultReachedModel": true,
+  "turnCompleted": true,
+  "errors": [],
+  "phoneActionsExecuted": false,
+  "limitations": [
+    "No Android provider client was connected",
+    "This verifies one nested schema, not all schema subset features",
+    "No native microphone or audio lifecycle test"
+  ]
+}

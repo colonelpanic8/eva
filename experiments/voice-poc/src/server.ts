@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
+import { attachDeviceConnections } from "./device-connection.ts";
 import { record, safeError } from "./rpc.ts";
 import { Session } from "./session.ts";
 
@@ -31,7 +32,18 @@ const server = createServer(async (req, res) => {
   }
 });
 const wss = new WebSocketServer({ noServer: true, maxPayload: 128 * 1024 });
+const deviceWss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
+attachDeviceConnections(deviceWss, token);
 server.on("upgrade", (req, socket, head) => {
+  if (req.url === "/device") {
+    const address = req.socket.remoteAddress;
+    if (req.headers.origin || !["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(address ?? "")) {
+      socket.destroy();
+      return;
+    }
+    deviceWss.handleUpgrade(req, socket, head, (ws) => deviceWss.emit("connection", ws));
+    return;
+  }
   const origin = req.headers.origin;
   let validOrigin = false;
   try {
@@ -130,7 +142,9 @@ for (const signal of ["SIGINT", "SIGTERM"] as const)
   process.on(signal, () => {
     void Promise.all([...sessions].map((session) => session.close())).finally(() => {
       for (const ws of wss.clients) ws.terminate();
+      for (const ws of deviceWss.clients) ws.terminate();
       wss.close();
+      deviceWss.close();
       server.close();
     });
   });

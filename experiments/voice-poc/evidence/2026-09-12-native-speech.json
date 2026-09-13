@@ -1,0 +1,40 @@
+{
+  "device": "Android 16 API 36 Google Play x86_64 emulator with host audio disabled",
+  "test": "NativeVoiceLiveTest.syntheticSpeechReachesProviderAndReturnsDecodedAudio",
+  "authentication": "Existing host ChatGPT subscription through the development broker",
+  "mode": "Native LIVE WebRTC with every capture buffer replaced by generated speech or silence; no tools",
+  "fixture": "Say EVA voice verified. What is thirty seven plus fifty eight?",
+  "input": {
+    "sampleRate": 48000,
+    "channels": 1,
+    "format": "PCM16",
+    "bytesSent": 467332
+  },
+  "assertions": {
+    "nativePeerConnected": true,
+    "userTranscriptContains37": true,
+    "assistantTranscriptContains95": true,
+    "entireFixtureSent": true,
+    "nonzeroDecodedOutputBytes": 281734
+  },
+  "result": "PASS (1 live instrumentation test)",
+  "limitations": [
+    "Synthetic samples replace capture; physical microphone not verified",
+    "Decoded PCM does not prove audible speaker output",
+    "No echo, Bluetooth, acoustic interruption, or voice action verification",
+    "Opt-in live test requires a broker and does not run in ordinary CI"
+  ],
+  "followupChecks": {
+    "jvmTests": 57,
+    "brokerTests": 17,
+    "ktlint": "pass",
+    "fatalAndroidLint": "pass",
+    "debugBuild": "pass",
+    "focusedEmulatorTests": {
+      "WebRtcNegotiationTest": 3,
+      "VoiceAccessRetentionTest": 1
+    },
+    "permissionDialog": "Not driven; retention test simulates permission results",
+    "mutualReview": "Accepted after retaining permission flow in an unsaved Activity ViewModel"
+  }
+}
