@@ -138,7 +138,16 @@ WebRTC connected to the real provider. The media connection survived rotation;
 backgrounding ended it. A subsequent opt-in [native speech test](native-voice-testing.md)
 sent generated speech through the native capture path, received the expected
 user and assistant transcripts, and decoded nonzero returned audio. The emulator
-had no host audio, so physical capture and audible playback remain unverified.
+had no host audio, so that run could not establish physical capture or playback.
+
+A later run on a physical Pixel closed that gap, using the published release APK
+launched through the assist gesture. A listen-only session connected, then a live
+session reported "Voice connected" with the microphone control available.
+Android's audio service showed `Recording active: true` and `Playback active: true`
+for EVA, WebRTC logged `verifyAudioConfig: PASS`, and playout ran at 48 kHz on the
+handset speaker. Stopping voice released the recorder. Acoustic quality, echo
+behaviour, and natural barge-in are still unmeasured; only the capture and
+playback paths are established.
 
 
 On 2026-09-12, focused JVM tests covered duplicate/conflicting call IDs,
@@ -229,6 +238,7 @@ real subscription provider. The Android emulator trial also displayed a live
 model response and opened Golden Gate Park in Maps from a natural-language
 request, then returned the actual handoff result to the model.
 
-Physical microphone/speaker behavior, natural barge-in, foreground audio
-transitions, and voice-driven phone actions remain unverified. The observed
-subscription bridge is an experiment, not a promise of public API stability.
+Acoustic quality, echo behaviour, natural barge-in, and voice-driven phone
+actions remain unverified; the microphone and speaker paths themselves are now
+established on hardware. The observed subscription bridge is an experiment, not
+a promise of public API stability.
