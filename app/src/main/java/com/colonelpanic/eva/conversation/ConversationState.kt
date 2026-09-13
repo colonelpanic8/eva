@@ -33,6 +33,7 @@ enum class EntryStatus {
     PENDING,
     DISPATCHING,
     HANDED_OFF,
+    COMPLETED,
     NOT_EXECUTED,
     FAILED,
     UNKNOWN,

@@ -51,6 +51,7 @@ object BundledCapabilities {
                 CapabilityRegistry.SMS_COMPOSE,
                 "Prepare a text message",
                 "Open a text message draft addressed to one explicit phone number. " +
+                    "When the user names a person instead, find the number with the contacts search first. " +
                     "The user sends it in their messaging app. Does not send an SMS.",
                 messageSchema,
                 ::validateMessage,
@@ -173,6 +174,23 @@ object BundledCapabilities {
             """,
                 ),
             ) { args -> if (args.getValue("app").isBlank()) "Name the app to open." else null },
+            CapabilityDefinition(
+                CapabilityRegistry.CONTACTS_SEARCH,
+                "Search contacts",
+                "Find phone numbers in the user's contacts by name. Use this when the user names a person " +
+                    "to text or call, then pass the returned number to the message or dialer action. " +
+                    "Returns matches only; it opens nothing. If several people match, ask which one.",
+                schema(
+                    """
+                {"type":"object","properties":{
+                "query":{"type":"string","minLength":1,"maxLength":100,"description":"All or part of a person's name"}},
+                "required":["query"],"additionalProperties":false}
+            """,
+                ),
+            ) { args ->
+                val query = args.getValue("query")
+                if (query.isBlank() || query.any { it.isISOControl() }) "Enter part of a name." else null
+            },
             CapabilityDefinition(
                 CapabilityRegistry.OPEN_SETTINGS,
                 "Open a settings screen",

@@ -37,7 +37,8 @@ class CapabilityRegistry(
         const val CALENDAR_EVENT = "eva.android.calendar.event"
         const val OPEN_APP = "eva.android.app.open"
         const val OPEN_SETTINGS = "eva.android.settings.open"
-        const val REVISION = 3
+        const val CONTACTS_SEARCH = "eva.android.contacts.search"
+        const val REVISION = 4
         const val MAX_DESTINATION_LENGTH = 500
     }
 }

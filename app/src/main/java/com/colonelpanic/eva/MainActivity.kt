@@ -33,6 +33,9 @@ class MainActivity : ComponentActivity() {
 
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
+    private val capabilityPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> eva.intentHost.onPermissionResult(granted) }
+
     private fun startVoice(
         link: String,
         listenOnly: Boolean,
@@ -128,7 +131,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        eva.intentHost.attach(this)
+        eva.intentHost.attach(this) { permission -> capabilityPermission.launch(permission) }
     }
 
     override fun onPause() {

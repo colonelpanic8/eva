@@ -195,6 +195,10 @@ private fun EntryStatus.presentation(): StatusPresentation =
             ) { MaterialTheme.colorScheme.primary }
         }
 
+        EntryStatus.COMPLETED -> {
+            StatusPresentation("Done", inProgress = false) { MaterialTheme.colorScheme.primary }
+        }
+
         EntryStatus.NOT_EXECUTED -> {
             StatusPresentation("Not run", inProgress = false) { MaterialTheme.colorScheme.onSurfaceVariant }
         }

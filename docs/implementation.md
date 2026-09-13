@@ -11,11 +11,15 @@ actual dispatcher outcomes. The development `/device` WebSocket uses an ephemera
 broker code and localhost forwarding. Subscription credentials stay on the host;
 there is no native OpenAI login or API-key fallback.
 
-Twelve bundled capabilities are described by `CapabilityDefinition` records with
+Thirteen bundled capabilities are described by `CapabilityDefinition` records with
 closed JSON Schemas: map search, driving navigation, message drafting, alarms,
 timers, dialing, web search, opening a URL, email drafting, calendar events,
-launching an installed app, and opening a settings screen. All but the first
-three share one generic `IntentBackend`. The registry and UI do not switch on
+launching an installed app, opening a settings screen, and contacts search. All
+but the first three and contacts search share one generic `IntentBackend`.
+Contacts search is the one query capability: it reads phone numbers matching a
+name through `ContactsContract`, requests `READ_CONTACTS` on first use through
+the resumed Activity, and completes with the matches in its outcome message so
+the model can pass an explicit number to the message or dialer action. The registry and UI do not switch on
 capability IDs. Generic schema validation covers closed/nested objects, bounded
 scalars, and enums; arrays and nullable values are rejected.
 

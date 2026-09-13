@@ -128,6 +128,7 @@ class SessionController(
                     InvocationStatus.CLAIMED -> EntryStatus.PENDING
                     InvocationStatus.DISPATCHING -> EntryStatus.DISPATCHING
                     InvocationStatus.HANDED_OFF -> EntryStatus.HANDED_OFF
+                    InvocationStatus.COMPLETED -> EntryStatus.COMPLETED
                     InvocationStatus.NOT_EXECUTED -> EntryStatus.NOT_EXECUTED
                     InvocationStatus.FAILED -> EntryStatus.FAILED
                     InvocationStatus.UNKNOWN -> EntryStatus.UNKNOWN

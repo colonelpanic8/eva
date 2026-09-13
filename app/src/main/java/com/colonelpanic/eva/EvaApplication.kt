@@ -2,6 +2,7 @@ package com.colonelpanic.eva
 
 import android.app.Application
 import com.colonelpanic.eva.adapters.android.AndroidIntentHost
+import com.colonelpanic.eva.adapters.android.ContactsQueryBackend
 import com.colonelpanic.eva.adapters.android.IntentBackend
 import com.colonelpanic.eva.adapters.android.MapIntentBackend
 import com.colonelpanic.eva.adapters.android.MessageIntentBackend
@@ -105,6 +106,7 @@ class EvaApplication : Application() {
                 CapabilityRegistry.MAP_SEARCH to MapIntentBackend(intentHost),
                 CapabilityRegistry.NAVIGATE to NavigationIntentBackend(intentHost),
                 CapabilityRegistry.SMS_COMPOSE to MessageIntentBackend(intentHost),
+                CapabilityRegistry.CONTACTS_SEARCH to ContactsQueryBackend(this, intentHost),
                 CapabilityRegistry.SET_ALARM to
                     intent("Alarm set.", "No clock app accepted this alarm.", NativeIntents::alarm),
                 CapabilityRegistry.SET_TIMER to
