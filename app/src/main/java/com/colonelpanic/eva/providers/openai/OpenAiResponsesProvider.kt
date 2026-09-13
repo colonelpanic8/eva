@@ -37,10 +37,20 @@ class OpenAiResponsesProvider(
     private val client: OkHttpClient = OkHttpClient(),
     private val baseUrl: String = OpenAiModels.BASE_URL,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val catalog: OpenAiModelCatalog = OpenAiModelCatalog(client, baseUrl, ioDispatcher),
 ) : ConversationProvider {
+    /**
+     * Unlike a realtime session, a typed session has nothing to negotiate, so "connected"
+     * would otherwise mean only that a screen changed. Listing the account's models proves
+     * the key works and the chosen model exists before anything is claimed.
+     */
     override suspend fun open(request: SessionOpenRequest): ConversationSession {
         require(request.catalog.tools.size <= 32)
         request.catalog.tools.forEach { ToolSchema.check(it.inputSchema) }
+        val known = catalog.load(apiKey).values.flatten()
+        check(known.isEmpty() || model in known) {
+            "This account cannot use $model. Choose another text model."
+        }
         return OpenAiResponsesSession(apiKey, model, client, baseUrl, request, toolNames(request.catalog.tools), ioDispatcher)
     }
 }

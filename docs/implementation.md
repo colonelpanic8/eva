@@ -136,6 +136,11 @@ released after the app still works. Blank restores the default. Defaults are
 `gpt-4o-transcribe` for input transcription. A chosen model applies to the next
 connection.
 
+A typed session has nothing to negotiate, so opening one lists the account's
+models first: that proves the key works and the chosen model exists before the
+UI claims to be connected. A realtime session already proves both by completing
+its SDP exchange.
+
 Coverage: JVM tests drive both adapters with canned HTTP and data-channel
 traffic, including a tool call held open across the follow-up response. The
 opt-in `OpenAiVoiceActionLiveTest` runs the spoken-timer scenario against the

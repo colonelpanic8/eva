@@ -34,6 +34,7 @@ class OpenAiResponsesProviderTest {
     private val catalog =
         ProviderToolCatalog("rev-1", listOf(ProviderToolDefinition("eva.android.maps.search", "Search maps", "Open a map search", schema)))
     private val requests = mutableListOf<String>()
+    private val modelList = """{"data":[{"id":"gpt-test"},{"id":"gpt-realtime-2.1"}]}"""
     private val replies =
         ArrayDeque(
             listOf(
@@ -45,17 +46,32 @@ class OpenAiResponsesProviderTest {
         OkHttpClient
             .Builder()
             .addInterceptor { chain ->
+                val listing =
+                    chain
+                        .request()
+                        .url.encodedPath
+                        .endsWith("/models")
                 val buffer = Buffer().also { chain.request().body?.writeTo(it) }
-                requests += buffer.readUtf8()
+                if (!listing) requests += buffer.readUtf8()
                 Response
                     .Builder()
                     .request(chain.request())
                     .protocol(Protocol.HTTP_1_1)
                     .code(200)
                     .message("OK")
-                    .body(replies.removeFirst().toResponseBody("application/json".toMediaType()))
+                    .body((if (listing) modelList else replies.removeFirst()).toResponseBody("application/json".toMediaType()))
                     .build()
             }.build()
+
+    @Test
+    fun `a model the account cannot use is refused before the session claims to be connected`() =
+        runTest {
+            val provider =
+                OpenAiResponsesProvider("sk-test", "gpt-missing", client, "https://example.test", StandardTestDispatcher(testScheduler))
+            val error = runCatching { provider.open(SessionOpenRequest("You are EVA.", catalog)) }.exceptionOrNull()
+            assertTrue(error is IllegalStateException)
+            assertEquals("This account cannot use gpt-missing. Choose another text model.", error!!.message)
+        }
 
     @Test
     fun `a rejected request surfaces the provider's own message`() =
@@ -68,13 +84,18 @@ class OpenAiResponsesProviderTest {
                 OkHttpClient
                     .Builder()
                     .addInterceptor { chain ->
+                        val listing =
+                            chain
+                                .request()
+                                .url.encodedPath
+                                .endsWith("/models")
                         Response
                             .Builder()
                             .request(chain.request())
                             .protocol(Protocol.HTTP_1_1)
-                            .code(401)
-                            .message("Unauthorized")
-                            .body(replies.removeFirst().toResponseBody("application/json".toMediaType()))
+                            .code(if (listing) 200 else 401)
+                            .message(if (listing) "OK" else "Unauthorized")
+                            .body((if (listing) modelList else replies.removeFirst()).toResponseBody("application/json".toMediaType()))
                             .build()
                     }.build()
             val session =
