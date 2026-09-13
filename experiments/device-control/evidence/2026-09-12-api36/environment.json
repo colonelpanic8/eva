@@ -1,0 +1,12 @@
+{
+  "ro.build.fingerprint": "google/sdk_gphone64_x86_64/emu64xa:16/BE2A.250530.026.D1/13818094:user/release-keys",
+  "ro.build.version.sdk": "36",
+  "ro.build.version.release": "16",
+  "ro.product.model": "sdk_gphone64_x86_64",
+  "ro.kernel.qemu": "1",
+  "shizukuApkSha256": "6e273ab0e991c4e79bc8b1bbb9b9dd739ccac1a8712a541a214078886b7b790f",
+  "apkSha256": {
+    "probe": "4668d3c002a9bb1415f750a96a01aa9f0ddaaeb468d7af08d8eb752c608dfcea",
+    "fixture": "5e6b0f50f1403a276c04a9526a4405dc50aaf22105d6804f6e31854e14a54742"
+  }
+}

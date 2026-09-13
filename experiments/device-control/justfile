@@ -1,0 +1,10 @@
+set shell := ["bash", "-euo", "pipefail", "-c"]
+
+format:
+    ../../gradlew --no-daemon ktlintFormat
+
+check:
+    ../../gradlew --no-daemon ktlintCheck :probe:lintDebug :fixture:lintDebug :probe:assembleDebug :fixture:assembleDebug
+
+probe serial operation="observe":
+    python3 run-probe.py --serial {{serial}} --operation {{operation}}

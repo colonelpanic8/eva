@@ -1,0 +1,23 @@
+{
+  "helperDiedWithClient": true,
+  "before": {
+    "ok": true,
+    "identity": "uid=2000,pid=7937",
+    "clientUid": 10218
+  },
+  "after": {
+    "ok": true,
+    "identity": "uid=2000,pid=7997",
+    "clientUid": 10218
+  },
+  "shizukuStoppedResult": {
+    "ok": false,
+    "shizukuUnavailable": true
+  },
+  "restarted": {
+    "ok": true,
+    "identity": "uid=2000,pid=8071",
+    "clientUid": 10218
+  },
+  "exerciseAfterRestartPassed": true
+}
