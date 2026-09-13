@@ -97,8 +97,11 @@ timer, the journal recorded the utterance, the model spoke "Three-minute timer
 started," and the session was still connected five seconds after Clock took
 the foreground. The empty-catalog chat-only test still passes. Evidence:
 [2026-09-12-voice-action.json](../experiments/voice-poc/evidence/2026-09-12-voice-action.json).
-The physical phone dropped off USB during the first attempt and had not
-returned, so the phone run is pending.
+The published v0.2.4 release package, installed on the same emulator, connected
+a live voice session with the foreground service running as microphone type and
+its ongoing notification shown, and cleared both on Stop voice. The physical
+phone dropped off USB during the first attempt and had not returned, so the
+phone run is pending.
 
 ## Development connection
 

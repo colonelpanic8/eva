@@ -42,5 +42,14 @@
     "a second spoken action while another app is in front"
   ],
   "brokerTests": 18,
-  "jvmTests": 63
+  "jvmTests": 63,
+  "releasePackage": {
+    "build": "v0.2.4 signed release APK from GitHub release, package com.colonelpanic.eva, installed on the same emulator",
+    "observed": {
+      "liveVoiceSession": "Voice connected; status shows gpt-live-1-codex with gpt-5.6-luna and the voice session copy",
+      "foregroundService": "VoiceSessionService isForeground=true, types=0x80 (microphone), ongoing notification 'EVA is in a voice session'",
+      "stopVoice": "service record and notification both gone after Stop voice; UI returned to the disconnected state"
+    },
+    "limit": "Synthetic speech cannot be injected into the release package, so the spoken-action round trip is proven on the debug package; the release package differs only by package ID and minification being off"
+  }
 }
