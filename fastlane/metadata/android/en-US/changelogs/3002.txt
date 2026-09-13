@@ -1,0 +1,1 @@
+* Fixed: A bad key or an unusable text model is now reported when you connect, instead of appearing to connect and failing on the first message.

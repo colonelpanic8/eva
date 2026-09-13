@@ -2,6 +2,12 @@
 
 All notable changes to EVA will be documented here.
 
+## [0.3.2] - 2026-09-13
+
+### Fixed
+
+- A bad key or an unusable text model is now reported when you connect, instead of appearing to connect and failing on the first message.
+
 ## [0.3.1] - 2026-09-13
 
 ### Added
@@ -10,7 +16,6 @@ All notable changes to EVA will be documented here.
 
 ### Fixed
 
-- A bad key or an unusable text model is now reported when you connect, instead of appearing to connect and failing on the first message.
 - A rejected OpenAI request shows the provider's own message instead of the raw response body.
 
 ## [0.3.0] - 2026-09-13
