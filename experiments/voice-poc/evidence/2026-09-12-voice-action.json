@@ -51,5 +51,13 @@
       "stopVoice": "service record and notification both gone after Stop voice; UI returned to the disconnected state"
     },
     "limit": "Synthetic speech cannot be injected into the release package, so the spoken-action round trip is proven on the debug package; the release package differs only by package ID and minification being off"
+  },
+  "obtainiumOnEmulator": {
+    "obtainium": "v1.6.15 app-release.apk installed on the same API 36 emulator",
+    "install": "EVA added from https://github.com/colonelpanic8/eva through the obtainium:// deep link; v0.2.4 eva.apk installed by Obtainium (installerPackageName=dev.imranr.obtainium) after allowing the unknown-app source; Play Protect prompted once and did not block",
+    "assistantRole": "granted to com.colonelpanic.eva; the assist keyevent brought EVA to the foreground from any app",
+    "typedAction": "'Open the wifi settings' handed off to com.android.settings Wi-Fi; EVA showed Handed off / Open a settings screen / Settings opened.",
+    "liveVoice": "Voice connected with gpt-live-1-codex and gpt-5.6-luna shown; VoiceSessionService isForeground=true types=0x80; ongoing notification present; Stop voice removed both",
+    "physicalPhone": "still absent from USB; nothing here was run on hardware"
   }
 }

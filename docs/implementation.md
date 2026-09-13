@@ -99,9 +99,13 @@ the foreground. The empty-catalog chat-only test still passes. Evidence:
 [2026-09-12-voice-action.json](../experiments/voice-poc/evidence/2026-09-12-voice-action.json).
 The published v0.2.4 release package, installed on the same emulator, connected
 a live voice session with the foreground service running as microphone type and
-its ongoing notification shown, and cleared both on Stop voice. The physical
-phone dropped off USB during the first attempt and had not returned, so the
-phone run is pending.
+its ongoing notification shown, and cleared both on Stop voice. Obtainium itself then
+installed v0.2.4 on that emulator from the GitHub release, EVA took the
+assistant role there, the assist gesture opened it from other apps, a typed
+request handed off to Wi-Fi settings, and a live voice session ran with the
+foreground service and its notification. The physical phone dropped off USB
+during the first attempt and had not returned, so nothing here is a hardware
+result yet.
 
 ## Development connection
 
