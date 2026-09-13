@@ -81,6 +81,9 @@ class VoiceAccess {
 /** Activity-retained, never saved: survives rotation, not process death. */
 class VoiceAccessModel : ViewModel() {
     val access = VoiceAccess()
+
+    /** Retained so a rotation does not reopen the microphone for a launch already answered. */
+    var launchHandled = false
     var denial by mutableStateOf<MicrophoneDenial?>(null)
         private set
 

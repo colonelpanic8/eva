@@ -74,6 +74,14 @@
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VOICE_COMMAND" />
+                <action android:name="android.intent.action.VOICE_ASSIST" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <!-- What a long-pressed headset button becomes: web search when open, hands free when locked. -->
+            <intent-filter>
+                <action android:name="android.speech.action.WEB_SEARCH" />
+                <action android:name="android.speech.action.VOICE_SEARCH_HANDS_FREE" />
 
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
