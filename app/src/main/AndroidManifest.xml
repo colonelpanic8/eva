@@ -6,6 +6,10 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <queries>
         <intent>
@@ -51,5 +55,11 @@
                 android:name="com.android.systemui.action_assist_icon"
                 android:resource="@mipmap/ic_launcher" />
         </activity>
+
+        <service
+            android:name=".audio.VoiceSessionService"
+            android:exported="false"
+            android:foregroundServiceType="microphone|mediaPlayback"
+            tools:targetApi="30" />
     </application>
 </manifest>

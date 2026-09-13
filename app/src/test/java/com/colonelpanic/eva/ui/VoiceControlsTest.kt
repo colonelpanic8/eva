@@ -43,8 +43,8 @@ class VoiceControlsTest {
             "Listen-only connected, speaker stopped",
             voiceStatusLabel(RealtimeMediaState.Connected(true), listenOnly.copy(playbackMuted = true)),
         )
-        assertEquals("Listen-only session · your microphone is off · phone actions unavailable", voiceSessionLabel(false))
-        assertEquals("Voice session · phone actions unavailable", voiceSessionLabel(true))
+        assertEquals("Listen-only session · your microphone is off", voiceSessionLabel(false))
+        assertEquals("Voice session · ask for a phone action or just talk", voiceSessionLabel(true))
     }
 
     @Test

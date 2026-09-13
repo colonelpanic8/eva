@@ -194,6 +194,13 @@ private class BrokerSession(
                         }
 
                         "backend-turn" -> {
+                            if (offerSdp != null && active == null) {
+                                // A spoken request has no typed input. The broker names the
+                                // delegated turn as the input so every later frame correlates.
+                                val voiceInput = message.string("inputId")
+                                check(voiceInput.startsWith("voice:") && voiceInput.length <= 128)
+                                active = ConversationInput(voiceInput, "")
+                            }
                             checkFrame(message)
                             check(providerTurnId == null)
                             providerTurnId = message.string("providerTurnId").also { check(it.isNotBlank()) }

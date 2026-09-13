@@ -57,6 +57,7 @@ class ProviderSessionController(
     private var attempt = 0
     private var currentInput: ConversationInput? = null
     private var claimedCall: String? = null
+    private var lastUserTranscript: String? = null
     private val definitions = registry.catalog.associateBy { it.id }
     private val catalog =
         ProviderToolCatalog(
@@ -117,7 +118,7 @@ class ProviderSessionController(
             scope.launch {
                 var openedSession: ConversationSession? = null
                 try {
-                    val connectionCatalog = if (microphone == null) catalog else ProviderToolCatalog("voice-no-tools-v1", emptyList())
+                    val connectionCatalog = catalog
                     val provider =
                         if (microphone == null) {
                             providerFactory(link)
@@ -152,7 +153,10 @@ class ProviderSessionController(
                                         "Ask for missing information. Never claim sending a message when only a draft was opened. " +
                                         clock()
                                 } else {
-                                    "You are EVA. Have a concise voice conversation. No phone actions are available in this session."
+                                    "You are EVA, a voice assistant running on the user's Android phone. " +
+                                        "Keep spoken replies short. Use the supplied tools for phone actions and say " +
+                                        "what the tool result reports. Never claim sending a message when only a draft was opened. " +
+                                        clock()
                                 },
                                 connectionCatalog,
                             ),
@@ -238,9 +242,21 @@ class ProviderSessionController(
                                 throw IllegalStateException(event.message)
                             }
 
-                            ProviderEvent.Closed, is ProviderEvent.ResponseStarted -> {}
+                            is ProviderEvent.ResponseStarted -> {
+                                if (currentInput == null) {
+                                    // Voice: the delegated turn is the input. Its transcript may
+                                    // still be in flight, so the request text is resolved at dispatch.
+                                    val input = ConversationInput(event.inputId, "")
+                                    currentInput = input
+                                    claimedCall = null
+                                    append(ConversationEntry(input.id, "", "Working on it…", EntryStatus.PENDING))
+                                }
+                            }
+
+                            ProviderEvent.Closed -> {}
 
                             is ProviderEvent.Transcript -> {
+                                if (event.role == "user") lastUserTranscript = event.text
                                 append(
                                     ConversationEntry(
                                         UUID.randomUUID().toString(),
@@ -364,7 +380,8 @@ class ProviderSessionController(
         val arguments = event.arguments.mapValues { (_, value) -> (value as? JsonPrimitive)?.content }
         val argumentError = if (arguments.values.any { it == null }) "This action binding requires scalar arguments." else null
         val id = "provider:${event.call.providerSessionId}:${event.call.callId}"
-        val proposal = ToolProposal(id, event.capabilityId, arguments.mapValues { it.value.orEmpty() }, input.text)
+        val request = input.text.ifBlank { lastUserTranscript ?: VOICE_REQUEST }
+        val proposal = ToolProposal(id, event.capabilityId, arguments.mapValues { it.value.orEmpty() }, request)
         append(ConversationEntry(id, "", "Preparing action…", EntryStatus.PENDING, actionTitle = definition.title))
         val job =
             scope.launch {
@@ -430,6 +447,7 @@ class ProviderSessionController(
     private fun finishInput(message: String) {
         val id = currentInput?.id
         currentInput = null
+        lastUserTranscript = null
         mutableState.update {
             it.copy(
                 isSubmitting = false,
@@ -445,6 +463,10 @@ class ProviderSessionController(
                     },
             )
         }
+    }
+
+    private companion object {
+        const val VOICE_REQUEST = "Voice request"
     }
 
     private fun clock(): String {

@@ -160,9 +160,9 @@ fun EvaApp(
 
 internal fun voiceSessionLabel(microphoneAvailable: Boolean): String =
     if (microphoneAvailable) {
-        "Voice session · phone actions unavailable"
+        "Voice session · ask for a phone action or just talk"
     } else {
-        "Listen-only session · your microphone is off · phone actions unavailable"
+        "Listen-only session · your microphone is off"
     }
 
 internal fun composerHint(state: ConversationState): String {

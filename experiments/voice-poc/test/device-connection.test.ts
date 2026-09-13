@@ -102,6 +102,102 @@ test("device connection authenticates, advertises its catalog and returns phone 
   }
 });
 
+test("voice with a catalog routes a delegated tool call to the phone and returns its result", async () => {
+  const original = process.env.EVA_CODEX_BIN;
+  process.env.EVA_CODEX_BIN = fileURLToPath(new URL("./fake-codex.mjs", import.meta.url));
+  const server = createServer();
+  const wss = new WebSocketServer({ server });
+  attachDeviceConnections(wss, "voice-tools");
+  server.listen(randomInt(40000, 60000), "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const client = new WebSocket(`ws://127.0.0.1:${address.port}/device`);
+  const events: RecordValue[] = [];
+  client.on("message", (raw) => {
+    const event = JSON.parse(raw.toString());
+    events.push(event);
+    if (event.kind === "authorized")
+      client.send(
+        JSON.stringify({
+          type: "start",
+          mode: "voice",
+          sdp: "v=0 test-offer",
+          catalogRevision: "voice-tools-1",
+          tools: [
+            {
+              name: "eva_tool_0",
+              description: "Start a countdown timer",
+              inputSchema: {
+                type: "object",
+                properties: { seconds: { type: "integer" } },
+                required: ["seconds"],
+                additionalProperties: false,
+              },
+            },
+          ],
+          instructions: "Talk to the user",
+        }),
+      );
+    if (event.kind === "tool-call")
+      client.send(
+        JSON.stringify({
+          type: "tool-result",
+          sessionId: event.sessionId,
+          inputId: event.inputId,
+          generationId: event.generationId,
+          providerTurnId: event.providerTurnId,
+          catalogRevision: event.catalogRevision,
+          callId: event.callId,
+          result: { status: "HANDED_OFF", message: "Timer started." },
+        }),
+      );
+  });
+  try {
+    await once(client, "open");
+    client.send(JSON.stringify({ version: 1, token: "voice-tools" }));
+    const deadline = Date.now() + 5000;
+    while (!events.some((event) => event.kind === "backend-completed")) {
+      assert.equal(
+        events.find((event) => event.kind === "error"),
+        undefined,
+      );
+      assert.ok(Date.now() < deadline, "Voice tool round trip timed out");
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    const turn = events.find((event) => event.kind === "backend-turn");
+    const call = events.find((event) => event.kind === "tool-call");
+    const completed = events.find((event) => event.kind === "backend-completed");
+    assert.ok(turn && call && completed);
+    // The delegated turn is the input: every frame of the exchange carries the same
+    // synthesized ID, so the phone can correlate without a typed request.
+    assert.equal(turn.inputId, "voice:voice-turn-1");
+    assert.equal(call.inputId, "voice:voice-turn-1");
+    assert.equal(call.generationId, "voice:voice-turn-1");
+    assert.equal(call.providerTurnId, "voice-turn-1");
+    assert.equal(call.tool, "eva_tool_0");
+    assert.deepEqual(call.arguments, { seconds: 180 });
+    assert.equal(completed.inputId, "voice:voice-turn-1");
+    assert.equal(completed.status, "completed");
+    const output = events.find((event) => event.kind === "backend-output");
+    assert.ok(output && String(output.text).includes("HANDED_OFF"));
+    // The user transcript arrived after the turn started and was passed through untouched.
+    assert.ok(events.some((event) => event.kind === "transcript" && event.role === "user"));
+    assert.equal(
+      events.find((event) => event.kind === "transcript" && event.role === "assistant")?.text,
+      "Timer set",
+    );
+    client.send(JSON.stringify({ type: "stop" }));
+    await once(client, "close");
+  } finally {
+    client.terminate();
+    wss.close();
+    server.close();
+    if (original === undefined) delete process.env.EVA_CODEX_BIN;
+    else process.env.EVA_CODEX_BIN = original;
+  }
+});
+
 test("voice negotiates an empty catalog and denies even a delegated tool call", async () => {
   const original = process.env.EVA_CODEX_BIN;
   process.env.EVA_CODEX_BIN = fileURLToPath(new URL("./fake-codex.mjs", import.meta.url));

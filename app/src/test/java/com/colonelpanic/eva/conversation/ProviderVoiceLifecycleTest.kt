@@ -5,9 +5,14 @@ import com.colonelpanic.eva.audio.MediaTimeline
 import com.colonelpanic.eva.audio.MicrophoneMode
 import com.colonelpanic.eva.audio.RealtimeMediaSession
 import com.colonelpanic.eva.audio.RealtimeMediaState
+import com.colonelpanic.eva.capability.CapabilityDefinition
 import com.colonelpanic.eva.capability.CapabilityDispatcher
 import com.colonelpanic.eva.capability.CapabilityRegistry
+import com.colonelpanic.eva.capability.ExecutionBackend
+import com.colonelpanic.eva.capability.ExecutionOutcome
+import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.MemoryInvocationRepository
+import com.colonelpanic.eva.providers.CallIdentity
 import com.colonelpanic.eva.providers.ConversationInput
 import com.colonelpanic.eva.providers.ConversationProvider
 import com.colonelpanic.eva.providers.ConversationSession
@@ -25,6 +30,10 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -51,7 +60,8 @@ class ProviderVoiceLifecycleTest {
                 provider.request.catalog.tools
                     .isEmpty(),
             )
-            assertTrue(provider.request.instructions.contains("No phone actions"))
+            assertFalse(provider.request.instructions.contains("No phone actions"))
+            assertTrue(provider.request.instructions.contains("supplied tools"))
             controller.submit("Open a map")
             advanceUntilIdle()
             assertEquals(0, provider.submissions)
@@ -126,6 +136,106 @@ class ProviderVoiceLifecycleTest {
             assertTrue(currentMedia.closed)
         }
 
+    @Test
+    fun `a delegated voice turn is the input and its tool call executes on the phone`() =
+        runTest {
+            val provider = VoiceProvider()
+            val media = VoiceMedia()
+            var executions = 0
+            val definition =
+                CapabilityDefinition(
+                    "test.timer",
+                    "Set a timer",
+                    "Start a countdown timer",
+                    Json
+                        .parseToJsonElement(
+                            """{"type":"object","properties":{"seconds":{"type":"integer","minimum":1}},
+                            "required":["seconds"],"additionalProperties":false}""",
+                        ).jsonObject,
+                )
+            val registry =
+                CapabilityRegistry(
+                    mapOf(
+                        definition.id to
+                            object : ExecutionBackend {
+                                override suspend fun unavailableReason(): String? = null
+
+                                override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome {
+                                    executions++
+                                    return ExecutionOutcome(InvocationStatus.HANDED_OFF, "Timer started.")
+                                }
+                            },
+                    ),
+                    listOf(definition),
+                )
+            val repository = MemoryInvocationRepository()
+            val controller =
+                ProviderSessionController(
+                    registry,
+                    CapabilityDispatcher(registry, repository),
+                    repository,
+                    this,
+                    { provider },
+                    { media },
+                    { _, _ -> provider },
+                )
+            advanceUntilIdle()
+            controller.connectVoice("test", listenOnly = false)
+            advanceUntilIdle()
+            assertEquals(
+                listOf("test.timer"),
+                provider.request.catalog.tools
+                    .map { it.capabilityId },
+            )
+            val revision = provider.request.catalog.revision
+
+            fun call(
+                turn: String,
+                callId: String,
+            ) = ProviderEvent.ToolCallReady(
+                CallIdentity("test-epoch", "test-session", "voice:$turn", "voice:$turn", turn, revision, callId),
+                definition.id,
+                buildJsonObject { put("seconds", 180) },
+            )
+
+            // The provider observed the turn starting before the user transcript landed.
+            provider.channel.send(ProviderEvent.ResponseStarted("voice:turn-1", "voice:turn-1"))
+            provider.channel.send(ProviderEvent.Transcript("user", "Set a timer for three minutes"))
+            provider.channel.send(call("turn-1", "call-1"))
+            advanceUntilIdle()
+            assertEquals(1, executions)
+            assertEquals("HANDED_OFF", provider.results.single().status)
+            assertEquals(
+                "voice:turn-1",
+                provider.results
+                    .single()
+                    .call.inputId,
+            )
+            assertEquals("Set a timer for three minutes", repository.history().single().request)
+            provider.channel.send(ProviderEvent.AssistantText("voice:turn-1", "Timer started.", false))
+            provider.channel.send(ProviderEvent.ResponseEnded("voice:turn-1", "completed"))
+            advanceUntilIdle()
+            assertEquals(ProviderStatus.CONNECTED, controller.state.value.providerStatus)
+            assertEquals(
+                "Timer started.",
+                controller.state.value.entries
+                    .first { it.id == "voice:turn-1" }
+                    .response,
+            )
+
+            // A second spoken request gets a fresh turn and a fresh one-action budget.
+            provider.channel.send(ProviderEvent.ResponseStarted("voice:turn-2", "voice:turn-2"))
+            provider.channel.send(call("turn-2", "call-2"))
+            advanceUntilIdle()
+            assertEquals(2, executions)
+            assertEquals("Voice request", repository.history().first { it.callId.endsWith("call-2") }.request)
+            provider.channel.send(ProviderEvent.ResponseEnded("voice:turn-2", "completed"))
+            advanceUntilIdle()
+            controller.disconnect()
+            advanceUntilIdle()
+            assertTrue(media.closed)
+        }
+
     private fun TestScope.controller(
         provider: VoiceProvider,
         mediaFactory: (MicrophoneMode) -> RealtimeMediaSession,
@@ -168,7 +278,11 @@ class ProviderVoiceLifecycleTest {
 
         override suspend fun requestResponse(request: ResponseRequest) = Unit
 
-        override suspend fun submitToolResult(result: CorrelatedToolResult) = error("Voice must not execute tools")
+        val results = mutableListOf<CorrelatedToolResult>()
+
+        override suspend fun submitToolResult(result: CorrelatedToolResult) {
+            results.add(result)
+        }
 
         override suspend fun close() {
             closes++

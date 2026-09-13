@@ -230,7 +230,9 @@ export class Session {
         count: this.turns.size,
         threads: this.backendThreads.size,
       });
-      if (this.turns.size > 8) this.fail(new Error("Backend-turn experiment limit reached"));
+      // The disposable harness caps turns; a phone session runs until the broker lifetime ends.
+      if (!this.runtime && this.turns.size > 8)
+        this.fail(new Error("Backend-turn experiment limit reached"));
     } else if (method === "turn/completed") {
       const id = String(record(params.turn).id ?? "");
       if (

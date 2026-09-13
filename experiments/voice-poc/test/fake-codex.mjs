@@ -24,6 +24,17 @@ createInterface({ input: process.stdin }).on("line", (line) => {
         turn: { id: "typed", status: "completed" },
       });
     }
+    if (msg.id === "voice-tool") {
+      if (!msg.result?.success) process.exit(4);
+      notify("item/completed", {
+        item: { type: "agentMessage", text: JSON.stringify(msg.result) },
+      });
+      notify("turn/completed", {
+        threadId: "test-thread",
+        turn: { id: "voice-turn-1", status: "completed" },
+      });
+      notify("thread/realtime/transcript/done", { role: "assistant", text: "Timer set" });
+    }
     if (msg.id === "tool" || msg.id === "repeat") {
       if (!msg.result?.success) process.exit(3);
       if (++resultCount === 2)
@@ -42,7 +53,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     catalog = params.dynamicTools ?? [];
     if (
       params.config?.mcp_servers?.unrelated?.enabled !== false ||
-      ![0, 2].includes(params.dynamicTools?.length) ||
+      ![0, 1, 2].includes(params.dynamicTools?.length) ||
       params.config?.features?.shell_tool !== false ||
       !params.ephemeral
     ) {
@@ -80,6 +91,26 @@ createInterface({ input: process.stdin }).on("line", (line) => {
           callId: "forbidden",
           tool: "open_map",
           arguments: {},
+        },
+      });
+      send({ id: msg.id, result });
+      return;
+    }
+    if (catalog.length === 1) {
+      notify("turn/started", { threadId: "test-thread", turn: { id: "voice-turn-1" } });
+      notify("thread/realtime/transcript/done", {
+        role: "user",
+        text: "Set a timer for three minutes",
+      });
+      send({
+        id: "voice-tool",
+        method: "item/tool/call",
+        params: {
+          threadId: "test-thread",
+          turnId: "voice-turn-1",
+          callId: "voice-call-1",
+          tool: catalog[0].name,
+          arguments: { seconds: 180 },
         },
       });
       send({ id: msg.id, result });

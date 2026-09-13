@@ -15,6 +15,10 @@ result evidence and distinguish required user resolution from completed executio
 This first integration permits one phone action per user request. Do not chain phone actions.
 Use ordinary language; the user does not need command syntax.`;
 
+const voiceInstructions = `${instructions}
+This is a spoken conversation. Keep replies brief. When a phone action is requested, delegate
+it and then say in one short sentence what the tool result reports.`;
+
 export function attachDeviceConnections(wss: WebSocketServer, token: string): void {
   let owner: WebSocket | undefined;
   wss.on("connection", (ws) => {
@@ -78,12 +82,16 @@ export function attachDeviceConnections(wss: WebSocketServer, token: string): vo
             (typeof msg.sdp !== "string" ||
               msg.sdp.length < 10 ||
               msg.sdp.length > 48_000 ||
-              !Array.isArray(msg.tools) ||
-              msg.tools.length !== 0)
+              !Array.isArray(msg.tools))
           )
-            throw new Error("Voice requires SDP and an empty catalog");
+            throw new Error("Voice requires SDP and a catalog array");
           if (!voice && msg.sdp !== undefined) throw new Error("SDP requires voice mode");
-          const tools = voice ? [] : deviceTools(msg.tools);
+          // An empty catalog in voice mode is a chat-only session; the model may not act.
+          const tools =
+            voice && Array.isArray(msg.tools) && msg.tools.length === 0
+              ? []
+              : deviceTools(msg.tools);
+          const chatOnly = voice && tools.length === 0;
           relay = new ToolRelay(
             tools,
             (event) => {
@@ -99,15 +107,23 @@ export function attachDeviceConnections(wss: WebSocketServer, token: string): vo
           session = new Session(
             (event) => {
               if (
-                voice &&
+                chatOnly &&
                 ["backend-turn", "backend-completed", "backend-output", "dispatch"].includes(
                   event.kind,
                 )
               )
                 return;
               try {
-                if (event.kind === "backend-turn")
-                  relay?.startGeneration(String(event.providerTurnId ?? ""));
+                if (event.kind === "backend-turn") {
+                  const providerTurnId = String(event.providerTurnId ?? "");
+                  // A spoken request has no typed input. The delegated backend turn is
+                  // the unit the phone correlates against, so it becomes the input.
+                  if (voice && !inputId) {
+                    inputId = `voice:${providerTurnId}`;
+                    relay?.beginInput(inputId);
+                  }
+                  relay?.startGeneration(providerTurnId);
+                }
                 if (event.kind === "backend-completed") relay?.completeInput();
               } catch (error) {
                 session?.fail(error);
@@ -125,10 +141,12 @@ export function attachDeviceConnections(wss: WebSocketServer, token: string): vo
             },
             {
               tools,
-              chatOnly: voice,
-              instructions: voice
+              chatOnly,
+              instructions: chatOnly
                 ? "You are EVA. Have a concise voice conversation. No phone actions are available in this session."
-                : instructions,
+                : voice
+                  ? voiceInstructions
+                  : instructions,
               execute: relay.execute,
             },
           );

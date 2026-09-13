@@ -1,7 +1,10 @@
 package com.colonelpanic.eva
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -27,10 +30,17 @@ class MainActivity : ComponentActivity() {
 
     private val eva get() = application as EvaApplication
 
+    private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
+
     private fun startVoice(
         link: String,
         listenOnly: Boolean,
     ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
         perform(voice.update { start(link, listenOnly, MicrophonePermission.isGranted(this@MainActivity)) })
     }
 
@@ -92,11 +102,6 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         eva.intentHost.attach(this)
-    }
-
-    override fun onStop() {
-        if (!isChangingConfigurations) eva.controller.stopVoiceOnBackground()
-        super.onStop()
     }
 
     override fun onPause() {
