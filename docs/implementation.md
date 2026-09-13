@@ -11,13 +11,24 @@ actual dispatcher outcomes. The development `/device` WebSocket uses an ephemera
 broker code and localhost forwarding. Subscription credentials stay on the host;
 there is no native OpenAI login or API-key fallback.
 
-Bundled map search, driving navigation, and message drafting are described by
-`CapabilityDefinition` records with closed JSON Schemas. The registry and UI no
-longer switch on capability IDs. Generic schema validation covers closed/nested
-objects, bounded scalars, and enums; arrays and nullable values are rejected.
-Current native backend argument maps still accept strings only. Nested schemas
-are supported at the model boundary, but execution adapters for structured native
-arguments and a package importer remain follow-up work.
+Twelve bundled capabilities are described by `CapabilityDefinition` records with
+closed JSON Schemas: map search, driving navigation, message drafting, alarms,
+timers, dialing, web search, opening a URL, email drafting, calendar events,
+launching an installed app, and opening a settings screen. All but the first
+three share one generic `IntentBackend`. The registry and UI do not switch on
+capability IDs. Generic schema validation covers closed/nested objects, bounded
+scalars, and enums; arrays and nullable values are rejected.
+
+Backends still receive flat string arguments, so `ToolSchema.coerce` restores
+each property's declared scalar type before the dispatcher revalidates. Integer
+and boolean parameters therefore work end to end; structured object arguments at
+the execution boundary and a package importer remain follow-up work.
+
+EVA declares `ACTION_ASSIST` and `ACTION_VOICE_COMMAND`, so it can be selected as
+the system digital assistant and launched by the assistant gesture. `MainActivity`
+is `singleTask` and reuses its instance for a later assist launch. Typed-mode
+instructions carry the user's current local time and Unix epoch milliseconds so
+alarms and calendar events can be scheduled from relative language.
 
 The phone pins a catalog revision to each connection and independently permits
 one action per input. The dispatcher validates, claims, and durably records
@@ -72,8 +83,10 @@ provider history seeding, or physical audio quality claim is included.
 4. Disconnect before changing modes. Each connection starts fresh model context;
    local action receipts remain. The broker lifetime is ten minutes.
 
-Cleartext is permitted only for localhost in the debug build on API 24+.
-API 23 and release builds retain the application-wide cleartext prohibition. The device endpoint
+Cleartext is permitted only for `127.0.0.1` and `localhost`, in every build type
+on API 24+, because an Obtainium-installed release build reaches the broker over
+the same adb-forwarded loopback socket. Every remote host still refuses
+cleartext, and API 23 retains the application-wide prohibition. The device endpoint
 rejects browser origins and non-loopback peers. This is a development bridge, not
 a completed remote-pairing or production authentication flow.
 

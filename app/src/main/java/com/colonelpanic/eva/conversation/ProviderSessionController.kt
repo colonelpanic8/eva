@@ -147,8 +147,10 @@ class ProviderSessionController(
                         provider.open(
                             SessionOpenRequest(
                                 if (microphone == null) {
-                                    "You are EVA. Help conversationally and use the supplied tools for phone actions. " +
-                                        "Ask for missing information. Never claim sending a message when only a draft was opened."
+                                    "You are EVA, an assistant running on the user's Android phone. " +
+                                        "Help conversationally and use the supplied tools for phone actions. " +
+                                        "Ask for missing information. Never claim sending a message when only a draft was opened. " +
+                                        clock()
                                 } else {
                                     "You are EVA. Have a concise voice conversation. No phone actions are available in this session."
                                 },
@@ -349,8 +351,8 @@ class ProviderSessionController(
                 else -> ToolSchema.error(definition.inputSchema, event.arguments)
             }
         if (claimedCall == null) claimedCall = event.call.callId
-        val arguments = event.arguments.mapValues { (_, value) -> (value as? JsonPrimitive)?.takeIf { it.isString }?.content }
-        val argumentError = if (arguments.values.any { it == null }) "This action binding requires string arguments." else null
+        val arguments = event.arguments.mapValues { (_, value) -> (value as? JsonPrimitive)?.content }
+        val argumentError = if (arguments.values.any { it == null }) "This action binding requires scalar arguments." else null
         val id = "provider:${event.call.providerSessionId}:${event.call.callId}"
         val proposal = ToolProposal(id, event.capabilityId, arguments.mapValues { it.value.orEmpty() }, input.text)
         append(ConversationEntry(id, "", "Preparing action…", EntryStatus.PENDING, actionTitle = definition.title))
@@ -433,6 +435,13 @@ class ProviderSessionController(
                     },
             )
         }
+    }
+
+    private fun clock(): String {
+        val now = java.util.Calendar.getInstance()
+        val format = java.text.SimpleDateFormat("EEEE yyyy-MM-dd HH:mm zzz", java.util.Locale.US)
+        return "The user's current local time is ${format.format(now.time)}, " +
+            "which is ${now.timeInMillis} in Unix milliseconds."
     }
 
     private fun append(entry: ConversationEntry) = upsert(entry)

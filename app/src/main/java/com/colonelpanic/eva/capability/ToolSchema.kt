@@ -11,6 +11,29 @@ import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 
 object ToolSchema {
+    /**
+     * Rebuilds a JSON object from a backend's flat string arguments, restoring the
+     * scalar type each property declares. A value that does not parse stays a string
+     * so schema validation rejects it.
+     */
+    fun coerce(
+        schema: JsonObject,
+        arguments: Map<String, String>,
+    ): JsonObject {
+        val properties = schema["properties"] as? JsonObject
+        return JsonObject(
+            arguments.mapValues { (key, value) ->
+                val declared = ((properties?.get(key) as? JsonObject)?.get("type") as? JsonPrimitive)?.contentOrNull
+                when (declared) {
+                    "integer" -> value.toLongOrNull()?.let { JsonPrimitive(it) }
+                    "number" -> value.toDoubleOrNull()?.let { JsonPrimitive(it) }
+                    "boolean" -> value.toBooleanStrictOrNull()?.let { JsonPrimitive(it) }
+                    else -> null
+                } ?: JsonPrimitive(value)
+            },
+        )
+    }
+
     fun check(
         schema: JsonObject,
         depth: Int = 0,
