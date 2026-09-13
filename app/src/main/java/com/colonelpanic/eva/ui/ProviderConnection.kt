@@ -20,12 +20,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.colonelpanic.eva.conversation.ConversationState
 import com.colonelpanic.eva.conversation.ProviderStatus
+import com.colonelpanic.eva.providers.openai.SignInState
 
 @Composable
 internal fun ProviderConnection(
@@ -36,6 +38,11 @@ internal fun ProviderConnection(
     hasApiKey: Boolean = false,
     onSaveApiKey: (String) -> Unit = {},
     onClearApiKey: () -> Unit = {},
+    account: String? = null,
+    signIn: SignInState = SignInState.Idle,
+    onSignIn: () -> Unit = {},
+    onCancelSignIn: () -> Unit = {},
+    onSignOut: () -> Unit = {},
     textModel: String = "",
     realtimeModel: String = "",
     availableTextModels: List<String> = emptyList(),
@@ -49,36 +56,35 @@ internal fun ProviderConnection(
 ) {
     var listenOnly by remember { mutableStateOf(false) }
     var link by remember { mutableStateOf("") }
-    var apiKey by remember { mutableStateOf("") }
-    val ready = (hasApiKey || link.isNotBlank()) && !state.isLoading && state.errorMessage == null
+    var showApiKey by remember { mutableStateOf(false) }
+    val usable = !state.isLoading && state.errorMessage == null
+    val ready = (account != null || hasApiKey || link.isNotBlank()) && usable
+
+    /** Speech has no subscription path yet, so voice needs its own readiness. */
+    val voiceReady = (hasApiKey || link.isNotBlank()) && usable
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (state.providerStatus == ProviderStatus.DISCONNECTED) {
             if (denial != null) {
                 MicrophoneDenied(denial, onRetryMicrophone, onListenOnlyInstead, onDismissDenial)
             } else {
-                if (hasApiKey) {
+                if (account != null) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("OpenAI API key saved on this phone", style = MaterialTheme.typography.bodySmall)
-                        TextButton(onClick = onClearApiKey) { Text("Remove") }
+                        Text(account, style = MaterialTheme.typography.bodySmall)
+                        TextButton(onClick = onSignOut) { Text("Sign out") }
                     }
-                    ModelPicker("Text model", textModel, availableTextModels, onSelectTextModel)
-                    ModelPicker("Voice model", realtimeModel, availableRealtimeModels, onSelectRealtimeModel)
                 } else {
-                    OutlinedTextField(
-                        value = apiKey,
-                        onValueChange = { apiKey = it },
-                        label = { Text("OpenAI API key") },
-                        visualTransformation = PasswordVisualTransformation(),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    OutlinedButton(
-                        onClick = {
-                            onSaveApiKey(apiKey)
-                            apiKey = ""
-                        },
-                        enabled = apiKey.isNotBlank(),
-                    ) { Text("Save key on this phone") }
+                    ChatGptSignIn(signIn, onSignIn, onCancelSignIn)
+                }
+                ApiKeyField(
+                    hasApiKey = hasApiKey,
+                    expanded = showApiKey || hasApiKey,
+                    onExpand = { showApiKey = true },
+                    onSaveApiKey = onSaveApiKey,
+                    onClearApiKey = onClearApiKey,
+                )
+                if (account != null || hasApiKey) {
+                    ModelPicker("Text model", textModel, availableTextModels, onSelectTextModel)
+                    if (hasApiKey) ModelPicker("Voice model", realtimeModel, availableRealtimeModels, onSelectRealtimeModel)
                 }
                 OutlinedTextField(
                     value = link,
@@ -100,8 +106,15 @@ internal fun ProviderConnection(
                             onVoice(link, listenOnly)
                             link = ""
                         },
-                        enabled = ready,
+                        enabled = voiceReady,
                     ) { Text(if (listenOnly) "Start listen-only" else "Start voice") }
+                }
+                if (account != null && !hasApiKey && link.isBlank()) {
+                    Text(
+                        "Your subscription covers typed chat. Voice needs an API key or a paired host.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(
@@ -125,6 +138,100 @@ internal fun ProviderConnection(
             }
         }
         state.providerMessage?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+    }
+}
+
+/**
+ * Shows the one-time code and where to approve it. Nothing is typed on the phone, which is
+ * what lets a subscription sign-in work here at all.
+ */
+@Composable
+private fun ChatGptSignIn(
+    signIn: SignInState,
+    onSignIn: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    val uriHandler = LocalUriHandler.current
+    when (signIn) {
+        is SignInState.Requesting -> {
+            Text("Asking OpenAI for a sign-in code…", style = MaterialTheme.typography.bodySmall)
+        }
+
+        is SignInState.Waiting -> {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Open the sign-in page and enter this code:", style = MaterialTheme.typography.bodySmall)
+                Text(signIn.userCode, style = MaterialTheme.typography.headlineSmall)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { uriHandler.openUri(signIn.verificationUrl) }) { Text("Open sign-in page") }
+                    TextButton(onClick = onCancel) { Text("Cancel") }
+                }
+                Text(
+                    "${signIn.verificationUrl} · the code expires in 15 minutes",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        is SignInState.Failed -> {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(signIn.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                Button(onClick = onSignIn) { Text("Sign in with ChatGPT") }
+            }
+        }
+
+        is SignInState.Idle -> {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Button(onClick = onSignIn) { Text("Sign in with ChatGPT") }
+                Text(
+                    "Typed chat is then covered by your ChatGPT subscription.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+/** The metered alternative, kept out of the way until it is asked for. */
+@Composable
+private fun ApiKeyField(
+    hasApiKey: Boolean,
+    expanded: Boolean,
+    onExpand: () -> Unit,
+    onSaveApiKey: (String) -> Unit,
+    onClearApiKey: () -> Unit,
+) {
+    var apiKey by remember { mutableStateOf("") }
+    when {
+        hasApiKey -> {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("OpenAI API key saved on this phone", style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = onClearApiKey) { Text("Remove") }
+            }
+        }
+
+        !expanded -> {
+            TextButton(onClick = onExpand) { Text("Use an API key instead") }
+        }
+
+        else -> {
+            OutlinedTextField(
+                value = apiKey,
+                onValueChange = { apiKey = it },
+                label = { Text("OpenAI API key") },
+                visualTransformation = PasswordVisualTransformation(),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedButton(
+                onClick = {
+                    onSaveApiKey(apiKey)
+                    apiKey = ""
+                },
+                enabled = apiKey.isNotBlank(),
+            ) { Text("Save key on this phone") }
+        }
     }
 }
 

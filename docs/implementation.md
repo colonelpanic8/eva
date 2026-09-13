@@ -147,6 +147,50 @@ opt-in `OpenAiVoiceActionLiveTest` runs the spoken-timer scenario against the
 real API when given `evaOpenAiKey`; no key was available on this machine, so
 that run is pending.
 
+## Subscription sign-in on the phone
+
+A ChatGPT account can now pay for typed conversation instead of a metered key.
+EVA requests a device code from `auth.openai.com/api/accounts/deviceauth/usercode`,
+shows the code, and polls `/deviceauth/token` until the code is approved in a
+browser on any device; a pending code answers 403 or 404, so those are wait
+states. The approval returns an authorization code together with the PKCE pair
+the account generated for it, which is exchanged at `/oauth/token`. Nothing is
+typed on the phone and no redirect has to reach it, which is what makes this
+usable from the assistant surface. The account issues tokens to the public
+client id the official command-line client uses; EVA cannot register one of its
+own against a ChatGPT account.
+
+Tokens are encrypted with the same non-exportable Keystore key as an API key,
+in the same backup-excluded file, and refreshed under a mutex when the access
+token is within two minutes of expiry, so two sessions cannot spend one refresh
+token twice. The ID token's claims supply the account id, plan, and email shown
+in the app.
+
+Subscription turns go to `chatgpt.com/backend-api/codex/responses`. Two things
+differ from the public API and are handled in the same adapter: the backend
+declines to store a response, so `previous_response_id` continuity is replaced
+by the phone resending the conversation, and it answers as an event stream, so
+output items are collected from `response.output_item.done` into the shape the
+stored path returns. The model list is `models[].slug` from
+`{base}/models?client_version=`, which requires a plain three-part version and
+lists text models only. `SubscriptionAccess` and `ApiKeyAccess` differ only in
+URL, headers, and those two flags; the session, controller, dispatcher, and
+journal are unchanged.
+
+Speech is not covered. The account's realtime path is a WebRTC call joined by a
+separate sideband WebSocket rather than the `oai-events` data channel EVA
+speaks, and no speech model appears in the subscription model list, so voice
+still needs an API key or the paired host and the app says so rather than
+failing at connect.
+
+Verification: the device-code request and the subscription responses call,
+including a custom EVA tool being selected and its arguments returned, were
+exercised against the live services from a workstation before the adapter was
+written; the token endpoint rejects a bogus code with the structured error the
+app surfaces. The approval-to-token exchange and refresh are covered by JVM
+tests against canned traffic, not by a live approval. Signing in on a phone,
+and a subscription-backed conversation from the app itself, are unverified.
+
 ## Development connection
 
 1. Start `direnv exec . npm start` in `experiments/voice-poc`. Each broker gets a
@@ -166,7 +210,7 @@ a completed remote-pairing or production authentication flow.
 
 ## Verification
 
-The integrated provider/voice build passes `just check`: 57 JVM tests, ktlint,
+The integrated provider/voice build passes `just check`: 78 JVM tests, ktlint,
 fatal Android lint, and APK assembly. The broker passes 17 tests, including
 empty-catalog voice negotiation and unconditional voice tool rejection.
 The latest focused emulator run passed four tests: receive-only/live offer
@@ -272,7 +316,8 @@ path, not completed network pairing or native login UI.
 The [provider contract](provider-contract.md) remains the target beyond this
 restricted slice. Next work includes controlled voice tool delegation, resolution
 tokens and confirmation, richer backend arguments, imported capability packages,
-provider-independent history/notices, and authenticated remote pairing.
+provider-independent history/notices, subscription-backed speech, and
+authenticated remote pairing.
 
 A [live provider contract probe](../experiments/voice-poc/evidence/2026-09-12-provider-contract.json)
 verified nested schema acceptance and strict backend turn identity against the

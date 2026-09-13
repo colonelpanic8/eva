@@ -48,6 +48,7 @@ import com.colonelpanic.eva.conversation.ConversationEntry
 import com.colonelpanic.eva.conversation.ConversationState
 import com.colonelpanic.eva.conversation.EntryStatus
 import com.colonelpanic.eva.conversation.ProviderStatus
+import com.colonelpanic.eva.providers.openai.SignInState
 import com.colonelpanic.eva.ui.theme.EvaTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -61,6 +62,11 @@ fun EvaApp(
     hasApiKey: Boolean = false,
     onSaveApiKey: (String) -> Unit = {},
     onClearApiKey: () -> Unit = {},
+    account: String? = null,
+    signIn: SignInState = SignInState.Idle,
+    onSignIn: () -> Unit = {},
+    onCancelSignIn: () -> Unit = {},
+    onSignOut: () -> Unit = {},
     textModel: String = "",
     realtimeModel: String = "",
     availableTextModels: List<String> = emptyList(),
@@ -110,23 +116,28 @@ fun EvaApp(
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
                 )
                 ProviderConnection(
-                    state,
-                    onConnect,
-                    onDisconnect,
-                    onVoice,
-                    hasApiKey,
-                    onSaveApiKey,
-                    onClearApiKey,
-                    textModel,
-                    realtimeModel,
-                    availableTextModels,
-                    availableRealtimeModels,
-                    onSelectTextModel,
-                    onSelectRealtimeModel,
-                    denial,
-                    onRetryMicrophone,
-                    onListenOnlyInstead,
-                    onDismissDenial,
+                    state = state,
+                    onConnect = onConnect,
+                    onDisconnect = onDisconnect,
+                    onVoice = onVoice,
+                    hasApiKey = hasApiKey,
+                    onSaveApiKey = onSaveApiKey,
+                    onClearApiKey = onClearApiKey,
+                    account = account,
+                    signIn = signIn,
+                    onSignIn = onSignIn,
+                    onCancelSignIn = onCancelSignIn,
+                    onSignOut = onSignOut,
+                    textModel = textModel,
+                    realtimeModel = realtimeModel,
+                    availableTextModels = availableTextModels,
+                    availableRealtimeModels = availableRealtimeModels,
+                    onSelectTextModel = onSelectTextModel,
+                    onSelectRealtimeModel = onSelectRealtimeModel,
+                    denial = denial,
+                    onRetryMicrophone = onRetryMicrophone,
+                    onListenOnlyInstead = onListenOnlyInstead,
+                    onDismissDenial = onDismissDenial,
                 )
                 if (state.voiceMode && state.providerStatus != ProviderStatus.DISCONNECTED) {
                     Text(

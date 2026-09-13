@@ -28,30 +28,30 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import java.util.UUID
 
 /** Typed turns straight from the phone over the OpenAI Responses API, with function calling. */
 class OpenAiResponsesProvider(
-    private val apiKey: String,
+    private val access: OpenAiAccess,
     private val model: String = OpenAiModels.TEXT,
     private val client: OkHttpClient = OkHttpClient(),
-    private val baseUrl: String = OpenAiModels.BASE_URL,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-    private val catalog: OpenAiModelCatalog = OpenAiModelCatalog(client, baseUrl, ioDispatcher),
+    private val catalog: OpenAiModelCatalog = OpenAiModelCatalog(client, ioDispatcher),
 ) : ConversationProvider {
     /**
      * Unlike a realtime session, a typed session has nothing to negotiate, so "connected"
      * would otherwise mean only that a screen changed. Listing the account's models proves
-     * the key works and the chosen model exists before anything is claimed.
+     * the credentials work and the chosen model exists before anything is claimed.
      */
     override suspend fun open(request: SessionOpenRequest): ConversationSession {
         require(request.catalog.tools.size <= 32)
         request.catalog.tools.forEach { ToolSchema.check(it.inputSchema) }
-        val known = catalog.load(apiKey).values.flatten()
+        val known = catalog.load(access).values.flatten()
         check(known.isEmpty() || model in known) {
             "This account cannot use $model. Choose another text model."
         }
-        return OpenAiResponsesSession(apiKey, model, client, baseUrl, request, toolNames(request.catalog.tools), ioDispatcher)
+        return OpenAiResponsesSession(access, model, client, request, toolNames(request.catalog.tools), ioDispatcher)
     }
 }
 
@@ -66,10 +66,9 @@ private sealed interface Command {
 }
 
 private class OpenAiResponsesSession(
-    private val apiKey: String,
+    private val access: OpenAiAccess,
     private val model: String,
     private val client: OkHttpClient,
-    private val baseUrl: String,
     private val request: SessionOpenRequest,
     private val tools: Map<String, ProviderToolDefinition>,
     private val ioDispatcher: CoroutineDispatcher,
@@ -79,28 +78,21 @@ private class OpenAiResponsesSession(
     private val commands = Channel<Command>(Channel.UNLIMITED)
     private var buffered: ConversationInput? = null
     private var previousResponseId: String? = null
+
+    /** Only needed where the provider keeps nothing: the phone then resends the conversation. */
+    private val history = mutableListOf<JsonElement>()
     private val pending = mutableMapOf<String, CallIdentity>()
     private val json = Json { ignoreUnknownKeys = true }
 
     override val events: Flow<ProviderEvent> =
         flow {
-            emit(ProviderEvent.Account(OpenAiModels.ACCOUNT_LABEL))
+            emit(ProviderEvent.Account(access.label))
             emit(ProviderEvent.Connected(sessionId, request.catalog.revision, model))
             for (command in commands) {
                 val input = (command as? Command.Respond)?.input ?: continue
                 emit(ProviderEvent.ResponseStarted(input.id, input.id))
                 try {
-                    var body =
-                        post(
-                            JsonArray(
-                                listOf(
-                                    buildJsonObject {
-                                        put("role", "user")
-                                        put("content", input.text)
-                                    },
-                                ),
-                            ),
-                        )
+                    var body = post(JsonArray(listOf(userMessage(input.text))))
                     while (true) {
                         val responseId = body.str("id") ?: error("The provider returned no response ID.")
                         previousResponseId = responseId
@@ -159,33 +151,117 @@ private class OpenAiResponsesSession(
             emit(ProviderEvent.Closed)
         }
 
+    /**
+     * The stored path shipped with the plain content form; the subscription backend is
+     * exercised with the explicit item form, so each keeps the shape it was proven against.
+     */
+    private fun userMessage(text: String): JsonObject =
+        if (access.serverKeepsHistory) {
+            buildJsonObject {
+                put("role", "user")
+                put("content", text)
+            }
+        } else {
+            buildJsonObject {
+                put("type", "message")
+                put("role", "user")
+                put(
+                    "content",
+                    JsonArray(
+                        listOf(
+                            buildJsonObject {
+                                put("type", "input_text")
+                                put("text", text)
+                            },
+                        ),
+                    ),
+                )
+            }
+        }
+
     private suspend fun post(input: JsonArray): JsonObject =
         withContext(ioDispatcher) {
             val payload =
                 buildJsonObject {
                     put("model", model)
                     put("instructions", request.instructions)
-                    put("input", input)
-                    put("store", true)
-                    previousResponseId?.let { put("previous_response_id", it) }
+                    put("input", if (access.serverKeepsHistory) input else JsonArray(history + input))
+                    put("store", access.serverKeepsHistory)
+                    put("stream", !access.serverKeepsHistory)
+                    if (access.serverKeepsHistory) previousResponseId?.let { put("previous_response_id", it) }
                     if (tools.isNotEmpty()) {
                         put("tools", functionTools(tools, strict = false))
                         put("tool_choice", "auto")
                     }
                 }
             val http =
-                Request
-                    .Builder()
-                    .url("$baseUrl/v1/responses")
-                    .header("Authorization", "Bearer $apiKey")
+                access
+                    .authorize(Request.Builder().url(access.responsesUrl))
+                    .header("Accept", if (access.serverKeepsHistory) "application/json" else "text/event-stream")
                     .post(payload.toString().toRequestBody("application/json".toMediaType()))
                     .build()
-            client.newCall(http).execute().use { response ->
-                val text = response.body.string()
-                check(response.isSuccessful) { openAiErrorMessage(response.code, text, "the request") }
-                json.parseToJsonElement(text).jsonObject
+            val body =
+                client.newCall(http).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        error(openAiErrorMessage(response.code, response.body.string(), "the request"))
+                    }
+                    if (access.serverKeepsHistory) {
+                        json.parseToJsonElement(response.body.string()).jsonObject
+                    } else {
+                        collectStream(response)
+                    }
+                }
+            if (!access.serverKeepsHistory) {
+                history.addAll(input)
+                history.addAll(body["output"]?.jsonArray.orEmpty())
+            }
+            body
+        }
+
+    /**
+     * A streamed response delivers its items one event at a time and leaves the completion
+     * event's own output empty, so the items are collected into the same shape the stored
+     * path returns and the rest of the session cannot tell the two apart.
+     */
+    private fun collectStream(response: Response): JsonObject {
+        val items = mutableListOf<JsonElement>()
+        var id: String? = null
+        var status = "completed"
+        val source = response.body.source()
+        while (true) {
+            val line = source.readUtf8Line() ?: break
+            if (!line.startsWith("data:")) continue
+            val data = line.removePrefix("data:").trim()
+            if (data.isEmpty() || data == "[DONE]") continue
+            val event = runCatching { json.parseToJsonElement(data).jsonObject }.getOrNull() ?: continue
+            when (val type = event.str("type")) {
+                "response.output_item.done" -> {
+                    event["item"]?.let { items += it }
+                }
+
+                "error" -> {
+                    error(streamFailure(event.obj("error")))
+                }
+
+                else -> {
+                    if (type != null && type.startsWith("response.")) {
+                        val body = event.obj("response") ?: continue
+                        id = body.str("id") ?: id
+                        body.str("status")?.let { status = it }
+                        body.obj("error")?.let { error(streamFailure(it)) }
+                    }
+                }
             }
         }
+        return buildJsonObject {
+            id?.let { put("id", it) }
+            put("status", status)
+            put("output", JsonArray(items))
+        }
+    }
+
+    private fun streamFailure(error: JsonObject?): String =
+        "OpenAI rejected the request: ${error?.str("message")?.trim()?.take(300) ?: "no reason was given"}"
 
     override suspend fun submit(input: ConversationInput) {
         check(buffered == null)

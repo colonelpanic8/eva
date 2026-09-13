@@ -2,6 +2,7 @@ package com.colonelpanic.eva.providers.openai
 
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.jsonObject
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -56,13 +57,21 @@ class OpenAiModelCatalogTest {
             val catalog =
                 OpenAiModelCatalog(
                     client(200, """{"data":[{"id":"gpt-6-astra"},{"id":"gpt-realtime-2.1"},{"id":"tts-1"}]}"""),
-                    "https://example.test",
                     StandardTestDispatcher(testScheduler),
                 )
-            val kinds = catalog.load("sk-test")
+            val kinds = catalog.load(ApiKeyAccess("sk-test", "https://example.test"))
             assertEquals(listOf("gpt-6-astra"), kinds[ModelKind.TEXT])
             assertEquals(listOf("gpt-realtime-2.1"), kinds[ModelKind.REALTIME])
         }
+
+    @Test
+    fun `a subscription account lists its models by slug`() {
+        val body =
+            kotlinx.serialization.json.Json
+                .parseToJsonElement("""{"models":[{"slug":"gpt-6-astra"},{"slug":"gpt-5.5"}]}""")
+                .jsonObject
+        assertEquals(listOf("gpt-6-astra", "gpt-5.5"), OpenAiModelCatalog.identifiers(body))
+    }
 
     @Test
     fun `a rejected list surfaces the provider message`() =
@@ -70,10 +79,9 @@ class OpenAiModelCatalogTest {
             val catalog =
                 OpenAiModelCatalog(
                     client(401, """{"error":{"message":"Incorrect API key provided"}}"""),
-                    "https://example.test",
                     StandardTestDispatcher(testScheduler),
                 )
-            val error = runCatching { catalog.load("sk-bad") }.exceptionOrNull()
+            val error = runCatching { catalog.load(ApiKeyAccess("sk-bad", "https://example.test")) }.exceptionOrNull()
             assertTrue(error is IllegalStateException)
             assertTrue(error!!.message!!.contains("Incorrect API key provided"))
         }

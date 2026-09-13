@@ -82,6 +82,8 @@ class MainActivity : ComponentActivity() {
             val textModel by eva.settings.textModelFlow.collectAsStateWithLifecycle()
             val realtimeModel by eva.settings.realtimeModelFlow.collectAsStateWithLifecycle()
             val models by eva.availableModels.collectAsStateWithLifecycle()
+            val account by eva.chatGpt.account.collectAsStateWithLifecycle()
+            val signIn by eva.signIn.state.collectAsStateWithLifecycle()
             EvaTheme {
                 EvaApp(
                     state = state,
@@ -97,6 +99,11 @@ class MainActivity : ComponentActivity() {
                         eva.settings.clearApiKey()
                         eva.refreshModels()
                     },
+                    account = account?.description,
+                    signIn = signIn,
+                    onSignIn = eva::startChatGptSignIn,
+                    onCancelSignIn = eva::cancelChatGptSignIn,
+                    onSignOut = eva::signOutChatGpt,
                     textModel = textModel,
                     realtimeModel = realtimeModel,
                     availableTextModels = models[ModelKind.TEXT].orEmpty(),

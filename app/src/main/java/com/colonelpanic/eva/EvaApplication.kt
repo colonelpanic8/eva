@@ -14,16 +14,22 @@ import com.colonelpanic.eva.capability.CapabilityDispatcher
 import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.conversation.ProviderSessionController
 import com.colonelpanic.eva.conversation.ProviderStatus
+import com.colonelpanic.eva.data.ChatGptAccountStore
 import com.colonelpanic.eva.data.OpenAiSettings
 import com.colonelpanic.eva.data.SqliteInvocationRepository
 import com.colonelpanic.eva.providers.BrokerConversationProvider
 import com.colonelpanic.eva.providers.BrokerEndpoint
+import com.colonelpanic.eva.providers.openai.ApiKeyAccess
+import com.colonelpanic.eva.providers.openai.ChatGptSignIn
 import com.colonelpanic.eva.providers.openai.ModelKind
+import com.colonelpanic.eva.providers.openai.OpenAiAccess
 import com.colonelpanic.eva.providers.openai.OpenAiModelCatalog
 import com.colonelpanic.eva.providers.openai.OpenAiRealtimeProvider
 import com.colonelpanic.eva.providers.openai.OpenAiResponsesProvider
+import com.colonelpanic.eva.providers.openai.SubscriptionAccess
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -43,22 +49,54 @@ class EvaApplication : Application() {
     private val mediaFactory by lazy { WebRtcMediaSessionFactory(this) }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val settings by lazy { OpenAiSettings(this) }
+    val chatGpt by lazy { ChatGptAccountStore(this) }
+    val signIn by lazy { ChatGptSignIn(save = chatGpt::save) }
+    private var signInJob: Job? = null
     private val catalog = OpenAiModelCatalog()
     private val mutableModels = MutableStateFlow<Map<ModelKind, List<String>>>(emptyMap())
 
-    /** Models this account can use, empty until a key is present and the list loads. */
+    /** Models this account can use, empty until credentials are present and the list loads. */
     val availableModels = mutableModels.asStateFlow()
+
+    private val clientVersion by lazy {
+        runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull()
+    }
+
+    /** A subscription is already paid for, so it is preferred when a key is also present. */
+    private fun access(): OpenAiAccess? =
+        when {
+            chatGpt.signedIn -> SubscriptionAccess(chatGpt, clientVersion.orEmpty())
+            settings.apiKey() != null -> ApiKeyAccess(settings.requireApiKey())
+            else -> null
+        }
 
     /** Best effort: the picker still accepts a typed model name when this fails. */
     fun refreshModels() {
-        val key =
-            settings.apiKey() ?: run {
+        val access =
+            access() ?: run {
                 mutableModels.value = emptyMap()
                 return
             }
         scope.launch {
-            mutableModels.value = runCatching { catalog.load(key) }.getOrDefault(emptyMap())
+            mutableModels.value = runCatching { catalog.load(access) }.getOrDefault(emptyMap())
         }
+    }
+
+    /** Signing in needs no browser on the phone: a code is approved on whatever device has one. */
+    fun startChatGptSignIn() {
+        if (signInJob?.isActive == true) return
+        signInJob = scope.launch { if (signIn.run()) refreshModels() }
+    }
+
+    fun cancelChatGptSignIn() {
+        signInJob?.cancel()
+        signIn.reset()
+    }
+
+    fun signOutChatGpt() {
+        cancelChatGptSignIn()
+        chatGpt.clear()
+        refreshModels()
     }
 
     val registry by lazy {
@@ -100,7 +138,8 @@ class EvaApplication : Application() {
             // A blank link means the phone talks to OpenAI itself; a link means the paired host bridge.
             providerFactory = { link ->
                 if (link.isBlank()) {
-                    OpenAiResponsesProvider(settings.requireApiKey(), settings.textModel)
+                    val access = access() ?: error("Sign in with ChatGPT, add an API key, or paste a paired host link.")
+                    OpenAiResponsesProvider(access, settings.textModel)
                 } else {
                     BrokerConversationProvider(BrokerEndpoint.parse(link))
                 }
@@ -108,7 +147,11 @@ class EvaApplication : Application() {
             mediaFactory = { mode -> mediaFactory.create(RealtimeMediaConfig(mode)) },
             voiceProviderFactory = { link, audio ->
                 if (link.isBlank()) {
-                    OpenAiRealtimeProvider(settings.requireApiKey(), audio, settings.realtimeModel)
+                    // A subscription sign-in carries typed turns only; speech still needs a key or a host.
+                    val key =
+                        settings.apiKey()
+                            ?: error("Voice needs an OpenAI API key on this phone, or a paired host link.")
+                    OpenAiRealtimeProvider(key, audio, settings.realtimeModel)
                 } else {
                     val endpoint = BrokerEndpoint.parse(link)
                     BrokerConversationProvider(endpoint, offerSdp = audio.createOffer(), onAnswer = audio::acceptAnswer)

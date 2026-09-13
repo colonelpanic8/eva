@@ -2,6 +2,17 @@
 
 All notable changes to EVA will be documented here.
 
+## [0.4.0] - 2026-09-13
+
+### Added
+
+- Sign in with your ChatGPT account instead of an API key. EVA shows a one-time code, you approve it in a browser on any device, and typed conversation is then covered by your subscription rather than billed per token. The tokens are encrypted with the Android Keystore, refreshed as they expire, and excluded from backups.
+
+### Changed
+
+- A ChatGPT sign-in is used first when both it and an API key are present, and the key now sits behind "Use an API key instead".
+- Voice still needs an API key or a paired host. A subscription covers typed conversation only.
+
 ## [0.3.2] - 2026-09-13
 
 ### Fixed

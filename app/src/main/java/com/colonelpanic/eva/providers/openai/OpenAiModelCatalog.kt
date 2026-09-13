@@ -19,32 +19,28 @@ enum class ModelKind { TEXT, REALTIME }
  */
 class OpenAiModelCatalog(
     private val client: OkHttpClient = OkHttpClient(),
-    private val baseUrl: String = OpenAiModels.BASE_URL,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
-    suspend fun load(apiKey: String): Map<ModelKind, List<String>> =
+    suspend fun load(access: OpenAiAccess): Map<ModelKind, List<String>> =
         withContext(ioDispatcher) {
-            val request =
-                Request
-                    .Builder()
-                    .url("$baseUrl/v1/models")
-                    .header("Authorization", "Bearer $apiKey")
-                    .build()
+            val request = access.authorize(Request.Builder().url(access.modelsUrl)).build()
             val body =
                 client.newCall(request).execute().use { response ->
                     val text = response.body.string()
                     check(response.isSuccessful) { openAiErrorMessage(response.code, text, "the model list") }
                     Json.parseToJsonElement(text).jsonObject
                 }
-            val ids =
-                body["data"]
-                    ?.jsonArray
-                    .orEmpty()
-                    .mapNotNull { (it as? JsonObject)?.str("id") }
-            classify(ids)
+            classify(identifiers(body))
         }
 
     companion object {
+        /** The public API lists `data[].id`; a subscription account lists `models[].slug`. */
+        internal fun identifiers(body: JsonObject): List<String> =
+            (body["data"] ?: body["models"])
+                ?.jsonArray
+                .orEmpty()
+                .mapNotNull { (it as? JsonObject)?.let { entry -> entry.str("id") ?: entry.str("slug") } }
+
         /**
          * Realtime sessions only accept speech-to-speech models; offering a text model there
          * produces a confusing server rejection at connect time. Names are matched rather than
