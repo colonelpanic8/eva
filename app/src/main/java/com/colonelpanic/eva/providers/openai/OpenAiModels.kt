@@ -14,7 +14,24 @@ object OpenAiModels {
     /** Text model for typed turns over the Responses API. */
     const val TEXT = "gpt-6-astra"
 
-    const val TRANSCRIPTION = "gpt-4o-transcribe"
+    const val TRANSCRIPTION = "gpt-transcribe"
+
+    /**
+     * Input transcription is a second model pass that only produces the on-screen captions; the
+     * speech model hears the audio itself. Accuracy is therefore worth more than latency here, so
+     * the transcriber is given the most audio context it offers.
+     */
+    const val TRANSCRIPTION_DELAY = "high"
+
+    val TRANSCRIPTION_LANGUAGES = listOf("en")
+
+    const val TRANSCRIPTION_PROMPT =
+        "Spoken commands to EVA, a voice assistant on an Android phone. Expect contact names, app names, " +
+            "and short requests to call, text, email, navigate, search, set alarms and timers, and open apps."
+
+    /** Keeps the session payload bounded when a large address book supplies the names. */
+    const val TRANSCRIPTION_KEYWORD_LIMIT = 200
+
     const val BASE_URL = "https://api.openai.com"
     const val ACCOUNT_LABEL = "OpenAI API key"
 }

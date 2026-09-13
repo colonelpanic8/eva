@@ -255,11 +255,39 @@ class ProviderVoiceLifecycleTest {
             assertTrue(media.closed)
         }
 
+    @Test
+    fun `contact keywords reach a spoken session and are never gathered for a typed one`() =
+        runTest {
+            val provider = VoiceProvider()
+            var reads = 0
+            val controller =
+                controller(provider, { VoiceMedia() }, voiceKeywords = {
+                    reads++
+                    listOf("Ana Beltrán")
+                })
+            advanceUntilIdle()
+
+            controller.connect("test")
+            advanceUntilIdle()
+            assertEquals(emptyList<String>(), provider.request.keywords)
+            assertEquals(0, reads)
+            controller.disconnect()
+            advanceUntilIdle()
+
+            controller.connectVoice("test", listenOnly = false)
+            advanceUntilIdle()
+            assertEquals(listOf("Ana Beltrán"), provider.request.keywords)
+            assertEquals(1, reads)
+            controller.disconnect()
+            advanceUntilIdle()
+        }
+
     private fun TestScope.controller(
         provider: VoiceProvider,
         mediaFactory: (MicrophoneMode) -> RealtimeMediaSession,
         voiceProviderFactory: suspend (String, RealtimeMediaSession) -> ConversationProvider = { _, _ -> provider },
         voiceLookupRetries: () -> Int = { 5 },
+        voiceKeywords: suspend () -> List<String> = { emptyList() },
     ): ProviderSessionController {
         val registry = CapabilityRegistry(emptyMap(), emptyList())
         val repository = MemoryInvocationRepository()
@@ -272,6 +300,7 @@ class ProviderVoiceLifecycleTest {
             mediaFactory,
             voiceProviderFactory,
             voiceLookupRetries,
+            voiceKeywords,
         )
     }
 

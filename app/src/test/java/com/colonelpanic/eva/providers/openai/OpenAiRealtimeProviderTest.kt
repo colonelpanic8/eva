@@ -71,13 +71,17 @@ class OpenAiRealtimeProviderTest {
                     client,
                     ioDispatcher = StandardTestDispatcher(testScheduler),
                 )
-            val session = provider.open(SessionOpenRequest("You are EVA.", catalog))
+            val session = provider.open(SessionOpenRequest("You are EVA.", catalog, listOf("Ana Beltrán", "", "Ana Beltrán")))
             assertEquals("v=0 answer", media.answer)
             val posted = requests.single()
             assertTrue(posted.contains("Bearer").not())
             assertTrue(posted.contains("\"type\":\"realtime\""))
             assertTrue(posted.contains("eva_tool_0"))
-            assertTrue(posted.contains("gpt-4o-transcribe"))
+            assertTrue(posted.contains("gpt-transcribe"))
+            assertTrue(posted.contains("\"delay\":\"high\""))
+            assertTrue(posted.contains("\"languages\":[\"en\"]"))
+            // Blanks and duplicates are dropped so the keyword list stays useful to the transcriber.
+            assertTrue(posted.contains("\"keywords\":[\"Ana Beltrán\"]"))
             val events = mutableListOf<ProviderEvent>()
             val collector = launch { session.events.collect { events += it } }
             media.incoming.send("""{"type":"session.created","session":{"id":"sess_1","model":"gpt-realtime-2.1"}}""")

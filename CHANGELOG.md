@@ -2,6 +2,13 @@
 
 All notable changes to EVA will be documented here.
 
+## [0.7.0] - 2026-09-13
+
+### Changed
+
+- Spoken captions are noticeably more accurate. Voice sessions now transcribe with `gpt-transcribe`, tell it what it is listening to, pin the language, and trade caption latency for word accuracy. The speech model always heard the audio itself, so this changes what you read, not what EVA understands. The new model also costs less per minute than the one it replaces.
+- Contact names you have already granted EVA access to are sent as transcription keywords, so spoken names are captioned with the spelling your phone knows. Names are read only when contacts access was already granted, never for typed sessions, and are limited to the 200 most-contacted.
+
 ## [0.6.0] - 2026-09-13
 
 ### Added

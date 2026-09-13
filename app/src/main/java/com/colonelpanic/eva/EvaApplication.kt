@@ -4,6 +4,7 @@ import android.app.Application
 import android.os.Build
 import com.colonelpanic.eva.adapters.android.AndroidIntentHost
 import com.colonelpanic.eva.adapters.android.AppFunctionsBackend
+import com.colonelpanic.eva.adapters.android.ContactNameKeywords
 import com.colonelpanic.eva.adapters.android.ContactsQueryBackend
 import com.colonelpanic.eva.adapters.android.IntentBackend
 import com.colonelpanic.eva.adapters.android.MapIntentBackend
@@ -156,6 +157,7 @@ class EvaApplication : Application() {
             },
         )
     }
+    private val contactKeywords by lazy { ContactNameKeywords(this) }
     val controller by lazy {
         val repository = SqliteInvocationRepository(this)
         ProviderSessionController(
@@ -183,6 +185,7 @@ class EvaApplication : Application() {
             repository = repository,
             scope = scope,
             voiceLookupRetries = { settings.voiceLookupRetries },
+            voiceKeywords = { contactKeywords.names() },
         ).also { controller ->
             scope.launch {
                 controller.state
