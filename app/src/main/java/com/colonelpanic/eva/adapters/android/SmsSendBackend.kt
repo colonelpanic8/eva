@@ -37,7 +37,9 @@ fun interface SmsSender {
 class SmsSendBackend(
     context: Context,
     private val host: AndroidIntentHost,
+    private val targets: MessageTargets,
     private val sender: SmsSender = platformSender(context),
+    private val groupSender: MmsSender = platformGroupSender(context),
 ) : ExecutionBackend {
     private val app = context.applicationContext
 
@@ -49,12 +51,23 @@ class SmsSendBackend(
         }
 
     override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome {
-        val recipient = arguments.getValue("recipient").trim()
         val message = arguments.getValue("message")
+        val target =
+            when (val resolved = targets.resolve(arguments)) {
+                is MessageTargets.Target.Refused -> return resolved.outcome
+                is MessageTargets.Target.Recipients -> resolved
+            }
         if (!host.ensurePermission(Manifest.permission.SEND_SMS)) {
             return ExecutionOutcome(InvocationStatus.NOT_EXECUTED, SmsSendResults.PERMISSION_DENIED)
         }
-        return SmsSendResults.describe(recipient, message, sender.send(recipient, message))
+        val numbers = target.numbers.map(MessageRecipients::normalize)
+        val destination = target.conversation?.let(ConversationSummaries::participants) ?: numbers.joinToString(", ")
+        // Several recipients have to travel as one MMS; separate texts would fragment the conversation.
+        return if (numbers.size == 1) {
+            SmsSendResults.describe(destination, message, sender.send(numbers.single(), message))
+        } else {
+            SmsSendResults.describeGroup(destination, message, groupSender.send(numbers, message))
+        }
     }
 
     companion object {
@@ -65,6 +78,13 @@ class SmsSendBackend(
                 PlatformSmsSender(context)
             } else {
                 SmsSender { _, _ -> SmsSendReport(0, failureCode = SmsSendResults.NO_SMS_SERVICE) }
+            }
+
+        private fun platformGroupSender(context: Context): MmsSender =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                PlatformMmsSender(context)
+            } else {
+                MmsSender { _, _ -> MmsSendReport(unsupported = MmsSendReport.NO_SERVICE) }
             }
     }
 }

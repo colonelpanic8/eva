@@ -44,14 +44,16 @@ class NativeCommandsTest {
         }
 
     @Test
-    fun `message recipient injection multiple recipients and empty bodies are rejected`() =
+    fun `message recipient injection, missing addressing, and empty bodies are rejected`() =
         runTest {
             val arguments =
                 listOf(
                     mapOf("recipient" to "2025550100;2025550101", "message" to "Hello"),
                     mapOf("recipient" to "2025550100?body=Injected", "message" to "Hello"),
-                    mapOf("recipient" to "2025550100,2025550101", "message" to "Hello"),
                     mapOf("recipient" to "Kat", "message" to "Hello"),
+                    mapOf("recipient" to "2025550100", "conversationId" to "12", "message" to "Hello"),
+                    mapOf("message" to "Hello"),
+                    mapOf("conversationId" to "0", "message" to "Hello"),
                     mapOf("recipient" to "2025550100", "message" to ""),
                     mapOf("recipient" to "2025550100", "message" to "a".repeat(801)),
                     mapOf("recipient" to "2025550100", "message" to "Hello\u0000world"),
@@ -62,6 +64,17 @@ class NativeCommandsTest {
                 assertEquals(InvocationStatus.NOT_EXECUTED, result.status)
             }
             assertEquals(emptyList<Pair<String, Map<String, String>>>(), received)
+        }
+
+    @Test
+    fun `a group of numbers and an existing conversation both reach the backend`() =
+        runTest {
+            val group = mapOf("recipient" to "2025550100, 2025550101", "message" to "Hello")
+            val thread = mapOf("conversationId" to "12", "message" to "Hello")
+            listOf(group, thread).forEachIndexed { index, args ->
+                dispatcher.execute(ToolProposal("group:$index", CapabilityRegistry.SMS_COMPOSE, args, "text test"))
+            }
+            assertEquals(listOf(CapabilityRegistry.SMS_COMPOSE to group, CapabilityRegistry.SMS_COMPOSE to thread), received)
         }
 
     @Test

@@ -11,13 +11,14 @@ actual dispatcher outcomes. The development `/device` WebSocket uses an ephemera
 broker code and localhost forwarding. Subscription credentials stay on the host;
 there is no native OpenAI login or API-key fallback.
 
-Seventeen bundled capabilities are described by `CapabilityDefinition` records with
+Nineteen bundled capabilities are described by `CapabilityDefinition` records with
 closed JSON Schemas: map search, driving navigation, message drafting, sending a
-text message, alarms, timers, dialing, web search, opening a URL, email drafting,
-calendar events, launching an installed app, opening a settings screen, contacts
-search, and three typed device-state operations. The intent operations other than
+text message, conversation search, conversation reading, alarms, timers, dialing,
+web search, opening a URL, email drafting, calendar events, launching an installed
+app, opening a settings screen, contacts search, and three typed device-state
+operations. The intent operations other than
 map search, navigation, and message drafting share one generic `IntentBackend`;
-contacts, SMS sending, and device state have query-specific backends.
+contacts, messaging, and device state have query-specific backends.
 Contacts search reads phone numbers matching a
 name through `ContactsContract`, requests `READ_CONTACTS` on first use through
 the resumed Activity, and completes with the matches in its outcome message so
@@ -55,6 +56,60 @@ returns `UNKNOWN` and tells the model the text may still have been delivered
 rather than claiming a send. The capability is unavailable below Android 12 or on
 a device without a cellular radio, and `android.hardware.telephony` is declared
 as not required.
+
+## Conversations as message targets
+
+A group text has no phone number, so the threads already on the phone are the only
+way to address one. `eva.android.messages.conversations` lists them newest first
+from `content://mms-sms/conversations?simple=true`, resolves each thread's
+`recipient_ids` through the shared canonical-address table, and names participants
+through `PhoneLookup` when contacts access was already granted; an optional query
+keeps only threads with a matching participant. `eva.android.messages.history`
+reads one thread back oldest message first, merging `content://sms` rows with
+`content://mms` rows and their `text/plain` parts, because a group conversation is
+made of MMS and an SMS-only read would show just its replies. MMS timestamps are
+seconds where SMS timestamps are milliseconds, and both are normalised before the
+merge. Both operations request `READ_SMS` on first use through the resumed
+Activity; scans are bounded and message bodies are previewed rather than dumped.
+
+Both message capabilities now accept either `recipient`, which may carry several
+comma-separated numbers, or a `conversationId` from that search, and exactly one of
+the two. `MessageTargets` resolves the argument to a recipient list; each number is
+validated on its own and encoded on its own, so a multi-recipient draft URI can
+still only be joined by the separator EVA writes. One recipient sends as SMS
+exactly as before. Several recipients send as a single MMS `M-Send.req` built by
+`MmsPdu`: WSP binary headers, an insert-address token for the sender, one `To` per
+recipient, and a `multipart.mixed` body holding one UTF-8 `text/plain` part. The
+PDU is written to a private cache file handed to `SmsManager.sendMultimediaMessage`
+through a non-exported `FileProvider`, and deleted once the send resolves. Fanning
+a group message out as separate SMS messages is deliberately not a fallback: it
+would create one-to-one threads that neither side sees as the conversation the user
+asked for. When `getCarrierConfigValues` reports multimedia or group messaging off,
+the outcome says so and points at the draft action instead.
+
+RCS is out of reach for what EVA sends itself: Android publishes no third-party API
+for it — `android.telephony.ims` exposes only `ImsRcsManager` and `RcsUceAdapter`,
+which report capability and registration — and `sendMultimediaMessage` goes through
+the telephony stack rather than the user's messaging app, so a group EVA sends is
+always MMS. The draft handoff is the exception: `eva.android.messages.compose` gives
+a multi-recipient `smsto:` URI to whichever app owns messaging, and that app may send
+it as an RCS group chat.
+
+What EVA can read is the messaging app's storage decision rather than a platform
+guarantee. Google Messages keeps RCS in its own store, which is why backup tools
+cannot see RCS either; an app that wrote RCS into the telephony provider would simply
+appear. The case to design for is partial visibility, not absence: a chat that has
+moved to RCS usually still has older SMS or MMS history, so its thread is listed with
+a stale snippet and reads back missing everything recent. `ConversationSummaries`
+therefore marks every read as the text-message side only, and an empty read says an
+RCS chat looks like this rather than reporting an empty conversation.
+
+The group send path is implemented and unit-tested at the encoding and result
+layers, but it has not yet been exercised against a carrier on a device; the PDU
+layout, carrier acceptance, and the sent-broadcast timing still need a device pass.
+That pass should also settle two open questions: whether a sent group MMS appears in
+the sender's own messaging app, and whether a recipient's client shows it inside an
+existing RCS conversation or beside it.
 
 Verified on the Pixel 11 Pro Fold (Android 17, API 37) from the registered
 backend: one text to the tester's own number completed in 1,030 ms with the
@@ -157,7 +212,8 @@ The app owns its controller across Activity recreation. Intent adapters require
 a resumed surface and hold only a weak Activity reference. Database work runs off
 Main. The latest 100 action receipts appear in history; chat/transcripts are
 session-only. Journal backup and device transfer remain disabled. Map/navigation
-results establish handoff only, and SMS capabilities open drafts without sending.
+results establish handoff only; the send capability reports what the platform
+confirmed, and the compose capability only opens a draft.
 The local parser remains available only as a test/diagnostic implementation.
 
 ## Native realtime voice

@@ -1,6 +1,8 @@
 package com.colonelpanic.eva.capability
 
 import com.colonelpanic.eva.adapters.android.ContactField
+import com.colonelpanic.eva.adapters.android.ConversationSummaries
+import com.colonelpanic.eva.adapters.android.MessageRecipients
 import com.colonelpanic.eva.adapters.android.NativeIntents
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -25,12 +27,16 @@ object BundledCapabilities {
     private val messageSchema =
         schema(
             """
-        {"type":"object","properties":{"recipient":{"type":"string","minLength":3,"maxLength":26},
+        {"type":"object","properties":{
+        "recipient":{"type":"string","minLength":3,"maxLength":300,
+        "description":"One phone number, or several separated by commas to start a group message"},
+        "conversationId":{"type":"integer","minimum":1,
+        "description":"An existing conversation from the conversation search; use this instead of recipient to reach a group"},
         "message":{"type":"string","minLength":1,"maxLength":800}},
-        "required":["recipient","message"],"additionalProperties":false}
+        "required":["message"],"additionalProperties":false}
     """,
         )
-    private val phone = Regex("\\+?[0-9][0-9 ()-]{2,24}")
+    private val phone = MessageRecipients.phone
 
     val definitions =
         listOf(
@@ -51,7 +57,7 @@ object BundledCapabilities {
             CapabilityDefinition(
                 CapabilityRegistry.SMS_COMPOSE,
                 "Prepare a text message",
-                "Open a text message draft addressed to one explicit phone number. " +
+                "Open a text message draft addressed to explicit phone numbers or to an existing conversation. " +
                     "The user sends it in their messaging app, so use this only when they ask to review the text first " +
                     "or when sending directly is unavailable. Does not send an SMS.",
                 messageSchema,
@@ -60,9 +66,12 @@ object BundledCapabilities {
             CapabilityDefinition(
                 CapabilityRegistry.SMS_SEND,
                 "Send a text message",
-                "Send a text message to one explicit phone number without opening another app. " +
+                "Send a text message without opening another app, to one phone number, to several at once, " +
+                    "or to an existing conversation given its conversationId. " +
                     "Use this for hands-free requests to text someone. " +
-                    "When the user names a person, find the number with the contacts search first and use the best match. " +
+                    "When the user names a person, find the number with the contacts search first and use the best match; " +
+                    "when they mean a group or an ongoing thread, find it with the conversation search and send to its " +
+                    "conversationId, which keeps the message in that one conversation instead of starting separate threads. " +
                     "Sending cannot be undone, so confirm the wording first when the user has not dictated it.",
                 messageSchema,
                 ::validateMessage,
@@ -211,6 +220,43 @@ object BundledCapabilities {
                 if (query.isBlank() || query.any { it.isISOControl() }) "Enter part of a name." else null
             },
             CapabilityDefinition(
+                CapabilityRegistry.CONVERSATIONS_SEARCH,
+                "Find text conversations",
+                "List the text conversations already on this phone, newest first, naming who is in each one and " +
+                    "its conversationId. Use this whenever the user means an existing thread or a group chat: a group " +
+                    "has no phone number of its own, so its conversationId is the only way to text it. An optional " +
+                    "query keeps only conversations with a matching participant name or number. " +
+                    "Returns matches only; it opens and sends nothing.",
+                schema(
+                    """
+                {"type":"object","properties":{
+                "query":{"type":"string","minLength":1,"maxLength":100,
+                "description":"Part of a participant's name or number; omit for the most recent conversations"},
+                "limit":{"type":"integer","minimum":1,"maximum":${ConversationSummaries.MAX_CONVERSATIONS}}},
+                "required":[],"additionalProperties":false}
+            """,
+                ),
+            ) { args ->
+                val query = args["query"].orEmpty()
+                if (query.any(Char::isISOControl)) "Enter part of a name or number." else null
+            },
+            CapabilityDefinition(
+                CapabilityRegistry.CONVERSATION_READ,
+                "Read a conversation",
+                "Read the most recent messages in one conversation, oldest last, with who sent each one and how long " +
+                    "ago. Use it to catch up on a thread, to check what a reply should answer, or to confirm a " +
+                    "conversation is the one the user meant. Find the conversationId with the conversation search first.",
+                schema(
+                    """
+                {"type":"object","properties":{
+                "conversationId":{"type":"integer","minimum":1},
+                "limit":{"type":"integer","minimum":1,"maximum":${ConversationSummaries.MAX_MESSAGES},
+                "description":"How many recent messages to read; defaults to the maximum"}},
+                "required":["conversationId"],"additionalProperties":false}
+            """,
+                ),
+            ),
+            CapabilityDefinition(
                 CapabilityRegistry.OPEN_SETTINGS,
                 "Open a settings screen",
                 "Open one of the device's settings screens. EVA cannot change a setting directly.",
@@ -269,11 +315,20 @@ object BundledCapabilities {
     private fun List<String>.quoted() = joinToString(",", "[", "]") { "\"$it\"" }
 
     private fun validateMessage(args: Map<String, String>): String? {
-        val recipient = args.getValue("recipient")
+        val recipient = args["recipient"]?.trim().orEmpty()
+        val conversation = args["conversationId"]?.trim().orEmpty()
         val body = args.getValue("message")
         return when {
-            !phone.matches(recipient) || recipient.count { it in '0'..'9' } !in 3..15 -> {
-                "Enter one valid phone number."
+            recipient.isEmpty() == conversation.isEmpty() -> {
+                "Address the message with either recipient or conversationId, not both."
+            }
+
+            recipient.isNotEmpty() && MessageRecipients.parse(recipient) == null -> {
+                MessageRecipients.INVALID
+            }
+
+            conversation.isNotEmpty() && (conversation.toLongOrNull() ?: 0L) <= 0L -> {
+                "Use a conversationId returned by the conversation search."
             }
 
             body.isBlank() || body.any { it.isISOControl() && it != '\n' && it != '\t' } -> {

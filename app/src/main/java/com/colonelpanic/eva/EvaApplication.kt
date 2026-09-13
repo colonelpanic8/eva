@@ -9,6 +9,9 @@ import com.colonelpanic.eva.adapters.android.ContactsQueryBackend
 import com.colonelpanic.eva.adapters.android.IntentBackend
 import com.colonelpanic.eva.adapters.android.MapIntentBackend
 import com.colonelpanic.eva.adapters.android.MessageIntentBackend
+import com.colonelpanic.eva.adapters.android.MessageTargets
+import com.colonelpanic.eva.adapters.android.MessagingReadBackend
+import com.colonelpanic.eva.adapters.android.MessagingStore
 import com.colonelpanic.eva.adapters.android.NativeIntents
 import com.colonelpanic.eva.adapters.android.NavigationIntentBackend
 import com.colonelpanic.eva.adapters.android.ShizukuShellHost
@@ -53,6 +56,8 @@ class EvaApplication : Application() {
         build: (Map<String, String>) -> android.content.Intent?,
     ) = IntentBackend(intentHost, success, missing, build)
 
+    private val messagingStore by lazy { MessagingStore(this) }
+    private val messageTargets by lazy { MessageTargets(intentHost, messagingStore) }
     private val mediaFactory by lazy { WebRtcMediaSessionFactory(this) }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val settings by lazy { OpenAiSettings(this) }
@@ -113,9 +118,13 @@ class EvaApplication : Application() {
                     mapOf(
                         CapabilityRegistry.MAP_SEARCH to MapIntentBackend(intentHost),
                         CapabilityRegistry.NAVIGATE to NavigationIntentBackend(intentHost),
-                        CapabilityRegistry.SMS_COMPOSE to MessageIntentBackend(intentHost),
-                        CapabilityRegistry.SMS_SEND to SmsSendBackend(this@EvaApplication, intentHost),
+                        CapabilityRegistry.SMS_COMPOSE to MessageIntentBackend(intentHost, messageTargets),
+                        CapabilityRegistry.SMS_SEND to SmsSendBackend(this@EvaApplication, intentHost, messageTargets),
                         CapabilityRegistry.CONTACTS_SEARCH to ContactsQueryBackend(this@EvaApplication, intentHost),
+                        CapabilityRegistry.CONVERSATIONS_SEARCH to
+                            MessagingReadBackend(intentHost, messagingStore, MessagingReadBackend.Operation.CONVERSATIONS),
+                        CapabilityRegistry.CONVERSATION_READ to
+                            MessagingReadBackend(intentHost, messagingStore, MessagingReadBackend.Operation.MESSAGES),
                         CapabilityRegistry.SET_ALARM to
                             intent("Alarm set.", "No clock app accepted this alarm.", NativeIntents::alarm),
                         CapabilityRegistry.SET_TIMER to
