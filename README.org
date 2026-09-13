@@ -3,18 +3,42 @@
 
 * Status
 
-EVA is an open, extensible Android assistant project. This repository currently
-contains a minimal native Kotlin and Jetpack Compose application shell plus its
-development, CI, signing, release, and self-hosted F-Droid foundation.
+EVA is an open, extensible Android assistant project. The Kotlin/Compose app
+connects to a development broker using the host's existing ChatGPT login.
+Natural-language typed requests reach a model, which can select map search,
+navigation, and message-draft capabilities from EVA's catalog. The phone validates
+and journals actions before dispatch; message drafts are not direct SMS sends.
+The local command parser remains a diagnostic/test harness.
 
-The app does *not* yet listen to audio, call a model, execute Android actions,
-or connect to Paseo. No microphone, assistant-role, package-query, accessibility,
-or Shizuku permissions are requested by the scaffold. Shizuku and AppFunctions
-are unverified, optional experiments rather than baseline dependencies.
+Native realtime WebRTC voice is implemented as a separate conversation mode,
+with microphone permission, listen-only negotiation, mute controls, audio focus,
+and cleanup. Voice mode currently has no phone tools. Physical microphone,
+speaker, and acoustic interruption behavior still require a phone test.
+An opt-in [[file:docs/native-voice-testing.md][native speech test]] verifies generated speech, live transcripts,
+and decoded provider audio on the emulator.
+The broker keeps subscription credentials on the host; native account login,
+remote pairing, and standalone operation are not implemented.
+
+Paseo, AppFunctions, capability-package import, and privileged extensions are not
+integrated. A separate [[file:experiments/device-control/README.md][device-control experiment]] verified Shizuku-backed
+screenshots, UI inspection, text replacement and touch on an Android 16 emulator.
+The [[file:experiments/voice-poc/README.md][browser voice POC]] remains the regression harness for subscription-backed
+speech and counter tools through the host-side Codex process.
 
 The proposed product direction and acceptance scenarios live in
 [[file:docs/design.md][docs/design.md]]. That document is an outline, not a description of working
 features.
+
+The proposed component boundaries, provider and capability interfaces, extension
+contracts, and implementation sequence live in
+[[file:docs/architecture.md][docs/architecture.md]]. Voice feasibility experiments are tracked separately in
+[[file:docs/proof-of-concept.md][docs/proof-of-concept.md]].
+
+The [[file:docs/device-control-extension.md][device-control extension design]] uses the same general package and capability
+API, with Shizuku behind versioned native operations and shared result artifacts.
+
+Implemented boundaries, limitations, and the plan for adapting the merged voice
+POC are recorded in [[file:docs/implementation.md][docs/implementation.md]].
 
 * Foundation
 
@@ -24,7 +48,8 @@ features.
 - compile/target SDK 37, minimum SDK 23, JDK 17
 - Stock Android APIs and documented intents are the intended useful baseline
 - Paseo is the first planned substantial remote adapter
-- Provider and privileged-extension libraries are intentionally absent
+- OkHttp carries broker control; WebRTC carries native audio directly to the provider
+- Privileged-extension libraries remain absent
 
 * Development
 
