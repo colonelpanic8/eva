@@ -90,3 +90,24 @@ utterance identity and interruption signal that survives event ordering across
 the media and control streams, then test overlapping speech, late transcripts,
 duplicate handoffs, and calls arriving after invalidation. Binding the next
 backend turn by arrival order alone is not sufficient evidence of that contract.
+
+## Voice action test
+
+`NativeVoiceActionLiveTest` drives the production controller with synthetic
+speech that asks for a timer, and asserts the delegated tool call, the Clock
+handoff, the journaled utterance, the spoken confirmation, and that the session
+is still connected five seconds after Clock takes the foreground.
+
+```sh
+espeak -w /tmp/q.wav -s 140 "Set a timer for three minutes."
+ffmpeg -y -i /tmp/q.wav -af 'adelay=800:all=1,apad=pad_dur=1.5' -ar 48000 -ac 1 -f s16le /tmp/eva-voice-timer.pcm
+adb -s DEVICE push /tmp/eva-voice-timer.pcm /data/local/tmp/eva-voice-timer.pcm
+adb -s DEVICE shell am instrument -w \
+  -e class com.colonelpanic.eva.providers.NativeVoiceActionLiveTest \
+  -e evaSpeechPcmPath /data/local/tmp/eva-voice-timer.pcm \
+  -e evaBrokerLink "$EVA_BROKER_LINK" \
+  com.colonelpanic.eva.debug.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+The test waits for journal recovery before connecting; `connectVoice` is a
+no-op while history is loading, which is why the UI disables the button then.

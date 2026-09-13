@@ -66,44 +66,39 @@ The controller owns provider teardown on disconnect, terminal events, event-stre
 completion, and failures. A canceled setup that returns late is closed without
 replacing a newer connection.
 
-Voice is explicitly **no-tools conversation mode**: an empty catalog is required,
-and every provider tool request is rejected. The speech/backend delegation path
-has not yet been adapted to EVA's input/generation and authorization model.
-Typed mode remains the verified model-to-phone action path. No background
-microphone service, assistant role, automatic reconnect, requirement tokens,
-provider history seeding, or physical audio quality claim is included.
+Voice sessions advertise the same catalog as typed mode and execute phone
+actions. The provider observably starts the delegated backend turn before the
+user transcript arrives, and the tool call carries that turn's ID, so the turn
+is the unit of correlation: the broker names each delegated turn as the input
+(`voice:<turnId>`), the phone provider adopts it when the turn starts, and the
+controller dispatches through the same dispatcher and journal as typed mode.
+The journaled request text is resolved at dispatch time from the latest user
+transcript, with a placeholder if it has not landed. Each turn gets a fresh
+one-action budget. An empty catalog still yields a chat-only session.
 
-## Release build constraints
+Phone actions open other apps. A foreground service with the microphone type
+holds the voice session across that handoff so the spoken confirmation can
+play and the user can keep talking; the session ends when the user stops voice
+or the broker lifetime expires. Android does not allow a background app to
+start an activity, so a second action requested while another app is in front
+will report `NOT_EXECUTED` with a prompt to return to EVA; that is the next
+gap, not a correlation problem.
 
-Release builds are not minified. A minified APK aborts with
-`JNI DETECTED ERROR IN APPLICATION: java_class == null`, raised by
-`GetStaticMethodID` inside WebRTC's `JNI_OnLoad`, as soon as
-`PeerConnectionFactory.initialize` loads `libjingle_peerconnection_so`.
+No automatic reconnect, requirement tokens, or provider history seeding is
+included.
 
-Keep rules for `org.webrtc` are necessary but not sufficient. With them applied,
-a dex comparison against the debug build showed every real `org.webrtc` class
-present and unrenamed, with the 79 differences all desugaring artifacts, and
-`WebRtcClassLoader` retaining its `getClassLoader` method. The abort persisted,
-and also persisted with R8 full mode disabled. The same source is fine
-unminified, which was confirmed on a physical phone for both the debug build and
-an unminified signed release.
+## Voice action verification
 
-The measured cost of disabling it is about 7.5 MB on a roughly 50 MB APK, which
-is dominated by native libraries that R8 does not touch. `-Peva.minifyRelease=true`
-restores minification for anyone re-attempting it; it must be paired with a
-device voice test, because no JVM or instrumentation test covers the release
-variant.
-
-## Models in use
-
-The broker runs backend turns on `gpt-5.6-luna` at low reasoning effort and
-realtime voice on `gpt-live-1-codex`, both through the host's existing ChatGPT
-subscription. It reports the model it actually opened in the session-started
-frame, and the phone shows that name under the connection status, labelled as
-the voice model when a speech model fronts the session.
-
-In voice mode the speech model carries conversation and delegates tool-selecting
-turns to the backend model. Typed mode runs the backend model alone.
+On 2026-09-12 the opt-in [voice action test](native-voice-testing.md) passed
+on an API 36 emulator: synthetic speech saying "set a timer for three minutes"
+went through the production controller, the model delegated a timer tool call,
+the Android backend handed off to Clock, which showed a running three-minute
+timer, the journal recorded the utterance, the model spoke "Three-minute timer
+started," and the session was still connected five seconds after Clock took
+the foreground. The empty-catalog chat-only test still passes. Evidence:
+[2026-09-12-voice-action.json](../experiments/voice-poc/evidence/2026-09-12-voice-action.json).
+The physical phone dropped off USB during the first attempt and had not
+returned, so the phone run is pending.
 
 ## Development connection
 

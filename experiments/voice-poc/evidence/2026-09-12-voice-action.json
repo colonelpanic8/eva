@@ -1,0 +1,46 @@
+{
+  "claim": "A spoken request executes a phone action through the real controller and the model speaks the result",
+  "device": "Android 16 API 36 google_apis_playstore x86_64 emulator (fresh headless AVD, no host audio)",
+  "build": "debug package com.colonelpanic.eva.debug from commit after 321c9c9",
+  "method": "NativeVoiceActionLiveTest replaces captured microphone samples with an espeak fixture; catalog, controller, dispatcher, journal, and Android intent backend are the production objects",
+  "fixture": {
+    "text": "Set a timer for three minutes.",
+    "format": "48 kHz mono PCM16",
+    "bytes": 439908,
+    "seconds": 4.58
+  },
+  "observed": {
+    "userTranscriptInJournal": "Set a timer for three minutes",
+    "toolCall": "eva.android.timer.set with seconds=180, correlated to the delegated backend turn",
+    "handoff": "Timer started.",
+    "clockApp": "com.google.android.deskclock resumed with a running 3m timer",
+    "spokenConfirmation": "Three-minute timer started.",
+    "sessionAfterHandoff": "CONNECTED with media Connected after a 5 s dwell with Clock in the foreground",
+    "foregroundService": "VoiceSessionService started with the app in TOP state; ActivityManager logged the FGS as allowed",
+    "crashBuffer": "empty"
+  },
+  "runs": [
+    {
+      "test": "NativeVoiceActionLiveTest",
+      "result": "PASS",
+      "seconds": 11.3
+    },
+    {
+      "test": "NativeVoiceActionLiveTest with 5 s dwell",
+      "result": "PASS"
+    },
+    {
+      "test": "NativeVoiceLiveTest (empty catalog, chat only)",
+      "result": "PASS",
+      "nonzeroDecodedBytes": 139775
+    }
+  ],
+  "notVerified": [
+    "physical phone (USB dropped mid-run and did not return)",
+    "audible playback",
+    "barge-in",
+    "a second spoken action while another app is in front"
+  ],
+  "brokerTests": 18,
+  "jvmTests": 63
+}

@@ -1,0 +1,2 @@
+* Added: Voice sessions perform phone actions. A spoken request is delegated to a tool call, executed through the same dispatcher and journal as typed mode, and confirmed aloud.
+* Added: A foreground service keeps the voice session alive when an action opens another app, so the confirmation plays and the conversation can continue.

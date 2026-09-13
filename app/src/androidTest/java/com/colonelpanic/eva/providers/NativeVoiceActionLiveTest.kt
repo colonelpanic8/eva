@@ -24,6 +24,7 @@ import com.colonelpanic.eva.conversation.ProviderSessionController
 import com.colonelpanic.eva.conversation.ProviderStatus
 import com.colonelpanic.eva.data.SqliteInvocationRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -118,6 +119,9 @@ class NativeVoiceActionLiveTest {
                     )
                 VoiceSessionService.start(context)
                 try {
+                    // connectVoice is a no-op until journal recovery finishes; the UI keeps the
+                    // button disabled for that window, so the test has to wait for it too.
+                    withTimeout(20_000) { controller.state.first { !it.isLoading } }
                     controller.connectVoice(checkNotNull(link), listenOnly = false)
                     withTimeout(70_000) {
                         controller.state.first { state ->
@@ -150,7 +154,11 @@ class NativeVoiceActionLiveTest {
                                 }.entries
                                 .last { it.status == EntryStatus.ANSWER && it.response.contains("timer", ignoreCase = true) }
                         }
+                    // Clock now owns the foreground. The session has to outlive that by a
+                    // margin, not just by the instant the confirmation landed.
+                    delay(5_000)
                     assertEquals(ProviderStatus.CONNECTED, controller.state.value.providerStatus)
+                    assertTrue(controller.state.value.mediaState is RealtimeMediaState.Connected)
                     instrumentation.sendStatus(
                         0,
                         Bundle().apply {

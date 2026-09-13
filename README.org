@@ -12,9 +12,10 @@ The local command parser remains a diagnostic/test harness.
 
 Native realtime WebRTC voice is implemented as a separate conversation mode,
 with microphone permission, listen-only negotiation, mute controls, audio focus,
-and cleanup. Voice mode currently has no phone tools. Microphone capture and
-speaker playout are verified on a physical phone; acoustic quality and
-interruption behaviour are not yet measured.
+and cleanup. Voice mode performs phone actions through the same catalog and
+dispatcher as typed mode, verified end to end with synthetic speech on an
+emulator. Microphone capture and speaker playout are verified on a physical
+phone; acoustic quality and interruption behaviour are not yet measured.
 An opt-in [[file:docs/native-voice-testing.md][native speech test]] verifies generated speech, live transcripts,
 and decoded provider audio on the emulator.
 The broker keeps subscription credentials on the host; native account login,

@@ -2,6 +2,13 @@
 
 All notable changes to EVA will be documented here.
 
+## [0.2.4] - 2026-09-12
+
+### Added
+
+- Voice sessions perform phone actions. A spoken request is delegated to a tool call, executed through the same dispatcher and journal as typed mode, and confirmed aloud.
+- A foreground service keeps the voice session alive when an action opens another app, so the confirmation plays and the conversation can continue.
+
 ## [0.2.3] - 2026-09-12
 
 ### Fixed
