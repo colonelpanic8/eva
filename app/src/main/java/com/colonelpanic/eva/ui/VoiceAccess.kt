@@ -20,7 +20,10 @@ data class MicrophoneDenial(
     val canAskAgain: Boolean,
 )
 
-/** Microphone-permission flow. Links are broker access codes and stay in memory only. */
+/**
+ * Microphone-permission flow. A link carries a broker access code; it is held here only
+ * for the length of a permission prompt, and at rest it lives encrypted in `SecretStore`.
+ */
 class VoiceAccess {
     var denial: MicrophoneDenial? = null
         private set

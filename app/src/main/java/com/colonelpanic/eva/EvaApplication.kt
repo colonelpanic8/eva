@@ -25,6 +25,7 @@ import com.colonelpanic.eva.capability.CapabilityDispatcher
 import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.conversation.ProviderSessionController
 import com.colonelpanic.eva.conversation.ProviderStatus
+import com.colonelpanic.eva.data.AppearanceSettings
 import com.colonelpanic.eva.data.ChatGptAccountStore
 import com.colonelpanic.eva.data.OpenAiSettings
 import com.colonelpanic.eva.data.SqliteInvocationRepository
@@ -65,6 +66,7 @@ class EvaApplication :
     private val mediaFactory by lazy { WebRtcMediaSessionFactory(this) }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val settings by lazy { OpenAiSettings(this) }
+    val appearance by lazy { AppearanceSettings(this) }
     val chatGpt by lazy { ChatGptAccountStore(this) }
     val signIn by lazy { ChatGptSignIn(save = chatGpt::save) }
     private var signInJob: Job? = null
@@ -82,7 +84,8 @@ class EvaApplication :
 
     override fun endVoiceSession() = controller.disconnect()
 
-    private val clientVersion by lazy {
+    /** Also what the settings screen reports; absent when the package cannot be read. */
+    val clientVersion by lazy {
         runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull()
     }
 

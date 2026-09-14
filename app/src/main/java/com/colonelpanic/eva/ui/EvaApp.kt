@@ -1,202 +1,99 @@
 package com.colonelpanic.eva.ui
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.only
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.activity.compose.BackHandler
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
+import com.colonelpanic.eva.audio.AudioFocusState
+import com.colonelpanic.eva.audio.MediaControls
+import com.colonelpanic.eva.audio.RealtimeMediaState
 import com.colonelpanic.eva.conversation.ConversationEntry
 import com.colonelpanic.eva.conversation.ConversationState
 import com.colonelpanic.eva.conversation.EntryStatus
 import com.colonelpanic.eva.conversation.ProviderStatus
-import com.colonelpanic.eva.providers.openai.SignInState
+import com.colonelpanic.eva.providers.openai.OpenAiModels
+import com.colonelpanic.eva.ui.settings.SettingsActions
+import com.colonelpanic.eva.ui.settings.SettingsScreen
+import com.colonelpanic.eva.ui.settings.SettingsUiState
 import com.colonelpanic.eva.ui.theme.EvaTheme
+import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+internal enum class EvaDestination { CONVERSATION, SETTINGS }
+
+/**
+ * Two top-level destinations behind a navigation drawer. A navigation library would only
+ * add a dependency to express what one saved enum and a back press already do.
+ */
 @Composable
 fun EvaApp(
     state: ConversationState,
+    settings: SettingsUiState,
+    settingsActions: SettingsActions,
     onSubmit: (String) -> Unit,
-    onConnect: (String) -> Unit = {},
+    onConnect: () -> Unit = {},
+    onVoice: () -> Unit = {},
     onDisconnect: () -> Unit = {},
-    onVoice: (String) -> Unit = {},
-    hasApiKey: Boolean = false,
-    onSaveApiKey: (String) -> Unit = {},
-    onClearApiKey: () -> Unit = {},
-    account: String? = null,
-    signIn: SignInState = SignInState.Idle,
-    onSignIn: () -> Unit = {},
-    onCancelSignIn: () -> Unit = {},
-    onSignOut: () -> Unit = {},
-    textModel: String = "",
-    realtimeModel: String = "",
-    availableTextModels: List<String> = emptyList(),
-    availableRealtimeModels: List<String> = emptyList(),
-    onSelectTextModel: (String) -> Unit = {},
-    onSelectRealtimeModel: (String) -> Unit = {},
-    reasoningEffort: String = "",
-    onSelectReasoningEffort: (String) -> Unit = {},
-    voiceLookupRetries: Int = 5,
-    onVoiceLookupRetriesChange: (Int) -> Unit = {},
     onToggleMicrophone: () -> Unit = {},
     onTogglePlayback: () -> Unit = {},
     denial: MicrophoneDenial? = null,
     onRetryMicrophone: () -> Unit = {},
     onDismissDenial: () -> Unit = {},
 ) {
-    var draft by rememberSaveable { mutableStateOf("") }
-    val storageFailed = state.errorMessage != null
-    val canSend =
-        draft.isNotBlank() && !state.isLoading && !state.isSubmitting && !storageFailed &&
-            state.providerStatus == ProviderStatus.CONNECTED &&
-            !state.voiceMode
-    val listState = rememberLazyListState()
+    var destination by rememberSaveable { mutableStateOf(EvaDestination.CONVERSATION) }
+    val drawer = rememberDrawerState(DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+    val openDrawer = { scope.launch { drawer.open() } }
 
-    LaunchedEffect(state.entries.lastOrNull()?.id) {
-        if (state.entries.isNotEmpty()) listState.scrollToItem(0)
+    // The drawer registers its own back handler while open, so this one only sees a back
+    // press on settings with the drawer already closed.
+    BackHandler(enabled = destination == EvaDestination.SETTINGS) {
+        destination = EvaDestination.CONVERSATION
     }
 
-    fun send() {
-        if (!canSend) return
-        onSubmit(draft.trim())
-        draft = ""
-    }
-
-    Scaffold(
-        contentWindowInsets = WindowInsets.safeDrawing,
-        topBar = {
-            Column {
-                TopAppBar(
-                    title = {
-                        Column {
-                            Text("EVA", fontWeight = FontWeight.SemiBold)
-                            Text(
-                                text = state.providerLabel,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
-                )
-                ProviderConnection(
+    ModalNavigationDrawer(
+        drawerState = drawer,
+        drawerContent = {
+            EvaDrawerSheet(
+                providerLabel = state.providerLabel,
+                current = destination,
+                onSelect = { selected ->
+                    destination = selected
+                    scope.launch { drawer.close() }
+                },
+            )
+        },
+    ) {
+        when (destination) {
+            EvaDestination.CONVERSATION -> {
+                ConversationScreen(
                     state = state,
+                    hasCredential = settings.hasCredential,
+                    onSubmit = onSubmit,
                     onConnect = onConnect,
-                    onDisconnect = onDisconnect,
                     onVoice = onVoice,
-                    hasApiKey = hasApiKey,
-                    onSaveApiKey = onSaveApiKey,
-                    onClearApiKey = onClearApiKey,
-                    account = account,
-                    signIn = signIn,
-                    onSignIn = onSignIn,
-                    onCancelSignIn = onCancelSignIn,
-                    onSignOut = onSignOut,
-                    textModel = textModel,
-                    realtimeModel = realtimeModel,
-                    availableTextModels = availableTextModels,
-                    availableRealtimeModels = availableRealtimeModels,
-                    onSelectTextModel = onSelectTextModel,
-                    onSelectRealtimeModel = onSelectRealtimeModel,
-                    reasoningEffort = reasoningEffort,
-                    onSelectReasoningEffort = onSelectReasoningEffort,
-                    voiceLookupRetries = voiceLookupRetries,
-                    onVoiceLookupRetriesChange = onVoiceLookupRetriesChange,
+                    onDisconnect = onDisconnect,
+                    onOpenDrawer = { openDrawer() },
+                    onToggleMicrophone = onToggleMicrophone,
+                    onTogglePlayback = onTogglePlayback,
                     denial = denial,
                     onRetryMicrophone = onRetryMicrophone,
                     onDismissDenial = onDismissDenial,
                 )
-                if (state.voiceMode && state.providerStatus != ProviderStatus.DISCONNECTED) {
-                    Text(
-                        text = VOICE_SESSION_LABEL,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                    )
-                    VoiceControls(
-                        state.mediaState,
-                        state.mediaControls,
-                        true,
-                        {},
-                        onDisconnect,
-                        onToggleMicrophone,
-                        onTogglePlayback,
-                        Modifier.padding(horizontal = 16.dp),
-                    )
-                }
             }
-        },
-        bottomBar = {
-            Composer(
-                draft = draft,
-                onDraftChange = { draft = it },
-                enabled = !storageFailed,
-                canSend = canSend,
-                supportingText = composerHint(state),
-                onSend = ::send,
-            )
-        },
-    ) { innerPadding ->
-        if (state.isLoading) {
-            LoadingHistory(Modifier.padding(innerPadding))
-        } else {
-            LazyColumn(
-                state = listState,
-                reverseLayout = true,
-                modifier = Modifier.fillMaxSize().padding(innerPadding),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Bottom),
-            ) {
-                state.errorMessage?.let { message ->
-                    item(key = "storage-error") { StorageErrorBanner(message) }
-                }
-                if (state.entries.isEmpty()) {
-                    item(key = "empty") {
-                        EmptyConversation(onSampleSelected = { draft = it }, enabled = !storageFailed)
-                    }
-                }
-                items(state.entries.asReversed(), key = { it.id }) { entry ->
-                    ConversationEntryItem(entry)
-                }
+
+            EvaDestination.SETTINGS -> {
+                SettingsScreen(
+                    state = settings,
+                    actions = settingsActions,
+                    onOpenDrawer = { openDrawer() },
+                )
             }
         }
     }
@@ -217,77 +114,17 @@ internal fun composerHint(state: ConversationState): String {
     }
 }
 
-@Composable
-private fun Composer(
-    draft: String,
-    onDraftChange: (String) -> Unit,
-    enabled: Boolean,
-    canSend: Boolean,
-    supportingText: String,
-    onSend: () -> Unit,
-) {
-    Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
-        Row(
-            modifier =
-                Modifier
-                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
-                    .padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 12.dp)
-                    .fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            OutlinedTextField(
-                value = draft,
-                onValueChange = onDraftChange,
-                enabled = enabled,
-                singleLine = true,
-                placeholder = { Text("Ask EVA…") },
-                supportingText = { Text(supportingText) },
-                keyboardOptions =
-                    KeyboardOptions(
-                        capitalization = KeyboardCapitalization.None,
-                        imeAction = ImeAction.Send,
-                    ),
-                keyboardActions = KeyboardActions(onSend = { onSend() }),
-                modifier =
-                    Modifier
-                        .weight(1f)
-                        .semantics { contentDescription = "Request to EVA" },
-            )
-            Button(
-                onClick = onSend,
-                enabled = canSend,
-                modifier = Modifier.padding(bottom = 20.dp),
-            ) {
-                Text("Send")
-            }
-        }
-    }
-}
-
-@Composable
-private fun LoadingHistory(modifier: Modifier = Modifier) {
-    Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            CircularProgressIndicator(modifier = Modifier.size(28.dp).semantics { contentDescription = "Loading" })
-            Text(
-                text = "Loading your action history…",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
 @Preview(name = "Empty", showBackground = true)
 @Preview(name = "Empty dark", showBackground = true, uiMode = android.content.res.Configuration.UI_MODE_NIGHT_YES)
 @Composable
 private fun EmptyPreview() {
     EvaTheme(dynamicColor = false) {
-        EvaApp(state = ConversationState(isLoading = false), onSubmit = {})
+        EvaApp(
+            state = ConversationState(isLoading = false),
+            settings = previewSettings,
+            settingsActions = SettingsActions(),
+            onSubmit = {},
+        )
     }
 }
 
@@ -296,7 +133,35 @@ private fun EmptyPreview() {
 @Composable
 private fun HistoryPreview() {
     EvaTheme(dynamicColor = false) {
-        EvaApp(state = ConversationState(entries = previewEntries, isLoading = false, isSubmitting = true), onSubmit = {})
+        EvaApp(
+            state = ConversationState(entries = previewEntries, isLoading = false, isSubmitting = true),
+            settings = previewSettings,
+            settingsActions = SettingsActions(),
+            onSubmit = {},
+        )
+    }
+}
+
+@Preview(name = "Voice session", showBackground = true)
+@Preview(name = "Voice session dark", showBackground = true, uiMode = android.content.res.Configuration.UI_MODE_NIGHT_YES)
+@Composable
+private fun VoiceSessionPreview() {
+    EvaTheme(dynamicColor = false) {
+        EvaApp(
+            state =
+                ConversationState(
+                    entries = previewEntries.take(2),
+                    isLoading = false,
+                    providerStatus = ProviderStatus.CONNECTED,
+                    providerLabel = "OpenAI · ${OpenAiModels.REALTIME}",
+                    voiceMode = true,
+                    mediaState = RealtimeMediaState.Connected(remoteAudio = true),
+                    mediaControls = MediaControls(focus = AudioFocusState.HELD),
+                ),
+            settings = previewSettings,
+            settingsActions = SettingsActions(),
+            onSubmit = {},
+        )
     }
 }
 
@@ -311,10 +176,14 @@ private fun StorageErrorPreview() {
                     isLoading = false,
                     errorMessage = "EVA could not safely read or save action history. Restart EVA before sending another request.",
                 ),
+            settings = previewSettings,
+            settingsActions = SettingsActions(),
             onSubmit = {},
         )
     }
 }
+
+private val previewSettings = SettingsUiState(account = "ivan@example.com", version = "0.10.0")
 
 private val previewEntries =
     listOf(

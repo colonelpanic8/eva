@@ -2,6 +2,7 @@ package com.colonelpanic.eva.data
 
 import android.content.Context
 import androidx.core.content.edit
+import com.colonelpanic.eva.providers.BrokerEndpoint
 import com.colonelpanic.eva.providers.openai.OpenAiModels
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,12 +22,16 @@ class OpenAiSettings(
             prefs.getString(REASONING_EFFORT, null)?.takeIf { it in OpenAiModels.REASONING_EFFORTS } ?: OpenAiModels.REASONING_EFFORT,
         )
     private val mutableVoiceLookupRetries = MutableStateFlow(prefs.getInt(VOICE_LOOKUP_RETRIES, DEFAULT_VOICE_LOOKUP_RETRIES))
+    private val mutableHasHostLink = MutableStateFlow(secrets.read(HOST_LINK) != null)
 
     /** Model used for typed turns. Changing it applies to the next connection. */
     val textModelFlow = mutableTextModel.asStateFlow()
     val realtimeModelFlow = mutableRealtimeModel.asStateFlow()
     val reasoningEffortFlow = mutableReasoningEffort.asStateFlow()
     val voiceLookupRetriesFlow = mutableVoiceLookupRetries.asStateFlow()
+
+    /** Whether a paired host link is stored. The link itself is never surfaced again. */
+    val hasHostLink = mutableHasHostLink.asStateFlow()
 
     val realtimeModel: String get() = mutableRealtimeModel.value
     val textModel: String get() = mutableTextModel.value
@@ -81,8 +86,29 @@ class OpenAiSettings(
         mutableHasKey.value = false
     }
 
+    /** The paired host link, or empty when none is stored; connecting accepts either. */
+    fun hostLink(): String = secrets.read(HOST_LINK).orEmpty()
+
+    /**
+     * Stores the link only if it parses, so a bad paste fails here rather than at the
+     * start of a voice session. The link carries a broker access code, which is why it
+     * goes to [SecretStore] alongside the API key and never back into the UI.
+     */
+    fun saveHostLink(value: String) {
+        val trimmed = value.trim()
+        BrokerEndpoint.parse(trimmed)
+        secrets.write(HOST_LINK, trimmed)
+        mutableHasHostLink.value = true
+    }
+
+    fun clearHostLink() {
+        secrets.clear(HOST_LINK)
+        mutableHasHostLink.value = false
+    }
+
     private companion object {
         const val API_KEY = "openai.apiKey"
+        const val HOST_LINK = "broker.link"
         const val REALTIME_MODEL = "openai.realtimeModel"
         const val TEXT_MODEL = "openai.textModel"
         const val REASONING_EFFORT = "openai.reasoningEffort"

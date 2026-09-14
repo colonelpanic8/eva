@@ -12,8 +12,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
@@ -24,6 +26,8 @@ import com.colonelpanic.eva.ui.EvaApp
 import com.colonelpanic.eva.ui.HandsFreeSurface
 import com.colonelpanic.eva.ui.VoiceAccessModel
 import com.colonelpanic.eva.ui.VoiceStart
+import com.colonelpanic.eva.ui.settings.SettingsActions
+import com.colonelpanic.eva.ui.settings.SettingsUiState
 import com.colonelpanic.eva.ui.theme.EvaTheme
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -56,8 +60,9 @@ class MainActivity : ComponentActivity() {
         runtimePermissions.launch(missing.toTypedArray())
     }
 
-    private fun startVoice(link: String) {
-        perform(voice.update { start(link, MicrophonePermission.isGranted(this@MainActivity)) })
+    /** The paired host link now lives in settings, not in a field on the conversation screen. */
+    private fun startVoice() {
+        perform(voice.update { start(eva.settings.hostLink(), MicrophonePermission.isGranted(this@MainActivity)) })
     }
 
     private fun retryMicrophone() {
@@ -96,7 +101,7 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             val loaded = eva.controller.state.first { !it.isLoading }
             if (loaded.voiceMode && loaded.providerStatus != ProviderStatus.DISCONNECTED) return@launch
-            startVoice(link = "")
+            startVoice()
         }
     }
 
@@ -109,6 +114,64 @@ class MainActivity : ComponentActivity() {
 
     private fun isLocked(): Boolean = getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
 
+    /** Answers the message a rejected value should show, or null once it is stored. */
+    private fun save(action: () -> Unit): String? =
+        runCatching(action).exceptionOrNull()?.let {
+            it.message
+                ?: "That value was not accepted."
+        }
+
+    @Composable
+    private fun settingsUiState(dynamicColor: Boolean): SettingsUiState {
+        val settings = eva.settings
+        val hasApiKey by settings.hasApiKey.collectAsStateWithLifecycle()
+        val hasHostLink by settings.hasHostLink.collectAsStateWithLifecycle()
+        val textModel by settings.textModelFlow.collectAsStateWithLifecycle()
+        val realtimeModel by settings.realtimeModelFlow.collectAsStateWithLifecycle()
+        val reasoningEffort by settings.reasoningEffortFlow.collectAsStateWithLifecycle()
+        val voiceLookupRetries by settings.voiceLookupRetriesFlow.collectAsStateWithLifecycle()
+        val models by eva.availableModels.collectAsStateWithLifecycle()
+        val account by eva.chatGpt.account.collectAsStateWithLifecycle()
+        val signIn by eva.signIn.state.collectAsStateWithLifecycle()
+        return SettingsUiState(
+            account = account?.description,
+            signIn = signIn,
+            hasApiKey = hasApiKey,
+            hasHostLink = hasHostLink,
+            textModel = textModel,
+            realtimeModel = realtimeModel,
+            availableTextModels = models[ModelKind.TEXT].orEmpty(),
+            availableRealtimeModels = models[ModelKind.REALTIME].orEmpty(),
+            reasoningEffort = reasoningEffort,
+            voiceLookupRetries = voiceLookupRetries,
+            dynamicColor = dynamicColor,
+            version = eva.clientVersion,
+        )
+    }
+
+    @Composable
+    private fun settingsActions(): SettingsActions =
+        remember {
+            val settings = eva.settings
+            SettingsActions(
+                onSignIn = eva::startChatGptSignIn,
+                onCancelSignIn = eva::cancelChatGptSignIn,
+                onSignOut = eva::signOutChatGpt,
+                onSaveApiKey = { key -> save { settings.saveApiKey(key) }.also { if (it == null) eva.refreshModels() } },
+                onClearApiKey = {
+                    settings.clearApiKey()
+                    eva.refreshModels()
+                },
+                onSaveHostLink = { link -> save { settings.saveHostLink(link) } },
+                onClearHostLink = settings::clearHostLink,
+                onSelectTextModel = { model -> save { settings.saveTextModel(model) } },
+                onSelectRealtimeModel = { model -> save { settings.saveRealtimeModel(model) } },
+                onSelectReasoningEffort = { effort -> save { settings.saveReasoningEffort(effort) } },
+                onVoiceLookupRetriesChange = settings::saveVoiceLookupRetries,
+                onDynamicColorChange = eva.appearance::saveDynamicColor,
+            )
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -116,15 +179,8 @@ class MainActivity : ComponentActivity() {
         val controller = eva.controller
         setContent {
             val state by controller.state.collectAsStateWithLifecycle()
-            val hasApiKey by eva.settings.hasApiKey.collectAsStateWithLifecycle()
-            val textModel by eva.settings.textModelFlow.collectAsStateWithLifecycle()
-            val realtimeModel by eva.settings.realtimeModelFlow.collectAsStateWithLifecycle()
-            val reasoningEffort by eva.settings.reasoningEffortFlow.collectAsStateWithLifecycle()
-            val voiceLookupRetries by eva.settings.voiceLookupRetriesFlow.collectAsStateWithLifecycle()
-            val models by eva.availableModels.collectAsStateWithLifecycle()
-            val account by eva.chatGpt.account.collectAsStateWithLifecycle()
-            val signIn by eva.signIn.state.collectAsStateWithLifecycle()
-            EvaTheme {
+            val dynamicColor by eva.appearance.dynamicColorFlow.collectAsStateWithLifecycle()
+            EvaTheme(dynamicColor = dynamicColor) {
                 if (surface.locked) {
                     HandsFreeSurface(
                         state = state,
@@ -136,33 +192,12 @@ class MainActivity : ComponentActivity() {
                 }
                 EvaApp(
                     state = state,
+                    settings = settingsUiState(dynamicColor),
+                    settingsActions = settingsActions(),
                     onSubmit = controller::submit,
-                    onConnect = controller::connect,
-                    onDisconnect = controller::disconnect,
+                    onConnect = { controller.connect(eva.settings.hostLink()) },
                     onVoice = ::startVoice,
-                    hasApiKey = hasApiKey,
-                    onSaveApiKey = { key ->
-                        runCatching { eva.settings.saveApiKey(key) }.onSuccess { eva.refreshModels() }
-                    },
-                    onClearApiKey = {
-                        eva.settings.clearApiKey()
-                        eva.refreshModels()
-                    },
-                    account = account?.description,
-                    signIn = signIn,
-                    onSignIn = eva::startChatGptSignIn,
-                    onCancelSignIn = eva::cancelChatGptSignIn,
-                    onSignOut = eva::signOutChatGpt,
-                    textModel = textModel,
-                    realtimeModel = realtimeModel,
-                    availableTextModels = models[ModelKind.TEXT].orEmpty(),
-                    availableRealtimeModels = models[ModelKind.REALTIME].orEmpty(),
-                    onSelectTextModel = { model -> runCatching { eva.settings.saveTextModel(model) } },
-                    onSelectRealtimeModel = { model -> runCatching { eva.settings.saveRealtimeModel(model) } },
-                    reasoningEffort = reasoningEffort,
-                    onSelectReasoningEffort = { effort -> runCatching { eva.settings.saveReasoningEffort(effort) } },
-                    voiceLookupRetries = voiceLookupRetries,
-                    onVoiceLookupRetriesChange = eva.settings::saveVoiceLookupRetries,
+                    onDisconnect = controller::disconnect,
                     onToggleMicrophone = controller::toggleMicrophone,
                     onTogglePlayback = controller::togglePlayback,
                     denial = voice.denial,
