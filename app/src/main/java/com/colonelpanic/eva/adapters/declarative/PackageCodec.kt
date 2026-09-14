@@ -175,13 +175,19 @@ object PackageCodec {
         val base =
             uri
                 ?.let {
-                    it.fields(setOf("base"), setOf("query"))
+                    it.fields(setOf("base"), setOf("query", "opaque"))
                     it.text("base", 2000).also { base ->
-                        val parsed = URI(base)
+                        val parsed = URI(if ("opaque" in it) base + "placeholder" else base)
                         require(parsed.isAbsolute && parsed.scheme.lowercase() !in setOf("intent", "file", "content", "javascript", "data"))
                         require(parsed.rawFragment == null && parsed.rawUserInfo == null && '?' !in base)
                     }
                 }.orEmpty()
+        val opaque =
+            uri?.get("opaque")?.let { value ->
+                require(Regex("[A-Za-z][A-Za-z0-9+.-]*:").matches(base)) { "An opaque slot needs a fixed scheme-only base" }
+                require("query" !in uri) { "Opaque slots cannot be combined with query mappings" }
+                slot(value.obj(), properties).also { require(it.type == "string") }
+            }
         val query = slots(uri?.get("query"), properties)
         val extras = slots(root["extras"], properties)
         val target = root["package"]?.string()?.also { require(packageId.matches(it)) }
@@ -191,7 +197,7 @@ object PackageCodec {
                 require(properties[it]?.obj()?.get("type") == JsonPrimitive("string"))
                 require(target == null) { "Choose either a fixed package or a visible app name" }
             }
-        return DeclarativeBinding.Intent(action, base, query, extras, target, mimeType, byName)
+        return DeclarativeBinding.Intent(action, base, query, extras, target, mimeType, byName, opaque)
     }
 
     private fun content(

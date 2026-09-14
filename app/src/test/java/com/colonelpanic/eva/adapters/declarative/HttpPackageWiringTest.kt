@@ -24,7 +24,7 @@ import org.junit.Test
 import java.io.File
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-class PackageAndroidWiringTest {
+class HttpPackageWiringTest {
     private val source =
         PackageCodec.decode(
             generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }
@@ -47,7 +47,7 @@ class PackageAndroidWiringTest {
     }
 
     @Test
-    fun `shipped package requires grants dispatches through host and journals budget and provenance`() =
+    fun `HTTP fixture requires grants dispatches through host and journals budget and provenance`() =
         runTest {
             val identity = PackageIdentity("00000000-0000-0000-0000-000000000001")
             var loaded = LoadedPackage(identity, configurePackage(source, "https://agenda.example.test"), true)

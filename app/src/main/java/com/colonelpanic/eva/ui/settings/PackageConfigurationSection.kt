@@ -17,11 +17,14 @@ internal fun PackageConfigurationSection(
     state: SettingsUiState,
     actions: SettingsActions,
 ) {
-    SettingsSection("Package servers and wait budgets") {
+    val hasServers = state.packages.any { it.credentialName != null }
+    SettingsSection(if (hasServers) "Package servers and wait budgets" else "Extension wait budgets") {
         SettingsBlock {
-            Text(
-                "Server credentials stay encrypted on this phone. Saving a URL approves that origin only; changing it requires enabling the package again.",
-            )
+            if (hasServers) {
+                Text(
+                    "Server credentials stay encrypted on this phone. Saving a URL approves that origin only; changing it requires enabling the package again.",
+                )
+            }
             Text("Reads disclose returned data to the configured model. A timeout does not undo an action. No automatic retries.")
         }
         for (mode in InteractionMode.entries) {
@@ -33,7 +36,16 @@ internal fun PackageConfigurationSection(
             )
         }
         for (entry in state.packages) {
-            SettingsRow(entry.title, entry.origin ?: "Server not configured")
+            SettingsRow(
+                entry.title,
+                if (entry.credentialName ==
+                    null
+                ) {
+                    "Uses installed Android apps; no server credentials needed"
+                } else {
+                    entry.origin ?: "Server not configured"
+                },
+            )
             if (entry.credentialName != null) {
                 SettingsBlock {
                     var url by remember(entry.id, entry.origin) { mutableStateOf(entry.origin.orEmpty()) }

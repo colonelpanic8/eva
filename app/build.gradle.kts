@@ -69,8 +69,6 @@ android {
         }
     }
 
-    sourceSets.getByName("main").assets.srcDir(rootProject.file("docs/examples"))
-
     buildFeatures {
         aidl = true
         compose = true

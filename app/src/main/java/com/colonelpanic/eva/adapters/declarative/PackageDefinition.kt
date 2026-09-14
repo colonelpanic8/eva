@@ -74,6 +74,7 @@ sealed interface DeclarativeBinding {
         val targetPackage: String?,
         val mimeType: String? = null,
         val packageByName: String? = null,
+        val opaque: ScalarSlot? = null,
     ) : DeclarativeBinding
 
     data class Content(

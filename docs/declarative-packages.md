@@ -1,12 +1,13 @@
 # Declarative capability packages
 
-Status: the shipped org-agenda package loads through the declarative adapter at
-startup, with settings, grants, encrypted credentials, real HTTP execution,
-intent handoffs, and conversation receipts. Focused JVM checks cover this wiring;
-Pixel verification is pending. Local/HTTPS import and content-provider execution
-remain unimplemented. See [device test steps](org-agenda-device-test.md).
-Packages, AppFunctions, and [installed extension apps](extension-protocol.md)
-are the three extension paths; generalized AppFunctions is still planned.
+Status: the shipped Messages package controls an existing Android messaging app
+with an SMS-compose intent. It uses settings grants and attributed handoff
+receipts, with no target-app changes or server credentials. Focused JVM tests
+cover it; [Pixel verification](messages-device-test.md) is pending. The org-agenda
+HTTP example remains a non-bundled interpreter fixture. Local/HTTPS import and
+content-provider execution remain unimplemented. Packages, AppFunctions, and
+[installed extension apps](extension-protocol.md) are the three extension paths;
+generalized AppFunctions is still planned.
 
 ## Package and repository identity
 
@@ -249,7 +250,7 @@ chooses between two fully declared bindings based only on argument presence.
 Nested selects are rejected. Both branches must use the capability's execution
 mode, and effect floors account for both. It cannot construct new destinations.
 
-The org-agenda package is the proving case. It exposes `agenda`, `search_todos`,
+The non-bundled org-agenda package is an HTTP example and test fixture. It exposes `agenda`, `search_todos`,
 `capture`, `complete_todo`, `custom_view`, and a mova create handoff. Capture
 always supplies `template` (default `default`) and `values.Title`. Completion
 selects an ID-only request, otherwise requires file, position, and exact title;
@@ -274,7 +275,7 @@ ID, file, and position. Those fields support strict completion in a subsequent
 request. Omitted custom-view key lists `/custom-views`; a supplied key runs the
 fixed `/custom-view?key=` route. No app-side mova extension code is needed.
 
-Order after this proving case: bundled intent migration and untyped share, then
+Order after the Messages device test: bundled intent migration and untyped share, then
 generalized AppFunctions. Installed-service AIDL remains supported and discovered
 but currently has no device-test vehicle. Device verification will be performed
 by the operator using the linked device-test procedure. No device result is claimed yet.
@@ -283,3 +284,15 @@ The `open_create` handoff uses `mova://create?title=<encoded text>`. Mova
 creates through its default template and must already be signed in. EVA reports
 only `HANDED_OFF`; opening the link is not creation evidence. The separate
 `mova://capture` route opens the native quick-capture dialog and accepts no title.
+
+## Encoded opaque intent values
+
+An intent URI may declare optional `opaque`, a string scalar slot, with a
+scheme-only fixed `base` such as `smsto:` or `tel:`. It is mutually exclusive with
+`query`. The interpreter percent-encodes the entire value and appends it to the
+fixed scheme; the model never supplies a parsed URI, scheme, component, or flags.
+The existing forbidden-scheme rules still apply. The shipped
+[Messages package](../app/src/main/assets/messages.json) references the named
+phoneNumber validator and maps the message into the fixed sms_body extra. It
+uses ACTION_SENDTO so Android chooses an installed messaging handler. No package
+name, app modification, extension service, or privileged API is required.

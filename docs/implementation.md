@@ -64,10 +64,10 @@ voice admission boundaries. Robolectric exercises the grant file and journal.
 **Device verification against a real installed provider has not happened yet.**
 No fixture APK was added. The installed-service adapter currently has no app-side test vehicle: mova is
 not shipping extension code for this pass. Its existing fake-connection tests
-remain. The proving device plan is EVA debug on the Pixel, with the org-agenda API
-origin and basic-auth credential configured in EVA, then typed agenda, search,
-capture, and strict complete as separate user requests. The operator will run it
-after the adapter and package are reported ready. Still needed on a device: cold-process binding, signing
+remain. The proving device plan now uses the phone's existing Messages app:
+enable the shipped Messages package and its compose action, then request a draft
+through a typed conversation. No target-app update or server credentials are
+needed. See [device steps](messages-device-test.md). Still needed on a device: cold-process binding, signing
 and UID checks across app boundaries, package update/removal broadcasts, background
 execution restrictions, real Binder death, and settings interaction.
 
@@ -101,13 +101,13 @@ boundaries and budget precedence. `BindingArguments`, `BindingResults`, and `Dec
 encoded intent/HTTP requests, bind constrained content predicates, project bounded
 results, and require exact completion evidence for writes. Fake-host JVM tests
 exercise handoffs, content reads, deadline propagation, and uncertain failures
-without retries. The shipped org-agenda document is an Android asset loaded through
+without retries. The Messages document in app/src/main/assets/messages.json is loaded through
 PackageAdapter at startup, composed with installed-service discovery in EvaApplication.
 It uses shared grants, catalog snapshots, admission, the invocation journal, and
 attributed conversation receipts. HTTP uses PackageHttpClient/OkHttp; intent
 handoffs use AndroidDeclarativeHost and AndroidIntentHost. Content-provider
 execution, local/HTTPS imports, preview UI, and generalized AppFunctions remain
-unimplemented. Pixel verification is pending; see [device test](org-agenda-device-test.md).
+unimplemented. Pixel verification is pending; see [device test](messages-device-test.md).
 
 Settings store a per-installation package UUID and encrypted origin/username/password
 in SecretStore under a package-only namespace. User approval replaces the template
@@ -127,7 +127,7 @@ suppression without holding a global mutex over network work. Installed-service
 execution retains its existing provider deadline until the shared budget wrapper
 is adopted there.
 
-Focused JVM tests load the actual shipped document and cover grants, writes,
+Focused JVM tests load the actual Messages asset and the separate HTTP fixture to cover grants, writes,
 changed-origin rejection, credential scoping, response limits, Android intent
 construction (Robolectric), wait expiry, busy refusal, disconnect, and late
 completion. Existing pre-namespace installed-app grants fail closed and require
@@ -858,6 +858,13 @@ actions remain unverified; the microphone and speaker paths themselves are now
 established on hardware. The observed subscription bridge is an experiment, not
 a promise of public API stability.
 
-Implementation order: wait for the org-agenda Pixel result, then migrate bundled intent templates and add the
+Implementation order: wait for the Messages Pixel result, then migrate bundled intent templates and add the
 untyped share handoff, then implement generalized AppFunctions through Shizuku.
 AIDL discovery stays enabled, with ordinary per-extension and mutation grants.
+
+The org-agenda JSON remains an HTTP interpreter example/test fixture under docs;
+it is not shipped or registered in the app. Messages uses ACTION_SENDTO, a fixed
+smsto scheme, a validated encoded phone-number slot, and the sms_body string extra.
+It has no HTTP binding or credentials. Success means HANDED_OFF, never sent or
+delivered. Existing native SMS capabilities remain unchanged until the separately
+planned bundled-capability migration.

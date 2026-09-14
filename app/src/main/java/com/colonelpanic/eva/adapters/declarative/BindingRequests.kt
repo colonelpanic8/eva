@@ -69,7 +69,12 @@ class BindingArguments(
 
     fun intent(binding: DeclarativeBinding.Intent): IntentRequest {
         val query = binding.query.mapNotNull { (name, slot) -> value(slot)?.let { encode(name) + "=" + encode(it.content) } }
-        val uri = binding.uriBase + if (query.isEmpty()) "" else query.joinToString("&", "?")
+        val uri =
+            binding.uriBase +
+                (
+                    binding.opaque?.let { encode(requireNotNull(value(it)) { "An opaque URI argument is missing" }.content) }
+                        ?: if (query.isEmpty()) "" else query.joinToString("&", "?")
+                )
         val extras = binding.extras.mapNotNull { (name, slot) -> value(slot)?.let { name to it } }.toMap()
         require(uri.toByteArray(Charsets.UTF_8).size <= ExtensionProtocol.ARGUMENT_BYTES)
         val appName =
