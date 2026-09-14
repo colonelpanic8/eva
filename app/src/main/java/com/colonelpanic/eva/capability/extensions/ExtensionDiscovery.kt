@@ -19,6 +19,7 @@ data class InstalledExtension(
     val problem: String? = null,
     val contractRejected: Boolean = false,
     val capabilityPrefix: String = "extension.$packageName",
+    val androidPackages: List<String> = listOf(packageName),
 )
 
 class ExtensionDiscovery(

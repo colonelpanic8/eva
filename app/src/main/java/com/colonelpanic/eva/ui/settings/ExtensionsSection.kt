@@ -29,6 +29,7 @@ internal fun ExtensionsSection(
             val descriptor = installed.descriptor
             SettingsRow(
                 title = descriptor?.title ?: installed.packageName,
+                leading = { InstalledAppIcon(installed.androidPackages) },
                 supporting =
                     installed.packageName + "\n" +
                         (installed.problem ?: "Enabling grants claimed read actions. Writes need separate permission."),

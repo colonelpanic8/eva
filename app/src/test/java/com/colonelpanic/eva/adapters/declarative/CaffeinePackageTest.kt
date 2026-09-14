@@ -17,6 +17,13 @@ import java.io.File
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], application = android.app.Application::class, manifest = Config.NONE)
 class CaffeinePackageTest {
+    @Test
+    fun `app matching uses fixed targets even without optional metadata`() {
+        val definition = PackageCodec.decode(source)
+        assertEquals(listOf("moe.zhs.caffeine"), definition.copy(androidPackages = emptyList()).appTargets())
+        assertEquals(listOf("moe.zhs.caffeine"), definition.appTargets())
+    }
+
     private val source get() =
         generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }
             .map { File(it, "docs/examples/caffeine.json") }

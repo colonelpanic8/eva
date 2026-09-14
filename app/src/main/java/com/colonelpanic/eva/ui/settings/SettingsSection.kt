@@ -57,12 +57,14 @@ internal fun SettingsRow(
     title: String,
     supporting: String? = null,
     onClick: (() -> Unit)? = null,
+    leading: @Composable (() -> Unit)? = null,
     trailing: @Composable (() -> Unit)? = null,
 ) {
     ListItem(
         headlineContent = { Text(title) },
         supportingContent = supporting?.let { { Text(it) } },
         trailingContent = trailing,
+        leadingContent = leading,
         colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
         modifier = if (onClick == null) Modifier else Modifier.clickable(onClick = onClick),
     )

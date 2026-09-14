@@ -17,6 +17,16 @@ data class PackageDefinition(
 
 enum class PackageEffect { READ, WRITE, HANDOFF, UNKNOWN }
 
+fun PackageDefinition.appTargets(): List<String> {
+    fun targets(binding: DeclarativeBinding): List<String> =
+        when (binding) {
+            is DeclarativeBinding.Intent -> listOfNotNull(binding.targetPackage)
+            is DeclarativeBinding.Select -> targets(binding.present) + targets(binding.absent)
+            else -> emptyList()
+        }
+    return (androidPackages + capabilities.flatMap { targets(it.binding) }).distinct()
+}
+
 data class PackageCapability(
     val name: String,
     val title: String,

@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.colonelpanic.eva.adapters.declarative.PluginBrowserState
+import com.colonelpanic.eva.adapters.declarative.appTargets
 
 @Composable
 internal fun PluginRepositorySection(
@@ -43,7 +44,11 @@ internal fun PluginRepositorySection(
                     listing.androidPackages.any(state.visibleApps::contains) -> "For an app on this phone"
                     else -> "Target app not detected"
                 }
-            SettingsRow(listing.title, "$match · version ${listing.version}\n${listing.androidPackages.joinToString()}") {
+            SettingsRow(
+                listing.title,
+                "$match · version ${listing.version}\n${listing.androidPackages.joinToString()}",
+                leading = { InstalledAppIcon(listing.androidPackages) },
+            ) {
                 TextButton(onClick = { actions.onPluginPreview(listing.id) }, enabled = !state.busy) {
                     Text(if (installed != null && installed.definition.version != listing.version) "Review update" else "Preview")
                 }
@@ -69,7 +74,11 @@ internal fun PluginRepositorySection(
     if (state.installed.isNotEmpty()) {
         SettingsSection("Repository installations") {
             state.installed.forEach { installed ->
-                SettingsRow(installed.definition.title, "${installed.definition.version}\n${installed.source}") {
+                SettingsRow(
+                    installed.definition.title,
+                    "${installed.definition.version}\n${installed.source}",
+                    leading = { InstalledAppIcon(installed.definition.appTargets()) },
+                ) {
                     TextButton(onClick = { actions.onPluginRemove(installed.identity.id) }, enabled = !state.busy) { Text("Remove plugin") }
                 }
             }

@@ -54,3 +54,8 @@ opens from the navigation drawer and shows Caffeine, Messages, their enabled
 switches and three action grants, plus the repository controls. Existing receipts
 still render. `just format` and `just check` pass. Remote repository installation
 has JVM coverage but awaits a published repository for device verification.
+
+The app-icon update was installed from the same worktree. A Pixel screenshot
+confirmed Caffeine's installed app icon next to its extension row, with existing
+grants still enabled. Generic Messages has no pinned app match and therefore no
+app icon; matching does not guess a specific messaging app from its display name.

@@ -67,6 +67,7 @@ class PackageAdapter(
                     ),
                     if (item.configured) null else "Configure the approved server URL and credential before enabling.",
                     capabilityPrefix = "extension.package.${item.identity.id}",
+                    androidPackages = definition.appTargets(),
                 )
             }
         entries.value += unavailable()

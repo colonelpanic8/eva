@@ -70,7 +70,9 @@ a draft; the user taps Send. No update to Messages, server credentials, Shizuku,
 or app-side extension code is needed. JVM tests cover the wiring;
 [[file:docs/device-validation-2026-09-14.md][Pixel verification]] passed with an unsent draft. The org-agenda HTTP example is not bundled.
 The Extensions page supports HTTPS repository refresh, app matching, preview,
-installation, updates and removal. Repository imports are JVM-tested; a published
+installation, updates and removal. Matched extensions show icons from installed
+Android apps. A separate =eva-plugins= repository is prepared locally with starter
+packages and an index generator. Repository imports are JVM-tested; a published
 starter repository and end-to-end repository device test are still pending.
 Local file import, content-provider execution, and Paseo are not integrated. The
 [[file:docs/extension-protocol.md][installed-app extension v1 contract]] now has generic discovery, asynchronous

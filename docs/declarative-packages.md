@@ -374,7 +374,9 @@ are for discovery only: the downloaded package's identity, digest, destinations,
 and compatibility must be validated before preview/install. Do not infer a
 trusted publisher from either an app-name match or a file's declared ID.
 Matching uses the optional package `androidPackages` field and required index
-`androidPackages` field. App icons and separate filtered views remain follow-up work.
+`androidPackages` field. Matched app icons come from Android locally; separate
+filtered views remain follow-up work. Installed packages may also use their fixed
+intent targets to find an icon, without changing the approved package digest.
 
 Download the shared index and perform matching on-device; never upload the user's
 app inventory. Android filters package visibility, so distinguish "not detected"

@@ -940,6 +940,13 @@ digest/origin rejection, updates and grant revocation. The default eva-plugins
 GitHub source is reserved but has not been published. End-to-end repository device
 verification and local-file import remain pending.
 
+Extension and repository rows display the first visible matching installed app's
+icon, loaded locally off the UI thread. Declarative matches use package metadata
+and fixed intent targets; installed-service matches use the discovered package.
+Missing or hidden apps have no icon. Matching does not alter grants or destinations.
+The separate `eva-plugins` repository has been seeded locally with Caffeine,
+Messages, org-agenda and a generated index; GitHub publication remains pending.
+
 ### Pixel extension checks on installed build 0f53e78
 
 Physical-phone startup, settings, ChatGPT sign-in, extension loading, and grant
