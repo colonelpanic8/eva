@@ -105,7 +105,7 @@ class OpenAiVoiceActionLiveTest {
                         }.createAudioDeviceModule()
                 val factory = PeerConnectionFactory.builder().setAudioDeviceModule(module).createPeerConnectionFactory()
                 module.release()
-                val journal = JournalDatabase(context)
+                val journal = JournalDatabase(context, SqliteInvocationRepository.DATABASE_NAME)
                 val repository = SqliteInvocationRepository(journal)
                 val audioManager = context.getSystemService(AudioManager::class.java)
                 val controller =

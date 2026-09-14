@@ -158,10 +158,20 @@ class ThreadController(
     private suspend fun receipts(items: List<ThreadItem>): Map<String, InvocationRecord> {
         val wanted = items.filterIsInstance<ThreadItem.ActionCall>().map { it.callId }.toSet()
         if (wanted.isEmpty()) return emptyMap()
-        return repository.history().filter { it.callId in wanted }.associateBy { it.callId }
+        return repository.byCallIds(wanted)
     }
 
     private fun activeTask(threadId: String): TurnTask? = tasks.values.firstOrNull { it.threadId == threadId && it.active }
+
+    /**
+     * Provider input ids are leg-local: a realtime session numbers its turns from scratch, so
+     * two sessions on one thread would collide. Turn identity is the store's, and a leg's ids
+     * are resolved against the leg that issued them.
+     */
+    private fun taskFor(
+        leg: ConversationSession,
+        inputId: String,
+    ): TurnTask? = tasks.values.firstOrNull { it.leg === leg && it.inputId == inputId }
 
     private fun notice(
         threadId: String,
@@ -313,7 +323,7 @@ class ThreadController(
             }
 
             is ProviderEvent.ResponseStarted -> {
-                if (tasks[event.inputId] == null && voice) {
+                if (taskFor(opened, event.inputId) == null && voice) {
                     // A spoken turn has no typed input; the response is the turn, and its transcript
                     // may still be in flight. Nothing else may own this thread's next answer.
                     activeTask(threadId)?.let { previous -> if (previous.dispatches.none { it.isActive }) previous.complete() }
@@ -360,7 +370,7 @@ class ThreadController(
                         hangUp()
                     }
                 } else {
-                    tasks[event.call.inputId]?.takeIf { it.leg === opened }?.dispatch(event)
+                    taskFor(opened, event.call.inputId)?.dispatch(event)
                 }
             }
 
@@ -376,11 +386,11 @@ class ThreadController(
             }
 
             is ProviderEvent.AssistantText -> {
-                tasks[event.inputId]?.takeIf { it.leg === opened }?.answer(event.text, event.truncated, voice)
+                taskFor(opened, event.inputId)?.answer(event.text, event.truncated, voice)
             }
 
             is ProviderEvent.ResponseEnded -> {
-                tasks[event.inputId]?.takeIf { it.leg === opened }?.generationEnded(event.status)
+                taskFor(opened, event.inputId)?.generationEnded(event.status)
             }
 
             is ProviderEvent.Failure -> {
@@ -433,18 +443,18 @@ class ThreadController(
         val current = state.value
         val opened = session ?: return
         val threadId = attachedThreadId ?: return
-        if (current.isLoading || current.isSubmitting || current.errorMessage != null ||
+        if (current.isLoading || current.errorMessage != null ||
             current.providerStatus != ProviderStatus.CONNECTED || current.voiceMode ||
             text.isBlank()
         ) {
             return
         }
-        if (text.length > 1000) {
-            mutableState.update { it.copy(providerMessage = "Keep requests under 1,000 characters.") }
-            return
-        }
         if (activeTask(threadId) != null) {
             mutableState.update { it.copy(providerMessage = "EVA is still working on the last request.") }
+            return
+        }
+        if (text.length > 1000) {
+            mutableState.update { it.copy(providerMessage = "Keep requests under 1,000 characters.") }
             return
         }
         val input = ConversationInput(UUID.randomUUID().toString(), text)
@@ -468,17 +478,18 @@ class ThreadController(
 
     private suspend fun startTask(
         threadId: String,
-        turnId: String,
+        inputId: String,
         request: String,
         leg: ConversationSession,
         spoken: Boolean,
     ): TurnTask {
+        val turnId = UUID.randomUUID().toString()
         store.openTurn(threadId, request, turnId)
         if (request.isNotBlank()) {
             store.append(ThreadItem.UserMessage(UUID.randomUUID().toString(), threadId, turnId, nowMillis(), request, spoken))
             titleFrom(threadId, request)
         }
-        val task = TurnTask(threadId, turnId, request, leg)
+        val task = TurnTask(threadId, turnId, inputId, request, leg)
         tasks[turnId] = task
         mutableState.update { it.copy(working = threadId == shownThreadId) }
         mutableWorking.update { it + threadId }
@@ -509,6 +520,8 @@ class ThreadController(
     private inner class TurnTask(
         val threadId: String,
         val turnId: String,
+        /** What the current leg calls this turn; the store's id is [turnId]. */
+        var inputId: String,
         var request: String,
         leg: ConversationSession,
     ) {
@@ -680,6 +693,7 @@ class ThreadController(
             }
             rehomed = true
             stranded = false
+            inputId = turnId
             store.append(notice(threadId, turnId, NoticeKind.REHOMED, "Continuing after the call ended"))
             try {
                 val items = store.items(threadId)

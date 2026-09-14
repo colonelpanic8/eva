@@ -243,7 +243,7 @@ class EvaApplication :
     }
     private val contactKeywords by lazy { ContactNameKeywords(this, ::contactHistory) }
     val controller by lazy {
-        val journal = JournalDatabase(this)
+        val journal = JournalDatabase(this, SqliteInvocationRepository.DATABASE_NAME)
         val repository = SqliteInvocationRepository(journal)
         ThreadController(
             registry = registry,

@@ -21,12 +21,16 @@ import com.colonelpanic.eva.providers.ProviderEvent
 import com.colonelpanic.eva.providers.ResponseRequest
 import com.colonelpanic.eva.providers.SessionOpenRequest
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -56,14 +60,18 @@ class ThreadControllerTest {
             "test.custom",
             "Custom action",
             "Execute a custom test action",
-            schema("""{"type":"object","properties":{"place":{"type":"string","minLength":1}},"required":["place"],"additionalProperties":false}"""),
+            schema(
+                """{"type":"object","properties":{"place":{"type":"string","minLength":1}},"required":["place"],"additionalProperties":false}""",
+            ),
         )
     private val lookup =
         CapabilityDefinition(
             "test.lookup",
             "Look something up",
             "Read-only lookup",
-            schema("""{"type":"object","properties":{"query":{"type":"string","minLength":1}},"required":["query"],"additionalProperties":false}"""),
+            schema(
+                """{"type":"object","properties":{"query":{"type":"string","minLength":1}},"required":["query"],"additionalProperties":false}""",
+            ),
             readOnly = true,
         )
     private val registry =
@@ -98,7 +106,7 @@ class ThreadControllerTest {
         dispatcher = CapabilityDispatcher(registry, repository),
         repository = repository,
         store = store,
-        scope = this,
+        scope = liveScope(),
         providerFactory = { provider },
         mediaFactory = media,
         voiceProviderFactory = { _, _ -> voiceProvider },
@@ -107,10 +115,20 @@ class ThreadControllerTest {
         onBackgroundAnswer = { answers += it },
     )
 
+    /**
+     * The controller watches the store for as long as it lives, so it gets a scope that shares
+     * the test scheduler without being a child of the test body.
+     */
+    private fun TestScope.liveScope() = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+
     private fun entry(
         controller: ThreadController,
         id: String,
-    ) = controller.state.value.entries.first { it.id == id }
+    ) = controller.state.value.entries
+        .first { it.id == id }
+
+    /** The store owns turn identity; a provider's input id is only meaningful to its own leg. */
+    private suspend fun latestTurn(controller: ThreadController) = store.turns(controller.state.value.threadId!!).last().id
 
     // ---- text ----
 
@@ -122,7 +140,12 @@ class ThreadControllerTest {
             advanceUntilIdle()
             controller.connect("unused")
             advanceUntilIdle()
-            assertEquals("Text session", controller.state.value.entries.single { it.status == EntryStatus.SESSION }.response)
+            assertEquals(
+                "Text session",
+                controller.state.value.entries
+                    .single { it.status == EntryStatus.SESSION }
+                    .response,
+            )
             controller.submit("Please show me the park")
             advanceUntilIdle()
             assertTrue(controller.state.value.working)
@@ -131,11 +154,11 @@ class ThreadControllerTest {
             assertEquals(1, executions)
             assertEquals("HANDED_OFF", provider.results.single().status)
             assertEquals("Opened Park", provider.results.single().message)
-            val turn = provider.input.id
+            val turn = latestTurn(controller)
             assertEquals(turn, entry(controller, "provider:session:first").parentId)
             assertEquals(turn, repository.history().single().turnId)
-            provider.channel.send(ProviderEvent.AssistantText(turn, "The park is open.", false))
-            provider.channel.send(ProviderEvent.ResponseEnded(turn, "completed"))
+            provider.channel.send(ProviderEvent.AssistantText(provider.input.id, "The park is open.", false))
+            provider.channel.send(ProviderEvent.ResponseEnded(provider.input.id, "completed"))
             advanceUntilIdle()
             assertFalse(controller.state.value.isSubmitting)
             assertFalse(controller.state.value.working)
@@ -144,7 +167,13 @@ class ThreadControllerTest {
             assertEquals("Please show me the park", store.threads().single().title)
             controller.disconnect()
             advanceUntilIdle()
-            assertEquals(listOf("Text session", "Session ended"), controller.state.value.entries.filter { it.status == EntryStatus.SESSION }.map { it.response })
+            assertEquals(
+                listOf("Text session", "Session ended"),
+                controller.state.value.entries
+                    .filter {
+                        it.status == EntryStatus.SESSION
+                    }.map { it.response },
+            )
         }
 
     @Test
@@ -240,7 +269,7 @@ class ThreadControllerTest {
             advanceUntilIdle()
             controller.submit("Open the park")
             advanceUntilIdle()
-            val turn = provider.input.id
+            val turn = latestTurn(controller)
             provider.call("first", action.id, "place" to "Park")
             advanceUntilIdle()
             assertEquals(1, executions)
@@ -269,7 +298,10 @@ class ThreadControllerTest {
             assertEquals("The park is open.", entry(controller, turn).response)
             assertEquals("The park is open.", answers.single().answer)
             assertEquals(1, background.closes)
-            assertTrue(controller.state.value.entries.any { it.status == EntryStatus.SESSION && it.response.contains("Continuing") })
+            assertTrue(
+                controller.state.value.entries
+                    .any { it.status == EntryStatus.SESSION && it.response.contains("Continuing") },
+            )
         }
 
     @Test
@@ -283,7 +315,7 @@ class ThreadControllerTest {
             advanceUntilIdle()
             controller.submit("Open the park")
             advanceUntilIdle()
-            val turn = provider.input.id
+            val turn = latestTurn(controller)
             provider.call("first", action.id, "place" to "Park")
             advanceUntilIdle()
             controller.disconnect()
@@ -306,7 +338,7 @@ class ThreadControllerTest {
             advanceUntilIdle()
             controller.submit("Open the park")
             advanceUntilIdle()
-            val turn = provider.input.id
+            val turn = latestTurn(controller)
             controller.disconnect()
             advanceUntilIdle()
             assertTrue(controller.state.value.working)
@@ -322,7 +354,7 @@ class ThreadControllerTest {
             advanceUntilIdle()
             controller.submit("Again")
             advanceUntilIdle()
-            val second = provider.input.id
+            val second = latestTurn(controller)
             controller.disconnect()
             advanceUntilIdle()
             background.channel.send(ProviderEvent.Failure("boom"))
@@ -351,13 +383,23 @@ class ThreadControllerTest {
             val second = controller.state.value.threadId!!
             assertTrue(first != second)
             assertEquals(2, controller.threads.value.size)
-            assertEquals(listOf("Voice session"), controller.state.value.entries.filter { it.status == EntryStatus.SESSION }.map { it.response })
+            assertEquals(
+                listOf("Voice session"),
+                controller.state.value.entries
+                    .filter { it.status == EntryStatus.SESSION }
+                    .map { it.response },
+            )
             controller.disconnect()
             advanceUntilIdle()
             controller.showThread(first)
             advanceUntilIdle()
             assertEquals(first, controller.state.value.threadId)
-            assertEquals("First thread", controller.state.value.entries.first { it.request.isNotBlank() }.request)
+            assertEquals(
+                "First thread",
+                controller.state.value.entries
+                    .first { it.request.isNotBlank() }
+                    .request,
+            )
         }
 
     @Test
@@ -394,20 +436,30 @@ class ThreadControllerTest {
             advanceUntilIdle()
             controller.connectVoice("test")
             advanceUntilIdle()
-            assertEquals(listOf(action.id, lookup.id, "eva.session.end"), provider.request.catalog.tools.map { it.capabilityId })
+            assertEquals(
+                listOf(action.id, lookup.id, "eva.session.end"),
+                provider.request.catalog.tools
+                    .map { it.capabilityId },
+            )
             provider.input = ConversationInput("voice:turn-1", "")
             provider.channel.send(ProviderEvent.ResponseStarted("voice:turn-1", "voice:turn-1"))
             provider.channel.send(ProviderEvent.Transcript("user", "Show me the park"))
             provider.call("call-1", action.id, "place" to "Park")
             advanceUntilIdle()
             assertEquals(1, executions)
-            assertEquals("voice:turn-1", provider.results.single().call.inputId)
+            assertEquals(
+                "voice:turn-1",
+                provider.results
+                    .single()
+                    .call.inputId,
+            )
             assertEquals("Show me the park", repository.history().single().request)
             provider.channel.send(ProviderEvent.AssistantText("voice:turn-1", "Opened.", false))
             provider.channel.send(ProviderEvent.ResponseEnded("voice:turn-1", "completed"))
             advanceUntilIdle()
-            assertEquals("Show me the park", entry(controller, "voice:turn-1").request)
-            assertEquals("Opened.", entry(controller, "voice:turn-1").response)
+            val spoken = latestTurn(controller)
+            assertEquals("Show me the park", entry(controller, spoken).request)
+            assertEquals("Opened.", entry(controller, spoken).response)
 
             provider.input = ConversationInput("voice:turn-2", "")
             provider.channel.send(ProviderEvent.ResponseStarted("voice:turn-2", "voice:turn-2"))
@@ -429,7 +481,12 @@ class ThreadControllerTest {
             advanceUntilIdle()
             controller.connectVoice("test")
             advanceUntilIdle()
-            assertEquals(listOf("eva.session.end"), provider.request.catalog.tools.map { it.capabilityId }.filter { it.startsWith("eva.") })
+            assertEquals(
+                listOf("eva.session.end"),
+                provider.request.catalog.tools
+                    .map { it.capabilityId }
+                    .filter { it.startsWith("eva.") },
+            )
             assertTrue(provider.request.instructions.contains("brief goodbye"))
             controller.submit("Open a map")
             advanceUntilIdle()
@@ -474,7 +531,7 @@ class ThreadControllerTest {
                     dispatcher = CapabilityDispatcher(registry, repository),
                     repository = repository,
                     store = store,
-                    scope = this,
+                    scope = liveScope(),
                     providerFactory = { current },
                     mediaFactory = { if (attempts++ == 0) oldMedia else currentMedia },
                     voiceProviderFactory = { link, _ -> if (link == "old") old else current },
@@ -547,7 +604,7 @@ class ThreadControllerTest {
             // Hanging up is not a phone action, and answering it would prompt the model to speak again.
             assertEquals(emptyList<CorrelatedToolResult>(), provider.results)
             advanceUntilIdle()
-            assertEquals("Goodbye!", entry(controller, "voice:turn-1").response)
+            assertEquals("Goodbye!", entry(controller, latestTurn(controller)).response)
             assertFalse(controller.state.value.working)
         }
 
@@ -567,7 +624,7 @@ class ThreadControllerTest {
             assertTrue(media.closed)
             assertEquals(ProviderStatus.DISCONNECTED, controller.state.value.providerStatus)
             advanceUntilIdle()
-            assertEquals("Response completed.", entry(controller, "voice:turn-1").response)
+            assertEquals("Response completed.", entry(controller, latestTurn(controller)).response)
 
             val stuck = FakeProvider()
             val stuckMedia = VoiceMedia()
@@ -591,8 +648,11 @@ class ThreadControllerTest {
     ) : ConversationProvider,
         ConversationSession {
         override val connectionEpoch = epoch
-        val channel = Channel<ProviderEvent>(Channel.UNLIMITED)
-        override val events = channel.receiveAsFlow()
+
+        /** A fresh channel per open, so one fake can serve a reconnect or a background leg. */
+        var channel = Channel<ProviderEvent>(Channel.UNLIMITED)
+            private set
+        override val events: Flow<ProviderEvent> get() = channel.receiveAsFlow()
         lateinit var request: SessionOpenRequest
         lateinit var input: ConversationInput
         val results = mutableListOf<CorrelatedToolResult>()
@@ -602,6 +662,7 @@ class ThreadControllerTest {
 
         override suspend fun open(request: SessionOpenRequest): ConversationSession {
             this.request = request
+            if (channel.isClosedForSend) channel = Channel(Channel.UNLIMITED)
             withContext(NonCancellable) { openGate?.await() }
             channel.send(ProviderEvent.Connected("session", request.catalog.revision))
             return this
