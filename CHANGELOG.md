@@ -4,9 +4,16 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Conversations are threads that outlive a call. Hanging up no longer cancels what EVA was doing: an unfinished request carries on in the background, moving from the voice model to the text model once the call ends, and the answer arrives as a notification. Ask for something and hang up, and EVA still finishes it.
+- A conversation list in the drawer. Voice and assist launches start a new conversation, and an earlier one can be reopened and continued by text or voice, with EVA given what was already said.
+- A Stop control for a request in progress, which is now a different thing from hanging up.
+- A request may make several read-only lookups, such as searching contacts for a misheard name, while still performing at most one action that changes something.
+
 ### Changed
 
-- The conversation reads as threads. Each session opens with a divider naming its mode and model ("Text session · gpt-5.6-sol") and closes with "Session ended"; within a turn, the actions the model ran hang off a branch under the request, ahead of the answer, instead of appearing as unrelated cards.
+- The conversation reads as grouped turns. Each session opens with a divider naming its mode and model ("Text session · gpt-5.6-sol") and closes with "Session ended"; within a turn, the actions the model ran hang off a branch under the request, ahead of the answer, instead of appearing as unrelated cards.
 
 ### Fixed
 
