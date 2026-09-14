@@ -6,7 +6,7 @@ All notable changes to EVA will be documented here.
 
 ### Added
 
-- Spotify queueing through the Web API. Settings accepts a Client ID from the user's Spotify developer app and connects with PKCE; queueing requires Spotify Premium and an available playback device.
+- Queueing a song so it plays after the current track. Android offers no way for one app to add to another's queue, so EVA keeps one provider per music app that has a route of its own, and an app with no provider is answered by naming the apps that do rather than by a bare refusal. Spotify is the first provider: paste a Client ID from your own free Spotify developer app into settings and connect it, which needs Premium and a device that is playing.
 
 ### Fixed
 

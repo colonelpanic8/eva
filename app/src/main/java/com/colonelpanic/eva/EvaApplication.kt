@@ -27,6 +27,7 @@ import com.colonelpanic.eva.adapters.android.NavigationIntentBackend
 import com.colonelpanic.eva.adapters.android.ObservationStore
 import com.colonelpanic.eva.adapters.android.ShizukuShellHost
 import com.colonelpanic.eva.adapters.android.SmsSendBackend
+import com.colonelpanic.eva.adapters.android.SpotifyQueueProvider
 import com.colonelpanic.eva.adapters.android.UiControlBackend
 import com.colonelpanic.eva.audio.RealtimeMediaConfig
 import com.colonelpanic.eva.audio.VoiceSessionHost
@@ -224,8 +225,11 @@ class EvaApplication :
                             ),
                         CapabilityRegistry.MEDIA_QUEUE to
                             MediaQueueBackend(
-                                spotifyApi,
-                                connected = { spotify.account.value != null && spotify.clientId.value != null },
+                                listOf(
+                                    SpotifyQueueProvider(spotifyApi) {
+                                        spotify.account.value != null && spotify.clientId.value != null
+                                    },
+                                ),
                             ),
                     ),
                 )

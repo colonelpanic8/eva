@@ -44,9 +44,14 @@ capabilities that work with EVA off screen. Beyond the report that Spotify
 answers the play-by-name intent with a search screen, none of this has been
 exercised against a real media app on a device yet.
 
-Queue requests use an optional user-configured Spotify developer Client ID and
-PKCE connection to search Spotify and add the top track through its Web API;
-Spotify requires Premium and an available playback device for this operation.
+Queueing is the exception to all of that, because Android exposes no way to add
+to another app's queue: transport controls stop at play, skip, and seek, and a
+session's queue can only be read. EVA instead keeps one queue provider per app
+that offers a route of its own, and an app with no provider is answered by
+naming the apps that have one. Spotify is the only provider so far, reached
+through its Web API with an optional connection the user sets up from a Client
+ID for their own Spotify developer app; Spotify requires Premium and an
+available playback device.
 
 EVA now registers a voice interaction service, so it can be selected as the
 phone's digital assistant rather than only answering an assist intent. The

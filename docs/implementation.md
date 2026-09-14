@@ -153,16 +153,33 @@ Spotify" ended at Spotify's search screen was reported from a device, which is
 the intent path; that Spotify's session honours `playFromSearch` from EVA's
 controller has not been confirmed on a device yet.
 
-### Queueing on Spotify
+### Queueing a track
 
-`eva.android.media.queue` uses Spotify's Web API because Android's generic media
-session has no play-from-search equivalent for queueing, and adding a session
-queue item requires an app-specific media ID that EVA cannot discover through
-the framework API. EVA searches Spotify for the requested words, chooses the
-top track, and adds its Spotify URI after the current track without interrupting
-playback.
+Queueing is the one media request that has no general answer on Android. The
+framework's transport controls carry play, pause, skip, seek, and
+`playFromSearch` but nothing that appends to a queue; a session's queue is
+readable through `getQueue` and cannot be added to; the session callback an app
+implements has no add-to-queue entry; and the framework `MediaBrowser` has no
+search, so there is also no generic way to turn spoken words into the media ID
+a queue item would need. The compat library does add an add-queue-item call and
+a browser search, but both only work over a connection made through the app's
+own `MediaBrowserService`, which is the same gate that refuses EVA.
 
-The optional connection uses OAuth Authorization Code with PKCE and no client
+`eva.android.media.queue` therefore works through `QueueProvider`: one
+implementation per app that offers a route of its own. A provider carries the
+label the user would say, decides whether a spoken app name means it, says
+whether the user has finished connecting it, and queues the best match for the
+words. `MediaQueueBackend` holds the list and chooses between them. An app that
+EVA can play through but not queue on is the expected case rather than a
+failure: it has no provider, and the reply names the apps that do have one
+instead of only refusing. A named app that no provider covers, a provider the
+user has not connected yet, and more than one connected provider with no app
+named are each answered with what to do about it. Nothing is queued in any of
+those cases, and the message says so.
+
+`SpotifyQueueProvider` is the only implementation today. Spotify refuses EVA as
+a media browser client, so its Web API is the only route to its queue. The
+optional connection uses OAuth Authorization Code with PKCE and no client
 secret. The user supplies the Client ID from their own Spotify developer app,
 whose redirect URI must include `eva://spotify`. EVA generates a one-time
 verifier, S256 challenge, and state; `SpotifyRedirectActivity` receives the
@@ -170,15 +187,19 @@ browsable redirect, verifies the state through the pending coordinator, trades
 the code for tokens, fetches the account profile, and returns the existing EVA
 task to settings. The Client ID stays in ordinary settings preferences. Tokens
 and the profile are serialized in `SecretStore`, and an expiring access token is
-refreshed under a mutex.
+refreshed under a mutex. The pending verifier is held in memory only, so a
+process death while the user is in the browser is reported as a mismatched
+sign-in to retry rather than silently accepted.
 
-Spotify restricts queue changes to Premium accounts. It also needs an available
-playback device: EVA prefers the active device, uses the only device when there
-is exactly one, and otherwise lets Spotify select or report that nothing is
-active. JVM tests cover PKCE, redirect-state checking, token-refresh timing,
-queue routing, device selection, and user-facing failures. This flow has not
-been exercised against Spotify on a device, including the developer dashboard's
-current redirect-URI acceptance rules.
+Spotify restricts queue changes to Premium accounts. It also queues onto a
+device rather than an app, so the provider prefers the device Spotify reports as
+active, uses the only device when there is exactly one, and otherwise leaves the
+choice to Spotify, which answers with its own reason when nothing is active.
+Both restrictions reach the user as stated reasons rather than a claimed
+success. JVM tests cover PKCE, redirect-state checking, token-refresh timing,
+provider selection and every refusal message, device selection, and user-facing
+failures. This flow has not been exercised against Spotify on a device,
+including the developer dashboard's current redirect-URI acceptance rules.
 
 ## Sending a text message
 
