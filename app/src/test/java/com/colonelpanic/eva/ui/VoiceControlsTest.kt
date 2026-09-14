@@ -4,6 +4,8 @@ import com.colonelpanic.eva.audio.AudioFocusState
 import com.colonelpanic.eva.audio.MediaControls
 import com.colonelpanic.eva.audio.MediaFailure
 import com.colonelpanic.eva.audio.RealtimeMediaState
+import com.colonelpanic.eva.audio.isActive
+import com.colonelpanic.eva.audio.voiceStatusLabel
 import com.colonelpanic.eva.conversation.ConversationState
 import com.colonelpanic.eva.conversation.ProviderStatus
 import org.junit.Assert.assertEquals

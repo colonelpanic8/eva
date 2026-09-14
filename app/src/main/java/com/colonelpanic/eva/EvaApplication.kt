@@ -17,7 +17,9 @@ import com.colonelpanic.eva.adapters.android.NavigationIntentBackend
 import com.colonelpanic.eva.adapters.android.ShizukuShellHost
 import com.colonelpanic.eva.adapters.android.SmsSendBackend
 import com.colonelpanic.eva.audio.RealtimeMediaConfig
+import com.colonelpanic.eva.audio.VoiceSessionHost
 import com.colonelpanic.eva.audio.VoiceSessionService
+import com.colonelpanic.eva.audio.VoiceSessionStatus
 import com.colonelpanic.eva.audio.webrtc.WebRtcMediaSessionFactory
 import com.colonelpanic.eva.capability.CapabilityDispatcher
 import com.colonelpanic.eva.capability.CapabilityRegistry
@@ -46,7 +48,9 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
-class EvaApplication : Application() {
+class EvaApplication :
+    Application(),
+    VoiceSessionHost {
     val intentHost = AndroidIntentHost()
     val shizukuShellHost by lazy { if (Build.VERSION.SDK_INT >= 37) ShizukuShellHost(this) else null }
 
@@ -69,6 +73,14 @@ class EvaApplication : Application() {
 
     /** Models this account can use, empty until credentials are present and the list loads. */
     val availableModels = mutableModels.asStateFlow()
+    private val mutableVoiceSession = MutableStateFlow(VoiceSessionStatus())
+
+    /** Mirrors the live session so the notification can render and control it without the activity. */
+    override val voiceSession = mutableVoiceSession.asStateFlow()
+
+    override fun toggleVoiceMicrophone() = controller.toggleMicrophone()
+
+    override fun endVoiceSession() = controller.disconnect()
 
     private val clientVersion by lazy {
         runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull()
@@ -198,6 +210,9 @@ class EvaApplication : Application() {
             voiceLookupRetries = { settings.voiceLookupRetries },
             voiceKeywords = { contactKeywords.names() },
         ).also { controller ->
+            scope.launch {
+                controller.state.collect { mutableVoiceSession.value = VoiceSessionStatus(it.mediaState, it.mediaControls) }
+            }
             scope.launch {
                 controller.state
                     .map { it.voiceMode && it.providerStatus != ProviderStatus.DISCONNECTED }

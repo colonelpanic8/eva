@@ -11,23 +11,65 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.colonelpanic.eva.MainActivity
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 /**
  * Holds a foreground notification for the duration of a voice session. Without it Android
  * silences the microphone and may kill playback as soon as a phone action brings another
- * app to the front, which is exactly when the spoken confirmation is due.
+ * app to the front, which is exactly when the spoken confirmation is due. The notification
+ * also carries the mute and end controls, so a backgrounded call stays reachable.
  */
 class VoiceSessionService : Service() {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val host get() = application as? VoiceSessionHost
+    private var foreground = false
+
     override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        createChannel()
+        val host = host ?: return
+        scope.launch {
+            host.voiceSession.collect { status ->
+                if (foreground) {
+                    getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(status))
+                }
+            }
+        }
+    }
 
     override fun onStartCommand(
         intent: Intent?,
         flags: Int,
         startId: Int,
     ): Int {
-        val notification = notification()
+        // Action intents only reach a service that is already in the foreground, so they must
+        // not re-enter startForeground while the session is being torn down.
+        when (intent?.action) {
+            ACTION_TOGGLE_MICROPHONE -> host?.toggleVoiceMicrophone()
+            ACTION_END -> host?.endVoiceSession()
+            else -> startInForeground()
+        }
+        return START_NOT_STICKY
+    }
+
+    override fun onDestroy() {
+        scope.cancel()
+        foreground = false
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        super.onDestroy()
+    }
+
+    private fun startInForeground() {
+        val notification = notification(host?.voiceSession?.value ?: VoiceSessionStatus())
         when {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
                 // Both types, so capture and playout keep running once another app takes the screen.
@@ -49,18 +91,36 @@ class VoiceSessionService : Service() {
                 startForeground(NOTIFICATION_ID, notification)
             }
         }
-        return START_NOT_STICKY
+        foreground = true
     }
 
-    private fun notification(): Notification {
-        val manager = getSystemService(NotificationManager::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            manager.createNotificationChannel(
-                NotificationChannel(CHANNEL, "Voice session", NotificationManager.IMPORTANCE_LOW).apply {
-                    description = "Shown while EVA is in a voice conversation"
-                },
-            )
-        }
+    private fun createChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        getSystemService(NotificationManager::class.java).createNotificationChannel(
+            NotificationChannel(CHANNEL, "Voice session", NotificationManager.IMPORTANCE_LOW).apply {
+                description = "Shown while EVA is in a voice conversation"
+            },
+        )
+    }
+
+    private fun action(
+        title: String,
+        action: String,
+        requestCode: Int,
+    ) = NotificationCompat.Action
+        .Builder(
+            0,
+            title,
+            PendingIntent.getService(
+                this,
+                requestCode,
+                Intent(this, VoiceSessionService::class.java).setAction(action),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            ),
+        ).build()
+
+    private fun notification(status: VoiceSessionStatus): Notification {
+        val content = voiceNotificationContent(status)
         val open =
             PendingIntent.getActivity(
                 this,
@@ -72,16 +132,23 @@ class VoiceSessionService : Service() {
             .Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentTitle("EVA is listening")
-            .setContentText("Tap to return. Stop voice in EVA to end it.")
+            .setContentText(content.text)
             .setOngoing(true)
+            .setSilent(true)
+            .setShowWhen(false)
             .setContentIntent(open)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
+            .apply {
+                addAction(action(content.microphoneAction, ACTION_TOGGLE_MICROPHONE, 1))
+                addAction(action("End", ACTION_END, 2))
+            }.build()
     }
 
     companion object {
         private const val CHANNEL = "eva.voice"
         private const val NOTIFICATION_ID = 41
+        private const val ACTION_TOGGLE_MICROPHONE = "com.colonelpanic.eva.audio.TOGGLE_MICROPHONE"
+        private const val ACTION_END = "com.colonelpanic.eva.audio.END"
 
         fun start(context: Context) = ContextCompat.startForegroundService(context, Intent(context, VoiceSessionService::class.java))
 
