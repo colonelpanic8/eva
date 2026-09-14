@@ -326,3 +326,23 @@ A read-only HTTP package can therefore GET an unfiltered collection and define q
 only in its tool schema/filter, omitting it from HTTP query mappings. That needs
 no server-side search changes. The existing org-agenda fixture still records its
 confirmed q/limit/total and strict server contract; its device test remains deferred.
+
+## Fixed activity components
+
+An `android.intent` binding may add `"package": "moe.zhs.caffeine"` and
+`"class": "moe.zhs.caffeine.ToggleActivity"`. The class must be a fully qualified
+activity class name and requires a fixed package; it cannot be combined with
+packageByName. These are literal approved destinations, never argument slots.
+Action, scalar extras and encoded URI slots work as before. Component identity
+participates in the package digest and grants. Effects still floor at external
+handoff, and packages may declare write. The Android host attempts the explicit
+launch without a package visibility pre-query. A missing/disabled component
+returns NOT_EXECUTED with install/enable/update guidance; no registry revision
+is changed merely because a target is temporarily unavailable. Android permission
+and export checks still apply. A successful launch is HANDED_OFF, not proof of
+completed work or resulting state.
+
+The bundled example lives in `app/src/main/assets/caffeine.json` and is loaded
+by the same codec as other packages. It pins Caffeine's ToggleActivity and integer
+Status 1/0 for enable/disable. The documented API provides no state query; EVA
+therefore offers no read capability. See [Caffeine's contract](https://lab.zhs.moe/caffeine/guide/advanced/).

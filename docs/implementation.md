@@ -878,3 +878,15 @@ Ivan is not deploying those changes now. Nothing in this extension work is
 device-verified. Messages is also awaiting its physical-phone test, and the
 installed-service adapter still has no test vehicle. All current extension
 verification claims refer to JVM/fake-host or Robolectric checks only.
+
+### Caffeine proving package
+
+The bundled Caffeine JSON uses the declarative codec and settings loader, starts
+disabled, and requires separate enable/disable write grants. Fixed package/class
+destinations retain typed extras/URI encoding and cannot be model-selected.
+Missing activities return actionable NOT_EXECUTED without catalog revision churn;
+success is HANDED_OFF. Focused JVM tests cover fixed destinations, integer Status,
+invalid definitions, missing activities and subsequent handoff. Caffeine exposes
+no documented state query. Physical execution remains unverified; see
+[caffeine-device-test.md](caffeine-device-test.md). This is the next device proving
+case; org-agenda testing remains deferred pending its server prerequisites.

@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.adapters.android
 
+import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
 import com.colonelpanic.eva.adapters.declarative.ContentRequest
@@ -33,7 +34,11 @@ class AndroidDeclarativeHost(
         return intents.launch(
             buildIntent(request),
             request.receipts.success ?: "Request handed to the app. Completion is not verified.",
-            request.receipts.handlerMissing ?: "No installed app can handle this request.",
+            if (request.targetClass != null) {
+                "The activity ${request.targetPackage}/${request.targetClass} is unavailable. Install or enable the target app, or update this package for its installed version."
+            } else {
+                request.receipts.handlerMissing ?: "No installed app can handle this request."
+            },
         )
     }
 
@@ -52,6 +57,7 @@ class AndroidDeclarativeHost(
             Intent(request.action).apply {
                 setDataAndType(request.uri.takeIf { it.isNotEmpty() }?.let(Uri::parse), request.mimeType)
                 request.targetPackage?.let { setPackage(it) }
+                request.targetClass?.let { component = ComponentName(requireNotNull(request.targetPackage), it) }
                 for ((name, value) in request.extras) {
                     when {
                         value.isString -> {

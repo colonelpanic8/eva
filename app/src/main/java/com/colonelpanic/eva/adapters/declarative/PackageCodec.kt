@@ -169,7 +169,7 @@ object PackageCodec {
         root: JsonObject,
         properties: JsonObject,
     ): DeclarativeBinding.Intent {
-        root.fields(setOf("kind", "action"), setOf("uri", "extras", "package", "mimeType", "packageByName"))
+        root.fields(setOf("kind", "action"), setOf("uri", "extras", "package", "mimeType", "packageByName", "class"))
         val action = root.text("action", 200).also { require(Regex("[A-Za-z][A-Za-z0-9_.]+").matches(it)) }
         val uri = root["uri"]?.obj()
         val base =
@@ -191,13 +191,22 @@ object PackageCodec {
         val query = slots(uri?.get("query"), properties)
         val extras = slots(root["extras"], properties)
         val target = root["package"]?.string()?.also { require(packageId.matches(it)) }
+        val targetClass =
+            root["class"]?.let {
+                require(target != null) { "A fixed class requires a fixed package" }
+                root.text("class", 300).also { name ->
+                    require(
+                        Regex("[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_$][A-Za-z0-9_$]*)+").matches(name),
+                    ) { "Use a fully qualified fixed activity class" }
+                }
+            }
         val mimeType = root["mimeType"]?.string()?.also { require(Regex("[a-z0-9.+-]+/[a-z0-9.+-]+").matches(it)) }
         val byName =
             root["packageByName"]?.string()?.also {
                 require(properties[it]?.obj()?.get("type") == JsonPrimitive("string"))
                 require(target == null) { "Choose either a fixed package or a visible app name" }
             }
-        return DeclarativeBinding.Intent(action, base, query, extras, target, mimeType, byName, opaque)
+        return DeclarativeBinding.Intent(action, base, query, extras, target, mimeType, byName, opaque, targetClass)
     }
 
     private fun content(

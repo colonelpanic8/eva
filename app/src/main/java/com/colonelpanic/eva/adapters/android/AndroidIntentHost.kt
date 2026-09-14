@@ -85,7 +85,16 @@ class AndroidIntentHost {
                 start(intent)
                 ExecutionOutcome(InvocationStatus.HANDED_OFF, successMessage)
             } catch (_: ActivityNotFoundException) {
-                ExecutionOutcome(InvocationStatus.FAILED, missingAppMessage)
+                ExecutionOutcome(
+                    if (intent.component !=
+                        null
+                    ) {
+                        InvocationStatus.NOT_EXECUTED
+                    } else {
+                        InvocationStatus.FAILED
+                    },
+                    missingAppMessage,
+                )
             } catch (_: IllegalStateException) {
                 ExecutionOutcome(InvocationStatus.NOT_EXECUTED, SURFACE_LOST)
             } catch (_: SecurityException) {

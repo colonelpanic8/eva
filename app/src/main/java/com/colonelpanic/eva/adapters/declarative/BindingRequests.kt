@@ -14,6 +14,7 @@ data class IntentRequest(
     val mimeType: String? = null,
     val appName: String? = null,
     val receipts: ReceiptText = ReceiptText(),
+    val targetClass: String? = null,
 )
 
 data class ContentRequest(
@@ -83,7 +84,16 @@ class BindingArguments(
                     require(it.isNotBlank() && it.length <= 100 && it.none(Char::isISOControl))
                 }
             }
-        return IntentRequest(binding.action, uri, extras, binding.targetPackage, binding.mimeType, appName, capability.receipts)
+        return IntentRequest(
+            binding.action,
+            uri,
+            extras,
+            binding.targetPackage,
+            binding.mimeType,
+            appName,
+            capability.receipts,
+            binding.targetClass,
+        )
     }
 
     fun select(binding: DeclarativeBinding): DeclarativeBinding =

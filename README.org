@@ -56,6 +56,12 @@ panel taps from dismissing it, and dismissed from the surrounding scrim. The
 keyguard path, assistant activity handoff, and delegated system recognition
 remain unverified; JVM tests cover selection, lifecycle, and dispatch logic.
 
+The bundled [[file:app/src/main/assets/caffeine.json][Caffeine package]] asks the existing app to enable or disable keep-awake
+through fixed-component intents. Both actions require separate write grants and
+report handoff, not verified state. It needs no server or app-side changes.
+JVM verification covers the contract and missing-activity handling;
+[[file:docs/caffeine-device-test.md][Pixel execution verification]] is pending.
+
 The shipped [[file:app/src/main/assets/messages.json][Messages package]] controls the phone's existing messaging app through
 Android's SMS-compose intent. Its JSON definition, enable/action grants, typed
 arguments, and attributed handoff receipts use the declarative adapter. It opens
