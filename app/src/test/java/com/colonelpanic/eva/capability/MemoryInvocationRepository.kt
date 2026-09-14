@@ -47,4 +47,6 @@ class MemoryInvocationRepository : InvocationRepository {
     }
 
     override suspend fun history() = records.values.toList()
+
+    override suspend fun byCallIds(ids: Collection<String>) = records.filterKeys { it in ids }
 }

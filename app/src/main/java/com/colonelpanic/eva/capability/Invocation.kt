@@ -62,6 +62,8 @@ interface InvocationRepository {
     ): InvocationRecord
 
     suspend fun history(): List<InvocationRecord>
+
+    suspend fun byCallIds(ids: Collection<String>): Map<String, InvocationRecord>
 }
 
 data class ExecutionOutcome(
