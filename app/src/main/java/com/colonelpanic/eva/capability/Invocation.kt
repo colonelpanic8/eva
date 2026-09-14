@@ -79,6 +79,8 @@ interface ExecutionBackend {
     suspend fun unavailableReason(): String?
 
     suspend fun execute(arguments: Map<String, String>): ExecutionOutcome
+
+    suspend fun execute(proposal: ToolProposal): ExecutionOutcome = execute(proposal.arguments)
 }
 
 open class ProposalRejectedException(

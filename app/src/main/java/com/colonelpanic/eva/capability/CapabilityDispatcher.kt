@@ -88,7 +88,7 @@ class CapabilityDispatcher(
                 currentCoroutineContext().ensureActive()
                 val outcome =
                     try {
-                        admitted.execute(snapshot.arguments)
+                        admitted.execute(snapshot)
                     } catch (error: CancellationException) {
                         throw error
                     } catch (_: Exception) {
