@@ -56,7 +56,10 @@ panel taps from dismissing it, and dismissed from the surrounding scrim. The
 keyguard path, assistant activity handoff, and delegated system recognition
 remain unverified; JVM tests cover selection, lifecycle, and dispatch logic.
 
-Paseo and capability-package import are not integrated. AppFunctions settings
+Paseo and capability-package import are not integrated. The
+[[file:docs/extension-protocol.md][installed-app extension v1 contract]] is specified for implementation;
+installed-app discovery, grants, and execution are not yet integrated.
+AppFunctions settings
 control and an experimental device-control backend use Shizuku when it is
 installed and explicitly authorized. On Android 11 and later, the device backend
 can read a bounded text projection of the active accessibility hierarchy, replace

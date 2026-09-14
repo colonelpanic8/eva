@@ -695,6 +695,24 @@ API 36 experiment verifies the native mechanism, not this integrated contract.
 
 ## 6. Custom extensions
 
+### First implementation: installed Android apps
+
+The [installed-app extension protocol v1](extension-protocol.md) is being built
+ahead of declarative imports and MCP. A separately installed agenda app already
+has a native client and credentials; discovering its bounded actions on stock
+Android directly tests install-only extensibility without app-specific EVA code.
+AppFunctions execution privileges are not a sideloaded baseline. This changes
+sequencing, not the common dispatcher/authorization boundary. The protocol is
+specified; runtime support remains unimplemented.
+
+The first pass uses asynchronous bound-service AIDL, immutable catalog snapshots,
+and persistent settings grants. Discovery is automatic; enabling an extension
+grants claimed reads, while writes and unknown effects need individual grants.
+Provider text remains attributed data. Additions appear on the next connection;
+revocations block dispatch immediately. In-turn/spoken confirmation, live provider
+rotation, multi-action requests, declarative import, and MCP remain deferred.
+The fuller contracts below describe the target beyond v1.
+
 ### One action contract, multiple execution mechanisms
 
 Use one versioned package format for bundled and imported action definitions.
@@ -771,9 +789,9 @@ extension does not install a new audio codec or arbitrary Kotlin code.
 
 Instruction bundles can add vocabulary and workflows referencing installed
 capability IDs. They have no independent execution privileges. Separately
-installed Android extension apps could later implement a versioned IPC contract
-with caller identity and explicit grants; defer that ABI until declarations
-and remote servers demonstrate what cannot be expressed.
+installed Android extension apps use the versioned IPC contract linked above,
+with caller identity and explicit grants. This is the first planned open
+extension mechanism; declarations and remote servers remain later work.
 
 ### Declarative package sketch
 
