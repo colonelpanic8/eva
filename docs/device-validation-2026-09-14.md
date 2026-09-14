@@ -45,3 +45,12 @@ execution awaits a compatible org-agenda-api deployment. Repository-import and
 general AppFunctions work remain in progress. Package removal/update broadcasts,
 Binder death, and background execution restrictions have not been exercised on a
 physical device.
+
+## Combined Extensions build
+
+The subsequent combined installed-extensions worktree build includes the receipt
+crash fix and dedicated Extensions destination. Installed with replacement, it
+opens from the navigation drawer and shows Caffeine, Messages, their enabled
+switches and three action grants, plus the repository controls. Existing receipts
+still render. `just format` and `just check` pass. Remote repository installation
+has JVM coverage but awaits a published repository for device verification.

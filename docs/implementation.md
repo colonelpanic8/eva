@@ -902,7 +902,8 @@ those paths, compiles it and rejects unreviewed constructs (including unmatched
 literal braces, Unicode properties, inline flags, possessive quantifiers and
 nested character classes). This is conservative syntax checking, not ICU execution:
 JVM/Robolectric tests still cannot prove Android regex-engine compatibility.
-Reinstallation and the [Caffeine device test](caffeine-device-test.md) are pending.
+Reinstallation and typed Caffeine actions subsequently passed on the Pixel; see
+[device results](device-validation-2026-09-14.md).
 
 Individual bundled package read/decode/initializer failures are logged and shown
 as unavailable entries; healthy packages continue loading. Adapter construction,
@@ -911,12 +912,33 @@ Discovery failures are logged, marked unavailable, and may be refreshed. These
 boundaries preserve coroutine cancellation and do not swallow VM-fatal errors.
 Application startup also catches non-fatal extension initialization failures.
 JVM tests inject malformed JSON, initializer errors, asset listing and adapter
-refresh failures. No extension action is yet device-verified.
+refresh failures. Caffeine and Messages intent actions are now device-verified;
+installed-service and HTTP execution remain unverified.
 
 Separate branch report, not fixed here: an earlier `threads` debug build crashed
 with `IllegalStateException: Unknown turn: <uuid>` in
 `SqliteConversationStore.turnThreadId` (line 329), called through `closeTurn`.
 This user-reported issue belongs to the unmerged threads branch.
+
+### Dedicated Extensions destination
+
+The navigation drawer now has an Extensions page containing discovered/installed
+extensions, read/write grants, configuration and wait budgets. These controls
+moved out of general Settings without changing authorization or storage. Caffeine's
+switches are now under Extensions → Installed extensions. The combined build passed
+`just check` and was installed from the installed-extensions worktree. Pixel navigation
+to the page, both package listings, and all five retained enable/action switches were
+verified. The crash fix and repository UI are included in the same APK.
+
+The repository browser fetches bounded HTTPS indexes and raw package files, matches
+Android package IDs locally, previews capabilities/effects/destinations, and installs
+the exact reviewed bytes. Persistent imports feed PackageAdapter alongside bundled
+assets. Updates retain instance identity, require increasing versions when content
+changes, and revoke grants through the shared descriptor digest. JVM tests cover
+remote additions reaching the registry without a rebuild, persistence failures,
+digest/origin rejection, updates and grant revocation. The default eva-plugins
+GitHub source is reserved but has not been published. End-to-end repository device
+verification and local-file import remain pending.
 
 ### Pixel extension checks on installed build 0f53e78
 

@@ -57,18 +57,22 @@ keyguard path, assistant activity handoff, and delegated system recognition
 remain unverified; JVM tests cover selection, lifecycle, and dispatch logic.
 
 The bundled [[file:app/src/main/assets/caffeine.json][Caffeine package]] asks the existing app to enable or disable keep-awake
-through fixed-component intents. Both actions require separate write grants and
+through fixed-component intents. Manage extensions, grants and wait budgets on
+the navigation drawer’s Extensions page. Both actions require separate write grants and
 report handoff, not verified state. It needs no server or app-side changes.
 JVM verification covers the contract and missing-activity handling;
-[[file:docs/caffeine-device-test.md][Pixel execution verification]] is pending.
+[[file:docs/device-validation-2026-09-14.md][Pixel typed execution verification]] passed for enable and disable, with notification state changes.
 
 The shipped [[file:app/src/main/assets/messages.json][Messages package]] controls the phone's existing messaging app through
 Android's SMS-compose intent. Its JSON definition, enable/action grants, typed
 arguments, and attributed handoff receipts use the declarative adapter. It opens
 a draft; the user taps Send. No update to Messages, server credentials, Shizuku,
 or app-side extension code is needed. JVM tests cover the wiring;
-[[file:docs/messages-device-test.md][Pixel verification]] is pending. The org-agenda HTTP example is not bundled.
-Local/HTTPS package import, content-provider execution, and Paseo are not integrated. The
+[[file:docs/device-validation-2026-09-14.md][Pixel verification]] passed with an unsent draft. The org-agenda HTTP example is not bundled.
+The Extensions page supports HTTPS repository refresh, app matching, preview,
+installation, updates and removal. Repository imports are JVM-tested; a published
+starter repository and end-to-end repository device test are still pending.
+Local file import, content-provider execution, and Paseo are not integrated. The
 [[file:docs/extension-protocol.md][installed-app extension v1 contract]] now has generic discovery, asynchronous
 AIDL execution, persistent settings grants, attributed receipts, and deterministic
 64-tool admission wired into the app. Extensions appear disabled; enabling grants

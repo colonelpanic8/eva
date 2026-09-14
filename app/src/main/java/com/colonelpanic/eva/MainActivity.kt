@@ -160,9 +160,11 @@ class MainActivity : ComponentActivity() {
         val signIn by eva.signIn.state.collectAsStateWithLifecycle()
         val screenControl by eva.capabilities.screenControlFlow.collectAsStateWithLifecycle()
         val extensions by eva.extensions.settings.collectAsStateWithLifecycle()
+        val plugins by eva.pluginBrowser.state.collectAsStateWithLifecycle()
         val packages by eva.packageSettings.state.collectAsStateWithLifecycle()
         val waits by eva.packageSettings.waits.collectAsStateWithLifecycle()
         return SettingsUiState(
+            plugins = plugins,
             extensions = extensions,
             packages = packages,
             waitDefaults = waits,
@@ -202,6 +204,11 @@ class MainActivity : ComponentActivity() {
         remember {
             val settings = eva.settings
             SettingsActions(
+                onRepositoryRefresh = eva.pluginBrowser::refresh,
+                onPluginPreview = eva.pluginBrowser::preview,
+                onPluginUrlPreview = eva.pluginBrowser::previewUrl,
+                onPluginInstall = eva.pluginBrowser::installPreview,
+                onPluginRemove = eva.pluginBrowser::remove,
                 onSavePackageServer = eva::savePackageServer,
                 onClearPackageServer = eva::clearPackageServer,
                 onSaveWait = eva.packageSettings::saveWait,

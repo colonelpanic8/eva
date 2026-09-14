@@ -6,6 +6,9 @@ import com.colonelpanic.eva.providers.openai.SignInState
 
 /** Everything the settings screen renders, collected once by the activity. */
 data class SettingsUiState(
+    val plugins: com.colonelpanic.eva.adapters.declarative.PluginBrowserState =
+        com.colonelpanic.eva.adapters.declarative
+            .PluginBrowserState(),
     val packages: List<com.colonelpanic.eva.data.PackageConfigurationEntry> = emptyList(),
     val waitDefaults: Map<com.colonelpanic.eva.capability.InteractionMode, Long> = emptyMap(),
     val extensions: ExtensionSettings = ExtensionSettings(),
@@ -36,6 +39,11 @@ data class SettingsUiState(
  * connection panel behaved, and it left nothing on screen to explain the failure.
  */
 data class SettingsActions(
+    val onRepositoryRefresh: (String) -> Unit = {},
+    val onPluginUrlPreview: (String) -> Unit = {},
+    val onPluginPreview: (String) -> Unit = {},
+    val onPluginInstall: () -> Unit = {},
+    val onPluginRemove: (String) -> Unit = {},
     val onSavePackageServer: (String, String, String, String) -> String? = { _, _, _, _ -> null },
     val onClearPackageServer: (String) -> Unit = {},
     val onSaveWait: (String, String) -> String? = { _, _ -> null },

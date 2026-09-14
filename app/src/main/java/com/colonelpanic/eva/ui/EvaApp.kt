@@ -22,16 +22,17 @@ import com.colonelpanic.eva.conversation.ProviderStatus
 import com.colonelpanic.eva.providers.openai.OpenAiModels
 import com.colonelpanic.eva.ui.about.AboutInfo
 import com.colonelpanic.eva.ui.about.AboutScreen
+import com.colonelpanic.eva.ui.settings.ExtensionsScreen
 import com.colonelpanic.eva.ui.settings.SettingsActions
 import com.colonelpanic.eva.ui.settings.SettingsScreen
 import com.colonelpanic.eva.ui.settings.SettingsUiState
 import com.colonelpanic.eva.ui.theme.EvaTheme
 import kotlinx.coroutines.launch
 
-internal enum class EvaDestination { CONVERSATION, SETTINGS, ABOUT }
+internal enum class EvaDestination { CONVERSATION, EXTENSIONS, SETTINGS, ABOUT }
 
 /**
- * Three top-level destinations behind a navigation drawer. A navigation library would only
+ * Top-level destinations behind a navigation drawer. A navigation library would only
  * add a dependency to express what one saved enum and a back press already do.
  */
 @Composable
@@ -91,6 +92,10 @@ fun EvaApp(
                     onRetryMicrophone = onRetryMicrophone,
                     onDismissDenial = onDismissDenial,
                 )
+            }
+
+            EvaDestination.EXTENSIONS -> {
+                ExtensionsScreen(state = settings, actions = settingsActions, onOpenDrawer = { openDrawer() })
             }
 
             EvaDestination.SETTINGS -> {

@@ -273,6 +273,39 @@ class EvaApplication :
         }
     }
 
+    val pluginBrowser by lazy {
+        com.colonelpanic.eva.adapters.declarative.PluginBrowser(
+            com.colonelpanic.eva.adapters.declarative.PluginRepository(
+                com.colonelpanic.eva.adapters.declarative
+                    .RepositoryHttpClient()::fetch,
+            ),
+            extensionScope,
+            packageSettings.repositorySource,
+            packageSettings::imported,
+            {
+                packageManager
+                    .queryIntentActivities(
+                        android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_LAUNCHER),
+                        0,
+                    ).map { it.activityInfo.packageName }
+                    .toSet()
+            },
+            packageSettings::saveRepository,
+            { preview ->
+                registry.changeAuthorization {
+                    packageSettings.installPlugin(preview)
+                    packageAdapter.refresh()
+                }
+            },
+            { instance ->
+                registry.changeAuthorization {
+                    packageSettings.removePlugin(instance)
+                    packageAdapter.refresh()
+                }
+            },
+        )
+    }
+
     fun savePackageServer(
         id: String,
         url: String,

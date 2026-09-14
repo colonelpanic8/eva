@@ -17,7 +17,7 @@ class PackageSettingsFailureTest {
     fun `malformed package and initializer error do not hide a healthy bundled package`() {
         val json =
             generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }
-                .map { File(it, "app/src/main/assets/caffeine.json") }
+                .map { File(it, "docs/examples/caffeine.json") }
                 .first { it.isFile }
                 .readText()
         val settings =

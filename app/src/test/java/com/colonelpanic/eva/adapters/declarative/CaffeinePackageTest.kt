@@ -19,12 +19,12 @@ import java.io.File
 class CaffeinePackageTest {
     private val source get() =
         generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }
-            .map { File(it, "app/src/main/assets/caffeine.json") }
+            .map { File(it, "docs/examples/caffeine.json") }
             .first { it.isFile }
             .readText()
 
     @Test
-    fun `shipped actions pin component and integer status and retain write effects`() {
+    fun `example actions pin component and integer status and retain write effects`() {
         val definition = PackageCodec.decode(source)
         assertEquals(listOf("enable", "disable"), definition.capabilities.map { it.name })
         definition.capabilities.forEachIndexed { index, capability ->

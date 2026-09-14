@@ -12,6 +12,7 @@ data class PackageDefinition(
     val capabilities: List<PackageCapability>,
     val digest: String,
     val document: JsonObject,
+    val androidPackages: List<String> = emptyList(),
 )
 
 enum class PackageEffect { READ, WRITE, HANDOFF, UNKNOWN }

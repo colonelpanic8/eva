@@ -57,7 +57,7 @@ class PackageSettings(
             null
         }
 
-    private val sources: Map<PackageIdentity, PackageDefinition> =
+    private val bundledSources: Map<PackageIdentity, PackageDefinition> =
         loadOrReject("Bundled packages", listPackages)
             .orEmpty()
             .filter { it.endsWith(".json") }
@@ -72,6 +72,35 @@ class PackageSettings(
                     PackageIdentity(id) to source
                 }
             }.toMap()
+    private val imports =
+        loadOrReject("Repository plugins") {
+            com.colonelpanic.eva.adapters.declarative.PluginInstallations(
+                { prefs.getString("imports", null) },
+                { encoded -> savePreferences { putString("imports", encoded) } },
+            )
+        }
+    private val sources: Map<PackageIdentity, PackageDefinition>
+        get() = bundledSources + imported().associate { it.identity to it.definition }
+
+    fun imported() = imports?.all().orEmpty()
+
+    val repositorySource: String get() =
+        prefs.getString("repository", null)
+            ?: com.colonelpanic.eva.adapters.declarative.DEFAULT_PLUGIN_INDEX
+
+    fun saveRepository(source: String) = savePreferences { putString("repository", source) }
+
+    fun installPlugin(preview: com.colonelpanic.eva.adapters.declarative.PluginPreview) {
+        checkNotNull(imports) { "Plugin storage could not be loaded" }.install(preview)
+        mutable.value = entries()
+    }
+
+    fun removePlugin(instance: String) {
+        checkNotNull(imports).remove(instance)
+        secrets.clear("package:$instance:basic")
+        mutable.value = entries()
+    }
+
     private val mutable = MutableStateFlow(entries())
     val state = mutable.asStateFlow()
     private val defaults = MutableStateFlow(modeDefaults())

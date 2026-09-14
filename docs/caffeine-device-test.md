@@ -1,14 +1,14 @@
 # Caffeine declarative package device test
 
-Status: the first Pixel attempt (185c710) crashed before UI during regex initialization.
-The portable-regex/startup-isolation fix is JVM-tested; reinstallation and physical
-action verification are pending. Caffeine needs
+Status: Pixel typed enable and disable passed on 0f53e78 with HANDED_OFF receipts
+and independently observed notification changes. The startup regex and receipt
+layout crashes are fixed. Idle screen-timeout behavior was not measured. Caffeine needs
 no modification, server, credentials, Shizuku or EVA-specific service.
 
 1. Install `app/build/outputs/apk/debug/app-debug.apk` (package
    `com.colonelpanic.eva.debug`) on the Pixel with Caffeine installed. Open
    Caffeine first and complete any permissions/setup that it requests.
-2. In EVA debug settings, under Installed extensions, enable Caffeine, then
+2. In EVA debug, open the navigation menu → Extensions → Installed extensions, enable Caffeine, then
    grant **Enable keep-awake** and **Disable keep-awake** separately. Both are
    writes and start without grants. No server credential entry is needed.
 3. Close any current connection and reconnect in typed mode, keeping EVA visible.

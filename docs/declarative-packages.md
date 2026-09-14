@@ -3,8 +3,9 @@
 Status: the shipped Messages package controls an existing Android messaging app
 with an SMS-compose intent. It uses settings grants and attributed handoff
 receipts, with no target-app changes or server credentials. Focused JVM tests
-cover it; [Pixel verification](messages-device-test.md) is pending. The org-agenda
-HTTP example remains a non-bundled interpreter fixture. Local/HTTPS import and
+cover it; [Pixel Caffeine and Messages verification](device-validation-2026-09-14.md) passed.
+The org-agenda HTTP example remains a non-bundled interpreter fixture. HTTPS index
+and raw-package imports are implemented with preview and explicit install. Local file import and
 content-provider execution remain unimplemented. Packages, AppFunctions, and
 [installed extension apps](extension-protocol.md) are the three extension paths;
 generalized AppFunctions is still planned.
@@ -33,7 +34,7 @@ packages/org-agenda.json
 packages/maps.json
 ```
 
-The planned index envelope is:
+The index envelope is:
 
 ```json
 {
@@ -43,7 +44,8 @@ The planned index envelope is:
     "version": "0.1.0",
     "title": "Org agenda",
     "url": "packages/org-agenda.json",
-    "sha256": "<SHA-256 of the exact package file bytes>"
+    "sha256": "<SHA-256 of the exact package file bytes>",
+    "androidPackages": []
   }]
 }
 ```
@@ -55,7 +57,10 @@ The preview shows the source, operations, effects, destinations, and data disclo
 Installation uses those exact previewed bytes, without a second download.
 Source and package ID are retained for explicit update checks. A changed version
 does not retain grants, and a digest is not publisher authentication. A package
-can also be copied or imported as a file without its repository.
+can also be copied and hosted independently at a raw HTTPS URL.
+Packages optionally declare `androidPackages`, a list of up to 16 Android package
+IDs used only as matching hints. The index requires this field (empty for a
+server-only plugin), and its value must match the downloaded package.
 
 ## Binding boundaries
 
@@ -346,3 +351,42 @@ The bundled example lives in `app/src/main/assets/caffeine.json` and is loaded
 by the same codec as other packages. It pins Caffeine's ToggleActivity and integer
 Status 1/0 for enable/disable. The documented API provides no state query; EVA
 therefore offers no read capability. See [Caffeine's contract](https://lab.zhs.moe/caffeine/guide/advanced/).
+
+## Extensions page and installed-app matching direction
+
+The Extensions destination owns installed plugins/providers, grants, configuration
+and wait budgets. It also supports repository refresh, package preview, explicit
+installation/update, and removal. JVM tests exercise a new remote listing reaching
+the registry without rebuilding EVA, plus update grant revocation.
+
+Plugin definitions will live in a separate GitHub repository, not only EVA's
+source/assets. A proposed repository name is `eva-plugins`; no repository has been
+published as part of this branch. Its index and self-contained package files are
+fetched over HTTPS. Codec-compatible plugin changes require no EVA release.
+New execution mechanisms or unsupported schema features still require app support.
+Bundled files are initial examples/seeds, not the long-term update channel.
+
+The browser prioritizes matching installed apps and labels available updates. Match locally
+using explicit Android package IDs in repository/package metadata, not display
+names. Caffeine identifies `moe.zhs.caffeine`; Android supplies its visible label
+and icon. Include declared version compatibility when needed. Index match hints
+are for discovery only: the downloaded package's identity, digest, destinations,
+and compatibility must be validated before preview/install. Do not infer a
+trusted publisher from either an app-name match or a file's declared ID.
+Matching uses the optional package `androidPackages` field and required index
+`androidPackages` field. App icons and separate filtered views remain follow-up work.
+
+Download the shared index and perform matching on-device; never upload the user's
+app inventory. Android filters package visibility, so distinguish "not detected"
+from proven incompatible. Preserve manual URL/file import for undetected apps and
+server-only plugins. Reuse generic visibility needed by supported app interactions;
+repository entries cannot add Android manifest queries at runtime. See
+[Android package visibility](https://developer.android.com/training/package-visibility).
+
+A match suggests a plugin; it never installs or enables it automatically. Preview
+shows the source/version, target apps, capabilities and effects. Keep the installed
+instance ID across explicit updates, retain the previous working bytes until
+replacement validates, and require re-enablement when the approved digest changes.
+Users can remove a plugin without uninstalling its target app. Installed-service
+and AppFunctions providers appear on the same page with their source clearly shown;
+a provider APK update is distinct from a declarative plugin-file update.

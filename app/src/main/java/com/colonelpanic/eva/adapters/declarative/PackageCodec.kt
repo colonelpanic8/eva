@@ -25,7 +25,7 @@ object PackageCodec {
 
     fun decode(json: String): PackageDefinition {
         val root = (BoundedJson.freeze(BoundedJson.parse(json, MAX_BYTES)) as? JsonObject) ?: error("Expected package object")
-        root.fields(setOf("formatVersion", "id", "version", "title", "capabilities"))
+        root.fields(setOf("formatVersion", "id", "version", "title", "capabilities"), setOf("androidPackages"))
         require(root.getValue("formatVersion").long() == 1L)
         val id = root.text("id", 128).also { require(packageId.matches(it)) }
         val revision = root.text("version", 40).also { require(version.matches(it)) }
@@ -36,7 +36,12 @@ object PackageCodec {
                 .also { require(it.size in 1..64) }
                 .map { capability(it.obj()) }
         require(capabilities.map { it.name }.distinct().size == capabilities.size) { "Duplicate tool name" }
-        return PackageDefinition(id, revision, root.text("title", 120), capabilities, BoundedJson.digest(root), root)
+        val apps =
+            root["androidPackages"]?.array().orEmpty().also { require(it.size <= 16) }.map {
+                it.string().also { name -> require(name.length <= 200 && packageId.matches(name)) }
+            }
+        require(apps.distinct().size == apps.size)
+        return PackageDefinition(id, revision, root.text("title", 120), capabilities, BoundedJson.digest(root), root, apps)
     }
 
     private fun capability(root: JsonObject): PackageCapability {
