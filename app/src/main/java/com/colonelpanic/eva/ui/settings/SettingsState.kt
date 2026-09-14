@@ -40,6 +40,7 @@ data class SettingsUiState(
  */
 data class SettingsActions(
     val onRepositoryRefresh: (String) -> Unit = {},
+    val onPluginFileImport: () -> Unit = {},
     val onPluginUrlPreview: (String) -> Unit = {},
     val onPluginPreview: (String) -> Unit = {},
     val onPluginInstall: () -> Unit = {},

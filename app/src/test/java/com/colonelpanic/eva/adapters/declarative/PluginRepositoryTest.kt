@@ -62,6 +62,32 @@ class PluginRepositoryTest {
     }
 
     @Test
+    fun `file import is bounded closes the stream and cannot replace another source`() {
+        var closed = false
+        val input =
+            object : java.io.ByteArrayInputStream(json.toByteArray()) {
+                override fun close() {
+                    closed = true
+                    super.close()
+                }
+            }
+        val preview = PluginRepository.filePreview(input)
+        assertTrue(closed)
+        var disk: String? = null
+        val store = PluginInstallations({ disk }, { disk = it })
+        val first = store.install(preview)
+        val second = store.install(PluginRepository.filePreview(json.byteInputStream()))
+        assertFalse(first.identity == second.identity)
+        assertEquals(2, PluginInstallations({ disk }, {}).all().size)
+        assertThrows(IllegalArgumentException::class.java) {
+            PluginRepository.filePreview(ByteArray(PackageCodec.MAX_BYTES + 1).inputStream())
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            PluginRepository.filePreview("invalid json".byteInputStream())
+        }
+    }
+
+    @Test
     fun `index destinations and file digest are validated before preview`() {
         var document = index(json)
         var file = json

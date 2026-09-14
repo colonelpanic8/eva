@@ -49,7 +49,8 @@ class PluginInstallations(
     @Synchronized fun install(preview: PluginPreview): InstalledPlugin {
         val definition = PackageCodec.decode(preview.json)
         require(definition.digest == preview.definition.digest) { "Preview changed; review it again" }
-        val source = PluginRepository.repositoryUrl(preview.source).toString()
+        val source = PluginRepository.installationSource(preview.source)
+        if (source.startsWith("file-import:")) require(preview.url == source)
         val old = entries.find { it.source == source && it.definition.id == definition.id }
         if (old != null && old.definition.digest != definition.digest) {
             require(
@@ -60,7 +61,7 @@ class PluginInstallations(
             InstalledPlugin(
                 old?.identity ?: PackageIdentity(UUID.randomUUID().toString()),
                 source,
-                PluginRepository.repositoryUrl(preview.url).toString(),
+                PluginRepository.installationSource(preview.url),
                 definition,
                 preview.json,
             )

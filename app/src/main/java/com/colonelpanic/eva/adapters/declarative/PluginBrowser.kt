@@ -49,6 +49,12 @@ class PluginBrowser(
             mutable.value = mutable.value.copy(preview = repository.previewUrl(url))
         }
 
+    fun previewFile(open: () -> java.io.InputStream) =
+        run {
+            mutable.value = mutable.value.copy(preview = null)
+            mutable.value = mutable.value.copy(preview = PluginRepository.filePreview(open()))
+        }
+
     fun preview(id: String) =
         run {
             mutable.value = mutable.value.copy(preview = null)

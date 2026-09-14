@@ -53,6 +53,15 @@ class MainActivity : ComponentActivity() {
 
     private val eva get() = application as EvaApplication
 
+    private val pluginFile =
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri != null) {
+                eva.pluginBrowser.previewFile {
+                    checkNotNull(contentResolver.openInputStream(uri)) { "Could not open the selected plugin file" }
+                }
+            }
+        }
+
     private val capabilityPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> eva.intentHost.onPermissionResult(granted) }
 
@@ -205,6 +214,7 @@ class MainActivity : ComponentActivity() {
             val settings = eva.settings
             SettingsActions(
                 onRepositoryRefresh = eva.pluginBrowser::refresh,
+                onPluginFileImport = { pluginFile.launch(arrayOf("application/json", "text/*", "application/octet-stream")) },
                 onPluginPreview = eva.pluginBrowser::preview,
                 onPluginUrlPreview = eva.pluginBrowser::previewUrl,
                 onPluginInstall = eva.pluginBrowser::installPreview,

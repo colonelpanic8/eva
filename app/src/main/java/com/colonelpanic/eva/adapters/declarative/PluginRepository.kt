@@ -10,7 +10,9 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.security.MessageDigest
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 data class PluginListing(
@@ -100,6 +102,31 @@ class PluginRepository(
 
     companion object {
         const val MAX_INDEX = 1_048_576
+
+        fun filePreview(input: InputStream): PluginPreview {
+            val bytes = ByteArrayOutputStream()
+            val buffer = ByteArray(8192)
+            input.use {
+                while (true) {
+                    val count = it.read(buffer)
+                    if (count < 0) break
+                    require(bytes.size() + count <= PackageCodec.MAX_BYTES) { "Plugin file is too large" }
+                    bytes.write(buffer, 0, count)
+                }
+            }
+            val json = bytes.toString(Charsets.UTF_8.name())
+            val source = "file-import:${UUID.randomUUID()}"
+            return PluginPreview(source, source, json, PackageCodec.decode(json))
+        }
+
+        fun installationSource(value: String): String {
+            if (value.startsWith("file-import:")) {
+                val id = value.removePrefix("file-import:")
+                require(UUID.fromString(id).toString() == id)
+                return value
+            }
+            return repositoryUrl(value).toString()
+        }
 
         fun repositoryUrl(value: String): HttpUrl =
             value.trim().toHttpUrl().also {
