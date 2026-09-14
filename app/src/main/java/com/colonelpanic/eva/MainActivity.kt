@@ -24,12 +24,15 @@ import com.colonelpanic.eva.adapters.android.MediaControlAccess
 import com.colonelpanic.eva.assist.AssistantRole
 import com.colonelpanic.eva.audio.MicrophonePermission
 import com.colonelpanic.eva.conversation.ProviderStatus
+import com.colonelpanic.eva.conversation.prompt.PromptYaml
 import com.colonelpanic.eva.providers.openai.ModelKind
 import com.colonelpanic.eva.ui.EvaApp
 import com.colonelpanic.eva.ui.HandsFreeSurface
 import com.colonelpanic.eva.ui.VoiceAccessModel
 import com.colonelpanic.eva.ui.VoiceStart
 import com.colonelpanic.eva.ui.about.AboutInfo
+import com.colonelpanic.eva.ui.prompt.PromptActions
+import com.colonelpanic.eva.ui.prompt.PromptUiState
 import com.colonelpanic.eva.ui.settings.SettingsActions
 import com.colonelpanic.eva.ui.settings.SettingsUiState
 import com.colonelpanic.eva.ui.theme.EvaTheme
@@ -53,6 +56,16 @@ class MainActivity : ComponentActivity() {
 
     private val capabilityPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> eva.intentHost.onPermissionResult(granted) }
+
+    // Both pickers hand out a grant EVA can keep, which is what lets the prompt live in a synced folder.
+    private val openPromptFile =
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri?.let { eva.editPrompt { useDocument(it, create = false) } }
+        }
+    private val createPromptFile =
+        registerForActivityResult(ActivityResultContracts.CreateDocument("application/x-yaml")) { uri ->
+            uri?.let { eva.editPrompt { useDocument(it, create = true) } }
+        }
 
     /**
      * Asks for everything still outstanding in one dialog run. A request launched while another is
@@ -176,6 +189,30 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    @Composable
+    private fun promptUiState(): PromptUiState {
+        val location by eva.prompts.location.collectAsStateWithLifecycle()
+        val prompt by eva.prompts.state.collectAsStateWithLifecycle()
+        val notice by eva.prompts.notice.collectAsStateWithLifecycle()
+        return PromptUiState(location = location, prompt = prompt, notice = notice)
+    }
+
+    @Composable
+    private fun promptActions(): PromptActions =
+        remember {
+            PromptActions(
+                onToggle = { id, enabled -> eva.editPrompt { update { it.toggle(id, enabled) } } },
+                onSave = { component -> eva.editPrompt { update { it.upsert(component) } } },
+                onDelete = { id -> eva.editPrompt { update { it.remove(id) } } },
+                // YAML has no agreed MIME type, so an existing file is found by name rather than by kind.
+                onOpenFile = { openPromptFile.launch(arrayOf("*/*")) },
+                onCreateFile = { createPromptFile.launch(PromptYaml.FILE_NAME) },
+                onUseOwnFile = { eva.editPrompt { useOwnFile() } },
+                onReset = { eva.editPrompt { resetToDefaults() } },
+                onDismissNotice = eva.prompts::clearNotice,
+            )
+        }
+
     private fun aboutInfo() =
         AboutInfo(
             version = eva.clientVersion,
@@ -231,6 +268,8 @@ class MainActivity : ComponentActivity() {
                     state = state,
                     settings = settingsUiState(dynamicColor),
                     settingsActions = settingsActions(),
+                    prompt = promptUiState(),
+                    promptActions = promptActions(),
                     about = aboutInfo(),
                     onSubmit = controller::submit,
                     onConnect = { controller.connect(eva.settings.hostLink()) },
@@ -267,6 +306,8 @@ class MainActivity : ComponentActivity() {
         deviceAssistant = AssistantRole.isEva(this)
         mediaControlAccess = MediaControlAccess.isGranted(this)
         if (surface.locked && !isLocked()) surface = Launch.HANDS_FREE
+        // The file may have been edited while EVA was away.
+        eva.editPrompt { reload() }
         eva.intentHost.attach(this) { permission -> capabilityPermission.launch(permission) }
         if (Build.VERSION.SDK_INT >= 37) eva.shizukuShellHost?.attach(this)
         if (Build.VERSION.SDK_INT >= 30) eva.deviceControlHost?.attach(this)
