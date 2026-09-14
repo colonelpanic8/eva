@@ -50,7 +50,7 @@ class WebRtcMediaSessionFactory(
         val audioManager = checkNotNull(appContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager)
         return RealtimeMediaController(
             config = config,
-            peerFactory = PeerLinkFactory { microphone -> WebRtcPeerLink(peerConnectionFactory, microphone) },
+            peerFactory = PeerLinkFactory { WebRtcPeerLink(peerConnectionFactory) },
             route = AndroidAudioRoute(audioManager),
             microphoneGranted = { MicrophonePermission.isGranted(appContext) },
             parentScope = scope,

@@ -8,7 +8,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.colonelpanic.eva.MainActivity
 import com.colonelpanic.eva.audio.AndroidAudioRoute
-import com.colonelpanic.eva.audio.MicrophoneMode
 import com.colonelpanic.eva.audio.MicrophonePermission
 import com.colonelpanic.eva.audio.PeerLinkFactory
 import com.colonelpanic.eva.audio.RealtimeMediaConfig
@@ -92,7 +91,7 @@ class NativeVoiceLiveTest {
                 module.release()
                 val media =
                     RealtimeMediaController(
-                        RealtimeMediaConfig(MicrophoneMode.LIVE),
+                        RealtimeMediaConfig(),
                         PeerLinkFactory { mode -> WebRtcPeerLink(factory, mode) },
                         AndroidAudioRoute(context.getSystemService(AudioManager::class.java)),
                         { true },

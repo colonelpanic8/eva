@@ -87,7 +87,6 @@ private class FakeRoute(
 
 private class Harness(
     scope: TestScope,
-    microphone: MicrophoneMode = MicrophoneMode.LIVE,
     granted: Boolean = true,
     focus: Boolean = true,
 ) {
@@ -97,7 +96,7 @@ private class Harness(
     var duringOpen: () -> Unit = {}
     val controller =
         RealtimeMediaController(
-            config = RealtimeMediaConfig(microphone, iceGatheringTimeoutMillis = 10_000, disconnectedGraceMillis = 8_000),
+            config = RealtimeMediaConfig(iceGatheringTimeoutMillis = 10_000, disconnectedGraceMillis = 8_000),
             peerFactory = {
                 opened++
                 duringOpen()
@@ -132,9 +131,9 @@ class RealtimeMediaControllerTest {
         }
 
     @Test
-    fun `receive-only mode needs no permission and denied focus releases nothing it did not take`() =
+    fun `denied focus releases nothing it did not take`() =
         runTest {
-            val harness = Harness(this, microphone = MicrophoneMode.NONE, granted = false, focus = false)
+            val harness = Harness(this, focus = false)
             val error = runCatching { harness.controller.createOffer() }.exceptionOrNull()
             assertEquals(MediaFailure.AudioFocusDenied, (error as MediaException).failure)
             assertEquals(1, harness.route.acquired)

@@ -3,17 +3,7 @@ package com.colonelpanic.eva.audio
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
-/** How the local audio leg is negotiated. */
-enum class MicrophoneMode {
-    /** Capture the device microphone; requires the record-audio permission. */
-    LIVE,
-
-    /** Receive-only audio: no capture, no permission, provider speech still plays. */
-    NONE,
-}
-
 data class RealtimeMediaConfig(
-    val microphone: MicrophoneMode,
     val iceGatheringTimeoutMillis: Long = 10_000,
     val disconnectedGraceMillis: Long = 8_000,
     val speakerphone: Boolean = true,
@@ -76,8 +66,6 @@ data class MediaControls(
     val microphoneMuted: Boolean = false,
     val playbackMuted: Boolean = false,
     val focus: AudioFocusState = AudioFocusState.NONE,
-    /** False for receive-only sessions: nothing is captured and mute has no effect. */
-    val microphoneAvailable: Boolean = false,
 )
 
 /** Elapsed milliseconds since [createOffer] for the media milestones observed so far. */

@@ -1,6 +1,5 @@
 package com.colonelpanic.eva.audio.webrtc
 
-import com.colonelpanic.eva.audio.MicrophoneMode
 import com.colonelpanic.eva.audio.PeerConnectionState
 import com.colonelpanic.eva.audio.PeerEvent
 import com.colonelpanic.eva.audio.PeerLink
@@ -13,7 +12,6 @@ import org.webrtc.DataChannel
 import org.webrtc.IceCandidate
 import org.webrtc.MediaConstraints
 import org.webrtc.MediaStream
-import org.webrtc.MediaStreamTrack
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
 import org.webrtc.RtpTransceiver
@@ -31,7 +29,6 @@ import kotlin.coroutines.resumeWithException
  */
 internal class WebRtcPeerLink(
     factory: PeerConnectionFactory,
-    microphone: MicrophoneMode,
 ) : PeerLink {
     private val eventChannel = Channel<PeerEvent>(Channel.BUFFERED)
     override val events = eventChannel.receiveAsFlow()
@@ -107,24 +104,13 @@ internal class WebRtcPeerLink(
     private val dataChannel: DataChannel
 
     init {
-        when (microphone) {
-            MicrophoneMode.LIVE -> {
-                val audioSource = factory.createAudioSource(MediaConstraints())
-                source = audioSource
-                localTrack =
-                    factory.createAudioTrack(LOCAL_TRACK_ID, audioSource).also {
-                        it.setEnabled(microphoneEnabled)
-                        connection.addTrack(it, listOf(STREAM_ID))
-                    }
+        val audioSource = factory.createAudioSource(MediaConstraints())
+        source = audioSource
+        localTrack =
+            factory.createAudioTrack(LOCAL_TRACK_ID, audioSource).also {
+                it.setEnabled(microphoneEnabled)
+                connection.addTrack(it, listOf(STREAM_ID))
             }
-
-            MicrophoneMode.NONE -> {
-                connection.addTransceiver(
-                    MediaStreamTrack.MediaType.MEDIA_TYPE_AUDIO,
-                    RtpTransceiver.RtpTransceiverInit(RtpTransceiver.RtpTransceiverDirection.RECV_ONLY),
-                )
-            }
-        }
         dataChannel = connection.createDataChannel(EVENTS_CHANNEL, DataChannel.Init())
         dataChannel.registerObserver(
             object : DataChannel.Observer {

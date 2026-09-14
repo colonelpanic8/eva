@@ -17,7 +17,7 @@ class VoiceAccessRetentionTest {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->
                 val model = ViewModelProvider(activity)[VoiceAccessModel::class.java]
-                val started = model.update { start("link", listenOnly = false, microphoneGranted = false) }
+                val started = model.update { start("link", microphoneGranted = false) }
                 assertEquals(VoiceStart.RequestMicrophone("link"), started)
             }
             scenario.recreate()
@@ -30,7 +30,7 @@ class VoiceAccessRetentionTest {
             scenario.onActivity { activity ->
                 val model = ViewModelProvider(activity)[VoiceAccessModel::class.java]
                 assertEquals(MicrophoneDenial("link", canAskAgain = true), model.denial)
-                assertEquals(VoiceStart.Connect("link", listenOnly = true), model.update { listenOnlyInstead() })
+                assertEquals(VoiceStart.Connect("link"), model.update { retry(microphoneGranted = true) })
                 assertNull(model.denial)
             }
         }

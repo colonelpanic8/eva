@@ -30,9 +30,11 @@ class VoiceSessionService : Service() {
         val notification = notification()
         when {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
+                // Both types, so capture and playout keep running once another app takes the screen.
+                // The microphone type is only legal with the grant, which a session already required.
                 val type =
                     if (MicrophonePermission.isGranted(this)) {
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
                     } else {
                         ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
                     }
@@ -69,7 +71,7 @@ class VoiceSessionService : Service() {
         return NotificationCompat
             .Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setContentTitle("EVA is in a voice session")
+            .setContentTitle("EVA is listening")
             .setContentText("Tap to return. Stop voice in EVA to end it.")
             .setOngoing(true)
             .setContentIntent(open)

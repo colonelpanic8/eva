@@ -58,7 +58,7 @@ fun EvaApp(
     onSubmit: (String) -> Unit,
     onConnect: (String) -> Unit = {},
     onDisconnect: () -> Unit = {},
-    onVoice: (String, Boolean) -> Unit = { _, _ -> },
+    onVoice: (String) -> Unit = {},
     hasApiKey: Boolean = false,
     onSaveApiKey: (String) -> Unit = {},
     onClearApiKey: () -> Unit = {},
@@ -81,7 +81,6 @@ fun EvaApp(
     onTogglePlayback: () -> Unit = {},
     denial: MicrophoneDenial? = null,
     onRetryMicrophone: () -> Unit = {},
-    onListenOnlyInstead: () -> Unit = {},
     onDismissDenial: () -> Unit = {},
 ) {
     var draft by rememberSaveable { mutableStateOf("") }
@@ -144,12 +143,11 @@ fun EvaApp(
                     onVoiceLookupRetriesChange = onVoiceLookupRetriesChange,
                     denial = denial,
                     onRetryMicrophone = onRetryMicrophone,
-                    onListenOnlyInstead = onListenOnlyInstead,
                     onDismissDenial = onDismissDenial,
                 )
                 if (state.voiceMode && state.providerStatus != ProviderStatus.DISCONNECTED) {
                     Text(
-                        text = voiceSessionLabel(state.mediaControls.microphoneAvailable),
+                        text = VOICE_SESSION_LABEL,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 16.dp),
@@ -204,21 +202,14 @@ fun EvaApp(
     }
 }
 
-internal fun voiceSessionLabel(microphoneAvailable: Boolean): String =
-    if (microphoneAvailable) {
-        "Voice session · ask for a phone action or just talk"
-    } else {
-        "Listen-only session · your microphone is off"
-    }
+internal const val VOICE_SESSION_LABEL = "Voice session · ask for a phone action or just talk"
 
 internal fun composerHint(state: ConversationState): String {
     val voiceConnected = state.voiceMode && state.providerStatus == ProviderStatus.CONNECTED
-    val listening = voiceConnected && !state.mediaControls.microphoneAvailable
     return when {
         state.errorMessage != null -> "Sending is paused until you restart EVA."
         state.isLoading -> "Loading your action history…"
         state.isSubmitting -> "Working on your last request…"
-        listening -> "Listening only: EVA can speak, but nothing you say is captured. Disconnect to use text."
         voiceConnected -> "Speak to EVA, or disconnect to use text."
         state.voiceMode -> "Setting up voice…"
         state.providerStatus != ProviderStatus.CONNECTED -> "Connect to start a conversation."

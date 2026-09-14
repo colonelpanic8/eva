@@ -116,7 +116,7 @@ class OpenAiVoiceActionLiveTest {
                 VoiceSessionService.start(context)
                 try {
                     withTimeout(20_000) { controller.state.first { !it.isLoading } }
-                    controller.connectVoice("", listenOnly = false)
+                    controller.connectVoice("")
                     withTimeout(70_000) {
                         controller.state.first { state ->
                             state.providerStatus == ProviderStatus.CONNECTED && state.mediaState is RealtimeMediaState.Connected

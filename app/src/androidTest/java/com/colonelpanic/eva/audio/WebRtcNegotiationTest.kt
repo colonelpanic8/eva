@@ -25,13 +25,13 @@ class WebRtcNegotiationTest {
     }
 
     @Test
-    fun receiveOnlyOfferCarriesAudioAndEventChannelWithoutCapture() {
-        val session = factory.create(RealtimeMediaConfig(MicrophoneMode.NONE))
+    fun offerCarriesAudioAndEventChannel() {
+        val session = factory.create(RealtimeMediaConfig())
         try {
             val sdp = runBlocking { session.createOffer() }
             assertTrue(sdp.startsWith("v=0"))
             assertTrue(sdp.contains("m=audio"))
-            assertTrue(sdp.contains("a=recvonly"))
+            assertTrue(sdp.contains("a=sendrecv"))
             assertTrue(sdp.contains("m=application"))
             // Candidate presence depends on the test network; ICE and DTLS setup do not.
             assertTrue(sdp.contains("a=ice-ufrag:"))
@@ -49,7 +49,7 @@ class WebRtcNegotiationTest {
 
     @Test
     fun liveOfferSendsAudioAndMuteSurvivesClose() {
-        val session = factory.create(RealtimeMediaConfig(MicrophoneMode.LIVE))
+        val session = factory.create(RealtimeMediaConfig())
         try {
             val sdp = runBlocking { session.createOffer() }
             assertTrue(sdp.contains("m=audio"))
@@ -66,7 +66,7 @@ class WebRtcNegotiationTest {
 
     @Test
     fun garbageAnswerFailsWithoutCrashing() {
-        val session = factory.create(RealtimeMediaConfig(MicrophoneMode.NONE))
+        val session = factory.create(RealtimeMediaConfig())
         runBlocking { session.createOffer() }
         val error =
             runCatching { runBlocking { session.acceptAnswer("not an sdp") } }.exceptionOrNull()

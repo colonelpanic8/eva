@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -39,7 +38,7 @@ internal fun ProviderConnection(
     state: ConversationState,
     onConnect: (String) -> Unit,
     onDisconnect: () -> Unit,
-    onVoice: (String, Boolean) -> Unit,
+    onVoice: (String) -> Unit,
     hasApiKey: Boolean = false,
     onSaveApiKey: (String) -> Unit = {},
     onClearApiKey: () -> Unit = {},
@@ -60,10 +59,8 @@ internal fun ProviderConnection(
     onVoiceLookupRetriesChange: (Int) -> Unit = {},
     denial: MicrophoneDenial? = null,
     onRetryMicrophone: () -> Unit = {},
-    onListenOnlyInstead: () -> Unit = {},
     onDismissDenial: () -> Unit = {},
 ) {
-    var listenOnly by remember { mutableStateOf(false) }
     var link by remember { mutableStateOf("") }
     var showApiKey by remember { mutableStateOf(false) }
     val usable = !state.isLoading && state.errorMessage == null
@@ -71,7 +68,7 @@ internal fun ProviderConnection(
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (state.providerStatus == ProviderStatus.DISCONNECTED) {
             if (denial != null) {
-                MicrophoneDenied(denial, onRetryMicrophone, onListenOnlyInstead, onDismissDenial)
+                MicrophoneDenied(denial, onRetryMicrophone, onDismissDenial)
             } else {
                 if (account != null) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -124,19 +121,11 @@ internal fun ProviderConnection(
                     }
                     Button(
                         onClick = {
-                            onVoice(link, listenOnly)
+                            onVoice(link)
                             link = ""
                         },
                         enabled = ready,
-                    ) { Text(if (listenOnly) "Start listen-only" else "Start voice") }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(
-                        checked = listenOnly,
-                        onCheckedChange = { listenOnly = it },
-                        modifier = Modifier.semantics { contentDescription = "Listen only, no microphone" },
-                    )
-                    Text("Listen only: EVA speaks, your microphone stays off", style = MaterialTheme.typography.bodySmall)
+                    ) { Text("Start voice") }
                 }
             }
         } else {
@@ -272,7 +261,6 @@ private fun ApiKeyField(
 private fun MicrophoneDenied(
     denial: MicrophoneDenial,
     onRetry: () -> Unit,
-    onListenOnly: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -283,7 +271,6 @@ private fun MicrophoneDenied(
         )
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = onRetry) { Text(if (denial.canAskAgain) "Allow microphone" else "Open settings") }
-            OutlinedButton(onClick = onListenOnly) { Text("Listen only instead") }
             TextButton(onClick = onDismiss) { Text("Dismiss") }
         }
     }
@@ -291,7 +278,7 @@ private fun MicrophoneDenied(
 
 internal fun microphoneDenialMessage(denial: MicrophoneDenial): String =
     if (denial.canAskAgain) {
-        "Microphone access was declined. Voice needs it to hear you; listen-only works without it."
+        "Microphone access was declined. EVA cannot hold a voice conversation without it."
     } else {
-        "Microphone access is blocked for EVA. Allow it in system settings, or continue listen-only."
+        "Microphone access is blocked for EVA. Allow it in system settings to use voice."
     }

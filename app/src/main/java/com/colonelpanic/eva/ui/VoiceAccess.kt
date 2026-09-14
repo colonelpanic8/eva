@@ -8,7 +8,6 @@ import androidx.lifecycle.ViewModel
 sealed interface VoiceStart {
     data class Connect(
         val link: String,
-        val listenOnly: Boolean,
     ) : VoiceStart
 
     data class RequestMicrophone(
@@ -29,13 +28,12 @@ class VoiceAccess {
 
     fun start(
         link: String,
-        listenOnly: Boolean,
         microphoneGranted: Boolean,
     ): VoiceStart {
         denial = null
-        if (listenOnly || microphoneGranted) {
+        if (microphoneGranted) {
             requested = null
-            return VoiceStart.Connect(link, listenOnly)
+            return VoiceStart.Connect(link)
         }
         requested = link
         return VoiceStart.RequestMicrophone(link)
@@ -48,7 +46,7 @@ class VoiceAccess {
     ): VoiceStart.Connect? {
         val link = requested ?: return null
         requested = null
-        if (granted) return VoiceStart.Connect(link, listenOnly = false)
+        if (granted) return VoiceStart.Connect(link)
         denial = MicrophoneDenial(link, canAskAgain)
         return null
     }
@@ -58,18 +56,12 @@ class VoiceAccess {
         val pending = denial ?: return null
         if (microphoneGranted) {
             denial = null
-            return VoiceStart.Connect(pending.link, listenOnly = false)
+            return VoiceStart.Connect(pending.link)
         }
         if (!pending.canAskAgain) return null
         denial = null
         requested = pending.link
         return VoiceStart.RequestMicrophone(pending.link)
-    }
-
-    fun listenOnlyInstead(): VoiceStart.Connect? {
-        val pending = denial ?: return null
-        denial = null
-        return VoiceStart.Connect(pending.link, listenOnly = true)
     }
 
     fun dismiss() {
@@ -84,6 +76,12 @@ class VoiceAccessModel : ViewModel() {
 
     /** Retained so a rotation does not reopen the microphone for a launch already answered. */
     var launchHandled = false
+
+    /** The launch sweep asks for everything once per Activity, not once per rotation. */
+    var permissionsRequested = false
+
+    /** A second launch while a dialog is open loses the answer, so callers wait for this one. */
+    var requestInFlight = false
     var denial by mutableStateOf<MicrophoneDenial?>(null)
         private set
 

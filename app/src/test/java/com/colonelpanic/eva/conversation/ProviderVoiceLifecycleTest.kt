@@ -2,7 +2,6 @@ package com.colonelpanic.eva.conversation
 
 import com.colonelpanic.eva.audio.MediaControls
 import com.colonelpanic.eva.audio.MediaTimeline
-import com.colonelpanic.eva.audio.MicrophoneMode
 import com.colonelpanic.eva.audio.RealtimeMediaSession
 import com.colonelpanic.eva.audio.RealtimeMediaState
 import com.colonelpanic.eva.capability.CapabilityDefinition
@@ -43,25 +42,14 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class ProviderVoiceLifecycleTest {
     @Test
-    fun `listen only exposes no tools or text submissions and background releases both connections`() =
+    fun `a voice session takes no typed submissions and disconnect releases both connections`() =
         runTest {
             val provider = VoiceProvider()
             val media = VoiceMedia()
-            var selectedMode: MicrophoneMode? = null
-            val controller =
-                controller(provider, {
-                    selectedMode = it
-                    media
-                })
+            val controller = controller(provider, { media })
             advanceUntilIdle()
-            controller.connectVoice("test", listenOnly = true)
+            controller.connectVoice("test")
             advanceUntilIdle()
-            assertEquals(MicrophoneMode.NONE, selectedMode)
-            assertTrue(
-                provider.request.catalog.tools
-                    .isEmpty(),
-            )
-            assertFalse(provider.request.instructions.contains("No phone actions"))
             assertTrue(provider.request.instructions.contains("supplied tools"))
             assertTrue(provider.request.instructions.contains("5 additional lookup queries"))
             assertTrue(provider.request.instructions.contains("first name or last name by itself"))
@@ -69,7 +57,7 @@ class ProviderVoiceLifecycleTest {
             controller.submit("Open a map")
             advanceUntilIdle()
             assertEquals(0, provider.submissions)
-            controller.stopVoiceOnBackground()
+            controller.disconnect()
             advanceUntilIdle()
             assertTrue(media.closed)
             assertEquals(1, provider.closes)
@@ -83,7 +71,7 @@ class ProviderVoiceLifecycleTest {
             val media = VoiceMedia()
             val controller = controller(provider, { media })
             advanceUntilIdle()
-            controller.connectVoice("test", listenOnly = false)
+            controller.connectVoice("test")
             advanceUntilIdle()
             provider.channel.send(ProviderEvent.Closed)
             advanceUntilIdle()
@@ -99,7 +87,7 @@ class ProviderVoiceLifecycleTest {
             val controller = controller(provider, { VoiceMedia() }, voiceLookupRetries = { 8 })
             advanceUntilIdle()
 
-            controller.connectVoice("test", listenOnly = false)
+            controller.connectVoice("test")
             advanceUntilIdle()
 
             assertTrue(provider.request.instructions.contains("8 additional lookup queries"))
@@ -114,7 +102,7 @@ class ProviderVoiceLifecycleTest {
             val media = VoiceMedia()
             val controller = controller(provider, { media })
             advanceUntilIdle()
-            controller.connectVoice("test", listenOnly = false)
+            controller.connectVoice("test")
             advanceUntilIdle()
             provider.channel.send(ProviderEvent.Failure("Connection lost"))
             advanceUntilIdle()
@@ -138,9 +126,9 @@ class ProviderVoiceLifecycleTest {
                     { link, _ -> if (link == "old") old else current },
                 )
             advanceUntilIdle()
-            controller.connectVoice("old", listenOnly = false)
+            controller.connectVoice("old")
             advanceUntilIdle()
-            controller.connectVoice("current", listenOnly = false)
+            controller.connectVoice("current")
             advanceUntilIdle()
             old.openGate!!.complete(Unit)
             advanceUntilIdle()
@@ -199,7 +187,7 @@ class ProviderVoiceLifecycleTest {
                     { _, _ -> provider },
                 )
             advanceUntilIdle()
-            controller.connectVoice("test", listenOnly = false)
+            controller.connectVoice("test")
             advanceUntilIdle()
             assertEquals(
                 listOf("test.timer"),
@@ -274,7 +262,7 @@ class ProviderVoiceLifecycleTest {
             controller.disconnect()
             advanceUntilIdle()
 
-            controller.connectVoice("test", listenOnly = false)
+            controller.connectVoice("test")
             advanceUntilIdle()
             assertEquals(listOf("Ana Beltrán"), provider.request.keywords)
             assertEquals(1, reads)
@@ -284,7 +272,7 @@ class ProviderVoiceLifecycleTest {
 
     private fun TestScope.controller(
         provider: VoiceProvider,
-        mediaFactory: (MicrophoneMode) -> RealtimeMediaSession,
+        mediaFactory: () -> RealtimeMediaSession,
         voiceProviderFactory: suspend (String, RealtimeMediaSession) -> ConversationProvider = { _, _ -> provider },
         voiceLookupRetries: () -> Int = { 5 },
         voiceKeywords: suspend () -> List<String> = { emptyList() },

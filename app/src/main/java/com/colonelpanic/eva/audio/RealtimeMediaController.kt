@@ -37,7 +37,7 @@ class RealtimeMediaController internal constructor(
     private val resources = Any()
     private var routeHeld = false
     private val mutableState = MutableStateFlow<RealtimeMediaState>(RealtimeMediaState.Idle)
-    private val mutableControls = MutableStateFlow(MediaControls(microphoneAvailable = config.microphone == MicrophoneMode.LIVE))
+    private val mutableControls = MutableStateFlow(MediaControls())
     private val mutableTimeline = MutableStateFlow(MediaTimeline())
 
     @Volatile
@@ -68,9 +68,7 @@ class RealtimeMediaController internal constructor(
     override suspend fun createOffer(): String =
         signaling.withLock {
             check(mutableState.value == RealtimeMediaState.Idle) { "createOffer requires an idle session" }
-            if (config.microphone == MicrophoneMode.LIVE && !microphoneGranted()) {
-                throw fail(MediaFailure.MicrophonePermissionRequired)
-            }
+            if (!microphoneGranted()) throw fail(MediaFailure.MicrophonePermissionRequired)
             mutableState.value = RealtimeMediaState.Preparing
             startedAt = nowMillis()
             try {
@@ -121,7 +119,7 @@ class RealtimeMediaController internal constructor(
     private fun openPeer(): PeerLink {
         val opened =
             try {
-                peerFactory.open(config.microphone)
+                peerFactory.open()
             } catch (error: Exception) {
                 throw fail(MediaFailure.Rejected(error.message ?: "The voice connection could not be created."))
             }

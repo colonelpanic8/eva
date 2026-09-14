@@ -122,7 +122,7 @@ class NativeVoiceActionLiveTest {
                     // connectVoice is a no-op until journal recovery finishes; the UI keeps the
                     // button disabled for that window, so the test has to wait for it too.
                     withTimeout(20_000) { controller.state.first { !it.isLoading } }
-                    controller.connectVoice(checkNotNull(link), listenOnly = false)
+                    controller.connectVoice(checkNotNull(link))
                     withTimeout(70_000) {
                         controller.state.first { state ->
                             state.providerStatus == ProviderStatus.CONNECTED && state.mediaState is RealtimeMediaState.Connected

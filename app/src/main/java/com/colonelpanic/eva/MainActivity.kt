@@ -1,9 +1,7 @@
 package com.colonelpanic.eva
 
-import android.Manifest
 import android.app.KeyguardManager
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -33,38 +31,38 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     private val voice: VoiceAccessModel by viewModels()
     private var surface by mutableStateOf(Launch.MANUAL)
-    private val microphonePermission =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+    private val runtimePermissions =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+            voice.requestInFlight = false
+            val granted = MicrophonePermission.isGranted(this)
             val canAskAgain = granted || shouldShowRequestPermissionRationale(MicrophonePermission.PERMISSION)
             voice.update { onPermissionResult(granted, canAskAgain) }?.let(::perform)
         }
 
     private val eva get() = application as EvaApplication
 
-    private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
-
     private val capabilityPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> eva.intentHost.onPermissionResult(granted) }
 
-    private fun startVoice(
-        link: String,
-        listenOnly: Boolean,
-    ) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
-        perform(voice.update { start(link, listenOnly, MicrophonePermission.isGranted(this@MainActivity)) })
+    /**
+     * Asks for everything still outstanding in one dialog run. A request launched while another is
+     * open loses its answer, so an in-flight sweep is left to deliver the result instead.
+     */
+    private fun requestMissingPermissions() {
+        if (voice.requestInFlight) return
+        val missing = EvaPermissions.missing(this)
+        if (missing.isEmpty()) return
+        voice.requestInFlight = true
+        runtimePermissions.launch(missing.toTypedArray())
+    }
+
+    private fun startVoice(link: String) {
+        perform(voice.update { start(link, MicrophonePermission.isGranted(this@MainActivity)) })
     }
 
     private fun retryMicrophone() {
         val next = voice.update { retry(MicrophonePermission.isGranted(this@MainActivity)) }
         if (next == null && voice.denial != null) openAppSettings() else next?.let(::perform)
-    }
-
-    private fun listenOnlyInstead() {
-        voice.update { listenOnlyInstead() }?.let(::perform)
     }
 
     private fun dismissDenial() {
@@ -73,8 +71,8 @@ class MainActivity : ComponentActivity() {
 
     private fun perform(start: VoiceStart) {
         when (start) {
-            is VoiceStart.Connect -> eva.controller.connectVoice(start.link, start.listenOnly)
-            is VoiceStart.RequestMicrophone -> microphonePermission.launch(MicrophonePermission.PERMISSION)
+            is VoiceStart.Connect -> eva.controller.connectVoice(start.link)
+            is VoiceStart.RequestMicrophone -> requestMissingPermissions()
         }
     }
 
@@ -98,7 +96,7 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             val loaded = eva.controller.state.first { !it.isLoading }
             if (loaded.voiceMode && loaded.providerStatus != ProviderStatus.DISCONNECTED) return@launch
-            startVoice(link = "", listenOnly = false)
+            startVoice(link = "")
         }
     }
 
@@ -169,10 +167,13 @@ class MainActivity : ComponentActivity() {
                     onTogglePlayback = controller::togglePlayback,
                     denial = voice.denial,
                     onRetryMicrophone = ::retryMicrophone,
-                    onListenOnlyInstead = ::listenOnlyInstead,
                     onDismissDenial = ::dismissDenial,
                 )
             }
+        }
+        if (!voice.permissionsRequested) {
+            voice.permissionsRequested = true
+            requestMissingPermissions()
         }
         if (!voice.launchHandled) {
             voice.launchHandled = true

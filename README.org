@@ -11,8 +11,10 @@ and journals actions before dispatch; message drafts are not direct SMS sends.
 The local command parser remains a diagnostic/test harness.
 
 Native realtime WebRTC voice is implemented as a separate conversation mode,
-with microphone permission, listen-only negotiation, mute controls, audio focus,
-and cleanup. Voice mode performs phone actions through the same catalog and
+with microphone permission, mute controls, audio focus, and cleanup. Voice
+always captures: there is no microphone-less mode. Every runtime permission EVA
+uses is asked for together when the app opens, because a session that continues
+while the phone is locked or another app is in front cannot show a dialog. Voice mode performs phone actions through the same catalog and
 dispatcher as typed mode, verified end to end with synthetic speech on an
 emulator. EVA signs in to a ChatGPT account
 on the phone with a one-time device code, and both typed conversation and

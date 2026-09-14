@@ -45,14 +45,12 @@ fun VoiceControls(
             } else {
                 Button(onClick = onStart, enabled = enabled) { Text("Start voice") }
             }
-            if (controls.microphoneAvailable) {
-                val microphoneAction = if (controls.microphoneMuted) "Unmute microphone" else "Mute microphone"
-                OutlinedButton(
-                    onClick = onToggleMicrophone,
-                    enabled = enabled && active,
-                    modifier = Modifier.semantics { contentDescription = microphoneAction },
-                ) { Text(if (controls.microphoneMuted) "Unmute mic" else "Mute mic") }
-            }
+            val microphoneAction = if (controls.microphoneMuted) "Unmute microphone" else "Mute microphone"
+            OutlinedButton(
+                onClick = onToggleMicrophone,
+                enabled = enabled && active,
+                modifier = Modifier.semantics { contentDescription = microphoneAction },
+            ) { Text(if (controls.microphoneMuted) "Unmute mic" else "Mute mic") }
             OutlinedButton(
                 onClick = onTogglePlayback,
                 enabled = enabled && active,
@@ -72,29 +70,25 @@ internal fun RealtimeMediaState.isActive(): Boolean =
 internal fun voiceStatusLabel(
     state: RealtimeMediaState,
     controls: MediaControls,
-): String {
-    val leg = if (controls.microphoneAvailable) "Voice" else "Listen-only"
-    return when (state) {
-        RealtimeMediaState.Idle -> "$leg off"
+): String =
+    when (state) {
+        RealtimeMediaState.Idle -> "Voice off"
         RealtimeMediaState.Preparing -> "Preparing audio…"
         is RealtimeMediaState.OfferReady -> "Waiting for the provider…"
-        RealtimeMediaState.Connecting -> "Connecting ${leg.lowercase()}…"
-        is RealtimeMediaState.Connected -> connectedLabel(state, controls, leg)
+        RealtimeMediaState.Connecting -> "Connecting voice…"
+        is RealtimeMediaState.Connected -> connectedLabel(state, controls)
         is RealtimeMediaState.Failed -> state.reason.message
-        RealtimeMediaState.Closed -> "$leg ended"
+        RealtimeMediaState.Closed -> "Voice ended"
     }
-}
 
 private fun connectedLabel(
     state: RealtimeMediaState.Connected,
     controls: MediaControls,
-    leg: String,
 ): String =
     when {
-        controls.focus != AudioFocusState.HELD -> "$leg paused: another app has audio"
-        !state.remoteAudio -> "$leg connected, no provider audio yet"
-        controls.playbackMuted -> "$leg connected, speaker stopped"
-        !controls.microphoneAvailable -> "Listen-only connected, your mic is off"
+        controls.focus != AudioFocusState.HELD -> "Voice paused: another app has audio"
+        !state.remoteAudio -> "Voice connected, no provider audio yet"
+        controls.playbackMuted -> "Voice connected, speaker stopped"
         controls.microphoneMuted -> "Voice connected, mic muted"
         else -> "Voice connected"
     }

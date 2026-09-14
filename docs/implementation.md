@@ -224,13 +224,21 @@ host starts the subscription-backed realtime session, and the answer is applied
 on the phone. Audio travels over WebRTC; control and transcripts use the broker.
 The `oai-events` channel is negotiated before the offer.
 
-Start voice requests microphone permission for live capture. A denial offers
-retry, system settings, or a listen-only fallback. Pending permission decisions
-survive Activity recreation in memory; broker codes are not saved to disk.
-Listen-only mode negotiates receive-only audio without capture and omits the
-microphone mute control. Local controls mute available capture and playback
-independently. Audio focus loss pauses tracks, and disconnect or
-backgrounding releases media; configuration changes retain the connection.
+Opening EVA asks for every runtime permission it uses at once: microphone,
+contacts, reading and sending text messages, and notifications. A session that
+keeps running while the phone is locked or another app is in front cannot show a
+permission dialog, so a grant requested when a capability first runs would
+arrive too late. A request launched while another is open loses its answer, so
+an in-flight sweep is left to deliver the result.
+
+Voice always captures; there is no microphone-less mode. A microphone denial
+offers retry or system settings, and voice does not start without it. Pending
+permission decisions survive Activity recreation in memory; broker codes are not
+saved to disk. Local controls mute capture and playback independently. Audio
+focus loss pauses tracks and disconnect releases media; backgrounding does not,
+and configuration changes retain the connection. The foreground service claims
+both the microphone and media-playback types so capture and playout continue
+once another app takes the screen.
 Local speaker mute is not a verified provider interruption or history truncation.
 
 The controller owns provider teardown on disconnect, terminal events, event-stream
@@ -434,8 +442,8 @@ user and assistant transcripts, and decoded nonzero returned audio. The emulator
 had no host audio, so that run could not establish physical capture or playback.
 
 A later run on a physical Pixel closed that gap, using the published release APK
-launched through the assist gesture. A listen-only session connected, then a live
-session reported "Voice connected" with the microphone control available.
+launched through the assist gesture. A live session reported "Voice connected"
+with the microphone control available.
 Android's audio service showed `Recording active: true` and `Playback active: true`
 for EVA, WebRTC logged `verifyAudioConfig: PASS`, and playout ran at 48 kHz on the
 handset speaker. Stopping voice released the recorder. Acoustic quality, echo

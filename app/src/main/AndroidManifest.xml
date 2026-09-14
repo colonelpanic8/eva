@@ -16,6 +16,10 @@
     <uses-feature
         android:name="android.hardware.telephony"
         android:required="false" />
+    <!-- Voice is the point of the app: there is no microphone-less mode to fall back to. -->
+    <uses-feature
+        android:name="android.hardware.microphone"
+        android:required="true" />
     <uses-sdk tools:overrideLibrary="rikka.shizuku.api" />
 
     <queries>

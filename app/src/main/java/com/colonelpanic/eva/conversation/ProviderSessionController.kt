@@ -1,6 +1,5 @@
 package com.colonelpanic.eva.conversation
 
-import com.colonelpanic.eva.audio.MicrophoneMode
 import com.colonelpanic.eva.audio.RealtimeMediaSession
 import com.colonelpanic.eva.audio.RealtimeMediaState
 import com.colonelpanic.eva.capability.CapabilityDispatcher
@@ -45,7 +44,7 @@ class ProviderSessionController(
     private val repository: InvocationRepository,
     private val scope: CoroutineScope,
     private val providerFactory: (String) -> ConversationProvider,
-    private val mediaFactory: ((MicrophoneMode) -> RealtimeMediaSession)? = null,
+    private val mediaFactory: (() -> RealtimeMediaSession)? = null,
     private val voiceProviderFactory: (suspend (String, RealtimeMediaSession) -> ConversationProvider)? = null,
     private val voiceLookupRetries: () -> Int = { 5 },
     private val voiceKeywords: suspend () -> List<String> = { emptyList() },
@@ -85,12 +84,9 @@ class ProviderSessionController(
         }
     }
 
-    fun connect(link: String) = connectSession(link, null)
+    fun connect(link: String) = connectSession(link, voice = false)
 
-    fun connectVoice(
-        link: String,
-        listenOnly: Boolean,
-    ) = connectSession(link, if (listenOnly) MicrophoneMode.NONE else MicrophoneMode.LIVE)
+    fun connectVoice(link: String) = connectSession(link, voice = true)
 
     fun toggleMicrophone() {
         media?.let { it.setMicrophoneMuted(!it.controls.value.microphoneMuted) }
@@ -100,32 +96,24 @@ class ProviderSessionController(
         media?.let { it.setPlaybackMuted(!it.controls.value.playbackMuted) }
     }
 
-    fun microphoneDenied() {
-        mutableState.update { it.copy(providerMessage = "Microphone permission was denied. Allow it to speak, or choose Listen only.") }
-    }
-
-    fun stopVoiceOnBackground() {
-        if (media != null) disconnect()
-    }
-
     private fun connectSession(
         link: String,
-        microphone: MicrophoneMode?,
+        voice: Boolean,
     ) {
         if (state.value.isLoading || state.value.errorMessage != null) return
         disconnect()
         val thisAttempt = attempt
-        mutableState.update { it.copy(providerStatus = ProviderStatus.CONNECTING, providerMessage = null, voiceMode = microphone != null) }
+        mutableState.update { it.copy(providerStatus = ProviderStatus.CONNECTING, providerMessage = null, voiceMode = voice) }
         connectionJob =
             scope.launch {
                 var openedSession: ConversationSession? = null
                 try {
                     val connectionCatalog = catalog
                     val provider =
-                        if (microphone == null) {
+                        if (!voice) {
                             providerFactory(link)
                         } else {
-                            val audio = checkNotNull(mediaFactory).invoke(microphone)
+                            val audio = checkNotNull(mediaFactory).invoke()
                             media = audio
                             launch {
                                 audio.controls.collect { controls ->
@@ -149,7 +137,7 @@ class ProviderSessionController(
                     val opened =
                         provider.open(
                             SessionOpenRequest(
-                                if (microphone == null) {
+                                if (!voice) {
                                     "You are EVA, an assistant running on the user's Android phone. " +
                                         "Help conversationally and use the supplied tools for phone actions. " +
                                         "Ask for missing information. Never claim sending a message when only a draft was opened. " +
@@ -175,7 +163,7 @@ class ProviderSessionController(
                                 },
                                 connectionCatalog,
                                 // Captions only; a typed session has no audio to transcribe.
-                                if (microphone == null) emptyList() else voiceKeywords(),
+                                if (voice) voiceKeywords() else emptyList(),
                             ),
                         )
                     openedSession = opened

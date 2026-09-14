@@ -183,7 +183,7 @@ class EvaApplication : Application() {
                     BrokerConversationProvider(BrokerEndpoint.parse(link))
                 }
             },
-            mediaFactory = { mode -> mediaFactory.create(RealtimeMediaConfig(mode)) },
+            mediaFactory = { mediaFactory.create(RealtimeMediaConfig()) },
             voiceProviderFactory = { link, audio ->
                 if (link.isBlank()) {
                     val access = access() ?: error("Sign in with ChatGPT, add an API key, or paste a paired host link.")

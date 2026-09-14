@@ -47,7 +47,7 @@ internal interface PeerLink {
 }
 
 internal fun interface PeerLinkFactory {
-    fun open(microphone: MicrophoneMode): PeerLink
+    fun open(): PeerLink
 }
 
 /** Audio focus, mode, and routing owned for the lifetime of one session. */
