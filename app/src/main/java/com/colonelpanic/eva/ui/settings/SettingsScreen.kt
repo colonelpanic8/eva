@@ -84,6 +84,7 @@ fun SettingsScreen(
             AssistantSection(state, actions)
             SettingsDivider()
             MediaSection(state, actions)
+            ScreenControlSection(state, actions)
             SettingsDivider()
             AppearanceSection(state, actions)
             Spacer(Modifier.height(24.dp))
@@ -230,6 +231,30 @@ private fun MediaSection(
         ) {
             TextButton(onClick = actions.onOpenMediaControlSettings) { Text("Change") }
         }
+    }
+}
+
+/**
+ * The one capability that can reach into any other app, so it gets a switch rather than only the
+ * Shizuku authorization that enables it. Switching it off removes the tools from the catalog EVA
+ * sends, so the model is not told the ability exists.
+ */
+@Composable
+private fun ScreenControlSection(
+    state: SettingsUiState,
+    actions: SettingsActions,
+) {
+    if (!state.canControlScreen) return
+    SettingsSection("Screen control") {
+        SettingsSwitchRow(
+            title = "Let EVA read and tap the screen",
+            supporting =
+                "Experimental, and only while Shizuku is running and has authorized EVA. It can read the " +
+                    "elements of whatever app is in front, tap one, or replace one text field, which means it can " +
+                    "send or buy things. Off removes these tools from what the model is offered.",
+            checked = state.screenControlEnabled,
+            onCheckedChange = actions.onScreenControlChange,
+        )
     }
 }
 

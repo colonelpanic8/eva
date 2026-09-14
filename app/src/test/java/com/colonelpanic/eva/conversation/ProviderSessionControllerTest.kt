@@ -24,6 +24,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Test
 
@@ -58,6 +59,89 @@ class ProviderSessionControllerTest {
             ),
             listOf(definition),
         )
+
+    private val secondDefinition =
+        CapabilityDefinition(
+            "test.hideable",
+            "Hideable action",
+            "Execute an action the user can switch off",
+            Json
+                .parseToJsonElement(
+                    """{"type":"object","properties":{"place":{"type":"string","minLength":1}},
+            "required":["place"],"additionalProperties":false}""",
+                ).jsonObject,
+        )
+    private val twoCapabilityRegistry =
+        CapabilityRegistry(
+            listOf(definition, secondDefinition).associate { entry ->
+                entry.id to
+                    object : ExecutionBackend {
+                        override suspend fun unavailableReason(): String? = null
+
+                        override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome {
+                            executions++
+                            return ExecutionOutcome(InvocationStatus.HANDED_OFF, "Opened ${arguments.getValue("place")}")
+                        }
+                    }
+            },
+            listOf(definition, secondDefinition),
+        )
+
+    @Test
+    fun `a switched off capability is never offered to the model`() =
+        runTest {
+            val controller =
+                ProviderSessionController(
+                    twoCapabilityRegistry,
+                    CapabilityDispatcher(twoCapabilityRegistry, repository),
+                    repository,
+                    this,
+                    { provider },
+                    hiddenCapabilities = { setOf(secondDefinition.id) },
+                )
+            advanceUntilIdle()
+            controller.connect("unused")
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf(definition.id),
+                provider.request.catalog.tools
+                    .map { it.capabilityId },
+            )
+            controller.disconnect()
+            advanceUntilIdle()
+        }
+
+    @Test
+    fun `switching a capability back on offers it again under a different catalog revision`() =
+        runTest {
+            var hidden = setOf(secondDefinition.id)
+            val controller =
+                ProviderSessionController(
+                    twoCapabilityRegistry,
+                    CapabilityDispatcher(twoCapabilityRegistry, repository),
+                    repository,
+                    this,
+                    { provider },
+                    hiddenCapabilities = { hidden },
+                )
+            advanceUntilIdle()
+            controller.connect("unused")
+            advanceUntilIdle()
+            val withoutIt = provider.request.catalog
+            controller.disconnect()
+            advanceUntilIdle()
+
+            hidden = emptySet()
+            controller.connect("unused")
+            advanceUntilIdle()
+            val withIt = provider.request.catalog
+
+            assertEquals(listOf(definition.id, secondDefinition.id), withIt.tools.map { it.capabilityId })
+            assertNotEquals(withoutIt.revision, withIt.revision)
+            controller.disconnect()
+            advanceUntilIdle()
+        }
 
     @Test
     fun `natural language uses a catalog supplied action and returns actual evidence`() =
