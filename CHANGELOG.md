@@ -2,6 +2,18 @@
 
 All notable changes to EVA will be documented here.
 
+## [0.13.0] - 2026-09-14
+
+### Added
+
+- EVA can be selected as Android's device assistant. The assistant gesture opens a Compose panel over the current app, joins or starts a voice session, keeps conversation text hidden on the lockscreen, and does not consume screen context or screenshots.
+- The settings screen reports whether EVA is the active device assistant and links to Android's assistant selection screen.
+
+### Fixed
+
+- EVA's required system speech recognizer delegates to on-device recognition or another installed recognizer without recursing between debug and release installs, and cleans up delegates after recognition ends.
+- Assistant app launches are offered only while the panel is shown, matching Android's rejection of launches from hidden sessions.
+
 ## [0.12.0] - 2026-09-14
 
 ### Added

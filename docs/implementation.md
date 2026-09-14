@@ -317,11 +317,18 @@ The manifest declares speech-service visibility for Android 11+. Delegates are
 released after terminal callbacks and cancellation; late callbacks from a
 released delegate are ignored.
 
-None of this section is device-verified. JVM tests cover the decision logic,
-recognizer selection, lifecycle transitions, and launch-surface dispatch;
-assistant-gesture invocation, the panel over another app, keyguard behaviour,
-background action dispatch through the session, and third-party recognition
-through the delegate have not been exercised on hardware or an emulator.
+On 2026-09-14, a signed 0.13.0 release candidate was installed over the existing
+production package on a Pixel 11 Pro Fold running Android 17. Refreshing the
+assistant role selected `EvaVoiceInteractionService`; the system reported the
+interaction and session services bound, and `KEYCODE_ASSIST` showed the Compose
+panel over Recents with voice connected. The panel remained shown after a tap
+inside it, while a tap on the surrounding scrim dismissed it and restored focus
+to Recents. No EVA crash appeared in logcat.
+
+The physical assistant gesture, keyguard behaviour, background activity handoff
+through the session, and third-party recognition through the delegate remain
+unverified. JVM tests cover the decision logic, recognizer selection, lifecycle
+transitions, and launch-surface dispatch.
 
 ## Voice action verification
 

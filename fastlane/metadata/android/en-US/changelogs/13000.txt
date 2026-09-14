@@ -1,0 +1,3 @@
+* Added: EVA can be selected as Android's device assistant. The assistant gesture opens a Compose panel over the current app, joins or starts a voice session, keeps conversation text hidden on the lockscreen, and does not consume screen context or screenshots.
+* Added: The settings screen reports whether EVA is the active device assistant and links to Android's assistant selection screen.
+* ...see CHANGELOG.md for the rest.

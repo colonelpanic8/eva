@@ -1,3 +1,2 @@
-* Added: Direct realtime voice works with a signed-in ChatGPT subscription on the phone, without a broker or API key.
-* Fixed: Voice negotiation no longer times out because of an invalid transcription option.
-* ...see CHANGELOG.md for the rest.
+* Added: Direct realtime voice now works with a signed-in ChatGPT subscription on the phone, without a broker or API key. Voice actions use the same capability dispatcher and can hand off to Android apps such as Clock.
+* Fixed: Removed an invalid local rejection of subscription voice and corrected the transcription session options that could make realtime negotiation time out.
