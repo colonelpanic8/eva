@@ -22,6 +22,7 @@ All notable changes to EVA will be documented here.
 
 ### Fixed
 
+- EVA starts again. The pattern matching `{{variable}}` references in the prompt file was rejected by Android's regex engine, so building the prompt aborted the app on launch. Only a device run catches this: the desktop JVM accepts the same pattern, which is why the unit tests passed.
 - The model pickers list the account's models again. The field opens holding the current model, and that text was being used as a filter, so the menu showed only the model already chosen.
 
 ## [0.15.0] - 2026-09-14

@@ -137,7 +137,9 @@ data class PromptConfig(
     // Not private: the generated serializer lives on the companion.
     companion object {
         private val ID = Regex("[a-z0-9][a-z0-9/-]*")
-        private val REFERENCE = Regex("""\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*}}""")
+
+        // Android's regex engine rejects an unescaped closing brace, where the desktop JVM's allows it.
+        private val REFERENCE = Regex("""\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}""")
 
         private fun substitute(
             text: String,
