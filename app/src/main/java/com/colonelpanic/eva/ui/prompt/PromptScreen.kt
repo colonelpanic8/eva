@@ -44,6 +44,7 @@ import com.colonelpanic.eva.conversation.prompt.PromptComponent
 import com.colonelpanic.eva.conversation.prompt.PromptConfig
 import com.colonelpanic.eva.conversation.prompt.PromptDefaults
 import com.colonelpanic.eva.data.PromptLocation
+import com.colonelpanic.eva.data.PromptRepository
 import com.colonelpanic.eva.data.PromptState
 import com.colonelpanic.eva.ui.MenuButton
 import com.colonelpanic.eva.ui.evaTopAppBarColors
@@ -57,6 +58,9 @@ data class PromptUiState(
     val location: PromptLocation = PromptLocation("", chosen = false),
     val prompt: PromptState = PromptState.Loading,
     val notice: String? = null,
+    val noticeIsError: Boolean = false,
+    val source: String = PromptRepository.DEFAULT_SOURCE,
+    val refreshing: Boolean = false,
 )
 
 data class PromptActions(
@@ -67,6 +71,7 @@ data class PromptActions(
     val onCreateFile: () -> Unit = {},
     val onUseOwnFile: () -> Unit = {},
     val onReset: () -> Unit = {},
+    val onRefreshSource: (String) -> Unit = {},
     val onDismissNotice: () -> Unit = {},
 )
 
@@ -109,7 +114,7 @@ fun PromptScreen(
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
             TopAppBar(
-                title = { Text("Prompt") },
+                title = { Text("Instructions") },
                 navigationIcon = { MenuButton(onOpenDrawer) },
                 colors = evaTopAppBarColors(),
             )
@@ -122,10 +127,48 @@ fun PromptScreen(
                     .padding(innerPadding)
                     .verticalScroll(rememberScrollState()),
         ) {
-            FileSection(state, actions)
-            SettingsDivider()
             ComponentsSection(state.prompt, actions, onEdit = { editing = it })
+            SettingsDivider()
+            SourceSection(state, actions)
+            SettingsDivider()
+            FileSection(state, actions)
             Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun SourceSection(
+    state: PromptUiState,
+    actions: PromptActions,
+) {
+    var source by remember(state.source) { mutableStateOf(state.source) }
+    SettingsSection("Git repository") {
+        SettingsBlock {
+            Text(
+                text =
+                    "Keep eva-prompt.yaml in Git and paste its raw HTTPS URL here. Updating replaces instruction " +
+                        "text and order from the repository while keeping matching on/off choices.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+                value = source,
+                onValueChange = { source = it },
+                label = { Text("HTTPS YAML URL") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = { actions.onRefreshSource(source) },
+                    enabled = source.isNotBlank() && !state.refreshing,
+                ) { Text(if (state.refreshing) "Updating…" else "Update instructions") }
+                TextButton(
+                    onClick = { source = PromptRepository.DEFAULT_SOURCE },
+                    enabled = !state.refreshing && source != PromptRepository.DEFAULT_SOURCE,
+                ) { Text("Use default source") }
+            }
         }
     }
 }
@@ -135,7 +178,7 @@ private fun FileSection(
     state: PromptUiState,
     actions: PromptActions,
 ) {
-    SettingsSection("File") {
+    SettingsSection("Local file") {
         SettingsRow(
             title = state.location.name,
             supporting =
@@ -160,7 +203,11 @@ private fun FileSection(
                 )
             }
             state.notice?.let {
-                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    it,
+                    color = if (state.noticeIsError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
                 TextButton(onClick = actions.onDismissNotice) { Text("Dismiss") }
             }
         }
@@ -173,12 +220,12 @@ private fun ComponentsSection(
     actions: PromptActions,
     onEdit: (String) -> Unit,
 ) {
-    SettingsSection("Components") {
+    SettingsSection("System prompt") {
         SettingsBlock {
             Text(
                 text =
-                    "Enabled components are joined in this order to make the system prompt. Tap one to edit it. " +
-                        "Slots, which allow one of their components on at a time, and tool overrides are edited in the file.",
+                    "Switch instructions on or off, tap one to edit its wording, or add your own. Enabled " +
+                        "instructions are combined in this order for each new session.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

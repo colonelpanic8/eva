@@ -3,8 +3,27 @@
 EVA's system prompt is assembled, at the start of every session, from
 `eva-prompt.yaml`. Nothing is added that the file does not contain. The stock
 prompt is written to the file the first time EVA runs; after that the file is
-the only source, and **Reset to defaults** on the Prompt screen writes the stock
-prompt again.
+what sessions read, and **Reset to defaults** on the Instructions screen writes
+the compiled stock prompt again.
+
+## Instruction source
+
+The Instructions screen starts with this source:
+
+`https://raw.githubusercontent.com/colonelpanic8/eva-instructions/main/eva-prompt.yaml`
+
+**Update instructions** downloads that raw YAML file, validates it with the same
+rules as a hand-edited prompt, and writes it into the active local prompt file.
+The source owns component text and order. EVA preserves the on/off choice of any
+component with the same id, uses the source default for a new id, and removes
+components the source no longer contains. Nothing is fetched automatically, so
+a repository change cannot silently alter the prompt sent to a model.
+
+Paste another raw HTTPS YAML URL to use a custom source. Credentials, fragments,
+redirects, non-HTTPS URLs, files over 1 MiB, malformed YAML, and unknown prompt
+variables are rejected without changing the current file or saved source. The
+stock catalog is also compiled into EVA, so first run and **Reset to defaults**
+work without the repository or a network connection.
 
 ## Where it is
 
@@ -13,15 +32,16 @@ prompt again.
   connection do not, because `Android/data` is closed to both. It is removed when
   EVA is uninstalled. This is the fallback, not the way to keep a prompt you care
   about.
-- **A file you choose**: **Open a file** or **Create a file** on the Prompt
+- **A file you choose**: **Open a file** or **Create a file** on the Instructions
   screen uses the system picker, and EVA keeps the access it is given. This is
   the one to use: it puts the file somewhere you can sync, back up, or commit.
   **Use EVA's copy** goes back.
 
 EVA reads the file whenever a session starts and whenever the app returns to the
-front. It writes the file only when something is changed on the Prompt screen,
-and it never overwrites a file it could not parse. A file that does not parse
-stops sessions from starting, with the parser's message shown on the Prompt
+front. It writes the file only when something is changed on the Instructions
+screen or a repository update is requested, and it never overwrites a file it
+could not parse. A file that does not parse stops sessions from starting, with
+the parser's message shown on the Instructions
 screen and at the connect bar, rather than falling back to a prompt you did not
 write.
 
@@ -59,9 +79,9 @@ newline, defaults are omitted so the file says only what was chosen, long
 instructions are literal blocks rather than escaped one-liners so a reworded
 sentence is a one-line diff, and EVA does not write the file at all when the
 result would be identical to what is already there. What does not: **the app
-rewrites the whole file when you change something on the Prompt screen, so
+rewrites the whole file when you change something on the Instructions screen, so
 comments do not survive that.** Edit in the file and toggle in the file if you
-keep comments; use the Prompt screen if you do not.
+keep comments; use the Instructions screen if you do not.
 
 Toggling a component in the app changes `enabled` in the file, which shows up as
 a diff in your worktree. That is deliberate — which components are on is part of
@@ -81,6 +101,10 @@ components:
   title: Spoken style
   applies: voice
   instruction: This is a spoken conversation. Keep replies short.
+- id: brief-actions
+  title: Brief action confirmations
+  applies: voice
+  instruction: When performing a simple action, give only a brief confirmation unless the user asks for more detail.
 - id: one-request
   title: One request
   slot: call
@@ -108,8 +132,8 @@ its own paragraph. Fields, all optional except `id`:
 | Field | Meaning |
 | --- | --- |
 | `id` | Names the entry. Lowercase letters, digits, dashes, and slashes; unique in the file. |
-| `title`, `summary` | Shown on the Prompt screen. `title` defaults to the id. |
-| `enabled` | Default `true`. The switch on the Prompt screen. |
+| `title`, `summary` | Shown on the Instructions screen. `title` defaults to the id. |
+| `enabled` | Default `true`. The switch on the Instructions screen. |
 | `applies` | `voice`, `text`, or `both` (default). Which kind of session includes it. |
 | `slot` | Components sharing a slot are alternatives: at most one may be enabled. Turning one on in the app turns the others off. |
 | `instruction` | The text. Line breaks join into one paragraph; a blank line starts another, so wrap it like prose. |
@@ -133,7 +157,7 @@ to use it.
 
 ## In the app
 
-The Prompt screen lists the components as switches, opens one to edit its title,
+The Instructions screen lists the components as switches, opens one to edit its title,
 summary, scope, and text, and adds or removes components. Slots, `describe`, and
 `hide` are edited in the file. The app writes the file with its own formatting;
 see [keeping it in a git repo](#keeping-it-in-a-git-repo) for what that costs a

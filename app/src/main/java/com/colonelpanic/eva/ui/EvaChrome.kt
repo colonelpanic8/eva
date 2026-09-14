@@ -14,11 +14,11 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -98,8 +98,8 @@ internal fun EvaDrawerSheet(
         }
         Spacer(Modifier.height(12.dp))
         DrawerDestination("Conversation", Icons.Filled.Home, EvaDestination.CONVERSATION, current, onSelect)
-        DrawerDestination("Extensions", Icons.Filled.List, EvaDestination.EXTENSIONS, current, onSelect)
-        DrawerDestination("Prompt", Icons.Filled.Edit, EvaDestination.PROMPT, current, onSelect)
+        DrawerDestination("Extensions", Icons.AutoMirrored.Filled.List, EvaDestination.EXTENSIONS, current, onSelect)
+        DrawerDestination("Instructions", Icons.Filled.Edit, EvaDestination.PROMPT, current, onSelect)
         DrawerDestination("Settings", Icons.Filled.Settings, EvaDestination.SETTINGS, current, onSelect)
         DrawerDestination("About", Icons.Filled.Info, EvaDestination.ABOUT, current, onSelect)
         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))

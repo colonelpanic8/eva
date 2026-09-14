@@ -19,11 +19,19 @@ class PromptConfigTest {
         assertTrue(voiceParagraphs.first().startsWith("You are EVA"))
         assertEquals("It is noon.", voiceParagraphs.last())
         assertTrue(voice.instructions.contains("This is a spoken conversation."))
+        assertTrue(voice.instructions.contains("give only a brief confirmation"))
         assertTrue(voice.instructions.contains("This call is for one request."))
         assertFalse(voice.instructions.contains("This call stays open."))
         assertFalse(typed.instructions.contains("spoken conversation"))
         assertFalse(typed.instructions.contains("This call is for one request."))
         assertTrue(typed.instructions.contains("Never claim sending a message"))
+        assertFalse(
+            PromptDefaults.config
+                .toggle("brief-actions", false)
+                .assemble(PromptContext(voice = true, variables))
+                .instructions
+                .contains("brief confirmation"),
+        )
         assertNull(PromptDefaults.config.problem(PromptDefaults.VARIABLES))
     }
 
