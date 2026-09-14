@@ -202,7 +202,17 @@ class MainActivity : ComponentActivity() {
         val location by eva.prompts.location.collectAsStateWithLifecycle()
         val prompt by eva.prompts.state.collectAsStateWithLifecycle()
         val notice by eva.prompts.notice.collectAsStateWithLifecycle()
-        return PromptUiState(location = location, prompt = prompt, notice = notice)
+        val noticeIsError by eva.prompts.noticeIsError.collectAsStateWithLifecycle()
+        val source by eva.prompts.source.collectAsStateWithLifecycle()
+        val refreshing by eva.prompts.refreshing.collectAsStateWithLifecycle()
+        return PromptUiState(
+            location = location,
+            prompt = prompt,
+            notice = notice,
+            noticeIsError = noticeIsError,
+            source = source,
+            refreshing = refreshing,
+        )
     }
 
     @Composable
@@ -217,6 +227,7 @@ class MainActivity : ComponentActivity() {
                 onCreateFile = { createPromptFile.launch(PromptYaml.FILE_NAME) },
                 onUseOwnFile = { eva.editPrompt { useOwnFile() } },
                 onReset = { eva.editPrompt { resetToDefaults() } },
+                onRefreshSource = { source -> eva.editPrompt { refreshFrom(source) } },
                 onDismissNotice = eva.prompts::clearNotice,
             )
         }

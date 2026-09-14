@@ -46,6 +46,7 @@ data class PromptLocation(
 class PromptStore(
     context: Context,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val repository: PromptRepository = PromptRepository(),
 ) {
     private val context = context.applicationContext
     private val prefs = this.context.getSharedPreferences("eva.prompt", Context.MODE_PRIVATE)
@@ -55,9 +56,15 @@ class PromptStore(
     private val mutableLocation = MutableStateFlow(currentLocation())
     val location = mutableLocation.asStateFlow()
     private val mutableNotice = MutableStateFlow<String?>(null)
+    private val mutableNoticeIsError = MutableStateFlow(false)
+    private val mutableSource = MutableStateFlow(prefs.getString(SOURCE, null) ?: PromptRepository.DEFAULT_SOURCE)
+    val source = mutableSource.asStateFlow()
+    private val mutableRefreshing = MutableStateFlow(false)
+    val refreshing = mutableRefreshing.asStateFlow()
 
-    /** Why the last user action did not happen, until the next one does. */
+    /** Result of the last user action, until the next one does. */
     val notice = mutableNotice.asStateFlow()
+    val noticeIsError = mutableNoticeIsError.asStateFlow()
 
     /** The file as it is now. An absent or empty own copy is first given the defaults. */
     suspend fun load(): PromptConfig =
@@ -98,6 +105,28 @@ class PromptStore(
         }
 
     suspend fun resetToDefaults() = attempt { save(PromptDefaults.config) }
+
+    /** Replaces the catalog from a raw HTTPS file while retaining switches for matching ids. */
+    suspend fun refreshFrom(source: String) {
+        if (mutableRefreshing.value) return
+        mutableRefreshing.value = true
+        try {
+            val current = (state.value as? PromptState.Loaded)?.config ?: load()
+            val remote = withContext(ioDispatcher) { repository.load(source) }
+            save(mergePromptUpdate(current, remote.config))
+            prefs.edit { putString(SOURCE, remote.source) }
+            mutableSource.value = remote.source
+            mutableNotice.value = "Instructions updated. Changes apply to the next session."
+            mutableNoticeIsError.value = false
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            mutableNotice.value = error.message ?: "The instruction source could not be updated."
+            mutableNoticeIsError.value = true
+        } finally {
+            mutableRefreshing.value = false
+        }
+    }
 
     /**
      * Adopts a picked document. A new one receives the current prompt; an existing one has to
@@ -147,6 +176,7 @@ class PromptStore(
 
     fun clearNotice() {
         mutableNotice.value = null
+        mutableNoticeIsError.value = false
     }
 
     private suspend fun save(config: PromptConfig) {
@@ -168,10 +198,12 @@ class PromptStore(
         try {
             action()
             mutableNotice.value = null
+            mutableNoticeIsError.value = false
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
             mutableNotice.value = error.message ?: "That did not work."
+            mutableNoticeIsError.value = true
         }
     }
 
@@ -225,6 +257,21 @@ class PromptStore(
     private companion object {
         const val DOCUMENT = "prompt.document"
         const val DOCUMENT_NAME = "prompt.documentName"
+        const val SOURCE = "prompt.source"
         const val GRANT_FLAGS = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
     }
+}
+
+/** A repository owns its component text and order; the phone owns existing switch choices. */
+internal fun mergePromptUpdate(
+    current: PromptConfig,
+    remote: PromptConfig,
+): PromptConfig {
+    val enabled = current.components.associate { it.id to it.enabled }
+    return remote.copy(
+        components =
+            remote.components.map { component ->
+                enabled[component.id]?.let { component.copy(enabled = it) } ?: component
+            },
+    )
 }

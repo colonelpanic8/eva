@@ -43,6 +43,15 @@ object PromptDefaults {
                     instruction = "This is a spoken conversation. Keep replies short.",
                 ),
                 PromptComponent(
+                    id = "brief-actions",
+                    title = "Brief action confirmations",
+                    summary = "Simple actions get a short confirmation without extra explanation",
+                    applies = Applies.VOICE,
+                    instruction =
+                        "When performing a simple action, give only a brief confirmation unless the user asks " +
+                            "for more detail.",
+                ),
+                PromptComponent(
                     id = "name-lookup",
                     title = "Misheard names",
                     summary = "Retry contact lookups with plausible spellings before asking",

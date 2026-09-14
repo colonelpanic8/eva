@@ -97,7 +97,7 @@ internal fun EvaDrawerSheet(
         }
         Spacer(Modifier.height(12.dp))
         DrawerDestination("Conversation", Icons.Filled.Home, EvaDestination.CONVERSATION, current, onSelect)
-        DrawerDestination("Prompt", Icons.Filled.Edit, EvaDestination.PROMPT, current, onSelect)
+        DrawerDestination("Instructions", Icons.Filled.Edit, EvaDestination.PROMPT, current, onSelect)
         DrawerDestination("Settings", Icons.Filled.Settings, EvaDestination.SETTINGS, current, onSelect)
         DrawerDestination("About", Icons.Filled.Info, EvaDestination.ABOUT, current, onSelect)
         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))

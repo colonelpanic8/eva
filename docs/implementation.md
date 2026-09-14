@@ -479,8 +479,14 @@ unknown key is reported with its line, because the file is meant to be edited by
 hand. Wrapped lines inside an instruction join with spaces and a blank line
 starts a new paragraph, so the file can be wrapped like prose and still diff.
 
-`PromptDefaults` is the stock prompt, written to the file when the file is
-absent or empty and again on reset; after that the file is the only source.
+`PromptDefaults` is the stock prompt compiled into the app, written to the file
+when the file is absent or empty and again on reset; after that the active file
+is what a session reads. `PromptRepository` can explicitly refresh that file
+from the default `eva-instructions` raw GitHub URL or a custom raw HTTPS YAML
+URL. Fetching is bounded to 1 MiB, accepts no redirects or embedded credentials,
+and validates before writing. A refresh replaces source-owned content and order,
+preserves `enabled` for ids already present, and takes the source default for new
+ids. It never runs automatically.
 `PromptStore` keeps EVA's own copy in the external files directory, reachable
 over USB and `adb` without a permission, or adopts a document the user picks
 through the system picker with the persisted grant those pickers give, which is
@@ -489,10 +495,12 @@ before it replaces anything and an empty one is filled with the current prompt.
 The store reads the file for every session and writes it only for an edit made
 in the app, so an external edit applies to the next session without a reload
 step, and a file that fails to parse fails the connection with the parser's
-message instead of falling back to something the user did not write. The prompt
-screen shows the components as switches over their `enabled` fields, edits one
+message instead of falling back to something the user did not write. The
+Instructions screen shows the components as switches over their `enabled`
+fields, edits one
 component's text and scope, and adds or removes components; slots and tool
-adjustments are edited in the file. `docs/prompt.md` documents the format.
+adjustments are edited in the file. It also exposes the repository source and
+manual update action. `docs/prompt.md` documents the format.
 
 ## The assistant role
 

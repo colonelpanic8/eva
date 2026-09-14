@@ -68,14 +68,16 @@ panel taps from dismissing it, and dismissed from the surrounding scrim. The
 keyguard path, assistant activity handoff, and delegated system recognition
 remain unverified; JVM tests cover selection, lifecycle, and dispatch logic.
 
-The system prompt is a YAML file the user owns rather than text inside the app:
-a list of components with their own instructions, scope, and on/off state, which
-EVA assembles at the start of every session. The stock prompt is written to that
-file on first run, and the file can be EVA's own copy or any file chosen through
-the system picker, so it can live in a synced folder or a git checkout and be
-edited there. Ending a call is one such component with two stock alternatives:
-hang up once the request is done, or stay on the line until asked. The format is
-described in [[file:docs/prompt.md][the prompt file]].
+The system prompt is a YAML file the user owns rather than text hidden inside the
+app: a list of instructions with their own scope and on/off state, which EVA
+assembles at the start of every session. The Instructions screen can update that
+catalog from the =eva-instructions= GitHub repository or a custom raw HTTPS YAML
+source while retaining switches for matching ids. A baked-in copy makes first
+run and reset work offline. The local file can be EVA's own copy or any file
+chosen through the system picker, so it can live in a synced folder or git
+checkout and be edited there. Ending a call is one such instruction with two
+stock alternatives: hang up once the request is done, or stay on the line until
+asked. The format is described in [[file:docs/prompt.md][the prompt file]].
 
 Paseo and capability-package import are not integrated. AppFunctions settings
 control and an experimental device-control backend use Shizuku when it is
