@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Declares EVA as a selectable digital assistant. supportsAssist is what puts EVA behind the
+  assist gesture; supportsLaunchVoiceAssistFromKeyguard lets a locked phone answer without
+  showing the conversation. Screen context is never requested: the session does not implement
+  onHandleAssist.
+-->
+<voice-interaction-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:recognitionService="com.colonelpanic.eva.assist.EvaRecognitionService"
+    android:sessionService="com.colonelpanic.eva.assist.EvaVoiceInteractionSessionService"
+    android:settingsActivity="com.colonelpanic.eva.MainActivity"
+    android:supportsAssist="true"
+    android:supportsLaunchVoiceAssistFromKeyguard="true" />

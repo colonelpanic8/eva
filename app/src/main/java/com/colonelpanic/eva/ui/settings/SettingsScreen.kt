@@ -81,6 +81,8 @@ fun SettingsScreen(
             SettingsDivider()
             VoiceSection(state, actions)
             SettingsDivider()
+            AssistantSection(state, actions)
+            SettingsDivider()
             AppearanceSection(state, actions)
             SettingsDivider()
             SettingsSection("About") {
@@ -172,6 +174,30 @@ private fun VoiceSection(
                 steps = MAX_LOOKUP_RETRIES - 1,
                 modifier = Modifier.fillMaxWidth(),
             )
+        }
+    }
+}
+
+/**
+ * Android has no role request for the assistant, so the most EVA can do is say whether it
+ * holds the role and open the screen where the user can grant it.
+ */
+@Composable
+private fun AssistantSection(
+    state: SettingsUiState,
+    actions: SettingsActions,
+) {
+    SettingsSection("Device assistant") {
+        SettingsRow(
+            title = if (state.isDeviceAssistant) "EVA answers the assist gesture" else "EVA is not the device assistant",
+            supporting =
+                if (state.isDeviceAssistant) {
+                    "Holding the home button or power button opens EVA over whatever app is in front."
+                } else {
+                    "Pick EVA as the digital assistant app to reach it without opening it first."
+                },
+        ) {
+            TextButton(onClick = actions.onOpenAssistantSettings) { Text("Change") }
         }
     }
 }

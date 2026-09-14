@@ -100,5 +100,47 @@
             android:exported="false"
             android:foregroundServiceType="microphone|mediaPlayback"
             tools:targetApi="30" />
+
+        <!-- Holding the assistant role, rather than only answering ACTION_ASSIST, is what puts
+             EVA behind the assist gesture and lets it answer over another app. Only the system
+             holds BIND_VOICE_INTERACTION, so only the system can bind either service. -->
+        <service
+            android:name=".assist.EvaVoiceInteractionService"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_VOICE_INTERACTION">
+            <intent-filter>
+                <action android:name="android.service.voice.VoiceInteractionService" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.voice_interaction"
+                android:resource="@xml/interaction_service" />
+        </service>
+
+        <service
+            android:name=".assist.EvaVoiceInteractionSessionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_VOICE_INTERACTION" />
+
+        <!-- Required of any voice interaction service, and made the device-wide recognizer when
+             EVA is selected, so it has to stay usable by unrelated apps. EVA forwards instead of
+             transcribing; see EvaRecognitionService. Callers bind it directly, so it cannot be
+             permission-guarded. -->
+        <service
+            android:name=".assist.EvaRecognitionService"
+            android:exported="true"
+            android:label="@string/recognition_service_name"
+            tools:ignore="ExportedService">
+            <intent-filter>
+                <action android:name="android.speech.RecognitionService" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.speech"
+                android:resource="@xml/recognition_service" />
+        </service>
     </application>
 </manifest>
