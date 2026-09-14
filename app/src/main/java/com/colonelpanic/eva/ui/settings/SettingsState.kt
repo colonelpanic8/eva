@@ -16,7 +16,6 @@ data class SettingsUiState(
     val reasoningEffort: String = OpenAiModels.REASONING_EFFORT,
     val voiceLookupRetries: Int = 5,
     val dynamicColor: Boolean = false,
-    val version: String? = null,
 ) {
     /** Whether any of the three ways to reach a provider is configured. */
     val hasCredential: Boolean get() = account != null || hasApiKey || hasHostLink

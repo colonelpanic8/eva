@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.tooling.preview.Preview
 import com.colonelpanic.eva.audio.AudioFocusState
 import com.colonelpanic.eva.audio.MediaControls
@@ -19,16 +20,18 @@ import com.colonelpanic.eva.conversation.ConversationState
 import com.colonelpanic.eva.conversation.EntryStatus
 import com.colonelpanic.eva.conversation.ProviderStatus
 import com.colonelpanic.eva.providers.openai.OpenAiModels
+import com.colonelpanic.eva.ui.about.AboutInfo
+import com.colonelpanic.eva.ui.about.AboutScreen
 import com.colonelpanic.eva.ui.settings.SettingsActions
 import com.colonelpanic.eva.ui.settings.SettingsScreen
 import com.colonelpanic.eva.ui.settings.SettingsUiState
 import com.colonelpanic.eva.ui.theme.EvaTheme
 import kotlinx.coroutines.launch
 
-internal enum class EvaDestination { CONVERSATION, SETTINGS }
+internal enum class EvaDestination { CONVERSATION, SETTINGS, ABOUT }
 
 /**
- * Two top-level destinations behind a navigation drawer. A navigation library would only
+ * Three top-level destinations behind a navigation drawer. A navigation library would only
  * add a dependency to express what one saved enum and a back press already do.
  */
 @Composable
@@ -36,6 +39,7 @@ fun EvaApp(
     state: ConversationState,
     settings: SettingsUiState,
     settingsActions: SettingsActions,
+    about: AboutInfo = AboutInfo(),
     onSubmit: (String) -> Unit,
     onConnect: () -> Unit = {},
     onVoice: () -> Unit = {},
@@ -47,13 +51,14 @@ fun EvaApp(
     onDismissDenial: () -> Unit = {},
 ) {
     var destination by rememberSaveable { mutableStateOf(EvaDestination.CONVERSATION) }
+    val uriHandler = LocalUriHandler.current
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val openDrawer = { scope.launch { drawer.open() } }
 
     // The drawer registers its own back handler while open, so this one only sees a back
-    // press on settings with the drawer already closed.
-    BackHandler(enabled = destination == EvaDestination.SETTINGS) {
+    // press away from the conversation with the drawer already closed.
+    BackHandler(enabled = destination != EvaDestination.CONVERSATION) {
         destination = EvaDestination.CONVERSATION
     }
 
@@ -93,6 +98,14 @@ fun EvaApp(
                     state = settings,
                     actions = settingsActions,
                     onOpenDrawer = { openDrawer() },
+                )
+            }
+
+            EvaDestination.ABOUT -> {
+                AboutScreen(
+                    info = about,
+                    onOpenDrawer = { openDrawer() },
+                    onOpenUrl = uriHandler::openUri,
                 )
             }
         }
@@ -183,7 +196,7 @@ private fun StorageErrorPreview() {
     }
 }
 
-private val previewSettings = SettingsUiState(account = "ivan@example.com", version = "0.10.0")
+private val previewSettings = SettingsUiState(account = "ivan@example.com")
 
 private val previewEntries =
     listOf(

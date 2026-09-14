@@ -26,6 +26,7 @@ import com.colonelpanic.eva.ui.EvaApp
 import com.colonelpanic.eva.ui.HandsFreeSurface
 import com.colonelpanic.eva.ui.VoiceAccessModel
 import com.colonelpanic.eva.ui.VoiceStart
+import com.colonelpanic.eva.ui.about.AboutInfo
 import com.colonelpanic.eva.ui.settings.SettingsActions
 import com.colonelpanic.eva.ui.settings.SettingsUiState
 import com.colonelpanic.eva.ui.theme.EvaTheme
@@ -145,9 +146,15 @@ class MainActivity : ComponentActivity() {
             reasoningEffort = reasoningEffort,
             voiceLookupRetries = voiceLookupRetries,
             dynamicColor = dynamicColor,
-            version = eva.clientVersion,
         )
     }
+
+    private fun aboutInfo() =
+        AboutInfo(
+            version = eva.clientVersion,
+            versionCode = eva.versionCode,
+            applicationId = packageName,
+        )
 
     @Composable
     private fun settingsActions(): SettingsActions =
@@ -194,6 +201,7 @@ class MainActivity : ComponentActivity() {
                     state = state,
                     settings = settingsUiState(dynamicColor),
                     settingsActions = settingsActions(),
+                    about = aboutInfo(),
                     onSubmit = controller::submit,
                     onConnect = { controller.connect(eva.settings.hostLink()) },
                     onVoice = ::startVoice,

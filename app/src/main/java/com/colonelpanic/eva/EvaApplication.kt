@@ -2,6 +2,7 @@ package com.colonelpanic.eva
 
 import android.app.Application
 import android.os.Build
+import androidx.core.content.pm.PackageInfoCompat
 import com.colonelpanic.eva.adapters.android.AndroidIntentHost
 import com.colonelpanic.eva.adapters.android.AppFunctionsBackend
 import com.colonelpanic.eva.adapters.android.ContactNameKeywords
@@ -84,10 +85,13 @@ class EvaApplication :
 
     override fun endVoiceSession() = controller.disconnect()
 
-    /** Also what the settings screen reports; absent when the package cannot be read. */
-    val clientVersion by lazy {
-        runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull()
-    }
+    private val packageInfo by lazy { runCatching { packageManager.getPackageInfo(packageName, 0) }.getOrNull() }
+
+    /** Also what the about screen reports; absent when the package cannot be read. */
+    val clientVersion by lazy { packageInfo?.versionName }
+
+    /** The build number a bug report needs, next to the version name the user recognises. */
+    val versionCode by lazy { packageInfo?.let { PackageInfoCompat.getLongVersionCode(it) } }
 
     /** A subscription is already paid for, so it is preferred when a key is also present. */
     private fun access(): OpenAiAccess? =

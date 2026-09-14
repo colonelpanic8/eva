@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.ui.settings
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -55,6 +56,7 @@ internal fun SettingsBlock(
 internal fun SettingsRow(
     title: String,
     supporting: String? = null,
+    onClick: (() -> Unit)? = null,
     trailing: @Composable (() -> Unit)? = null,
 ) {
     ListItem(
@@ -62,6 +64,7 @@ internal fun SettingsRow(
         supportingContent = supporting?.let { { Text(it) } },
         trailingContent = trailing,
         colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
+        modifier = if (onClick == null) Modifier else Modifier.clickable(onClick = onClick),
     )
 }
 

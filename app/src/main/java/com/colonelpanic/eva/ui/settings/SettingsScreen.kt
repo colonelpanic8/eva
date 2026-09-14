@@ -82,10 +82,6 @@ fun SettingsScreen(
             VoiceSection(state, actions)
             SettingsDivider()
             AppearanceSection(state, actions)
-            SettingsDivider()
-            SettingsSection("About") {
-                SettingsRow(title = "EVA", supporting = state.version?.let { "Version $it" } ?: "Version unavailable")
-            }
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -313,7 +309,7 @@ private fun copyToClipboard(
 @Composable
 private fun SettingsSignedOutPreview() {
     EvaTheme(dynamicColor = false) {
-        SettingsScreen(state = SettingsUiState(version = "0.10.0"), actions = SettingsActions(), onOpenDrawer = {})
+        SettingsScreen(state = SettingsUiState(), actions = SettingsActions(), onOpenDrawer = {})
     }
 }
 
@@ -330,7 +326,6 @@ private fun SettingsSignedInPreview() {
                     textModel = OpenAiModels.TEXT,
                     realtimeModel = OpenAiModels.REALTIME,
                     voiceLookupRetries = 5,
-                    version = "0.10.0",
                 ),
             actions = SettingsActions(),
             onOpenDrawer = {},
