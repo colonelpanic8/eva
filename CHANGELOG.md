@@ -2,6 +2,12 @@
 
 All notable changes to EVA will be documented here.
 
+## [Unreleased]
+
+### Fixed
+
+- The model pickers list the account's models again. The field opens holding the current model, and that text was being used as a filter, so the menu showed only the model already chosen.
+
 ## [0.15.0] - 2026-09-14
 
 ### Added

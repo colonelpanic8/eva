@@ -20,6 +20,28 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 
+/** Every model worth listing: the account's, plus the default and the current choice. */
+internal fun modelCandidates(
+    available: List<String>,
+    selected: String,
+    defaultModel: String,
+): List<String> = (available + listOf(defaultModel, selected).filter { it.isNotBlank() }).distinct().sorted()
+
+/**
+ * What the menu shows. The field opens holding the current model, so filtering on its text
+ * would hide the whole account list behind the one name already chosen; [editing] says the
+ * text is a filter the user typed rather than the standing selection.
+ */
+internal fun listedModels(
+    candidates: List<String>,
+    draft: String,
+    editing: Boolean,
+): List<String> {
+    val filter = draft.trim()
+    if (!editing || filter.isEmpty()) return candidates
+    return candidates.filter { it.contains(filter, ignoreCase = true) }
+}
+
 /**
  * A normal editable dropdown for model choice. [available] comes from the account when it
  * can be listed; typing a name not in the list is still accepted so a model missing
@@ -36,18 +58,20 @@ internal fun ModelPicker(
 ) {
     var expanded by remember { mutableStateOf(false) }
     var draft by remember(selected) { mutableStateOf(selected) }
+    var editing by remember(selected) { mutableStateOf(false) }
     val candidates =
         remember(available, selected, defaultModel) {
-            (available + listOf(defaultModel, selected).filter { it.isNotBlank() }).distinct().sorted()
+            modelCandidates(available, selected, defaultModel)
         }
     val filtered =
-        remember(draft, candidates) {
-            if (draft.isBlank()) candidates else candidates.filter { it.contains(draft, ignoreCase = true) }
+        remember(draft, candidates, editing) {
+            listedModels(candidates, draft, editing)
         }
     val trimmed = draft.trim()
 
     fun commit(value: String) {
         expanded = false
+        editing = false
         draft = value
         onSelect(value.trim())
     }
@@ -61,6 +85,7 @@ internal fun ModelPicker(
             value = draft,
             onValueChange = {
                 draft = it
+                editing = true
                 expanded = true
             },
             label = { Text(label) },
@@ -88,7 +113,7 @@ internal fun ModelPicker(
                 text = { Text("Default ($defaultModel)") },
                 onClick = { commit("") },
             )
-            if (filtered.isEmpty() && trimmed.isEmpty()) {
+            if (available.isEmpty()) {
                 DropdownMenuItem(
                     text = { Text("No models listed for this account yet") },
                     onClick = {},
