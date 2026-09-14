@@ -4,6 +4,10 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Added
+
+- A setting for screen control, the one capability that can reach into any other app. Turning it off removes reading, tapping, and text replacement from the tools EVA offers the model, so the model is not told the ability exists rather than being told and then refused. It takes effect on the next conversation, and appears only where the capability could run at all. It stays on by default, so an installed build behaves as it did.
+
 ### Changed
 
 - When EVA ends a voice conversation itself, the assistant panel closes with it, so a request that opened an app leaves you in that app instead of behind EVA's panel. Stopping the conversation yourself leaves the panel up, and EVA's own screen is never closed by a hang-up.

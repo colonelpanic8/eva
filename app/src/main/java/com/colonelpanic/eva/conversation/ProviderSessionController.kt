@@ -54,6 +54,8 @@ class ProviderSessionController(
     private val voiceProviderFactory: (suspend (String, RealtimeMediaSession) -> ConversationProvider)? = null,
     private val voiceLookupRetries: () -> Int = { 5 },
     private val voiceKeywords: suspend () -> List<String> = { emptyList() },
+    /** Capabilities the user has switched off. They are left out of the catalog entirely. */
+    private val hiddenCapabilities: () -> Set<String> = { emptySet() },
 ) {
     private val mutableState = MutableStateFlow(ConversationState())
     val state = mutableState.asStateFlow()
@@ -74,11 +76,21 @@ class ProviderSessionController(
     private var claimedCall: String? = null
     private var lastUserTranscript: String? = null
     private val definitions = registry.catalog.associateBy { it.id }
-    private val phoneTools = registry.catalog.map { ProviderToolDefinition(it.id, it.title, it.description, it.inputSchema) }
-    private val typedCatalog = catalogOf(phoneTools)
+
+    /**
+     * Read when a session opens, not once at construction, so switching a capability off takes
+     * effect on the next connection. A live session keeps the catalog it was opened with.
+     */
+    private fun phoneTools() =
+        registry.catalog
+            .filterNot { it.id in hiddenCapabilities() }
+            .map { ProviderToolDefinition(it.id, it.title, it.description, it.inputSchema) }
+
+    private fun typedCatalog() = catalogOf(phoneTools())
 
     // Only a spoken session is something the model can hang up.
-    private val voiceCatalog = catalogOf(phoneTools + END_CONVERSATION)
+    private fun voiceCatalog() = catalogOf(phoneTools() + END_CONVERSATION)
+
     private var ending = false
     private var assistantSpeaking = false
 
@@ -120,7 +132,7 @@ class ProviderSessionController(
             scope.launch {
                 var openedSession: ConversationSession? = null
                 try {
-                    val connectionCatalog = if (voice) voiceCatalog else typedCatalog
+                    val connectionCatalog = if (voice) voiceCatalog() else typedCatalog()
                     val provider =
                         if (!voice) {
                             providerFactory(link)

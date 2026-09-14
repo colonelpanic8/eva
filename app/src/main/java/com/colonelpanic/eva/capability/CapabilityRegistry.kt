@@ -51,6 +51,9 @@ class CapabilityRegistry(
         const val UI_OBSERVE = "eva.device.observe"
         const val UI_TAP = "eva.device.tap"
         const val UI_SET_TEXT = "eva.device.set_text"
+
+        /** Reading and driving another app's screen, which the user can withhold as a group. */
+        val SCREEN_CONTROL = setOf(UI_OBSERVE, UI_TAP, UI_SET_TEXT)
         const val REVISION = 9
         const val MAX_DESTINATION_LENGTH = 500
     }

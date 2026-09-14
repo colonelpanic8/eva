@@ -36,6 +36,7 @@ import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.conversation.ProviderSessionController
 import com.colonelpanic.eva.conversation.ProviderStatus
 import com.colonelpanic.eva.data.AppearanceSettings
+import com.colonelpanic.eva.data.CapabilitySettings
 import com.colonelpanic.eva.data.ChatGptAccountStore
 import com.colonelpanic.eva.data.ChosenNumbers
 import com.colonelpanic.eva.data.OpenAiSettings
@@ -88,6 +89,7 @@ class EvaApplication :
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val settings by lazy { OpenAiSettings(this) }
     val appearance by lazy { AppearanceSettings(this) }
+    val capabilities by lazy { CapabilitySettings(this) }
     val chatGpt by lazy { ChatGptAccountStore(this) }
     val signIn by lazy { ChatGptSignIn(save = chatGpt::save) }
     private var signInJob: Job? = null
@@ -225,9 +227,10 @@ class EvaApplication :
                     )
                 }
                 deviceControlHost?.let { host ->
-                    put(CapabilityRegistry.UI_OBSERVE, UiControlBackend(host, observations, UiControlBackend.Operation.OBSERVE))
-                    put(CapabilityRegistry.UI_TAP, UiControlBackend(host, observations, UiControlBackend.Operation.TAP))
-                    put(CapabilityRegistry.UI_SET_TEXT, UiControlBackend(host, observations, UiControlBackend.Operation.SET_TEXT))
+                    val exposed = { capabilities.screenControlEnabled }
+                    put(CapabilityRegistry.UI_OBSERVE, UiControlBackend(host, observations, UiControlBackend.Operation.OBSERVE, exposed))
+                    put(CapabilityRegistry.UI_TAP, UiControlBackend(host, observations, UiControlBackend.Operation.TAP, exposed))
+                    put(CapabilityRegistry.UI_SET_TEXT, UiControlBackend(host, observations, UiControlBackend.Operation.SET_TEXT, exposed))
                 }
             },
         )
@@ -261,6 +264,7 @@ class EvaApplication :
             scope = scope,
             voiceLookupRetries = { settings.voiceLookupRetries },
             voiceKeywords = { contactKeywords.names() },
+            hiddenCapabilities = { if (capabilities.screenControlEnabled) emptySet() else CapabilityRegistry.SCREEN_CONTROL },
         ).also { controller ->
             scope.launch {
                 controller.state.collect { mutableVoiceSession.value = VoiceSessionStatus(it.mediaState, it.mediaControls) }
