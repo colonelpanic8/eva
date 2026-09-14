@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.os.Build
 import android.os.Bundle
+import android.os.RemoteException
 import android.speech.RecognitionListener
 import android.speech.RecognitionService
 import android.speech.SpeechRecognizer
@@ -24,14 +25,22 @@ class EvaRecognitionService : RecognitionService() {
         listener: Callback,
     ) {
         release()
-        val recognizer =
-            createDelegate() ?: run {
+        try {
+            val recognizer = createDelegate()
+            if (recognizer == null) {
                 listener.report { this.error(SpeechRecognizer.ERROR_CLIENT) }
                 return
             }
-        delegate = recognizer
-        recognizer.setRecognitionListener(Forwarder(listener))
-        recognizer.startListening(recognizerIntent)
+            delegate = recognizer
+            recognizer.setRecognitionListener(Forwarder(listener, recognizer))
+            recognizer.startListening(Intent(recognizerIntent))
+        } catch (_: SecurityException) {
+            release()
+            listener.report { this.error(SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) }
+        } catch (_: IllegalArgumentException) {
+            release()
+            listener.report { this.error(SpeechRecognizer.ERROR_CLIENT) }
+        }
     }
 
     override fun onStopListening(listener: Callback) {
@@ -48,8 +57,9 @@ class EvaRecognitionService : RecognitionService() {
     }
 
     private fun release() {
-        delegate?.destroy()
+        val previous = delegate
         delegate = null
+        previous?.destroy()
     }
 
     /** On-device recognition first: it answers without the request leaving the phone. */
@@ -74,40 +84,54 @@ class EvaRecognitionService : RecognitionService() {
 
     /** A caller that has already gone away takes its binder with it; that is not an EVA failure. */
     private fun Callback.report(block: Callback.() -> Unit) {
-        runCatching { block() }
+        try {
+            block()
+        } catch (_: RemoteException) {
+            release()
+        }
     }
 
     private inner class Forwarder(
         private val callback: Callback,
+        private val recognizer: SpeechRecognizer,
     ) : RecognitionListener {
-        override fun onReadyForSpeech(params: Bundle?) = callback.report { this.readyForSpeech(params) }
+        private fun forward(
+            terminal: Boolean = false,
+            block: Callback.() -> Unit,
+        ) {
+            if (delegate !== recognizer) return
+            callback.report(block)
+            if (terminal && delegate === recognizer) release()
+        }
 
-        override fun onBeginningOfSpeech() = callback.report { this.beginningOfSpeech() }
+        override fun onReadyForSpeech(params: Bundle?) = forward { this.readyForSpeech(params) }
 
-        override fun onRmsChanged(rmsdB: Float) = callback.report { this.rmsChanged(rmsdB) }
+        override fun onBeginningOfSpeech() = forward { this.beginningOfSpeech() }
 
-        override fun onBufferReceived(buffer: ByteArray?) = callback.report { this.bufferReceived(buffer) }
+        override fun onRmsChanged(rmsdB: Float) = forward { this.rmsChanged(rmsdB) }
 
-        override fun onEndOfSpeech() = callback.report { this.endOfSpeech() }
+        override fun onBufferReceived(buffer: ByteArray?) = forward { this.bufferReceived(buffer) }
 
-        override fun onError(error: Int) = callback.report { this.error(error) }
+        override fun onEndOfSpeech() = forward { this.endOfSpeech() }
 
-        override fun onResults(results: Bundle?) = callback.report { this.results(results) }
+        override fun onError(error: Int) = forward(terminal = true) { this.error(error) }
 
-        override fun onPartialResults(partialResults: Bundle?) = callback.report { this.partialResults(partialResults) }
+        override fun onResults(results: Bundle?) = forward(terminal = true) { this.results(results) }
+
+        override fun onPartialResults(partialResults: Bundle?) = forward { this.partialResults(partialResults) }
 
         override fun onSegmentResults(segmentResults: Bundle) =
-            callback.report {
+            forward {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) this.segmentResults(segmentResults)
             }
 
         override fun onEndOfSegmentedSession() =
-            callback.report {
+            forward(terminal = true) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) this.endOfSegmentedSession()
             }
 
         override fun onLanguageDetection(results: Bundle) =
-            callback.report {
+            forward {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) this.languageDetection(results)
             }
 

@@ -19,11 +19,7 @@ fun interface PermissionRequester {
     fun request(permission: String)
 }
 
-/**
- * A live assistant session, which can open an app while EVA has no screen at all. The
- * activity path cannot: Android refuses a background activity start, and that is exactly
- * the moment a spoken follow-up arrives, with the app from the last action still in front.
- */
+/** A shown assistant session that can ask Android to open an app. */
 fun interface AssistantLauncher {
     fun start(intent: Intent)
 }
@@ -90,6 +86,8 @@ class AndroidIntentHost {
                 ExecutionOutcome(InvocationStatus.HANDED_OFF, successMessage)
             } catch (_: ActivityNotFoundException) {
                 ExecutionOutcome(InvocationStatus.FAILED, missingAppMessage)
+            } catch (_: IllegalStateException) {
+                ExecutionOutcome(InvocationStatus.NOT_EXECUTED, SURFACE_LOST)
             } catch (_: SecurityException) {
                 ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "Android did not allow this request to open.")
             }

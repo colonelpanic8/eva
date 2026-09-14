@@ -18,6 +18,6 @@ internal fun preferredRecognizer(
     candidates: List<RecognizerCandidate>,
     self: String,
 ): RecognizerCandidate? {
-    val others = candidates.filter { it.packageName != self }
+    val others = candidates.filter { it.packageName != self && it.className != "com.colonelpanic.eva.assist.EvaRecognitionService" }
     return others.firstOrNull { it.preinstalled } ?: others.firstOrNull()
 }

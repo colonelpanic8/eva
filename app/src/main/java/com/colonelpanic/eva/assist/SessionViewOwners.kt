@@ -29,7 +29,7 @@ internal class SessionViewOwners :
     override val viewModelStore = ViewModelStore()
     override val savedStateRegistry: SavedStateRegistry get() = savedState.savedStateRegistry
 
-    /** A session is never restored: it is created fresh for each invocation. */
+    /** State survives hide/show in memory; a replacement session starts fresh. */
     fun create() {
         savedState.performAttach()
         savedState.performRestore(null)

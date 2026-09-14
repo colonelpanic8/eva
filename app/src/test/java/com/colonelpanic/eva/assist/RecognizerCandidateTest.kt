@@ -21,6 +21,14 @@ class RecognizerCandidateTest {
     }
 
     @Test
+    fun `release and debug installations cannot delegate to each other`() {
+        val debug = eva.copy(packageName = "$self.debug")
+        assertNull(preferredRecognizer(listOf(debug), self))
+        assertNull(preferredRecognizer(listOf(eva), debug.packageName))
+        assertEquals(installed, preferredRecognizer(listOf(eva, debug, installed), self))
+    }
+
+    @Test
     fun `EVA never forwards to itself`() {
         assertNull(preferredRecognizer(listOf(eva), self))
         assertNull(preferredRecognizer(emptyList(), self))

@@ -20,14 +20,12 @@ import com.colonelpanic.eva.adapters.android.AssistantLauncher
 import com.colonelpanic.eva.audio.MicrophonePermission
 import com.colonelpanic.eva.ui.AssistantSurface
 import com.colonelpanic.eva.ui.theme.EvaTheme
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
- * EVA's surface when the system, not the launcher, opened it. The panel is drawn over
- * whatever app is in front rather than replacing it, and while it exists EVA can open an
- * app for a spoken request even with no screen of its own, which is the gap an activity
- * launch leaves behind once another app takes the foreground.
+ * EVA's panel over the foreground app when invoked through the assistant role.
  *
  * Screen context is deliberately not read: `onHandleAssist` and `onHandleScreenshot` stay
  * unimplemented, so nothing about the app underneath reaches a provider.
@@ -37,13 +35,13 @@ class EvaVoiceInteractionSession(
 ) : VoiceInteractionSession(context) {
     private val eva = context.applicationContext as EvaApplication
     private val owners = SessionViewOwners()
+    private var startJob: Job? = null
     private var locked by mutableStateOf(false)
     private var needsMicrophone by mutableStateOf(false)
 
     private val assistantLauncher =
         AssistantLauncher { intent ->
-            // No activity is starting this, so it has to be its own task. From Android 10 the
-            // system only accepts it through the session, which is what survives losing the screen.
+            // Older releases use the visible session window as their launch surface.
             val launch = Intent(intent).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) startAssistantActivity(launch) else context.startActivity(launch)
         }
@@ -55,9 +53,6 @@ class EvaVoiceInteractionSession(
     override fun onCreate() {
         super.onCreate()
         owners.create()
-        // Attached for the session's whole life, not just while shown: a spoken request can
-        // land after the panel is dismissed, and that is exactly when an activity cannot help.
-        eva.intentHost.attachAssistant(assistantLauncher)
     }
 
     override fun onCreateContentView(): View {
@@ -90,6 +85,7 @@ class EvaVoiceInteractionSession(
         super.onShow(args, showFlags)
         locked = context.getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
         owners.show()
+        eva.intentHost.attachAssistant(assistantLauncher)
         start()
     }
 
@@ -99,6 +95,8 @@ class EvaVoiceInteractionSession(
     }
 
     override fun onHide() {
+        eva.intentHost.detachAssistant(assistantLauncher)
+        startJob?.cancel()
         owners.hide()
         super.onHide()
     }
@@ -114,12 +112,14 @@ class EvaVoiceInteractionSession(
      * and a session already running is left alone: the panel controls it instead of replacing it.
      */
     private fun start() {
-        owners.lifecycleScope.launch {
-            val loaded = eva.controller.state.first { !it.isLoading }
-            val next = assistantStart(MicrophonePermission.isGranted(context), loaded.voiceMode, loaded.providerStatus)
-            needsMicrophone = next == AssistantStart.NEEDS_MICROPHONE
-            if (next == AssistantStart.CONNECT) eva.controller.connectVoice(eva.settings.hostLink())
-        }
+        startJob?.cancel()
+        startJob =
+            owners.lifecycleScope.launch {
+                val loaded = eva.controller.state.first { !it.isLoading }
+                val next = assistantStart(MicrophonePermission.isGranted(context), loaded.voiceMode, loaded.providerStatus)
+                needsMicrophone = next == AssistantStart.NEEDS_MICROPHONE
+                if (next == AssistantStart.CONNECT) eva.controller.connectVoice(eva.settings.hostLink())
+            }
     }
 
     /** The panel is on screen, so EVA has a visible window and its own task will accept this. */

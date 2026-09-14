@@ -23,6 +23,9 @@
     <uses-sdk tools:overrideLibrary="rikka.shizuku.api" />
 
     <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
         <package android:name="moe.shizuku.privileged.api" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
