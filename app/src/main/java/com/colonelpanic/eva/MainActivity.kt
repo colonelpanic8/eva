@@ -265,10 +265,12 @@ class MainActivity : ComponentActivity() {
         if (surface.locked && !isLocked()) surface = Launch.HANDS_FREE
         eva.intentHost.attach(this) { permission -> capabilityPermission.launch(permission) }
         if (Build.VERSION.SDK_INT >= 37) eva.shizukuShellHost?.attach(this)
+        if (Build.VERSION.SDK_INT >= 30) eva.deviceControlHost?.attach(this)
     }
 
     override fun onPause() {
         eva.intentHost.detach(this)
+        if (Build.VERSION.SDK_INT >= 30) eva.deviceControlHost?.detach(this)
         if (Build.VERSION.SDK_INT >= 37) eva.shizukuShellHost?.detach(this)
         super.onPause()
     }

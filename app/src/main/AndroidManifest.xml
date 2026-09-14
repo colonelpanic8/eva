@@ -57,7 +57,7 @@
         <provider
             android:name="rikka.shizuku.ShizukuProvider"
             android:authorities="${applicationId}.shizuku"
-            android:enabled="@bool/shizuku_app_functions_enabled"
+            android:enabled="@bool/shizuku_enabled"
             android:exported="true"
             android:multiprocess="false"
             android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />

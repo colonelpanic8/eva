@@ -10,6 +10,7 @@ All notable changes to EVA will be documented here.
 - "Play Black Hole Sun on Spotify" starts the app if it is not already running, through the same interface Android Auto uses to play things in arbitrary media apps, and tells you what actually started rather than only that it asked. The app decides what the words match, and an app that turns EVA away falls back to the standard play-by-name intent.
 - Media volume as a spoken control, separate from the ringer, alarms, and EVA's own voice.
 - A media controls setting. Turning on notification access lets EVA read what is playing, pick between apps when two are playing at once, and confirm that a pause actually took effect instead of only reporting that a button was sent. Android offers nothing narrower for this, so the setting says plainly that notifications also reach EVA, which ignores them. Without the grant EVA still sends the play, pause, and skip buttons, and says it cannot see what received them.
+- Experimental screen control through Shizuku on Android 11 and later. After granting Shizuku access, EVA can read a bounded accessibility hierarchy, replace an observed text field, and tap an observed element through its ordinary capability dispatcher. Screen mutations use short-lived, single-use observation references and revalidate the target before input.
 
 ## [0.14.1] - 2026-09-14
 
