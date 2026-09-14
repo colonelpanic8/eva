@@ -8,6 +8,8 @@ data class ToolProposal(
     val arguments: Map<String, String>,
     val request: String,
     val catalogRevision: Int = CapabilityRegistry.REVISION,
+    val threadId: String? = null,
+    val turnId: String? = null,
 ) {
     fun fingerprint(): String {
         val fields = listOf(capabilityId, catalogRevision.toString()) + arguments.toSortedMap().flatMap { listOf(it.key, it.value) }
@@ -37,6 +39,9 @@ data class InvocationRecord(
     val capabilityId: String,
     val catalogRevision: Int,
     val title: String? = null,
+    /** Null for receipts journaled before threads existed. */
+    val threadId: String? = null,
+    val turnId: String? = null,
 )
 
 data class ClaimResult(

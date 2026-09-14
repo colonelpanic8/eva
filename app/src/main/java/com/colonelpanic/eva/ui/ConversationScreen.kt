@@ -38,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -51,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import com.colonelpanic.eva.R
 import com.colonelpanic.eva.conversation.ConversationState
 import com.colonelpanic.eva.conversation.ProviderStatus
+import com.colonelpanic.eva.conversation.groups
 
 /**
  * The conversation, and almost nothing else. Configuration lives in settings, a live
@@ -80,6 +82,7 @@ internal fun ConversationScreen(
             state.providerStatus == ProviderStatus.CONNECTED &&
             !state.voiceMode
     val listState = rememberLazyListState()
+    val groups = remember(state.entries) { groups(state.entries) }
     val inSession = state.voiceMode && state.providerStatus != ProviderStatus.DISCONNECTED
 
     LaunchedEffect(state.entries.lastOrNull()?.id) {
@@ -162,8 +165,8 @@ internal fun ConversationScreen(
                         EmptyConversation(onSampleSelected = { draft = it }, enabled = !storageFailed)
                     }
                 }
-                items(state.entries.asReversed(), key = { it.id }) { entry ->
-                    ConversationEntryItem(entry)
+                items(groups.asReversed(), key = { it.entry.id }) { group ->
+                    ConversationEntryItem(group.entry, group.actions)
                 }
             }
         }

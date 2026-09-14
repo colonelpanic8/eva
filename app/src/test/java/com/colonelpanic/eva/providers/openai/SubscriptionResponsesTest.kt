@@ -2,6 +2,7 @@ package com.colonelpanic.eva.providers.openai
 
 import com.colonelpanic.eva.providers.ConversationInput
 import com.colonelpanic.eva.providers.CorrelatedToolResult
+import com.colonelpanic.eva.providers.HistoryItem
 import com.colonelpanic.eva.providers.ProviderEvent
 import com.colonelpanic.eva.providers.ProviderToolCatalog
 import com.colonelpanic.eva.providers.ProviderToolDefinition
@@ -145,6 +146,92 @@ class SubscriptionResponsesTest {
             assertEquals("Bearer access-1", headers.first()["Authorization"])
             assertEquals("acct-1", headers.first()["chatgpt-account-id"])
             assertEquals("eva", headers.first()["originator"])
+            collector.cancel()
+        }
+
+    @Test
+    fun `subscription responses keep explicit seed messages at the head of local history`() =
+        runTest {
+            val history =
+                listOf(
+                    HistoryItem.User("Take me downtown"),
+                    HistoryItem.Assistant("I can open a route."),
+                    HistoryItem.ActionEvidence("Open route", mapOf("destination" to "Downtown"), "HANDED_OFF", "Maps opened."),
+                    HistoryItem.Note("The voice attachment ended."),
+                )
+            val session =
+                OpenAiResponsesProvider(access, "gpt-test", client, StandardTestDispatcher(testScheduler))
+                    .open(SessionOpenRequest("You are EVA.", catalog, history = history))
+            val events = mutableListOf<ProviderEvent>()
+            val collector = launch { session.events.collect { events += it } }
+            advanceUntilIdle()
+
+            session.submit(ConversationInput("input-1", "Continue"))
+            session.requestResponse(ResponseRequest("input-1"))
+            advanceUntilIdle()
+            val call = events.filterIsInstance<ProviderEvent.ToolCallReady>().single()
+            session.submitToolResult(CorrelatedToolResult(call.call, "ok", "Map opened."))
+            advanceUntilIdle()
+
+            val first =
+                Json
+                    .parseToJsonElement(requests[0])
+                    .jsonObject
+                    .getValue("input")
+                    .jsonArray
+            assertEquals(
+                listOf("user", "assistant", "developer", "developer", "user"),
+                first.map {
+                    it.jsonObject
+                        .getValue("role")
+                        .jsonPrimitive.content
+                },
+            )
+            assertTrue(
+                first.all {
+                    it.jsonObject
+                        .getValue("type")
+                        .jsonPrimitive.content == "message"
+                },
+            )
+            assertTrue(
+                first.all {
+                    it.jsonObject
+                        .getValue("content")
+                        .jsonArray
+                        .single()
+                        .jsonObject
+                        .getValue("type")
+                        .jsonPrimitive.content == "input_text"
+                },
+            )
+            val evidenceText =
+                first[2]
+                    .jsonObject
+                    .getValue("content")
+                    .jsonArray
+                    .single()
+                    .jsonObject
+                    .getValue("text")
+                    .jsonPrimitive.content
+            assertTrue(evidenceText.contains("Title: Open route"))
+            assertTrue(evidenceText.contains("Status: HANDED_OFF"))
+            assertTrue(evidenceText.contains("Message: Maps opened."))
+
+            val second =
+                Json
+                    .parseToJsonElement(requests[1])
+                    .jsonObject
+                    .getValue("input")
+                    .jsonArray
+            assertEquals(
+                listOf("user", "assistant", "developer", "developer"),
+                second.take(4).map {
+                    it.jsonObject
+                        .getValue("role")
+                        .jsonPrimitive.content
+                },
+            )
             collector.cancel()
         }
 

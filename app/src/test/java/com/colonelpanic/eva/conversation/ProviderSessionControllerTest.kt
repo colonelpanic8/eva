@@ -209,6 +209,36 @@ class ProviderSessionControllerTest {
             assertFalse(controller.state.value.isSubmitting)
         }
 
+    @Test
+    fun `a session is bracketed and its actions hang off the turn that ran them`() =
+        runTest {
+            val controller = ProviderSessionController(registry, CapabilityDispatcher(registry, repository), repository, this, { provider })
+            advanceUntilIdle()
+            controller.connect("unused")
+            advanceUntilIdle()
+            val opened =
+                controller.state.value.entries
+                    .single { it.status == EntryStatus.SESSION }
+            assertEquals("Text session", opened.response)
+            controller.submit("Please show me the park")
+            advanceUntilIdle()
+            provider.call("first")
+            advanceUntilIdle()
+            val action =
+                controller.state.value.entries
+                    .single { it.id.endsWith(":first") }
+            assertEquals(provider.input.id, action.parentId)
+            assertEquals(listOf(opened.id, provider.input.id), groups(controller.state.value.entries).map { it.entry.id })
+            controller.disconnect()
+            advanceUntilIdle()
+            assertEquals(
+                listOf("Text session", "Session ended"),
+                controller.state.value.entries
+                    .filter { it.status == EntryStatus.SESSION }
+                    .map { it.response },
+            )
+        }
+
     private class FakeProvider :
         ConversationProvider,
         ConversationSession {

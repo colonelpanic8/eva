@@ -35,6 +35,7 @@ import com.colonelpanic.eva.audio.RealtimeMediaState
 import com.colonelpanic.eva.conversation.ConversationEntry
 import com.colonelpanic.eva.conversation.ConversationState
 import com.colonelpanic.eva.conversation.EntryStatus
+import com.colonelpanic.eva.conversation.groups
 import com.colonelpanic.eva.ui.theme.EvaTheme
 
 private const val VISIBLE_ENTRIES = 3
@@ -131,7 +132,7 @@ private fun AssistantTranscript(entries: List<ConversationEntry>) {
         modifier = Modifier.heightIn(max = 240.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        entries.takeLast(VISIBLE_ENTRIES).forEach { entry -> ConversationEntryItem(entry) }
+        groups(entries).takeLast(VISIBLE_ENTRIES).forEach { group -> ConversationEntryItem(group.entry, group.actions) }
     }
 }
 

@@ -7,15 +7,20 @@ import com.colonelpanic.eva.providers.ConversationInput
 import com.colonelpanic.eva.providers.ConversationProvider
 import com.colonelpanic.eva.providers.ConversationSession
 import com.colonelpanic.eva.providers.CorrelatedToolResult
+import com.colonelpanic.eva.providers.HistoryItem
 import com.colonelpanic.eva.providers.ProviderEvent
 import com.colonelpanic.eva.providers.ProviderToolDefinition
 import com.colonelpanic.eva.providers.ResponseRequest
 import com.colonelpanic.eva.providers.SessionOpenRequest
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
@@ -56,38 +61,53 @@ class OpenAiRealtimeProvider(
         request.catalog.tools.forEach { ToolSchema.check(it.inputSchema) }
         val named = toolNames(request.catalog.tools)
         val session = publicApiSession(model, request, named, voice)
-        val offer = media.createOffer()
-        val answer =
-            withContext(ioDispatcher) {
-                val body =
-                    MultipartBody
-                        .Builder()
-                        .setType(MultipartBody.FORM)
-                        .addFormDataPart("sdp", offer)
-                        .addFormDataPart("session", session.toString())
-                        .build()
-                val http = access.authorize(Request.Builder().url(access.realtimeCallsUrl)).post(body).build()
-                val response =
-                    try {
-                        client.newCall(http).execute()
-                    } catch (error: IOException) {
-                        // A bare socket message names nothing the person can act on.
-                        throw IllegalStateException(
-                            "EVA could not complete the voice session request to ${http.url.host}: " +
-                                "${error.message ?: error::class.simpleName}.",
-                            error,
-                        )
+        val microphoneWasMuted = media.controls.value.microphoneMuted
+        if (request.history.isNotEmpty()) media.setMicrophoneMuted(true)
+        try {
+            val offer = media.createOffer()
+            val answer =
+                withContext(ioDispatcher) {
+                    val body =
+                        MultipartBody
+                            .Builder()
+                            .setType(MultipartBody.FORM)
+                            .addFormDataPart("sdp", offer)
+                            .addFormDataPart("session", session.toString())
+                            .build()
+                    val http = access.authorize(Request.Builder().url(access.realtimeCallsUrl)).post(body).build()
+                    val response =
+                        try {
+                            client.newCall(http).execute()
+                        } catch (error: IOException) {
+                            // A bare socket message names nothing the person can act on.
+                            throw IllegalStateException(
+                                "EVA could not complete the voice session request to ${http.url.host}: " +
+                                    "${error.message ?: error::class.simpleName}.",
+                                error,
+                            )
+                        }
+                    response.use {
+                        val text = it.body.string()
+                        check(it.isSuccessful) { openAiErrorMessage(it.code, text, "the voice session") }
+                        check(text.startsWith("v=")) { "OpenAI returned an unexpected answer." }
+                        text
                     }
-                response.use {
-                    val text = it.body.string()
-                    check(it.isSuccessful) { openAiErrorMessage(it.code, text, "the voice session") }
-                    check(text.startsWith("v=")) { "OpenAI returned an unexpected answer." }
-                    text
                 }
-            }
-        media.acceptAnswer(answer)
-        withTimeout(30_000) { media.eventsReady.first { it } }
-        return OpenAiRealtimeSession(media, named, request.catalog.revision, model, access.label)
+            media.acceptAnswer(answer)
+            withTimeout(30_000) { media.eventsReady.first { it } }
+            return OpenAiRealtimeSession(
+                media,
+                named,
+                request.catalog.revision,
+                model,
+                access.label,
+                request.history,
+                microphoneWasMuted,
+            )
+        } catch (error: Exception) {
+            if (request.history.isNotEmpty() && !microphoneWasMuted) media.setMicrophoneMuted(false)
+            throw error
+        }
     }
 }
 
@@ -98,12 +118,21 @@ private fun realtimeCallClient(): OkHttpClient =
         .callTimeout(20, TimeUnit.SECONDS)
         .build()
 
+internal const val REALTIME_HISTORY_ACK_TIMEOUT_MILLIS = 10_000L
+
+private data class RealtimeSeedItem(
+    val id: String,
+    val event: String,
+)
+
 private class OpenAiRealtimeSession(
     private val media: RealtimeMediaSession,
     private val tools: Map<String, ProviderToolDefinition>,
     private val catalogRevision: String,
     private val model: String,
     private val accountLabel: String,
+    history: List<HistoryItem>,
+    private val microphoneWasMuted: Boolean,
 ) : ConversationSession {
     override val connectionEpoch: String = UUID.randomUUID().toString()
     private var sessionId: String? = null
@@ -113,101 +142,156 @@ private class OpenAiRealtimeSession(
     private var activeResponse: String? = null
     private var awaitingTool = false
     private val pending = mutableMapOf<String, CallIdentity>()
+    private val seedItems = history.map(::realtimeSeedItem)
+    private val pendingSeedItemIds = seedItems.mapTo(mutableSetOf()) { it.id }
+    private var seedReady = seedItems.isEmpty()
+    private var seedGate: CompletableDeferred<Boolean>? = null
+    private var seedTimeout: Job? = null
+    private var pendingConnected: ProviderEvent.Connected? = null
     private val json = Json { ignoreUnknownKeys = true }
 
     override val events: Flow<ProviderEvent> =
-        flow {
-            emit(ProviderEvent.Account(accountLabel))
-            media.events.collect { raw ->
-                val message = runCatching { json.parseToJsonElement(raw).jsonObject }.getOrNull() ?: return@collect
-                when (message.str("type")) {
-                    "session.created", "session.updated" -> {
-                        if (sessionId == null) {
-                            val session = message.obj("session")
-                            sessionId = session?.str("id") ?: UUID.randomUUID().toString()
-                            emit(ProviderEvent.Connected(checkNotNull(sessionId), catalogRevision, session?.str("model") ?: model))
+        channelFlow {
+            send(ProviderEvent.Account(accountLabel))
+            try {
+                media.events.collect { raw ->
+                    val message = runCatching { json.parseToJsonElement(raw).jsonObject }.getOrNull() ?: return@collect
+                    when (message.str("type")) {
+                        "session.created", "session.updated" -> {
+                            if (sessionId == null) {
+                                val session = message.obj("session")
+                                sessionId = session?.str("id") ?: UUID.randomUUID().toString()
+                                val connected =
+                                    ProviderEvent.Connected(
+                                        checkNotNull(sessionId),
+                                        catalogRevision,
+                                        session?.str("model") ?: model,
+                                    )
+                                if (seedReady) {
+                                    send(connected)
+                                } else {
+                                    pendingConnected = connected
+                                    val gate = CompletableDeferred<Boolean>()
+                                    seedGate = gate
+                                    seedItems.forEach { media.send(it.event) }
+                                    seedTimeout =
+                                        launch {
+                                            delay(REALTIME_HISTORY_ACK_TIMEOUT_MILLIS)
+                                            if (gate.complete(false)) {
+                                                send(
+                                                    ProviderEvent.Failure(
+                                                        "OpenAI did not acknowledge EVA's conversation history within 10 seconds.",
+                                                    ),
+                                                )
+                                            }
+                                        }
+                                }
+                            }
                         }
-                    }
 
-                    "response.created" -> {
-                        val id = message.obj("response")?.str("id") ?: return@collect
-                        activeResponse = id
-                        if (activeInput == null) {
-                            // A spoken turn has no typed input; the response is the input, mirroring the
-                            // delegated-turn convention. A follow-up after a tool result keeps its input.
-                            val input = pendingTypedInput?.id ?: "voice:$id"
-                            pendingTypedInput = null
-                            activeInput = input
-                            emit(ProviderEvent.ResponseStarted(input, input))
+                        "conversation.item.created", "conversation.item.added" -> {
+                            if (seedReady) return@collect
+                            val itemId = message.obj("item")?.str("id") ?: return@collect
+                            if (!pendingSeedItemIds.remove(itemId) || pendingSeedItemIds.isNotEmpty()) return@collect
+                            val gate = checkNotNull(seedGate)
+                            if (gate.complete(true)) {
+                                seedReady = true
+                                seedTimeout?.cancel()
+                                if (!microphoneWasMuted) media.setMicrophoneMuted(false)
+                                send(checkNotNull(pendingConnected))
+                                pendingConnected = null
+                            }
                         }
-                    }
 
-                    "conversation.item.input_audio_transcription.completed" -> {
-                        message.str("transcript")?.takeIf { it.isNotBlank() }?.let { emit(ProviderEvent.Transcript("user", it)) }
-                    }
-
-                    "response.output_audio_transcript.done", "response.audio_transcript.done", "response.output_text.done" -> {
-                        val text = message.str("transcript") ?: message.str("text")
-                        val input = activeInput
-                        if (text != null && input != null) emit(ProviderEvent.AssistantText(input, text, false))
-                    }
-
-                    "response.output_item.done" -> {
-                        val item = message.obj("item") ?: return@collect
-                        if (item.str("type") != "function_call") return@collect
-                        val input = activeInput ?: return@collect
-                        val callId = item.str("call_id") ?: return@collect
-                        val tool = tools[item.str("name")]
-                        if (tool == null) {
-                            emit(ProviderEvent.Failure("The model called a tool that was not advertised."))
-                            return@collect
+                        "response.created" -> {
+                            val id = message.obj("response")?.str("id") ?: return@collect
+                            if (!seedReady) {
+                                media.send(responseCancel(id))
+                                return@collect
+                            }
+                            activeResponse = id
+                            awaitingTool = false
+                            if (activeInput == null) {
+                                // A spoken turn has no typed input; the response is the input, mirroring the
+                                // delegated-turn convention. A follow-up after a tool result keeps its input.
+                                val input = pendingTypedInput?.id ?: "voice:$id"
+                                pendingTypedInput = null
+                                activeInput = input
+                                send(ProviderEvent.ResponseStarted(input, input))
+                            }
                         }
-                        val arguments =
-                            runCatching { json.parseToJsonElement(item.str("arguments").orEmpty()).jsonObject }
-                                .getOrDefault(JsonObject(emptyMap()))
-                        val identity =
-                            CallIdentity(
-                                connectionEpoch,
-                                checkNotNull(sessionId),
-                                input,
-                                input,
-                                checkNotNull(activeResponse),
-                                catalogRevision,
-                                callId,
-                            )
-                        pending[callId] = identity
-                        awaitingTool = true
-                        emit(ProviderEvent.ToolCallReady(identity, tool.capabilityId, arguments))
-                    }
 
-                    // WebRTC only: the server paces audio out after generating it, so these, not
-                    // response.done, say when the reply has finished reaching the phone.
-                    "output_audio_buffer.started" -> {
-                        emit(ProviderEvent.AssistantSpeaking(true))
-                    }
+                        "conversation.item.input_audio_transcription.completed" -> {
+                            message.str("transcript")?.takeIf { it.isNotBlank() }?.let {
+                                send(ProviderEvent.Transcript("user", it))
+                            }
+                        }
 
-                    "output_audio_buffer.stopped", "output_audio_buffer.cleared" -> {
-                        emit(ProviderEvent.AssistantSpeaking(false))
-                    }
+                        "response.output_audio_transcript.done", "response.audio_transcript.done", "response.output_text.done" -> {
+                            val text = message.str("transcript") ?: message.str("text")
+                            val input = activeInput
+                            if (text != null && input != null) send(ProviderEvent.AssistantText(input, text, false))
+                        }
 
-                    "response.done" -> {
-                        val input = activeInput ?: return@collect
-                        if (awaitingTool && pending.isNotEmpty()) return@collect
-                        val status = message.obj("response")?.str("status") ?: "completed"
-                        activeInput = null
-                        activeResponse = null
-                        awaitingTool = false
-                        emit(ProviderEvent.ResponseEnded(input, status))
-                    }
+                        "response.output_item.done" -> {
+                            val item = message.obj("item") ?: return@collect
+                            if (item.str("type") != "function_call") return@collect
+                            val input = activeInput ?: return@collect
+                            val callId = item.str("call_id") ?: return@collect
+                            val tool = tools[item.str("name")]
+                            if (tool == null) {
+                                send(ProviderEvent.Failure("The model called a tool that was not advertised."))
+                                return@collect
+                            }
+                            val arguments =
+                                runCatching { json.parseToJsonElement(item.str("arguments").orEmpty()).jsonObject }
+                                    .getOrDefault(JsonObject(emptyMap()))
+                            val identity =
+                                CallIdentity(
+                                    connectionEpoch,
+                                    checkNotNull(sessionId),
+                                    input,
+                                    input,
+                                    checkNotNull(activeResponse),
+                                    catalogRevision,
+                                    callId,
+                                )
+                            pending[callId] = identity
+                            awaitingTool = true
+                            send(ProviderEvent.ToolCallReady(identity, tool.capabilityId, arguments))
+                        }
 
-                    "error" -> {
-                        val error = message.obj("error")
-                        if (error?.str("code") == "response_cancel_not_active") return@collect
-                        emit(ProviderEvent.Failure(error?.str("message") ?: "The provider reported an error."))
+                        // WebRTC only: the server paces audio out after generating it, so these, not
+                        // response.done, say when the reply has finished reaching the phone.
+                        "output_audio_buffer.started" -> {
+                            send(ProviderEvent.AssistantSpeaking(true))
+                        }
+
+                        "output_audio_buffer.stopped", "output_audio_buffer.cleared" -> {
+                            send(ProviderEvent.AssistantSpeaking(false))
+                        }
+
+                        "response.done" -> {
+                            val response = message.obj("response") ?: return@collect
+                            if (response.str("id") != activeResponse || awaitingTool || pending.isNotEmpty()) return@collect
+                            val input = activeInput ?: return@collect
+                            val status = response.str("status") ?: "completed"
+                            activeInput = null
+                            activeResponse = null
+                            send(ProviderEvent.ResponseEnded(input, status))
+                        }
+
+                        "error" -> {
+                            val error = message.obj("error")
+                            if (error?.str("code") == "response_cancel_not_active") return@collect
+                            send(ProviderEvent.Failure(error?.str("message") ?: "The provider reported an error."))
+                        }
                     }
                 }
+            } finally {
+                seedTimeout?.cancel()
             }
-            emit(ProviderEvent.Closed)
+            send(ProviderEvent.Closed)
         }
 
     override suspend fun submit(input: ConversationInput) {
@@ -274,6 +358,43 @@ private class OpenAiRealtimeSession(
 
     override suspend fun close() = Unit
 }
+
+private fun realtimeSeedItem(item: HistoryItem): RealtimeSeedItem {
+    val message = item.toOpenAiMessage()
+    val role = if (message.role == "developer") "system" else message.role
+    val contentType = if (role == "assistant") "output_text" else "input_text"
+    val id = "item_eva_${UUID.randomUUID().toString().replace("-", "")}"
+    val event =
+        buildJsonObject {
+            put("type", "conversation.item.create")
+            put(
+                "item",
+                buildJsonObject {
+                    put("id", id)
+                    put("type", "message")
+                    put("role", role)
+                    put(
+                        "content",
+                        JsonArray(
+                            listOf(
+                                buildJsonObject {
+                                    put("type", contentType)
+                                    put("text", message.text)
+                                },
+                            ),
+                        ),
+                    )
+                },
+            )
+        }
+    return RealtimeSeedItem(id, event.toString())
+}
+
+private fun responseCancel(responseId: String): String =
+    buildJsonObject {
+        put("type", "response.cancel")
+        put("response_id", responseId)
+    }.toString()
 
 /** The GA shape: the caller names the model, the transcriber, and its own tools. */
 private fun publicApiSession(

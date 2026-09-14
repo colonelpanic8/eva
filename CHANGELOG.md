@@ -2,6 +2,16 @@
 
 All notable changes to EVA will be documented here.
 
+## [Unreleased]
+
+### Changed
+
+- The conversation reads as threads. Each session opens with a divider naming its mode and model ("Text session · gpt-5.6-sol") and closes with "Session ended"; within a turn, the actions the model ran hang off a branch under the request, ahead of the answer, instead of appearing as unrelated cards.
+
+### Fixed
+
+- The model pickers list the account's models again. The field opens holding the current model, and that text was being used as a filter, so the menu showed only the model already chosen.
+
 ## [0.15.0] - 2026-09-14
 
 ### Added

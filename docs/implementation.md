@@ -685,6 +685,14 @@ The provider receives available capabilities and chooses structured calls; EVA
 retains validation, admission, and execution. Success receipts use concise copy,
 with uncertainty reserved for interrupted or unknown outcomes.
 
+The conversation is rendered as grouped turns rather than a flat stream. Each session
+is bracketed by dividers naming its mode and model ("Text session ·
+gpt-5.6-sol", "Session ended"), and each turn shows its request, the actions the
+model ran for it on a branch beneath, then the answer. Actions carry the ID of
+the turn that ran them in memory only; restored history still renders one card
+per receipt. There is one provider session at a time; the model cannot open a
+second one.
+
 ## Voice recheck
 
 The merged POC's `npm run check` passed all nine deterministic tests. A fresh
