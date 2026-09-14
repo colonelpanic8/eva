@@ -177,19 +177,25 @@ class ProviderSessionController(
                         when (event) {
                             is ProviderEvent.Connected -> {
                                 check(event.catalogRevision == connectionCatalog.revision)
+                                val model =
+                                    listOfNotNull(event.model, event.backendModel)
+                                        .distinct()
+                                        .joinToString(" · ")
+                                        .ifBlank { null }
                                 mutableState.update {
                                     it.copy(
                                         providerStatus = ProviderStatus.CONNECTED,
                                         providerMessage = null,
-                                        providerModel =
-                                            listOfNotNull(event.model, event.backendModel)
-                                                .distinct()
-                                                .joinToString(" · ")
-                                                .ifBlank { null },
+                                        providerModel = model,
                                     )
                                 }
                                 append(
-                                    ConversationEntry("boundary:${opened.connectionEpoch}", "", "New model session", EntryStatus.SESSION),
+                                    ConversationEntry(
+                                        "boundary:${opened.connectionEpoch}",
+                                        "",
+                                        listOfNotNull(if (voice) "Voice session" else "Text session", model).joinToString(" · "),
+                                        EntryStatus.SESSION,
+                                    ),
                                 )
                             }
 
@@ -312,6 +318,9 @@ class ProviderSessionController(
                     }
                 } finally {
                     currentCoroutineContext().cancelChildren()
+                    openedSession?.let {
+                        append(ConversationEntry("boundary-end:${it.connectionEpoch}", "", "Session ended", EntryStatus.SESSION))
+                    }
                     if (thisAttempt == attempt) {
                         actionJobs.toList().forEach { it.cancel() }
                         session = null
@@ -423,19 +432,21 @@ class ProviderSessionController(
         val id = "provider:${event.call.providerSessionId}:${event.call.callId}"
         val request = input.text.ifBlank { lastUserTranscript ?: VOICE_REQUEST }
         val proposal = ToolProposal(id, event.capabilityId, arguments.mapValues { it.value.orEmpty() }, request)
-        append(ConversationEntry(id, "", "Preparing action…", EntryStatus.PENDING, actionTitle = definition.title))
+
+        fun record(entry: ConversationEntry) = upsert(entry.copy(request = "", actionTitle = definition.title, parentId = input.id))
+        record(ConversationEntry(id, "", "Preparing action…", EntryStatus.PENDING))
         val job =
             scope.launch {
                 try {
                     val result = dispatcher.execute(proposal, rejection ?: argumentError)
-                    upsert(result.entry().copy(request = "", actionTitle = definition.title))
+                    record(result.entry())
                     if (attempt == thisAttempt &&
                         session === opened
                     ) {
                         opened.submitToolResult(CorrelatedToolResult(event.call, result.status.name, result.message))
                     }
                 } catch (error: ProposalRejectedException) {
-                    upsert(ConversationEntry(id, "", error.message.orEmpty(), EntryStatus.NOT_EXECUTED, actionTitle = definition.title))
+                    record(ConversationEntry(id, "", error.message.orEmpty(), EntryStatus.NOT_EXECUTED))
                     if (attempt == thisAttempt && session === opened) {
                         try {
                             opened.submitToolResult(CorrelatedToolResult(event.call, "NOT_EXECUTED", error.message.orEmpty()))
@@ -446,7 +457,7 @@ class ProviderSessionController(
                         }
                     }
                 } catch (error: InvocationPersistenceException) {
-                    upsert(
+                    record(
                         ConversationEntry(
                             id,
                             "",
@@ -456,18 +467,13 @@ class ProviderSessionController(
                                 "Action history could not be saved. Nothing was executed."
                             },
                             if (error.mayHaveExecuted) EntryStatus.UNKNOWN else EntryStatus.NOT_EXECUTED,
-                            actionTitle = definition.title,
                         ),
                     )
                     mutableState.update { it.copy(errorMessage = SessionController.STORAGE_ERROR) }
                     disconnect()
                 } catch (error: CancellationException) {
                     withContext(NonCancellable) {
-                        repository.history().find { it.callId == id }?.let {
-                            upsert(
-                                it.entry().copy(request = "", actionTitle = definition.title),
-                            )
-                        }
+                        repository.history().find { it.callId == id }?.let { record(it.entry()) }
                     }
                     throw error
                 } catch (_: Exception) {
