@@ -345,6 +345,50 @@ class ProviderSessionControllerTest {
             advanceUntilIdle()
         }
 
+    @Test
+    fun `large catalog opens within limit and overflow calls never execute`() =
+        runTest {
+            val definitions = List(65) { definition.copy(id = "extension.example.action_${it.toString().padStart(2, '0')}") }
+            val backend =
+                registry.snapshot.resolve(
+                    com.colonelpanic.eva.capability.ToolProposal(
+                        "lookup",
+                        definition.id,
+                        emptyMap(),
+                        "lookup",
+                        registry.snapshot.revision,
+                    ),
+                )!!
+            val large = CapabilityRegistry(definitions.associate { it.id to backend }, definitions)
+            val controller = ProviderSessionController(large, CapabilityDispatcher(large, repository), repository, this, { provider })
+            advanceUntilIdle()
+            controller.connect("unused")
+            advanceUntilIdle()
+            assertEquals(64, provider.request.catalog.tools.size)
+            controller.submit("Use the overflow action")
+            advanceUntilIdle()
+            provider.channel.send(
+                ProviderEvent.ToolCallReady(
+                    CallIdentity(
+                        provider.connectionEpoch,
+                        "session",
+                        provider.input.id,
+                        provider.input.id,
+                        "turn",
+                        provider.request.catalog.revision,
+                        "overflow",
+                    ),
+                    definitions.last().id,
+                    Json.parseToJsonElement("""{"place":"Park"}""").jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals("NOT_EXECUTED", provider.results.single().status)
+            assertEquals(0, executions)
+            controller.disconnect()
+            advanceUntilIdle()
+        }
+
     private class FakeProvider :
         ConversationProvider,
         ConversationSession {

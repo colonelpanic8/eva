@@ -11,6 +11,7 @@ import com.colonelpanic.eva.capability.extensions.ExtensionSettings
 internal fun ExtensionsSection(
     state: ExtensionSettings,
     actions: SettingsActions,
+    overflow: Map<String, String>,
 ) {
     SettingsSection("Installed extensions") {
         SettingsBlock {
@@ -39,6 +40,8 @@ internal fun ExtensionsSection(
                 )
             }
             descriptor?.capabilities?.forEach { capability ->
+                val unavailable = overflow["extension.${installed.packageName}.${capability.name}"]
+                if (unavailable != null) SettingsRow(capability.title, unavailable)
                 if (capability.effect == Effect.READ) {
                     SettingsRow(capability.title, "Provider claims read-only. ${capability.description}")
                 } else {

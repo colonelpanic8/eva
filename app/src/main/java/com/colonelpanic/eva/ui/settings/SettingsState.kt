@@ -7,6 +7,7 @@ import com.colonelpanic.eva.providers.openai.SignInState
 /** Everything the settings screen renders, collected once by the activity. */
 data class SettingsUiState(
     val extensions: ExtensionSettings = ExtensionSettings(),
+    val extensionOverflow: Map<String, String> = emptyMap(),
     val account: String? = null,
     val signIn: SignInState = SignInState.Idle,
     val hasApiKey: Boolean = false,

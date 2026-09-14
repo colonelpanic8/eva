@@ -11,8 +11,8 @@ type Receipt = {
 };
 
 export function deviceTools(value: unknown): RecordValue[] {
-  if (!Array.isArray(value) || value.length < 1 || value.length > 32)
-    throw new Error("Catalog must contain 1–32 tools");
+  if (!Array.isArray(value) || value.length < 1 || value.length > 64)
+    throw new Error("Catalog must contain 1–64 tools");
   const names = new Set<string>();
   return value.map((value) => {
     const tool = record(value);
@@ -21,7 +21,8 @@ export function deviceTools(value: unknown): RecordValue[] {
       !/^[a-zA-Z][a-zA-Z0-9_]{0,63}$/.test(tool.name) ||
       names.has(tool.name) ||
       typeof tool.description !== "string" ||
-      tool.description.length > 2000 ||
+      // EVA adds quoted provenance around the bounded provider description.
+      tool.description.length > 32768 ||
       record(tool.inputSchema).type !== "object"
     )
       throw new Error("Invalid or duplicate catalog tool");

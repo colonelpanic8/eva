@@ -1,8 +1,9 @@
 # EVA installed-app extension protocol v1
 
-Status: frozen v1 contract for implementation. Discovery, grants, and execution
-are not yet implemented or device-verified in EVA. This specifies intended
-behavior, not features available in the current release.
+Status: frozen v1 contract. EVA has an implementation with focused JVM tests for
+discovery, grants, and execution. Device verification against a real installed
+provider has not happened yet; see [implementation status](implementation.md).
+The AIDL and JSON contract below is unchanged.
 
 An independently installed Android app advertises actions without registration
 or app-specific code in EVA. EVA discovers it automatically. The user must enable

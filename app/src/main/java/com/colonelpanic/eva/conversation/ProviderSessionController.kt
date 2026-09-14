@@ -5,6 +5,7 @@ import com.colonelpanic.eva.audio.RealtimeMediaState
 import com.colonelpanic.eva.capability.BoundedJson
 import com.colonelpanic.eva.capability.CapabilityDispatcher
 import com.colonelpanic.eva.capability.CapabilityRegistry
+import com.colonelpanic.eva.capability.CatalogAdmission
 import com.colonelpanic.eva.capability.InvocationPersistenceException
 import com.colonelpanic.eva.capability.InvocationRecord
 import com.colonelpanic.eva.capability.InvocationRepository
@@ -84,15 +85,22 @@ class ProviderSessionController(
      * Read when a session opens, not once at construction, so switching a capability off takes
      * effect on the next connection. A live session keeps the catalog it was opened with.
      */
-    private fun phoneTools(snapshot: CapabilityRegistry.Snapshot) =
-        snapshot.catalog
-            .filterNot { it.id in hiddenCapabilities() }
-            .map { ProviderToolDefinition(it.id, it.title, it.modelDescription(), it.inputSchema) }
+    private fun phoneTools(
+        snapshot: CapabilityRegistry.Snapshot,
+        controls: Int = 0,
+    ) = CatalogAdmission
+        .select(snapshot.catalog.filterNot { it.id in hiddenCapabilities() }, controls)
+        .admitted
+        .map { ProviderToolDefinition(it.id, it.title, it.modelDescription(), it.inputSchema) }
 
     private fun typedCatalog(snapshot: CapabilityRegistry.Snapshot) = catalogOf(snapshot.revision, phoneTools(snapshot))
 
     // Only a spoken session is something the model can hang up.
-    private fun voiceCatalog(snapshot: CapabilityRegistry.Snapshot) = catalogOf(snapshot.revision, phoneTools(snapshot) + END_CONVERSATION)
+    private fun voiceCatalog(snapshot: CapabilityRegistry.Snapshot) =
+        catalogOf(
+            snapshot.revision,
+            listOf(END_CONVERSATION) + phoneTools(snapshot, controls = 1),
+        )
 
     private var ending = false
     private var assistantSpeaking = false

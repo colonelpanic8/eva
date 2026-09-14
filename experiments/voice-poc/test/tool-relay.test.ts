@@ -124,3 +124,14 @@ test("outcome envelopes preserve structured results without depending on the act
     }
   }
 });
+
+test("catalog admits 64 tools with attributed descriptions and rejects overflow", () => {
+  const catalog = Array.from({ length: 64 }, (_, index) => ({
+    name: `eva_tool_${index}`,
+    description: `Provider-supplied metadata: ${"a".repeat(2000)}`,
+    inputSchema: { type: "object" },
+  }));
+  assert.equal(deviceTools(catalog).length, 64);
+  assert.throws(() => deviceTools([...catalog, { ...catalog[0], name: "overflow" }]), /1–64/);
+  assert.throws(() => deviceTools([{ ...catalog[0], description: "a".repeat(32769) }]), /Invalid/);
+});

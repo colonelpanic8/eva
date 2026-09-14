@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.providers.openai
 
+import com.colonelpanic.eva.capability.CatalogAdmission
 import com.colonelpanic.eva.capability.ToolSchema
 import com.colonelpanic.eva.providers.CallIdentity
 import com.colonelpanic.eva.providers.ConversationInput
@@ -48,7 +49,7 @@ class OpenAiResponsesProvider(
      * the credentials work and the chosen model exists before anything is claimed.
      */
     override suspend fun open(request: SessionOpenRequest): ConversationSession {
-        require(request.catalog.tools.size <= 32)
+        require(request.catalog.tools.size <= CatalogAdmission.LIMIT)
         request.catalog.tools.forEach { ToolSchema.check(it.inputSchema) }
         val known = catalog.load(access).values.flatten()
         check(known.isEmpty() || model in known) {

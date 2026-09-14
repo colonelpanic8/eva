@@ -1,6 +1,7 @@
 package com.colonelpanic.eva.providers.openai
 
 import com.colonelpanic.eva.audio.RealtimeMediaSession
+import com.colonelpanic.eva.capability.CatalogAdmission
 import com.colonelpanic.eva.capability.ToolSchema
 import com.colonelpanic.eva.providers.CallIdentity
 import com.colonelpanic.eva.providers.ConversationInput
@@ -52,7 +53,7 @@ class OpenAiRealtimeProvider(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ConversationProvider {
     override suspend fun open(request: SessionOpenRequest): ConversationSession {
-        require(request.catalog.tools.size <= 32)
+        require(request.catalog.tools.size <= CatalogAdmission.LIMIT)
         require(
             request.catalog.tools
                 .map { it.capabilityId }

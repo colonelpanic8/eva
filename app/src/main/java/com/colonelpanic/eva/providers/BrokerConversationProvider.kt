@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.providers
 
+import com.colonelpanic.eva.capability.CatalogAdmission
 import com.colonelpanic.eva.capability.ToolSchema
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.Channel
@@ -32,7 +33,7 @@ class BrokerConversationProvider(
 ) : ConversationProvider {
     override suspend fun open(request: SessionOpenRequest): ConversationSession {
         check(request.continuation == null) { "The paired host does not support continuing a turn." }
-        require(request.catalog.tools.size <= 32)
+        require(request.catalog.tools.size <= CatalogAdmission.LIMIT)
         require(
             request.catalog.tools
                 .map { it.capabilityId }

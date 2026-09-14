@@ -27,7 +27,7 @@ class AndroidExtensionConnector(
     @Suppress("DEPRECATION")
     fun scan(): List<ExtensionCandidate> =
         context.packageManager
-            .queryIntentServices(Intent(ACTION), PackageManager.GET_META_DATA or PackageManager.MATCH_DISABLED_COMPONENTS)
+            .queryIntentServices(Intent(ACTION), PackageManager.GET_META_DATA or PackageManager.GET_DISABLED_COMPONENTS)
             .mapNotNull { resolved ->
                 val service = resolved.serviceInfo ?: return@mapNotNull null
                 val component = ComponentName(service.packageName, service.name)

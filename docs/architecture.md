@@ -702,8 +702,9 @@ ahead of declarative imports and MCP. A separately installed agenda app already
 has a native client and credentials; discovering its bounded actions on stock
 Android directly tests install-only extensibility without app-specific EVA code.
 AppFunctions execution privileges are not a sideloaded baseline. This changes
-sequencing, not the common dispatcher/authorization boundary. The protocol is
-specified; runtime support remains unimplemented.
+sequencing, not the common dispatcher/authorization boundary. The protocol and
+runtime are implemented with focused JVM tests; cross-app device verification
+against a real provider has not happened yet. See [implementation status](implementation.md).
 
 The first pass uses asynchronous bound-service AIDL, immutable catalog snapshots,
 and persistent settings grants. Discovery is automatic; enabling an extension

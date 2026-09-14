@@ -23,6 +23,8 @@ import androidx.lifecycle.lifecycleScope
 import com.colonelpanic.eva.adapters.android.MediaControlAccess
 import com.colonelpanic.eva.assist.AssistantRole
 import com.colonelpanic.eva.audio.MicrophonePermission
+import com.colonelpanic.eva.capability.CapabilityRegistry
+import com.colonelpanic.eva.capability.CatalogAdmission
 import com.colonelpanic.eva.conversation.ProviderStatus
 import com.colonelpanic.eva.providers.openai.ModelKind
 import com.colonelpanic.eva.ui.EvaApp
@@ -160,6 +162,12 @@ class MainActivity : ComponentActivity() {
         val extensions by eva.extensions.settings.collectAsStateWithLifecycle()
         return SettingsUiState(
             extensions = extensions,
+            extensionOverflow =
+                CatalogAdmission.overflowReasons(
+                    eva.registry.catalog.filterNot {
+                        !screenControl && it.id in CapabilityRegistry.SCREEN_CONTROL
+                    },
+                ),
             account = account?.description,
             signIn = signIn,
             hasApiKey = hasApiKey,

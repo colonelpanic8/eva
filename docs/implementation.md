@@ -2,7 +2,7 @@
 
 Updated: 2026-09-14. Architecture: [architecture.md](architecture.md).
 
-## Installed-extension foundations
+## Installed-app extensions (v1)
 
 The [installed-app v1 contract](extension-protocol.md) and strict bounded JSON
 codecs are implemented. The registry now publishes immutable snapshots with
@@ -16,8 +16,52 @@ Backend owners must change binding revisions when authority or semantics change.
 The journal migrates integer revisions to text without rewriting fingerprints
 or historical outcomes. JVM tests cover migration/recovery, snapshot replacement,
 and stale/unadvertised calls. One action per request still includes reads.
-Discovery, Binder execution, persistent grants, and the planned 64-tool admission
-policy remain unimplemented. The codecs do not register or authorize extensions.
+`EvaApplication` now composes action-scoped PackageManager discovery, the copied
+asynchronous AIDL contract, a generic execution backend, and settings grants.
+Exactly one advertised service per package is accepted. Bindings use explicit
+components and `BIND_AUTO_CREATE`; identity includes user, package, component,
+current signing certificate set, UID, and installation timestamp. Shared-UID
+providers are rejected. Callbacks must match the bound UID and outstanding ID.
+Discovery runs at startup, activity resume, manual refresh, and debounced package
+events on an IO scope, with at most four concurrent descriptions and one in-flight
+transaction per provider. Describe has a five-second elapsedRealtime deadline.
+
+Providers are listed disabled. Enabling grants claimed reads; write and unknown
+effects require individual switches. Settings explains disclosure to the configured
+model and that effects are provider claims. Grants are stored atomically in
+no-backup internal storage and bound to identity plus the canonical descriptor
+digest, including authorization scope. The installation timestamp additionally
+blocks grants across reinstalls missed while EVA was stopped. Changed contracts
+require re-enablement; removal discards grants. The registry serializes grant
+changes with its final revision/grant check and durable `DISPATCHING` transition.
+
+Execute restores scalar argument types and sends the approved descriptor revision
+and absolute deadline. Terminal statuses, reasons, attribution, and truncation
+notices survive receipt delivery. Death, timeout, or invalid/oversized responses
+after submission become `UNKNOWN`; execution is never retried. Duplicate, late,
+and wrong-identity callbacks cannot complete a request. Temporary binding outages
+keep the cached contract and registry revision while blocking execution. Package
+invalidation blocks old bindings before the debounced refresh completes.
+
+All three Android providers and the development tool relay accept at most 64
+tools. Connections reserve controls first, then admit bundled actions, then
+extensions in qualified-ID order. Settings shows overflow, including the extra
+voice control slot. Disabled grants and hidden screen controls do not consume
+slots. The relay's description bound allows room for EVA's attribution envelope;
+this does not change the provider protocol's JSON limits.
+
+Focused JVM tests cover fake-connection lifecycle/identity failures, discovery
+ambiguity/debouncing, execute outcome mapping, persistent grants and scope changes,
+revocation after preflight, runtime discovery-to-execution-to-removal, and typed/
+voice admission boundaries. Robolectric exercises the grant file and journal.
+**Device verification against a real installed provider has not happened yet.**
+No fixture APK was added. Still needed on a device: cold-process binding, signing
+and UID checks across app boundaries, package update/removal broadcasts, background
+execution restrictions, real Binder death, and settings interaction.
+
+V1 deliberately has no live connection rotation, in-turn/spoken confirmation,
+pending approval tokens, cancellation/reconciliation, multi-action requests,
+declarative imports, or MCP. Search then complete requires separate user requests.
 
 Receipts now persist arguments and optional source/binding provenance, retaining
 their original display after removal. Direct and broker tool results carry this

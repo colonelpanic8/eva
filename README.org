@@ -57,8 +57,15 @@ keyguard path, assistant activity handoff, and delegated system recognition
 remain unverified; JVM tests cover selection, lifecycle, and dispatch logic.
 
 Paseo and capability-package import are not integrated. The
-[[file:docs/extension-protocol.md][installed-app extension v1 contract]] is specified for implementation;
-installed-app discovery, grants, and execution are not yet integrated.
+[[file:docs/extension-protocol.md][installed-app extension v1 contract]] now has generic discovery, asynchronous
+AIDL execution, persistent settings grants, attributed receipts, and deterministic
+64-tool admission wired into the app. Extensions appear disabled; enabling grants
+claimed reads, and writes/unknown effects need separate switches. Reads may send
+data to the configured model. Additions appear on the next connection; revocation
+blocks new execution. JVM tests cover the runtime with a fake connection layer,
+including uncertainty and removal. *Device verification against a real installed
+provider has not happened yet.* Search then complete still requires separate user
+requests; in-turn approval and live catalog rotation are deferred.
 AppFunctions settings
 control and an experimental device-control backend use Shizuku when it is
 installed and explicitly authorized. On Android 11 and later, the device backend

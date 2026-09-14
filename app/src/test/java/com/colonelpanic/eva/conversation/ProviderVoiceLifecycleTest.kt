@@ -45,6 +45,58 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class ProviderVoiceLifecycleTest {
     @Test
+    fun `voice admits its control before filling the remaining action slots`() =
+        runTest {
+            val provider = VoiceProvider()
+            val media = VoiceMedia()
+            val journal = MemoryInvocationRepository()
+            val definitions =
+                List(65) {
+                    CapabilityDefinition(
+                        "extension.example.action_${it.toString().padStart(2, '0')}",
+                        "Action",
+                        "Action",
+                        com.colonelpanic.eva.capability.extensions.extensionSchema,
+                    )
+                }
+            val backend =
+                object : ExecutionBackend {
+                    override suspend fun unavailableReason(): String? = null
+
+                    override suspend fun execute(arguments: Map<String, String>) = ExecutionOutcome(InvocationStatus.COMPLETED, "done")
+                }
+            val registry = CapabilityRegistry(definitions.associate { it.id to backend }, definitions)
+            val controller =
+                ProviderSessionController(
+                    registry,
+                    CapabilityDispatcher(registry, journal),
+                    journal,
+                    this,
+                    { error("typed") },
+                    mediaFactory = { media },
+                    voiceProviderFactory = { _, _ -> provider },
+                )
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            assertEquals(64, provider.request.catalog.tools.size)
+            assertEquals(
+                "eva.session.end",
+                provider.request.catalog.tools
+                    .first()
+                    .capabilityId,
+            )
+            assertEquals(
+                definitions.take(63).map { it.id },
+                provider.request.catalog.tools
+                    .drop(1)
+                    .map { it.capabilityId },
+            )
+            controller.disconnect()
+            advanceUntilIdle()
+        }
+
+    @Test
     fun `a voice session takes no typed submissions and disconnect releases both connections`() =
         runTest {
             val provider = VoiceProvider()
@@ -199,7 +251,7 @@ class ProviderVoiceLifecycleTest {
             controller.connectVoice("test")
             advanceUntilIdle()
             assertEquals(
-                listOf("test.timer", "eva.session.end"),
+                listOf("eva.session.end", "test.timer"),
                 provider.request.catalog.tools
                     .map { it.capabilityId },
             )
