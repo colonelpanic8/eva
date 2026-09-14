@@ -51,6 +51,8 @@ internal fun ConnectBar(
     hasCredential: Boolean,
     onConnect: () -> Unit,
     onVoice: () -> Unit,
+    onAssistant: () -> Unit,
+    assistantEnabled: Boolean,
     onDisconnect: () -> Unit,
     denial: MicrophoneDenial?,
     onRetryMicrophone: () -> Unit,
@@ -70,10 +72,18 @@ internal fun ConnectBar(
                 val prompt = connectPrompt(state, hasCredential)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = onVoice, enabled = prompt.canConnect) { Text("Start voice") }
+                    OutlinedButton(onClick = onAssistant, enabled = prompt.canConnect && assistantEnabled) { Text("Ask once") }
                     OutlinedButton(onClick = onConnect, enabled = prompt.canConnect) { Text("Connect for text") }
                 }
                 prompt.supporting?.let {
                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (prompt.canConnect && !assistantEnabled) {
+                    Text(
+                        "Select EVA as the device assistant in Settings to use Ask once.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
 

@@ -22,6 +22,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.colonelpanic.eva.adapters.android.MediaControlAccess
 import com.colonelpanic.eva.assist.AssistantRole
+import com.colonelpanic.eva.assist.EvaVoiceInteractionService
 import com.colonelpanic.eva.audio.MicrophonePermission
 import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.capability.CatalogAdmission
@@ -120,6 +121,10 @@ class MainActivity : ComponentActivity() {
 
     /** Whichever of the assistant screens this device actually has. */
     private fun openAssistantSettings() = openFirstAvailable(AssistantRole.settingsIntents())
+
+    private fun showAssistant() {
+        if (!EvaVoiceInteractionService.showAssistant()) openAssistantSettings()
+    }
 
     private fun openMediaControlSettings() = openFirstAvailable(MediaControlAccess.settingsIntents(this))
 
@@ -348,6 +353,7 @@ class MainActivity : ComponentActivity() {
                     onSubmit = controller::submit,
                     onConnect = { controller.connect(eva.settings.hostLink()) },
                     onVoice = ::startVoice,
+                    onAssistant = ::showAssistant,
                     onDisconnect = controller::disconnect,
                     onToggleMicrophone = controller::toggleMicrophone,
                     onTogglePlayback = controller::togglePlayback,
