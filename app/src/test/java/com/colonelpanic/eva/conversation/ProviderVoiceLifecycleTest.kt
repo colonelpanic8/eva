@@ -26,6 +26,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -379,6 +380,37 @@ class ProviderVoiceLifecycleTest {
             assertFalse(stuckMedia.closed)
             advanceTimeBy(11_000)
             assertTrue(stuckMedia.closed)
+        }
+
+    @Test
+    fun `the model hanging up is signalled to call surfaces, and a user disconnect is not`() =
+        runTest {
+            val stopped = VoiceProvider()
+            val byUser = controller(stopped, { VoiceMedia() })
+            advanceUntilIdle()
+            var userHangUps = 0
+            val userWatcher = launch { byUser.hangUps.collect { userHangUps++ } }
+            runCurrent()
+            byUser.connectVoice("test")
+            advanceUntilIdle()
+            byUser.disconnect()
+            advanceUntilIdle()
+            assertEquals(0, userHangUps)
+            userWatcher.cancel()
+
+            val provider = VoiceProvider()
+            val byModel = controller(provider, { VoiceMedia() })
+            advanceUntilIdle()
+            var modelHangUps = 0
+            val modelWatcher = launch { byModel.hangUps.collect { modelHangUps++ } }
+            runCurrent()
+            byModel.connectVoice("test")
+            advanceUntilIdle()
+            provider.channel.send(ProviderEvent.ResponseStarted("voice:turn-1", "voice:turn-1"))
+            provider.channel.send(endCall(provider, "turn-1"))
+            advanceUntilIdle()
+            assertEquals(1, modelHangUps)
+            modelWatcher.cancel()
         }
 
     private fun endCall(

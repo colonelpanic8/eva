@@ -2,6 +2,12 @@
 
 All notable changes to EVA will be documented here.
 
+## [Unreleased]
+
+### Changed
+
+- When EVA ends a voice conversation itself, the assistant panel closes with it, so a request that opened an app leaves you in that app instead of behind EVA's panel. Stopping the conversation yourself leaves the panel up, and EVA's own screen is never closed by a hang-up.
+
 ## [0.15.0] - 2026-09-14
 
 ### Added
