@@ -2,6 +2,12 @@
 
 All notable changes to EVA will be documented here.
 
+## [0.14.0] - 2026-09-14
+
+### Added
+
+- EVA can end a voice conversation itself. When you say goodbye, say that is all, or ask it to hang up, it says a brief goodbye and ends the session once that goodbye has finished playing. Typed sessions are unchanged.
+
 ## [0.13.0] - 2026-09-14
 
 ### Added
