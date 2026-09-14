@@ -6,21 +6,27 @@ import com.colonelpanic.eva.audio.RealtimeMediaSession
 import com.colonelpanic.eva.audio.RealtimeMediaState
 import com.colonelpanic.eva.providers.ConversationInput
 import com.colonelpanic.eva.providers.CorrelatedToolResult
+import com.colonelpanic.eva.providers.HistoryItem
 import com.colonelpanic.eva.providers.ProviderEvent
 import com.colonelpanic.eva.providers.ProviderToolCatalog
 import com.colonelpanic.eva.providers.ProviderToolDefinition
 import com.colonelpanic.eva.providers.ResponseRequest
 import com.colonelpanic.eva.providers.SessionOpenRequest
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -31,6 +37,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class OpenAiRealtimeProviderTest {
     private val schema =
         Json
@@ -230,6 +237,179 @@ class OpenAiRealtimeProviderTest {
             collector.cancel()
         }
 
+    @Test
+    fun `history is seeded in order before the realtime session connects`() =
+        runTest {
+            val media = FakeMedia()
+            val history =
+                listOf(
+                    HistoryItem.User("Set a timer"),
+                    HistoryItem.Assistant("How long should it run?"),
+                    HistoryItem.ActionEvidence("Set timer", mapOf("seconds" to "180"), "HANDED_OFF", "Timer opened."),
+                    HistoryItem.Note("The earlier voice attachment ended."),
+                )
+            val session =
+                OpenAiRealtimeProvider(
+                    ApiKeyAccess("sk-test", "https://example.test"),
+                    media,
+                    client = client,
+                    ioDispatcher = StandardTestDispatcher(testScheduler),
+                ).open(SessionOpenRequest("You are EVA.", catalog, history = history))
+            assertTrue(media.controls.value.microphoneMuted)
+            val events = mutableListOf<ProviderEvent>()
+            val collector = launch { session.events.collect { events += it } }
+
+            media.incoming.send("""{"type":"session.created","session":{"id":"sess_1"}}""")
+            runCurrent()
+
+            val seed = media.sent.map { Json.parseToJsonElement(it).jsonObject }
+            assertEquals(4, seed.size)
+            assertTrue(seed.all { it.getValue("type").jsonPrimitive.content == "conversation.item.create" })
+            assertEquals(
+                listOf("user", "assistant", "system", "system"),
+                seed.map {
+                    it
+                        .getValue("item")
+                        .jsonObject
+                        .getValue("role")
+                        .jsonPrimitive.content
+                },
+            )
+            assertEquals(
+                listOf("input_text", "output_text", "input_text", "input_text"),
+                seed.map {
+                    it
+                        .getValue("item")
+                        .jsonObject
+                        .getValue("content")
+                        .jsonArray
+                        .single()
+                        .jsonObject
+                        .getValue("type")
+                        .jsonPrimitive.content
+                },
+            )
+            assertTrue(events.none { it is ProviderEvent.Connected })
+
+            media.incoming.send("""{"type":"response.created","response":{"id":"premature"}}""")
+            runCurrent()
+            assertEquals(
+                "response.cancel",
+                Json.parseToJsonElement(media.sent.last()).jsonObject["type"]?.let { (it as JsonPrimitive).content },
+            )
+
+            val ids =
+                seed.map {
+                    it
+                        .getValue("item")
+                        .jsonObject
+                        .getValue("id")
+                        .jsonPrimitive.content
+                }
+            media.incoming.send("""{"type":"conversation.item.created","item":{"id":"${ids[0]}"}}""")
+            media.incoming.send("""{"type":"conversation.item.added","item":{"id":"${ids[1]}"}}""")
+            media.incoming.send("""{"type":"conversation.item.created","item":{"id":"${ids[2]}"}}""")
+            runCurrent()
+            assertTrue(events.none { it is ProviderEvent.Connected })
+            assertTrue(media.controls.value.microphoneMuted)
+
+            media.incoming.send("""{"type":"conversation.item.added","item":{"id":"${ids[3]}"}}""")
+            runCurrent()
+            assertEquals("sess_1", events.filterIsInstance<ProviderEvent.Connected>().single().sessionId)
+            assertTrue(!media.controls.value.microphoneMuted)
+            val evidence =
+                seed[2]
+                    .getValue("item")
+                    .jsonObject
+                    .getValue("content")
+                    .jsonArray
+                    .single()
+                    .jsonObject
+                    .getValue("text")
+                    .jsonPrimitive.content
+            assertTrue(evidence.contains("Title: Set timer"))
+            assertTrue(evidence.contains("Arguments: {\"seconds\":\"180\"}"))
+            assertTrue(evidence.contains("Status: HANDED_OFF"))
+            assertTrue(evidence.contains("Message: Timer opened."))
+            collector.cancel()
+        }
+
+    @Test
+    fun `unacknowledged realtime history fails without unmuting`() =
+        runTest {
+            val media = FakeMedia()
+            val session =
+                OpenAiRealtimeProvider(
+                    ApiKeyAccess("sk-test", "https://example.test"),
+                    media,
+                    client = client,
+                    ioDispatcher = StandardTestDispatcher(testScheduler),
+                ).open(
+                    SessionOpenRequest(
+                        "You are EVA.",
+                        catalog,
+                        history = listOf(HistoryItem.User("Continue the prior conversation")),
+                    ),
+                )
+            val events = mutableListOf<ProviderEvent>()
+            val collector = launch { session.events.collect { events += it } }
+            media.incoming.send("""{"type":"session.updated","session":{"id":"sess_1"}}""")
+            runCurrent()
+
+            advanceTimeBy(REALTIME_HISTORY_ACK_TIMEOUT_MILLIS - 1)
+            runCurrent()
+            assertTrue(events.none { it is ProviderEvent.Failure })
+            advanceTimeBy(1)
+            runCurrent()
+
+            assertEquals(
+                "OpenAI did not acknowledge EVA's conversation history within 10 seconds.",
+                events.filterIsInstance<ProviderEvent.Failure>().single().message,
+            )
+            assertTrue(events.none { it is ProviderEvent.Connected })
+            assertTrue(media.controls.value.microphoneMuted)
+            collector.cancel()
+        }
+
+    @Test
+    fun `a tool result arriving before response done keeps the input active for the follow-up`() =
+        runTest {
+            val media = FakeMedia()
+            val session =
+                OpenAiRealtimeProvider(
+                    ApiKeyAccess("sk-test", "https://example.test"),
+                    media,
+                    client = client,
+                    ioDispatcher = StandardTestDispatcher(testScheduler),
+                ).open(SessionOpenRequest("You are EVA.", catalog))
+            val events = mutableListOf<ProviderEvent>()
+            val collector = launch { session.events.collect { events += it } }
+            media.incoming.send("""{"type":"session.created","session":{"id":"sess_1"}}""")
+            media.incoming.send("""{"type":"response.created","response":{"id":"resp_1"}}""")
+            media.incoming.send(
+                """{"type":"response.output_item.done","item":{"type":"function_call","name":"eva_tool_0","call_id":"call_1","arguments":"{\"seconds\":180}"}}""",
+            )
+            runCurrent()
+            val call = events.filterIsInstance<ProviderEvent.ToolCallReady>().single()
+
+            session.submitToolResult(CorrelatedToolResult(call.call, "HANDED_OFF", "Timer started."))
+            media.incoming.send("""{"type":"response.done","response":{"id":"resp_1","status":"completed"}}""")
+            runCurrent()
+            assertTrue(events.none { it is ProviderEvent.ResponseEnded })
+
+            media.incoming.send("""{"type":"response.created","response":{"id":"resp_2"}}""")
+            media.incoming.send("""{"type":"response.done","response":{"id":"resp_1","status":"completed"}}""")
+            runCurrent()
+            assertTrue(events.none { it is ProviderEvent.ResponseEnded })
+
+            media.incoming.send("""{"type":"response.output_audio_transcript.done","transcript":"Timer started."}""")
+            media.incoming.send("""{"type":"response.done","response":{"id":"resp_2","status":"completed"}}""")
+            runCurrent()
+            assertEquals("voice:resp_1", events.filterIsInstance<ProviderEvent.ResponseEnded>().single().inputId)
+            assertEquals("Timer started.", events.filterIsInstance<ProviderEvent.AssistantText>().single().text)
+            collector.cancel()
+        }
+
     private class FakeMedia : RealtimeMediaSession {
         override val state = MutableStateFlow<RealtimeMediaState>(RealtimeMediaState.Idle)
         override val controls = MutableStateFlow(MediaControls())
@@ -255,7 +435,9 @@ class OpenAiRealtimeProviderTest {
             sent += event
         }
 
-        override fun setMicrophoneMuted(muted: Boolean) = Unit
+        override fun setMicrophoneMuted(muted: Boolean) {
+            controls.value = controls.value.copy(microphoneMuted = muted)
+        }
 
         override fun setPlaybackMuted(muted: Boolean) = Unit
 
