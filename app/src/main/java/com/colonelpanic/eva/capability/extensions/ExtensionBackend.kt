@@ -17,7 +17,6 @@ class ExtensionBackend(
     private val descriptor: Descriptor,
     private val capability: Capability,
     private val connections: ExtensionConnectionManager,
-    private val authorization: () -> String?,
     private val worker: CoroutineDispatcher = Dispatchers.IO,
 ) : ExecutionBackend {
     val definition =
@@ -30,16 +29,13 @@ class ExtensionBackend(
             source = CapabilitySource(identity.component, descriptor.title),
         )
 
-    override suspend fun unavailableReason(): String? = authorization()
-
-    override fun dispatchRejection(): String? = authorization()
+    override suspend fun unavailableReason(): String? = null
 
     override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome =
         ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "Extension execution requires a journaled invocation.")
 
     override suspend fun execute(proposal: ToolProposal): ExecutionOutcome =
         withContext(worker) {
-            authorization()?.let { return@withContext ExecutionOutcome(InvocationStatus.NOT_EXECUTED, it) }
             val arguments =
                 try {
                     ExtensionProtocol.encodeArguments(capability.inputSchema, proposal.arguments)

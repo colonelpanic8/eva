@@ -2,10 +2,8 @@ package com.colonelpanic.eva.capability.extensions
 
 import com.colonelpanic.eva.capability.CapabilityRegistry
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
@@ -28,11 +26,9 @@ data class ExtensionSettings(
 
 class ExtensionRuntime(
     private val registry: CapabilityRegistry,
-    private val discovery: ExtensionDiscovery,
-    private val connections: ExtensionConnectionManager,
+    private val adapter: CapabilityAdapter,
     private val grants: ExtensionGrants,
     private val scope: CoroutineScope,
-    private val worker: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val bundled = registry.snapshot
     private val updates = Mutex()
@@ -42,15 +38,15 @@ class ExtensionRuntime(
     init {
         scope.launch {
             updates.withLock { registry.changeAuthorization { grants.load() } }
-            discovery.ready.first { it }
-            discovery.installed.collect {
-                update { grants.reconcile(discovery.installed.value) }
+            adapter.ready.first { it }
+            adapter.installed.collect {
+                update { grants.reconcile(adapter.installed.value) }
             }
         }
-        discovery.requestRefresh()
+        adapter.refresh()
     }
 
-    fun refresh() = discovery.requestRefresh()
+    fun refresh() = adapter.refresh()
 
     fun packageChanged(
         packageName: String,
@@ -58,7 +54,7 @@ class ExtensionRuntime(
     ) {
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             // Invalidate before waiting for settings I/O; the final dispatch gate reads this state.
-            registry.changeAuthorization { discovery.invalidate(packageName, removed) }
+            registry.changeAuthorization { adapter.invalidate(packageName, removed) }
             if (removed) update { grants.remove(packageName) }
         }
     }
@@ -84,11 +80,11 @@ class ExtensionRuntime(
         scope.launch {
             update {
                 val entry =
-                    discovery.installed.value.find { "${it.identity?.key}:${it.descriptor?.digest}" == key }
+                    adapter.installed.value.find { "${it.identity?.key}:${it.descriptor?.digest}" == key }
                         ?: error("Extension changed")
                 val identity = checkNotNull(entry.identity)
                 val descriptor = checkNotNull(entry.descriptor)
-                if (requireAvailable) require(discovery.available(identity, descriptor.digest))
+                if (requireAvailable) require(adapter.available(identity, descriptor.digest))
                 change(identity, descriptor)
             }
         }
@@ -104,17 +100,18 @@ class ExtensionRuntime(
             } catch (_: Exception) {
                 error = "Extension permissions were not saved. Refresh and try again."
             }
-            val installed = discovery.installed.value
+            val installed = adapter.installed.value
             val backends = bundled.bindings.toMutableMap()
             val definitions = bundled.catalog.toMutableList()
             val revisions = bundled.bindingRevisions.toMutableMap()
             for (entry in installed) {
                 val identity = entry.identity ?: continue
                 val descriptor = entry.descriptor ?: continue
-                for (capability in descriptor.capabilities) {
+                for (binding in adapter.bindings(entry)) {
+                    val capability = binding.capability
                     if (!grants.allowed(identity, descriptor, capability)) continue
                     val backend =
-                        ExtensionBackend(identity, descriptor, capability, connections, {
+                        GrantedExecutionBackend(binding.backend) {
                             when {
                                 !grants.allowed(
                                     identity,
@@ -122,17 +119,17 @@ class ExtensionRuntime(
                                     capability,
                                 ) -> "Extension permission is disabled. Nothing was executed."
 
-                                !discovery.available(
+                                !adapter.available(
                                     identity,
                                     descriptor.digest,
                                 ) -> "Extension is unavailable or changed. Nothing was executed."
 
                                 else -> null
                             }
-                        }, worker)
-                    backends[backend.definition.id] = backend
-                    definitions += backend.definition
-                    revisions[backend.definition.id] = "${identity.key}:${descriptor.digest}"
+                        }
+                    backends[binding.definition.id] = backend
+                    definitions += binding.definition
+                    revisions[binding.definition.id] = binding.revision
                 }
             }
             registry.replace(backends, definitions, revisions)

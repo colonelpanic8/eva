@@ -18,6 +18,13 @@ or historical outcomes. JVM tests cover migration/recovery, snapshot replacement
 and stale/unadvertised calls. One action per request still includes reads.
 `EvaApplication` now composes action-scoped PackageManager discovery, the copied
 asynchronous AIDL contract, a generic execution backend, and settings grants.
+`CapabilityAdapter` owns discovery and yields definitions/backends;
+`InstalledServiceAdapter` supports apps implementing EVA's protocol without
+Shizuku. Discovery is on; each extension starts disabled and mutations require
+separate grants. The common runtime wraps all adapters with grants; settings,
+admission, journaling, and receipts do not select a transport. Declarative
+packages and a general Shizuku `AppFunctionsAdapter` are being built as sibling
+paths; neither is implemented yet. There is no developer gate.
 Exactly one advertised service per package is accepted. Bindings use explicit
 components and `BIND_AUTO_CREATE`; identity includes user, package, component,
 current signing certificate set, UID, and installation timestamp. Shared-UID
@@ -55,7 +62,9 @@ ambiguity/debouncing, execute outcome mapping, persistent grants and scope chang
 revocation after preflight, runtime discovery-to-execution-to-removal, and typed/
 voice admission boundaries. Robolectric exercises the grant file and journal.
 **Device verification against a real installed provider has not happened yet.**
-No fixture APK was added. Still needed on a device: cold-process binding, signing
+No fixture APK was added. The planned device test uses the same mova build
+through installed-service AIDL and AppFunctions, comparing discovery, grants,
+results, cold starts, timeouts, and duplicate suppression. Still needed on a device: cold-process binding, signing
 and UID checks across app boundaries, package update/removal broadcasts, background
 execution restrictions, real Binder death, and settings interaction.
 

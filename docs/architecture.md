@@ -695,24 +695,22 @@ API 36 experiment verifies the native mechanism, not this integrated contract.
 
 ## 6. Custom extensions
 
-### First implementation: installed Android apps
+### Three extension paths
 
-The [installed-app extension protocol v1](extension-protocol.md) is being built
-ahead of declarative imports and MCP. A separately installed agenda app already
-has a native client and credentials; discovering its bounded actions on stock
-Android directly tests install-only extensibility without app-specific EVA code.
-AppFunctions execution privileges are not a sideloaded baseline. This changes
-sequencing, not the common dispatcher/authorization boundary. The protocol and
-runtime are implemented with focused JVM tests; cross-app device verification
-against a real provider has not happened yet. See [implementation status](implementation.md).
+Declarative packages, AppFunctions, and installed extension apps share
+`CapabilityAdapter`, grants, admission, journaling, and attributed receipts.
+Declarative packages adapt existing apps via intents, content providers, and HTTP
+without app code changes. AppFunctions uses the optional Shizuku shell bridge.
+The [installed-service protocol](extension-protocol.md) lets an author expose
+structured result envelopes from their own app on supported stock Android,
+without Shizuku. Discovery is on; it never grants execution authority.
 
-The first pass uses asynchronous bound-service AIDL, immutable catalog snapshots,
-and persistent settings grants. Discovery is automatic; enabling an extension
-grants claimed reads, while writes and unknown effects need individual grants.
-Provider text remains attributed data. Additions appear on the next connection;
-revocations block dispatch immediately. In-turn/spoken confirmation, live provider
-rotation, multi-action requests, declarative import, and MCP remain deferred.
-The fuller contracts below describe the target beyond v1.
+The installed-service path is implemented and JVM-tested; cross-app device
+verification is outstanding. Declarative packages are next, followed by the
+generalized AppFunctions adapter. See [package design](declarative-packages.md)
+for HTTPS repository import, content queries, and the future App Actions
+investigation. Additions appear on the next connection; revocation blocks new
+dispatch. In-turn approval, catalog rotation, polling, and MCP remain deferred.
 
 ### One action contract, multiple execution mechanisms
 

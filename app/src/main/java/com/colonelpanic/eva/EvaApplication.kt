@@ -39,6 +39,7 @@ import com.colonelpanic.eva.capability.extensions.ExtensionConnectionManager
 import com.colonelpanic.eva.capability.extensions.ExtensionDiscovery
 import com.colonelpanic.eva.capability.extensions.ExtensionGrants
 import com.colonelpanic.eva.capability.extensions.ExtensionRuntime
+import com.colonelpanic.eva.capability.extensions.InstalledServiceAdapter
 import com.colonelpanic.eva.conversation.ProviderSessionController
 import com.colonelpanic.eva.conversation.ProviderStatus
 import com.colonelpanic.eva.data.AppearanceSettings
@@ -248,8 +249,7 @@ class EvaApplication :
         val connections = ExtensionConnectionManager(connector, SystemClock::elapsedRealtime)
         ExtensionRuntime(
             registry,
-            ExtensionDiscovery(connector::scan, connections, extensionScope),
-            connections,
+            InstalledServiceAdapter(ExtensionDiscovery(connector::scan, connections, extensionScope), connections),
             ExtensionGrants(ExtensionGrantFile(this)),
             extensionScope,
         )

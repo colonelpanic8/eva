@@ -24,7 +24,6 @@ class ExtensionBackendTest {
                     descriptor,
                     extensionCapability,
                     ExtensionConnectionManager(fake) { testScheduler.currentTime },
-                    { null },
                     StandardTestDispatcher(testScheduler),
                 )
             for (status in listOf(
@@ -54,7 +53,6 @@ class ExtensionBackendTest {
                     descriptor,
                     extensionCapability,
                     ExtensionConnectionManager(fake) { testScheduler.currentTime },
-                    { null },
                     StandardTestDispatcher(testScheduler),
                 )
             for (reason in listOf(
@@ -85,14 +83,15 @@ class ExtensionBackendTest {
             val fake = FakeExtensionConnector()
             var denied: String? = "Grant required"
             val backend =
-                ExtensionBackend(
-                    extensionIdentity,
-                    descriptor,
-                    extensionCapability,
-                    ExtensionConnectionManager(fake) { testScheduler.currentTime },
-                    { denied },
-                    StandardTestDispatcher(testScheduler),
-                )
+                GrantedExecutionBackend(
+                    ExtensionBackend(
+                        extensionIdentity,
+                        descriptor,
+                        extensionCapability,
+                        ExtensionConnectionManager(fake) { testScheduler.currentTime },
+                        StandardTestDispatcher(testScheduler),
+                    ),
+                ) { denied }
             assertEquals(InvocationStatus.NOT_EXECUTED, backend.execute(proposal).status)
             assertEquals(0, fake.binds)
             denied = null

@@ -1,9 +1,12 @@
 # EVA installed-app extension protocol v1
 
-Status: frozen v1 contract. EVA has an implementation with focused JVM tests for
-discovery, grants, and execution. Device verification against a real installed
-provider has not happened yet; see [implementation status](implementation.md).
-The AIDL and JSON contract below is unchanged.
+Status: supported v1 specification for one of three extension paths: declarative
+packages, AppFunctions, and installed extension apps. Choose this path for
+structured result envelopes from an app you control, on any Android version EVA
+supports, without Shizuku. Discovery stays on; per-extension enablement and
+per-capability mutation grants are required. Focused JVM tests cover this adapter;
+device verification against a real provider has not happened yet.
+See [implementation status](implementation.md).
 
 An independently installed Android app advertises actions without registration
 or app-specific code in EVA. EVA discovers it automatically. The user must enable

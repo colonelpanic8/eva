@@ -141,11 +141,9 @@ class ExtensionGrantsTest {
             val runtime =
                 ExtensionRuntime(
                     registry,
-                    discovery,
-                    connections,
+                    InstalledServiceAdapter(discovery, connections, StandardTestDispatcher(testScheduler)),
                     ExtensionGrants(MemoryGrantPersistence()),
                     backgroundScope,
-                    StandardTestDispatcher(testScheduler),
                 )
             runCurrent()
             advanceTimeBy(251)
