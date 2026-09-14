@@ -19,6 +19,7 @@ data class InstalledExtension(
     val descriptor: Descriptor?,
     val problem: String? = null,
     val contractRejected: Boolean = false,
+    val capabilityPrefix: String = "extension.$packageName",
 )
 
 class ExtensionDiscovery(

@@ -35,7 +35,7 @@ class DeclarativeBackend(
         ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "Extension execution requires a journaled invocation.")
 
     override suspend fun execute(proposal: ToolProposal): ExecutionOutcome {
-        val wait = budget(proposal)
+        val wait = proposal.waitBudget ?: budget(proposal)
         val arguments: BindingArguments
         val binding: DeclarativeBinding
         val request: Any
@@ -77,6 +77,8 @@ class DeclarativeBackend(
                         BindingResults.http(capability.copy(binding = binding), host.request(request as HttpRequest, wait.effectiveMillis))
                     }
                 }
+            } catch (notSubmitted: BindingNotSubmitted) {
+                ExecutionOutcome(InvocationStatus.NOT_EXECUTED, notSubmitted.message.orEmpty())
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {

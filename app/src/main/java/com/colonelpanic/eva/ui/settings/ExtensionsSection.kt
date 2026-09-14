@@ -16,7 +16,7 @@ internal fun ExtensionsSection(
     SettingsSection("Installed extensions") {
         SettingsBlock {
             Text(
-                "Enable only apps you trust. Read actions can disclose private data to your configured model. " +
+                "Enable only extensions you trust. Read actions can disclose private data to your configured model. " +
                     "Apps declare their own effects; EVA cannot verify those claims.",
             )
             Text("Newly enabled actions appear on your next connection. Search and complete require separate requests.")
@@ -31,7 +31,7 @@ internal fun ExtensionsSection(
                 title = descriptor?.title ?: installed.packageName,
                 supporting =
                     installed.packageName + "\n" +
-                        (installed.problem ?: "Enabling grants this app's claimed read actions. Writes need separate permission."),
+                        (installed.problem ?: "Enabling grants claimed read actions. Writes need separate permission."),
             ) {
                 Switch(
                     checked = entry.enabled,
@@ -40,7 +40,7 @@ internal fun ExtensionsSection(
                 )
             }
             descriptor?.capabilities?.forEach { capability ->
-                val unavailable = overflow["extension.${installed.packageName}.${capability.name}"]
+                val unavailable = overflow["${installed.capabilityPrefix}.${capability.name}"]
                 if (unavailable != null) SettingsRow(capability.title, unavailable)
                 if (capability.effect == Effect.READ) {
                     SettingsRow(capability.title, "Provider claims read-only. ${capability.description}")
