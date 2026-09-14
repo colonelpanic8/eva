@@ -1,0 +1,132 @@
+package com.colonelpanic.eva.capability.extensions
+
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+
+data class InstalledExtension(
+    val packageName: String,
+    val identity: ExtensionIdentity?,
+    val descriptor: Descriptor?,
+    val problem: String? = null,
+)
+
+class ExtensionDiscovery(
+    private val scan: suspend () -> List<ExtensionCandidate>,
+    private val connections: ExtensionConnectionManager,
+    scope: CoroutineScope,
+) {
+    private val monitor = Any()
+    private var generation = 0L
+    private val refreshes = Channel<Unit>(Channel.CONFLATED)
+    private val mutable = MutableStateFlow<List<InstalledExtension>>(emptyList())
+    val installed = mutable.asStateFlow()
+    private val initialized = MutableStateFlow(false)
+    val ready = initialized.asStateFlow()
+
+    init {
+        scope.launch {
+            for (signal in refreshes) {
+                delay(250)
+                while (refreshes.tryReceive().isSuccess) { /* Coalesce package bursts. */ }
+                refresh()
+            }
+        }
+    }
+
+    fun requestRefresh() {
+        refreshes.trySend(Unit)
+    }
+
+    fun invalidate(
+        packageName: String,
+        removed: Boolean,
+    ) = synchronized(monitor) {
+        generation++
+        mutable.value =
+            if (removed) {
+                mutable.value.filterNot { it.packageName == packageName }
+            } else {
+                mutable.value.map {
+                    if (it.packageName == packageName) it.copy(problem = "Package changed; awaiting extension validation.") else it
+                }
+            }
+        requestRefresh()
+    }
+
+    fun available(
+        identity: ExtensionIdentity,
+        digest: String,
+    ): Boolean = installed.value.any { it.identity == identity && it.descriptor?.digest == digest && it.problem == null }
+
+    private suspend fun refresh() {
+        val (version, previous) = synchronized(monitor) { generation to mutable.value }
+        val candidates =
+            try {
+                scan()
+            } catch (_: Exception) {
+                synchronized(monitor) {
+                    if (version ==
+                        generation
+                    ) {
+                        mutable.value = previous.map { it.copy(problem = "Extension discovery is temporarily unavailable.") }
+                    }
+                }
+                return
+            }
+        val permits = Semaphore(4)
+        val entries =
+            coroutineScope {
+                selectExtensions(candidates)
+                    .map { listing ->
+                        async {
+                            permits.withPermit {
+                                val identity = listing.identity
+                                if (identity == null) return@withPermit InstalledExtension(listing.packageName, null, null, listing.problem)
+                                val old = previous.find { it.identity == identity }
+                                when (val reply = connections.describe(identity)) {
+                                    is ExtensionExchange.Reply -> {
+                                        val description = runCatching { ExtensionProtocol.describe(reply.json) }.getOrNull()
+                                        InstalledExtension(
+                                            listing.packageName,
+                                            identity,
+                                            description?.descriptor,
+                                            if (description?.descriptor ==
+                                                null
+                                            ) {
+                                                "Extension description was rejected or unavailable."
+                                            } else {
+                                                null
+                                            },
+                                        )
+                                    }
+
+                                    else -> {
+                                        InstalledExtension(
+                                            listing.packageName,
+                                            identity,
+                                            old?.descriptor,
+                                            "Extension is temporarily unreachable. Try reopening EVA.",
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }.awaitAll()
+            }
+        synchronized(monitor) {
+            if (version == generation) {
+                mutable.value = entries
+                initialized.value = true
+            }
+        }
+    }
+}

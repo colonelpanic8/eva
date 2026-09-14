@@ -24,6 +24,9 @@
 
     <queries>
         <intent>
+            <action android:name="com.colonelpanic.eva.action.EXTENSION" />
+        </intent>
+        <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>
         <package android:name="moe.shizuku.privileged.api" />
