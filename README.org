@@ -42,6 +42,7 @@ panel over another app from the system assist key event, connected voice, kept
 panel taps from dismissing it, and dismissed from the surrounding scrim. The
 keyguard path, assistant activity handoff, and delegated system recognition
 remain unverified; JVM tests cover selection, lifecycle, and dispatch logic.
+
 Paseo, AppFunctions, capability-package import, and privileged extensions are not
 integrated. A separate [[file:experiments/device-control/README.md][device-control experiment]] verified Shizuku-backed
 screenshots, UI inspection, text replacement and touch on an Android 16 emulator.
