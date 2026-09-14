@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.capability.extensions
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -17,6 +18,7 @@ data class InstalledExtension(
     val identity: ExtensionIdentity?,
     val descriptor: Descriptor?,
     val problem: String? = null,
+    val contractRejected: Boolean = false,
 )
 
 class ExtensionDiscovery(
@@ -72,6 +74,8 @@ class ExtensionDiscovery(
         val candidates =
             try {
                 scan()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (_: Exception) {
                 synchronized(monitor) {
                     if (version ==
@@ -98,7 +102,7 @@ class ExtensionDiscovery(
                                         InstalledExtension(
                                             listing.packageName,
                                             identity,
-                                            description?.descriptor,
+                                            description?.descriptor ?: old?.descriptor?.takeIf { description != null },
                                             if (description?.descriptor ==
                                                 null
                                             ) {
@@ -106,6 +110,7 @@ class ExtensionDiscovery(
                                             } else {
                                                 null
                                             },
+                                            contractRejected = description == null,
                                         )
                                     }
 

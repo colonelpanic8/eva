@@ -86,6 +86,8 @@ fun SettingsScreen(
             MediaSection(state, actions)
             ScreenControlSection(state, actions)
             SettingsDivider()
+            ExtensionsSection(state.extensions, actions)
+            SettingsDivider()
             AppearanceSection(state, actions)
             Spacer(Modifier.height(24.dp))
         }

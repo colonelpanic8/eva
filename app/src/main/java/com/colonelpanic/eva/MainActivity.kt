@@ -157,7 +157,9 @@ class MainActivity : ComponentActivity() {
         val account by eva.chatGpt.account.collectAsStateWithLifecycle()
         val signIn by eva.signIn.state.collectAsStateWithLifecycle()
         val screenControl by eva.capabilities.screenControlFlow.collectAsStateWithLifecycle()
+        val extensions by eva.extensions.settings.collectAsStateWithLifecycle()
         return SettingsUiState(
+            extensions = extensions,
             account = account?.description,
             signIn = signIn,
             hasApiKey = hasApiKey,
@@ -188,6 +190,9 @@ class MainActivity : ComponentActivity() {
         remember {
             val settings = eva.settings
             SettingsActions(
+                onExtensionEnable = eva.extensions::enable,
+                onExtensionMutation = eva.extensions::mutation,
+                onRefreshExtensions = eva.extensions::refresh,
                 onSignIn = eva::startChatGptSignIn,
                 onCancelSignIn = eva::cancelChatGptSignIn,
                 onSignOut = eva::signOutChatGpt,
@@ -263,6 +268,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        eva.extensions.refresh()
         // Both grants are made in system settings, so the answers only change while EVA is away.
         deviceAssistant = AssistantRole.isEva(this)
         mediaControlAccess = MediaControlAccess.isGranted(this)

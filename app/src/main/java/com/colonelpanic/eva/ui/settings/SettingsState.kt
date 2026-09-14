@@ -1,10 +1,12 @@
 package com.colonelpanic.eva.ui.settings
 
+import com.colonelpanic.eva.capability.extensions.ExtensionSettings
 import com.colonelpanic.eva.providers.openai.OpenAiModels
 import com.colonelpanic.eva.providers.openai.SignInState
 
 /** Everything the settings screen renders, collected once by the activity. */
 data class SettingsUiState(
+    val extensions: ExtensionSettings = ExtensionSettings(),
     val account: String? = null,
     val signIn: SignInState = SignInState.Idle,
     val hasApiKey: Boolean = false,
@@ -31,6 +33,9 @@ data class SettingsUiState(
  * connection panel behaved, and it left nothing on screen to explain the failure.
  */
 data class SettingsActions(
+    val onExtensionEnable: (String, Boolean) -> Unit = { _, _ -> },
+    val onExtensionMutation: (String, String, Boolean) -> Unit = { _, _, _ -> },
+    val onRefreshExtensions: () -> Unit = {},
     val onSignIn: () -> Unit = {},
     val onCancelSignIn: () -> Unit = {},
     val onSignOut: () -> Unit = {},

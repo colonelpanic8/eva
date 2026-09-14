@@ -32,6 +32,8 @@ class ExtensionBackend(
 
     override suspend fun unavailableReason(): String? = authorization()
 
+    override fun dispatchRejection(): String? = authorization()
+
     override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome =
         ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "Extension execution requires a journaled invocation.")
 

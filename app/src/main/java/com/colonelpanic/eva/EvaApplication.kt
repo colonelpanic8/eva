@@ -4,6 +4,7 @@ import android.app.Application
 import android.os.Build
 import android.os.SystemClock
 import androidx.core.content.pm.PackageInfoCompat
+import com.colonelpanic.eva.adapters.android.AndroidExtensionConnector
 import com.colonelpanic.eva.adapters.android.AndroidIntentHost
 import com.colonelpanic.eva.adapters.android.AndroidMediaLauncher
 import com.colonelpanic.eva.adapters.android.AndroidMediaSessions
@@ -26,6 +27,7 @@ import com.colonelpanic.eva.adapters.android.ObservationStore
 import com.colonelpanic.eva.adapters.android.ShizukuShellHost
 import com.colonelpanic.eva.adapters.android.SmsSendBackend
 import com.colonelpanic.eva.adapters.android.UiControlBackend
+import com.colonelpanic.eva.adapters.android.observeExtensionPackages
 import com.colonelpanic.eva.audio.RealtimeMediaConfig
 import com.colonelpanic.eva.audio.VoiceSessionHost
 import com.colonelpanic.eva.audio.VoiceSessionService
@@ -33,12 +35,17 @@ import com.colonelpanic.eva.audio.VoiceSessionStatus
 import com.colonelpanic.eva.audio.webrtc.WebRtcMediaSessionFactory
 import com.colonelpanic.eva.capability.CapabilityDispatcher
 import com.colonelpanic.eva.capability.CapabilityRegistry
+import com.colonelpanic.eva.capability.extensions.ExtensionConnectionManager
+import com.colonelpanic.eva.capability.extensions.ExtensionDiscovery
+import com.colonelpanic.eva.capability.extensions.ExtensionGrants
+import com.colonelpanic.eva.capability.extensions.ExtensionRuntime
 import com.colonelpanic.eva.conversation.ProviderSessionController
 import com.colonelpanic.eva.conversation.ProviderStatus
 import com.colonelpanic.eva.data.AppearanceSettings
 import com.colonelpanic.eva.data.CapabilitySettings
 import com.colonelpanic.eva.data.ChatGptAccountStore
 import com.colonelpanic.eva.data.ChosenNumbers
+import com.colonelpanic.eva.data.ExtensionGrantFile
 import com.colonelpanic.eva.data.OpenAiSettings
 import com.colonelpanic.eva.data.SqliteInvocationRepository
 import com.colonelpanic.eva.providers.BrokerConversationProvider
@@ -235,6 +242,25 @@ class EvaApplication :
             },
         )
     }
+    private val extensionScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    val extensions by lazy {
+        val connector = AndroidExtensionConnector(this)
+        val connections = ExtensionConnectionManager(connector, SystemClock::elapsedRealtime)
+        ExtensionRuntime(
+            registry,
+            ExtensionDiscovery(connector::scan, connections, extensionScope),
+            connections,
+            ExtensionGrants(ExtensionGrantFile(this)),
+            extensionScope,
+        )
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        observeExtensionPackages(this, extensions::packageChanged)
+        extensions.refresh()
+    }
+
     private val contactKeywords by lazy { ContactNameKeywords(this, ::contactHistory) }
     val controller by lazy {
         val repository = SqliteInvocationRepository(this)

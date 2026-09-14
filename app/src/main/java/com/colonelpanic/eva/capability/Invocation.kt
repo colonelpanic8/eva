@@ -76,6 +76,9 @@ data class ExecutionOutcome(
 }
 
 interface ExecutionBackend {
+    /** Local authorization only, checked under the registry's durable admission lock. */
+    fun dispatchRejection(): String? = null
+
     suspend fun unavailableReason(): String?
 
     suspend fun execute(arguments: Map<String, String>): ExecutionOutcome

@@ -33,20 +33,27 @@ class CapabilityRegistry(
 
     fun validationError(proposal: ToolProposal): String? = current.validationError(proposal)
 
+    suspend fun changeAuthorization(update: suspend () -> Unit) = admission.withLock { update() }
+
     /** Only journal the dispatch transition here; never perform external work under this lock. */
     internal suspend fun commitDispatch(
         proposal: ToolProposal,
+        onRejected: (String) -> Unit = {},
         commit: suspend () -> Unit,
     ): ExecutionBackend? =
         admission.withLock {
             val backend = current.resolve(proposal) ?: return@withLock null
+            backend.dispatchRejection()?.let {
+                onRejected(it)
+                return@withLock null
+            }
             commit()
             backend
         }
 
     class Snapshot private constructor(
         val catalog: List<CapabilityDefinition>,
-        private val bindings: Map<String, ExecutionBackend>,
+        internal val bindings: Map<String, ExecutionBackend>,
         val bindingRevisions: Map<String, String>,
         val revision: String,
     ) {

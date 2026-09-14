@@ -73,8 +73,9 @@ class CapabilityDispatcher(
                         repository.transition(proposal.callId, phase, InvocationStatus.NOT_EXECUTED, unavailable)
                     }
                 }
+                var admissionRejection = CapabilityRegistry.STALE_MESSAGE
                 val admitted =
-                    registry.commitDispatch(snapshot) {
+                    registry.commitDispatch(snapshot, onRejected = { admissionRejection = it }) {
                         journal {
                             repository.transition(proposal.callId, phase, InvocationStatus.DISPATCHING, "Dispatching action…")
                             phase = InvocationStatus.DISPATCHING
@@ -82,7 +83,7 @@ class CapabilityDispatcher(
                     }
                 if (admitted == null) {
                     return@withLock journal {
-                        repository.transition(proposal.callId, phase, InvocationStatus.NOT_EXECUTED, CapabilityRegistry.STALE_MESSAGE)
+                        repository.transition(proposal.callId, phase, InvocationStatus.NOT_EXECUTED, admissionRejection)
                     }
                 }
                 currentCoroutineContext().ensureActive()
