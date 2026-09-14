@@ -19,6 +19,14 @@ and stale/unadvertised calls. One action per request still includes reads.
 Discovery, Binder execution, persistent grants, and the planned 64-tool admission
 policy remain unimplemented. The codecs do not register or authorize extensions.
 
+Receipts now persist arguments and optional source/binding provenance, retaining
+their original display after removal. Direct and broker tool results carry this
+metadata in the shared evidence envelope. Restored OpenAI history puts only a
+validated outcome and EVA-authored explanation in developer/system instructions;
+titles, arguments, source labels, and result prose are quoted in a separate
+assistant message as untrusted data. Legacy receipts receive the same treatment.
+External capability descriptions are attributed when their source is supplied.
+
 ## Android provider and action runtime
 
 The Compose app now uses `ProviderSessionController` and a provider-neutral

@@ -236,7 +236,7 @@ class OpenAiResponsesProviderTest {
                     .getValue("input")
                     .jsonArray
             assertEquals(
-                listOf("user", "assistant", "developer", "developer", "user"),
+                listOf("user", "assistant", "developer", "assistant", "developer", "user"),
                 input.map {
                     it.jsonObject
                         .getValue("role")
@@ -259,14 +259,14 @@ class OpenAiResponsesProviderTest {
                     .contains("EVA action receipt"),
             )
             assertTrue(
-                input[2]
+                input[3]
                     .jsonObject
                     .getValue("content")
                     .jsonPrimitive.content
                     .contains("\"seconds\":\"180\""),
             )
             assertTrue(
-                input[3]
+                input[4]
                     .jsonObject
                     .getValue("content")
                     .jsonPrimitive.content
@@ -274,7 +274,7 @@ class OpenAiResponsesProviderTest {
             )
             assertEquals(
                 "Continue",
-                input[4]
+                input[5]
                     .jsonObject
                     .getValue("content")
                     .jsonPrimitive.content,

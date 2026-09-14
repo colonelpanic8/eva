@@ -17,6 +17,7 @@ data class CapabilityDefinition(
     val inputSchema: JsonObject,
     /** Claims observation without mutation; this does not authorize execution or tool chaining. */
     val readOnly: Boolean = false,
+    val source: CapabilitySource? = null,
     val validateOperation: (Map<String, String>) -> String? = { null },
 )
 

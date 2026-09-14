@@ -3,6 +3,7 @@ package com.colonelpanic.eva.capability
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import java.util.Collections
@@ -92,6 +93,7 @@ class CapabilityRegistry(
                                         "description" to JsonPrimitive(it.description),
                                         "schema" to it.inputSchema,
                                         "readOnly" to JsonPrimitive(it.readOnly),
+                                        "source" to (it.source?.toJson() ?: JsonNull),
                                         "binding" to JsonPrimitive(bindingRevisions.getValue(it.id)),
                                     ),
                                 )

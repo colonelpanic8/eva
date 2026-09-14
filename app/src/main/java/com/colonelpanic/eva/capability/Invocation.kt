@@ -39,6 +39,8 @@ data class InvocationRecord(
     val capabilityId: String,
     val catalogRevision: String,
     val title: String? = null,
+    val arguments: Map<String, String>? = null,
+    val provenance: ReceiptProvenance? = null,
     /** Null for receipts journaled before threads existed. */
     val threadId: String? = null,
     val turnId: String? = null,

@@ -304,11 +304,7 @@ private class BrokerSession(
                 put("callId", result.call.callId)
                 put(
                     "result",
-                    buildJsonObject {
-                        put("status", result.status)
-                        put("message", result.message.take(2000))
-                        result.data?.let { put("data", it) }
-                    },
+                    result.wireOutcome(),
                 )
             },
         )

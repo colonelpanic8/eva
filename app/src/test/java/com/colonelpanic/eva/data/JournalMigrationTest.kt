@@ -19,15 +19,16 @@ class JournalMigrationTest {
     fun `integer revisions migrate preserving fingerprints titles order and recovery`() =
         runBlocking {
             val context = RuntimeEnvironment.getApplication()
-            for (version in 1..2) {
+            for (version in 1..3) {
                 val name = "migration-${UUID.randomUUID()}.db"
                 try {
                     context.openOrCreateDatabase(name, 0, null).use { db ->
-                        val title = if (version == 2) ", title TEXT" else ""
+                        val revisionType = if (version == 3) "TEXT" else "INTEGER"
+                        val title = if (version >= 2) ", title TEXT" else ""
                         db.execSQL(
-                            "CREATE TABLE invocations (call_id TEXT PRIMARY KEY NOT NULL, fingerprint TEXT NOT NULL, request TEXT NOT NULL, destination TEXT, status TEXT NOT NULL, message TEXT NOT NULL, created_at INTEGER NOT NULL, capability_id TEXT NOT NULL, catalog_revision INTEGER NOT NULL$title)",
+                            "CREATE TABLE invocations (call_id TEXT PRIMARY KEY NOT NULL, fingerprint TEXT NOT NULL, request TEXT NOT NULL, destination TEXT, status TEXT NOT NULL, message TEXT NOT NULL, created_at INTEGER NOT NULL, capability_id TEXT NOT NULL, catalog_revision $revisionType NOT NULL$title)",
                         )
-                        val oldTitle = if (version == 2) ",'Original title'" else ""
+                        val oldTitle = if (version >= 2) ",'Original title'" else ""
                         db.execSQL(
                             "INSERT INTO invocations VALUES ('first','original-fingerprint','request','Park','HANDED_OFF','Opened',1,'eva.maps',9$oldTitle)",
                         )
@@ -41,6 +42,8 @@ class JournalMigrationTest {
                         assertEquals(listOf("first", "second"), records.map { it.callId })
                         assertEquals(listOf("9", "9"), records.map { it.catalogRevision })
                         assertEquals("original-fingerprint", records.first().fingerprint)
+                        assertNull(records.first().arguments)
+                        assertNull(records.first().provenance)
                         if (version == 1) assertNull(records.first().title) else assertEquals("Original title", records.first().title)
                         journal.recoverInterrupted()
                         assertEquals(InvocationStatus.UNKNOWN, journal.history().last().status)

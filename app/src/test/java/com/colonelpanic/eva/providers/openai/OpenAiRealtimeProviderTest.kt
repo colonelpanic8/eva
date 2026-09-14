@@ -263,10 +263,10 @@ class OpenAiRealtimeProviderTest {
             runCurrent()
 
             val seed = media.sent.map { Json.parseToJsonElement(it).jsonObject }
-            assertEquals(4, seed.size)
+            assertEquals(5, seed.size)
             assertTrue(seed.all { it.getValue("type").jsonPrimitive.content == "conversation.item.create" })
             assertEquals(
-                listOf("user", "assistant", "system", "system"),
+                listOf("user", "assistant", "system", "assistant", "system"),
                 seed.map {
                     it
                         .getValue("item")
@@ -276,7 +276,7 @@ class OpenAiRealtimeProviderTest {
                 },
             )
             assertEquals(
-                listOf("input_text", "output_text", "input_text", "input_text"),
+                listOf("input_text", "output_text", "input_text", "output_text", "input_text"),
                 seed.map {
                     it
                         .getValue("item")
@@ -315,10 +315,13 @@ class OpenAiRealtimeProviderTest {
 
             media.incoming.send("""{"type":"conversation.item.added","item":{"id":"${ids[3]}"}}""")
             runCurrent()
+            assertTrue(events.none { it is ProviderEvent.Connected })
+            media.incoming.send("""{"type":"conversation.item.added","item":{"id":"${ids[4]}"}}""")
+            runCurrent()
             assertEquals("sess_1", events.filterIsInstance<ProviderEvent.Connected>().single().sessionId)
             assertTrue(!media.controls.value.microphoneMuted)
             val evidence =
-                seed[2]
+                seed[3]
                     .getValue("item")
                     .jsonObject
                     .getValue("content")
@@ -327,10 +330,10 @@ class OpenAiRealtimeProviderTest {
                     .jsonObject
                     .getValue("text")
                     .jsonPrimitive.content
-            assertTrue(evidence.contains("Title: Set timer"))
-            assertTrue(evidence.contains("Arguments: {\"seconds\":\"180\"}"))
-            assertTrue(evidence.contains("Status: HANDED_OFF"))
-            assertTrue(evidence.contains("Message: Timer opened."))
+            assertTrue(evidence.contains("\"title\":\"Set timer\""))
+            assertTrue(evidence.contains("\"arguments\":{\"seconds\":\"180\"}"))
+            assertTrue(evidence.contains("\"reportedStatus\":\"HANDED_OFF\""))
+            assertTrue(evidence.contains("\"message\":\"Timer opened.\""))
             collector.cancel()
         }
 

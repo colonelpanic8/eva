@@ -180,7 +180,7 @@ class SubscriptionResponsesTest {
                     .getValue("input")
                     .jsonArray
             assertEquals(
-                listOf("user", "assistant", "developer", "developer", "user"),
+                listOf("user", "assistant", "developer", "assistant", "developer", "user"),
                 first.map {
                     it.jsonObject
                         .getValue("role")
@@ -206,7 +206,7 @@ class SubscriptionResponsesTest {
                 },
             )
             val evidenceText =
-                first[2]
+                first[3]
                     .jsonObject
                     .getValue("content")
                     .jsonArray
@@ -214,9 +214,9 @@ class SubscriptionResponsesTest {
                     .jsonObject
                     .getValue("text")
                     .jsonPrimitive.content
-            assertTrue(evidenceText.contains("Title: Open route"))
-            assertTrue(evidenceText.contains("Status: HANDED_OFF"))
-            assertTrue(evidenceText.contains("Message: Maps opened."))
+            assertTrue(evidenceText.contains("\"title\":\"Open route\""))
+            assertTrue(evidenceText.contains("\"reportedStatus\":\"HANDED_OFF\""))
+            assertTrue(evidenceText.contains("\"message\":\"Maps opened.\""))
 
             val second =
                 Json
@@ -225,8 +225,8 @@ class SubscriptionResponsesTest {
                     .getValue("input")
                     .jsonArray
             assertEquals(
-                listOf("user", "assistant", "developer", "developer"),
-                second.take(4).map {
+                listOf("user", "assistant", "developer", "assistant", "developer"),
+                second.take(5).map {
                     it.jsonObject
                         .getValue("role")
                         .jsonPrimitive.content

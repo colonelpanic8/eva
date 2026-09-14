@@ -7,6 +7,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.util.Collections
 
 class CapabilityDispatcher(
     private val registry: CapabilityRegistry,
@@ -21,12 +22,13 @@ class CapabilityDispatcher(
         rejection: String? = null,
     ): InvocationRecord =
         submissions.withLock {
-            val snapshot = proposal.copy(arguments = proposal.arguments.toMap())
+            val snapshot = proposal.copy(arguments = Collections.unmodifiableMap(proposal.arguments.toMap()))
             if (proposal.callId.isBlank() || proposal.callId.length > 256 || proposal.request.length > 1000) {
                 throw ProposalRejectedException("The request has invalid metadata. No app was opened.")
             }
             val catalog = registry.snapshot
             val validationError = rejection ?: catalog.validationError(snapshot)
+            val definition = catalog.takeIf { it.revision == proposal.catalogRevision }?.definitions?.get(proposal.capabilityId)
             val initial =
                 InvocationRecord(
                     callId = proposal.callId,
@@ -38,12 +40,15 @@ class CapabilityDispatcher(
                     createdAtMillis = nowMillis(),
                     capabilityId = proposal.capabilityId,
                     catalogRevision = proposal.catalogRevision,
-                    title =
-                        catalog
-                            .takeIf { it.revision == proposal.catalogRevision }
-                            ?.definitions
-                            ?.get(proposal.capabilityId)
-                            ?.title,
+                    title = definition?.title,
+                    arguments = snapshot.arguments,
+                    provenance =
+                        definition?.source?.let {
+                            ReceiptProvenance(
+                                it,
+                                catalog.bindingRevisions.getValue(proposal.capabilityId),
+                            )
+                        },
                     threadId = proposal.threadId,
                     turnId = proposal.turnId,
                 )

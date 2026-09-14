@@ -82,6 +82,7 @@ class RegistrySnapshotTest {
         assertNotEquals(original, identityChange.snapshot.revision)
         listOf(
             definition.copy(title = "New title"),
+            definition.copy(source = CapabilitySource("different-owner", "New source")),
             definition.copy(readOnly = !definition.readOnly),
             definition.copy(description = "New behavior"),
             definition.copy(

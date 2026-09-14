@@ -10,8 +10,14 @@ import com.colonelpanic.eva.capability.ClaimResult
 import com.colonelpanic.eva.capability.InvocationRecord
 import com.colonelpanic.eva.capability.InvocationRepository
 import com.colonelpanic.eva.capability.InvocationStatus
+import com.colonelpanic.eva.capability.ReceiptProvenance
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 class SqliteInvocationRepository(
     context: Context,
@@ -56,6 +62,17 @@ class SqliteInvocationRepository(
                             put("capability_id", record.capabilityId)
                             put("catalog_revision", record.catalogRevision)
                             put("title", record.title)
+                            put(
+                                "arguments_json",
+                                record.arguments?.let {
+                                    JsonObject(
+                                        it.mapValues { entry ->
+                                            JsonPrimitive(entry.value)
+                                        },
+                                    ).toString()
+                                },
+                            )
+                            put("provenance_json", record.provenance?.toJson()?.toString())
                         }
                     db.insertOrThrow("invocations", null, values)
                     ClaimResult(record, true)
@@ -129,17 +146,22 @@ class SqliteInvocationRepository(
             capabilityId = getString(getColumnIndexOrThrow("capability_id")),
             catalogRevision = getString(getColumnIndexOrThrow("catalog_revision")),
             title = getColumnIndexOrThrow("title").let { if (isNull(it)) null else getString(it) },
+            arguments = nullableJson("arguments_json")?.mapValues { it.value.jsonPrimitive.content },
+            provenance = nullableJson("provenance_json")?.let(ReceiptProvenance::fromJson),
         )
+
+    private fun Cursor.nullableJson(column: String): JsonObject? =
+        getColumnIndexOrThrow(column).let { if (isNull(it)) null else Json.parseToJsonElement(getString(it)).jsonObject }
 
     private class JournalDatabase(
         context: Context,
         name: String,
-    ) : SQLiteOpenHelper(context, name, null, 3) {
+    ) : SQLiteOpenHelper(context, name, null, 4) {
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL(
                 "CREATE TABLE invocations (call_id TEXT PRIMARY KEY NOT NULL, fingerprint TEXT NOT NULL, " +
                     "request TEXT NOT NULL, destination TEXT, status TEXT NOT NULL, message TEXT NOT NULL, created_at INTEGER NOT NULL, " +
-                    "capability_id TEXT NOT NULL, catalog_revision TEXT NOT NULL, title TEXT)",
+                    "capability_id TEXT NOT NULL, catalog_revision TEXT NOT NULL, title TEXT, arguments_json TEXT, provenance_json TEXT)",
             )
         }
 
@@ -148,16 +170,21 @@ class SqliteInvocationRepository(
             oldVersion: Int,
             newVersion: Int,
         ) {
-            check(oldVersion in 1..2 && newVersion == 3)
-            if (oldVersion == 1) db.execSQL("ALTER TABLE invocations ADD COLUMN title TEXT")
-            db.execSQL("ALTER TABLE invocations RENAME TO invocations_legacy")
-            onCreate(db)
-            db.execSQL(
-                "INSERT INTO invocations (call_id, fingerprint, request, destination, status, message, created_at, " +
-                    "capability_id, catalog_revision, title) SELECT call_id, fingerprint, request, destination, status, message, " +
-                    "created_at, capability_id, CAST(catalog_revision AS TEXT), title FROM invocations_legacy ORDER BY rowid",
-            )
-            db.execSQL("DROP TABLE invocations_legacy")
+            check(oldVersion in 1..3 && newVersion == 4)
+            if (oldVersion < 3) {
+                if (oldVersion == 1) db.execSQL("ALTER TABLE invocations ADD COLUMN title TEXT")
+                db.execSQL("ALTER TABLE invocations RENAME TO invocations_legacy")
+                onCreate(db)
+                db.execSQL(
+                    "INSERT INTO invocations (call_id, fingerprint, request, destination, status, message, created_at, " +
+                        "capability_id, catalog_revision, title) SELECT call_id, fingerprint, request, destination, status, message, " +
+                        "created_at, capability_id, CAST(catalog_revision AS TEXT), title FROM invocations_legacy ORDER BY rowid",
+                )
+                db.execSQL("DROP TABLE invocations_legacy")
+            } else {
+                db.execSQL("ALTER TABLE invocations ADD COLUMN arguments_json TEXT")
+                db.execSQL("ALTER TABLE invocations ADD COLUMN provenance_json TEXT")
+            }
         }
     }
 

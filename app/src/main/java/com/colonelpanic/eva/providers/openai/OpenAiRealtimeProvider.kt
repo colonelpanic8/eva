@@ -12,6 +12,7 @@ import com.colonelpanic.eva.providers.ProviderEvent
 import com.colonelpanic.eva.providers.ProviderToolDefinition
 import com.colonelpanic.eva.providers.ResponseRequest
 import com.colonelpanic.eva.providers.SessionOpenRequest
+import com.colonelpanic.eva.providers.wireOutcome
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -142,7 +143,7 @@ private class OpenAiRealtimeSession(
     private var activeResponse: String? = null
     private var awaitingTool = false
     private val pending = mutableMapOf<String, CallIdentity>()
-    private val seedItems = history.map(::realtimeSeedItem)
+    private val seedItems = history.flatMap { it.toOpenAiMessages().map(::realtimeSeedItem) }
     private val pendingSeedItemIds = seedItems.mapTo(mutableSetOf()) { it.id }
     private var seedReady = seedItems.isEmpty()
     private var seedGate: CompletableDeferred<Boolean>? = null
@@ -333,12 +334,7 @@ private class OpenAiRealtimeSession(
 
     override suspend fun submitToolResult(result: CorrelatedToolResult) {
         check(result.call.connectionEpoch == connectionEpoch && pending[result.call.callId] == result.call)
-        val output =
-            buildJsonObject {
-                put("status", result.status)
-                put("message", result.message.take(2000))
-                result.data?.let { put("data", it) }
-            }
+        val output = result.wireOutcome()
         media.send(
             buildJsonObject {
                 put("type", "conversation.item.create")
@@ -359,8 +355,7 @@ private class OpenAiRealtimeSession(
     override suspend fun close() = Unit
 }
 
-private fun realtimeSeedItem(item: HistoryItem): RealtimeSeedItem {
-    val message = item.toOpenAiMessage()
+private fun realtimeSeedItem(message: OpenAiHistoryMessage): RealtimeSeedItem {
     val role = if (message.role == "developer") "system" else message.role
     val contentType = if (role == "assistant") "output_text" else "input_text"
     val id = "item_eva_${UUID.randomUUID().toString().replace("-", "")}"

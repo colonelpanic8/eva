@@ -12,6 +12,8 @@ import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.ProposalRejectedException
 import com.colonelpanic.eva.capability.ToolProposal
 import com.colonelpanic.eva.capability.ToolSchema
+import com.colonelpanic.eva.capability.displayMessage
+import com.colonelpanic.eva.capability.modelDescription
 import com.colonelpanic.eva.providers.ConversationInput
 import com.colonelpanic.eva.providers.ConversationProvider
 import com.colonelpanic.eva.providers.ConversationSession
@@ -85,7 +87,7 @@ class ProviderSessionController(
     private fun phoneTools(snapshot: CapabilityRegistry.Snapshot) =
         snapshot.catalog
             .filterNot { it.id in hiddenCapabilities() }
-            .map { ProviderToolDefinition(it.id, it.title, it.description, it.inputSchema) }
+            .map { ProviderToolDefinition(it.id, it.title, it.modelDescription(), it.inputSchema) }
 
     private fun typedCatalog(snapshot: CapabilityRegistry.Snapshot) = catalogOf(snapshot.revision, phoneTools(snapshot))
 
@@ -479,7 +481,9 @@ class ProviderSessionController(
                     if (attempt == thisAttempt &&
                         session === opened
                     ) {
-                        opened.submitToolResult(CorrelatedToolResult(event.call, result.status.name, result.message))
+                        opened.submitToolResult(
+                            CorrelatedToolResult(event.call, result.status.name, result.message, provenance = result.provenance),
+                        )
                     }
                 } catch (error: ProposalRejectedException) {
                     record(ConversationEntry(id, "", error.message.orEmpty(), EntryStatus.NOT_EXECUTED))
@@ -617,7 +621,7 @@ class ProviderSessionController(
         ConversationEntry(
             callId,
             request,
-            message,
+            displayMessage(),
             when (status) {
                 InvocationStatus.CLAIMED -> EntryStatus.PENDING
                 InvocationStatus.DISPATCHING -> EntryStatus.DISPATCHING

@@ -11,6 +11,7 @@ import com.colonelpanic.eva.providers.ProviderEvent
 import com.colonelpanic.eva.providers.ProviderToolDefinition
 import com.colonelpanic.eva.providers.ResponseRequest
 import com.colonelpanic.eva.providers.SessionOpenRequest
+import com.colonelpanic.eva.providers.wireOutcome
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -89,11 +90,11 @@ private class OpenAiResponsesSession(
         if (access.serverKeepsHistory) {
             mutableListOf()
         } else {
-            request.history.mapTo(mutableListOf<JsonElement>(), ::historyMessage)
+            request.history.flatMapTo(mutableListOf<JsonElement>(), ::historyMessages)
         }
     private var storedSeed =
         if (access.serverKeepsHistory) {
-            request.history.map(::historyMessage)
+            request.history.flatMap(::historyMessages)
         } else {
             emptyList()
         }
@@ -159,11 +160,7 @@ private class OpenAiResponsesSession(
                                     put("call_id", result.call.callId)
                                     put(
                                         "output",
-                                        buildJsonObject {
-                                            put("status", result.status)
-                                            put("message", result.message.take(2000))
-                                            result.data?.let { put("data", it) }
-                                        }.toString(),
+                                        result.wireOutcome().toString(),
                                     )
                                 }
                         }
@@ -181,8 +178,8 @@ private class OpenAiResponsesSession(
      * The stored path shipped with the plain content form; the subscription backend is
      * exercised with the explicit item form, so each keeps the shape it was proven against.
      */
-    private fun historyMessage(item: HistoryItem): JsonObject =
-        item.toOpenAiMessage().let { message -> inputMessage(message.role, message.text) }
+    private fun historyMessages(item: HistoryItem): List<JsonObject> =
+        item.toOpenAiMessages().map { message -> inputMessage(message.role, message.text) }
 
     private fun inputMessage(
         role: String,

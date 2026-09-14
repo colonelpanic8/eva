@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.providers
 
+import com.colonelpanic.eva.capability.ReceiptProvenance
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.JsonObject
 
@@ -30,8 +31,8 @@ data class SessionOpenRequest(
 )
 
 /**
- * The provider-facing view of a thread. Evidence and notes are EVA's own words, not the
- * user's, and providers must present them that way (a developer or system role).
+ * The provider-facing view of a thread. Only app-authored envelopes and notes
+ * are instructions; external action evidence remains attributed, quoted data.
  */
 sealed interface HistoryItem {
     data class User(
@@ -47,6 +48,7 @@ sealed interface HistoryItem {
         val arguments: Map<String, String>,
         val status: String,
         val message: String,
+        val provenance: ReceiptProvenance? = null,
     ) : HistoryItem
 
     data class Note(
@@ -82,6 +84,7 @@ data class CorrelatedToolResult(
     val status: String,
     val message: String,
     val data: JsonObject? = null,
+    val provenance: ReceiptProvenance? = null,
 )
 
 sealed interface ProviderEvent {

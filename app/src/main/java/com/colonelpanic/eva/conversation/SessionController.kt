@@ -6,6 +6,7 @@ import com.colonelpanic.eva.capability.InvocationRecord
 import com.colonelpanic.eva.capability.InvocationRepository
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.ProposalRejectedException
+import com.colonelpanic.eva.capability.displayMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -122,7 +123,7 @@ class SessionController(
         ConversationEntry(
             id = callId,
             request = request,
-            response = message,
+            response = displayMessage(),
             status =
                 when (status) {
                     InvocationStatus.CLAIMED -> EntryStatus.PENDING
