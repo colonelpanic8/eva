@@ -917,3 +917,18 @@ Separate branch report, not fixed here: an earlier `threads` debug build crashed
 with `IllegalStateException: Unknown turn: <uuid>` in
 `SqliteConversationStore.turnThreadId` (line 329), called through `closeTurn`.
 This user-reported issue belongs to the unmerged threads branch.
+
+### Pixel extension checks on installed build 0f53e78
+
+Physical-phone startup, settings, ChatGPT sign-in, extension loading, and grant
+persistence pass. Separate typed requests enabled and disabled Caffeine with
+attributed `HANDED_OFF` receipts; its foreground-service notification independently
+confirmed both state changes. A Messages request opened the correct unsent draft and
+also produced an attributed `HANDED_OFF` receipt. No SMS was sent.
+
+The first action exposed a Compose intrinsic-measurement crash in conversation
+receipt rendering. The installed 0f53e78 build fixes it, renders both recovered and
+new receipts, and has no current crash-buffer entry. See
+[the dated device-validation record](device-validation-2026-09-14.md). Installed
+service, HTTP, repository-import, and generalized AppFunctions execution remain
+unverified on a device.
