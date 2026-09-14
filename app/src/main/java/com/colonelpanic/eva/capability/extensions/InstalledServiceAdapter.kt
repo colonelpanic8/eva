@@ -19,12 +19,12 @@ class InstalledServiceAdapter(
     ) = discovery.invalidate(packageName, removed)
 
     override fun available(
-        identity: ExtensionIdentity,
+        identity: AdapterIdentity,
         digest: String,
-    ): Boolean = discovery.available(identity, digest)
+    ): Boolean = identity is ExtensionIdentity && discovery.available(identity, digest)
 
     override fun bindings(extension: InstalledExtension): List<CapabilityBinding> {
-        val identity = extension.identity ?: return emptyList()
+        val identity = extension.identity as? ExtensionIdentity ?: return emptyList()
         val descriptor = extension.descriptor ?: return emptyList()
         return descriptor.capabilities.map { capability ->
             val backend = ExtensionBackend(identity, descriptor, capability, connections, worker)

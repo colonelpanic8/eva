@@ -59,7 +59,7 @@ class CapabilityAdapterTest {
                     }
 
                     override fun available(
-                        identity: ExtensionIdentity,
+                        identity: AdapterIdentity,
                         digest: String,
                     ) = installed.value.isNotEmpty()
 

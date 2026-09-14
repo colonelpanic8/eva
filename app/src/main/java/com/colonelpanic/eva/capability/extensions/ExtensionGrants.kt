@@ -53,12 +53,12 @@ class ExtensionGrants(
     }
 
     fun grant(
-        identity: ExtensionIdentity,
+        identity: AdapterIdentity,
         descriptor: Descriptor,
-    ): ExtensionGrant? = grants[identity.packageName]?.takeIf { it.identityKey == identity.key && it.digest == descriptor.digest }
+    ): ExtensionGrant? = grants[identity.instanceId]?.takeIf { it.identityKey == identity.key && it.digest == descriptor.digest }
 
     fun allowed(
-        identity: ExtensionIdentity,
+        identity: AdapterIdentity,
         descriptor: Descriptor,
         capability: Capability,
     ): Boolean {
@@ -68,22 +68,22 @@ class ExtensionGrants(
     }
 
     suspend fun enable(
-        identity: ExtensionIdentity,
+        identity: AdapterIdentity,
         descriptor: Descriptor,
         enabled: Boolean,
     ) {
         save(
             if (enabled) {
-                grants + (identity.packageName to ExtensionGrant(identity.key, descriptor.digest))
+                grants + (identity.instanceId to ExtensionGrant(identity.key, descriptor.digest))
             } else {
                 grants -
-                    identity.packageName
+                    identity.instanceId
             },
         )
     }
 
     suspend fun mutation(
-        identity: ExtensionIdentity,
+        identity: AdapterIdentity,
         descriptor: Descriptor,
         name: String,
         enabled: Boolean,
@@ -91,7 +91,7 @@ class ExtensionGrants(
         val current = checkNotNull(grant(identity, descriptor)) { "Enable the extension first." }
         require(descriptor.capabilities.any { it.name == name && it.effect != Effect.READ })
         val names = if (enabled) current.mutations + name else current.mutations - name
-        save(grants + (identity.packageName to current.copy(mutations = names)))
+        save(grants + (identity.instanceId to current.copy(mutations = names)))
     }
 
     suspend fun remove(packageName: String) {
@@ -99,7 +99,7 @@ class ExtensionGrants(
     }
 
     suspend fun reconcile(installed: List<InstalledExtension>) {
-        val packages = installed.associateBy { it.packageName }
+        val packages = installed.associateBy { it.identity?.instanceId }
         save(
             grants.filter { (name, grant) ->
                 val entry = packages[name]

@@ -15,7 +15,7 @@ import kotlinx.coroutines.sync.withPermit
 
 data class InstalledExtension(
     val packageName: String,
-    val identity: ExtensionIdentity?,
+    val identity: AdapterIdentity?,
     val descriptor: Descriptor?,
     val problem: String? = null,
     val contractRejected: Boolean = false,

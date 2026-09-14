@@ -31,6 +31,30 @@ internal class MemoryGrantPersistence : ExtensionGrantPersistence {
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class ExtensionGrantsTest {
+    @Test
+    fun `same declared package does not share grants between import instances or transports`() =
+        runTest {
+            val descriptor = ExtensionProtocol.describe(extensionDescription).descriptor!!
+            val one = PackageIdentity("00000000-0000-0000-0000-000000000001")
+            val two = PackageIdentity("00000000-0000-0000-0000-000000000002")
+            val grants = ExtensionGrants(MemoryGrantPersistence())
+            grants.enable(one, descriptor, true)
+            grants.enable(extensionIdentity, descriptor, true)
+            assertTrue(grants.allowed(one, descriptor, extensionCapability))
+            assertFalse(grants.allowed(two, descriptor, extensionCapability))
+            grants.reconcile(
+                listOf(
+                    InstalledExtension("example.app", extensionIdentity, descriptor),
+                    InstalledExtension("example.app", one, descriptor),
+                ),
+            )
+            assertTrue(grants.allowed(one, descriptor, extensionCapability))
+            assertTrue(grants.allowed(extensionIdentity, descriptor, extensionCapability))
+            grants.remove(one.instanceId)
+            assertFalse(grants.allowed(one, descriptor, extensionCapability))
+            assertTrue(grants.allowed(extensionIdentity, descriptor, extensionCapability))
+        }
+
     private val descriptor = ExtensionProtocol.describe(extensionDescription).descriptor!!
     private val write = extensionCapability.copy(name = "write", effect = Effect.WRITE)
     private val unknown = extensionCapability.copy(name = "unknown", effect = Effect.UNKNOWN)
@@ -91,7 +115,7 @@ class ExtensionGrantsTest {
             runCatching { grants.enable(extensionIdentity, descriptor, false) }
             assertFalse(grants.allowed(extensionIdentity, descriptor, extensionCapability))
             disk.fail = false
-            grants.remove(extensionIdentity.packageName)
+            grants.remove(extensionIdentity.instanceId)
             val restored = ExtensionGrants(disk)
             restored.load()
             assertFalse(restored.allowed(extensionIdentity, descriptor, extensionCapability))

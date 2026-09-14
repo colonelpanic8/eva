@@ -29,7 +29,7 @@ class ExtensionGrantFileTest {
             val restored = ExtensionGrants(ExtensionGrantFile(context))
             restored.load()
             assertTrue(restored.allowed(extensionIdentity, descriptor, extensionCapability))
-            restored.remove(extensionIdentity.packageName)
+            restored.remove(extensionIdentity.instanceId)
             val revoked = ExtensionGrants(ExtensionGrantFile(context))
             revoked.load()
             assertFalse(revoked.allowed(extensionIdentity, descriptor, extensionCapability))

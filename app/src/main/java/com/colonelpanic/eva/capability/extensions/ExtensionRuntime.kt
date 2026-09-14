@@ -55,7 +55,7 @@ class ExtensionRuntime(
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             // Invalidate before waiting for settings I/O; the final dispatch gate reads this state.
             registry.changeAuthorization { adapter.invalidate(packageName, removed) }
-            if (removed) update { grants.remove(packageName) }
+            if (removed) update { grants.reconcile(adapter.installed.value) }
         }
     }
 
@@ -75,7 +75,7 @@ class ExtensionRuntime(
     private fun change(
         key: String,
         requireAvailable: Boolean,
-        change: suspend (ExtensionIdentity, Descriptor) -> Unit,
+        change: suspend (AdapterIdentity, Descriptor) -> Unit,
     ) {
         scope.launch {
             update {

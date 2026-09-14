@@ -20,7 +20,7 @@ interface CapabilityAdapter {
     )
 
     fun available(
-        identity: ExtensionIdentity,
+        identity: AdapterIdentity,
         digest: String,
     ): Boolean
 

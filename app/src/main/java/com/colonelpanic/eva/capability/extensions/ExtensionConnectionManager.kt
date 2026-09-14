@@ -17,8 +17,9 @@ data class ExtensionIdentity(
     val signer: String,
     val uid: Int,
     val installedAt: Long,
-) {
-    val key: String get() =
+) : AdapterIdentity {
+    override val instanceId: String get() = "installed:$user:$packageName"
+    override val key: String get() =
         BoundedJson.digest(
             JsonArray(listOf(user.toString(), packageName, component, signer, installedAt.toString()).map(::JsonPrimitive)),
         )
