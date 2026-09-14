@@ -20,7 +20,7 @@ object PackageCodec {
     private val identifier = Regex("[A-Za-z_][A-Za-z0-9_]{0,63}")
     private val packageId = Regex("[a-z][a-z0-9_-]*(?:\\.[a-z][a-z0-9_-]*)+")
     private val version = Regex("(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})")
-    private val pathSlot = Regex("\\{([A-Za-z_][A-Za-z0-9_]{0,63})}")
+    private val pathSlot = Regex("\\{([A-Za-z_][A-Za-z0-9_]{0,63})\\}")
     private val scalarTypes = setOf("string", "integer", "number", "boolean")
 
     fun decode(json: String): PackageDefinition {

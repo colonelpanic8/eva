@@ -27,6 +27,7 @@ class PackageAdapter(
     private val load: () -> List<LoadedPackage>,
     private val host: (PackageIdentity) -> DeclarativeHost,
     private val execution: BoundedExecution,
+    private val unavailable: () -> List<InstalledExtension> = { emptyList() },
     private val budget: (PackageIdentity, PackageCapability, ToolProposal) -> WaitBudget,
 ) : CapabilityAdapter {
     private var packages = emptyList<LoadedPackage>()
@@ -68,6 +69,7 @@ class PackageAdapter(
                     capabilityPrefix = "extension.package.${item.identity.id}",
                 )
             }
+        entries.value += unavailable()
         ready.value = true
     }
 

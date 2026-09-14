@@ -1,6 +1,5 @@
 package com.colonelpanic.eva.capability.extensions
 
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -26,6 +25,7 @@ class ExtensionDiscovery(
     private val scan: suspend () -> List<ExtensionCandidate>,
     private val connections: ExtensionConnectionManager,
     scope: CoroutineScope,
+    private val report: (Throwable) -> Unit = {},
 ) {
     private val monitor = Any()
     private var generation = 0L
@@ -40,7 +40,28 @@ class ExtensionDiscovery(
             for (signal in refreshes) {
                 delay(250)
                 while (refreshes.tryReceive().isSuccess) { /* Coalesce package bursts. */ }
-                refresh()
+                try {
+                    refresh()
+                } catch (failure: Throwable) {
+                    rethrowFatalExtensionFailure(failure)
+                    report(failure)
+                    synchronized(monitor) {
+                        mutable.value =
+                            mutable.value
+                                .map { it.copy(problem = "Extension discovery is temporarily unavailable.") }
+                                .ifEmpty {
+                                    listOf(
+                                        InstalledExtension(
+                                            "Installed extension apps",
+                                            null,
+                                            null,
+                                            "Extension discovery failed. Refresh to retry.",
+                                        ),
+                                    )
+                                }
+                        initialized.value = true
+                    }
+                }
             }
         }
     }
@@ -72,21 +93,7 @@ class ExtensionDiscovery(
 
     private suspend fun refresh() {
         val (version, previous) = synchronized(monitor) { generation to mutable.value }
-        val candidates =
-            try {
-                scan()
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                synchronized(monitor) {
-                    if (version ==
-                        generation
-                    ) {
-                        mutable.value = previous.map { it.copy(problem = "Extension discovery is temporarily unavailable.") }
-                    }
-                }
-                return
-            }
+        val candidates = scan()
         val permits = Semaphore(4)
         val entries =
             coroutineScope {

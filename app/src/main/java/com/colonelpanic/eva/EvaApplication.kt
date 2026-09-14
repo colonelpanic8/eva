@@ -243,7 +243,10 @@ class EvaApplication :
             },
         )
     }
-    private val extensionScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val extensionScope =
+        CoroutineScope(
+            SupervisorJob() + Dispatchers.IO + kotlinx.coroutines.CoroutineExceptionHandler { _, failure -> logExtensionFailure(failure) },
+        )
     val packageSettings by lazy {
         com.colonelpanic.eva.data
             .PackageSettings(this)
@@ -264,6 +267,7 @@ class EvaApplication :
                 )
             },
             boundedExecution,
+            unavailable = packageSettings::unavailable,
         ) { identity, capability, proposal ->
             packageSettings.budget(identity, capability.execution.maxWaitMillis, proposal.interactionMode)
         }
@@ -286,14 +290,27 @@ class EvaApplication :
     }
 
     val extensions by lazy {
-        val connector = AndroidExtensionConnector(this)
-        val connections = ExtensionConnectionManager(connector, SystemClock::elapsedRealtime)
         ExtensionRuntime(
             registry,
             com.colonelpanic.eva.capability.extensions.CompositeCapabilityAdapter(
                 listOf(
-                    InstalledServiceAdapter(ExtensionDiscovery(connector::scan, connections, extensionScope), connections),
-                    packageAdapter,
+                    com.colonelpanic.eva.capability.extensions.IsolatedCapabilityAdapter(
+                        "Installed extension apps",
+                        extensionScope,
+                        ::logExtensionFailure,
+                    ) {
+                        val connector = AndroidExtensionConnector(this)
+                        val connections = ExtensionConnectionManager(connector, SystemClock::elapsedRealtime)
+                        InstalledServiceAdapter(
+                            ExtensionDiscovery(connector::scan, connections, extensionScope, ::logExtensionFailure),
+                            connections,
+                        )
+                    },
+                    com.colonelpanic.eva.capability.extensions.IsolatedCapabilityAdapter(
+                        "Declarative packages",
+                        extensionScope,
+                        ::logExtensionFailure,
+                    ) { packageAdapter },
                 ),
                 extensionScope,
             ),
@@ -302,10 +319,20 @@ class EvaApplication :
         )
     }
 
+    private fun logExtensionFailure(failure: Throwable) {
+        android.util.Log.e("EvaExtensions", "Extension startup or refresh failed", failure)
+    }
+
     override fun onCreate() {
         super.onCreate()
-        observeExtensionPackages(this, extensions::packageChanged)
-        extensions.refresh()
+        try {
+            observeExtensionPackages(this, extensions::packageChanged)
+            extensions.refresh()
+        } catch (failure: Throwable) {
+            com.colonelpanic.eva.capability.extensions
+                .rethrowFatalExtensionFailure(failure)
+            logExtensionFailure(failure)
+        }
     }
 
     private val contactKeywords by lazy { ContactNameKeywords(this, ::contactHistory) }

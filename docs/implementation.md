@@ -890,3 +890,30 @@ invalid definitions, missing activities and subsequent handoff. Caffeine exposes
 no documented state query. Physical execution remains unverified; see
 [caffeine-device-test.md](caffeine-device-test.md). This is the next device proving
 case; org-agenda testing remains deferred pending its server prerequisites.
+
+### Pixel startup regression and extension isolation (2026-09-14)
+
+The Caffeine test of 185c710 failed before UI appeared: Android rejected an
+unescaped closing brace in PackageCodec's static template-slot regex. The same
+pattern was present in ItemResults. Both now escape literal opening and closing
+braces explicitly. The extension/declarative regex audit also covers shared JSON
+number and phone validation. A JVM source-audit test enumerates every regex in
+those paths, compiles it and rejects unreviewed constructs (including unmatched
+literal braces, Unicode properties, inline flags, possessive quantifiers and
+nested character classes). This is conservative syntax checking, not ICU execution:
+JVM/Robolectric tests still cannot prove Android regex-engine compatibility.
+Reinstallation and the [Caffeine device test](caffeine-device-test.md) are pending.
+
+Individual bundled package read/decode/initializer failures are logged and shown
+as unavailable entries; healthy packages continue loading. Adapter construction,
+refresh and binding faults fail closed and disable the adapter until restart.
+Discovery failures are logged, marked unavailable, and may be refreshed. These
+boundaries preserve coroutine cancellation and do not swallow VM-fatal errors.
+Application startup also catches non-fatal extension initialization failures.
+JVM tests inject malformed JSON, initializer errors, asset listing and adapter
+refresh failures. No extension action is yet device-verified.
+
+Separate branch report, not fixed here: an earlier `threads` debug build crashed
+with `IllegalStateException: Unknown turn: <uuid>` in
+`SqliteConversationStore.turnThreadId` (line 329), called through `closeTurn`.
+This user-reported issue belongs to the unmerged threads branch.

@@ -58,7 +58,7 @@ object ItemResults {
                     // JSON quoting preserves exact identifiers and prevents newlines from forging extra items.
                     value.toString()
                 }
-            val line = Regex("\\{([A-Za-z_][A-Za-z0-9_]{0,63})}").replace(projection.line) { fields.getValue(it.groupValues[1]) }
+            val line = Regex("\\{([A-Za-z_][A-Za-z0-9_]{0,63})\\}").replace(projection.line) { fields.getValue(it.groupValues[1]) }
             val size = line.toByteArray(Charsets.UTF_8).size + if (lines.isEmpty()) 0 else 1
             if (bytes + size > maxBytes) {
                 truncated = true

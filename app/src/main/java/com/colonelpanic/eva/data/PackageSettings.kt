@@ -3,6 +3,7 @@ package com.colonelpanic.eva.data
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import com.colonelpanic.eva.adapters.declarative.BasicCredential
 import com.colonelpanic.eva.adapters.declarative.LoadedPackage
 import com.colonelpanic.eva.adapters.declarative.PackageCodec
@@ -11,7 +12,9 @@ import com.colonelpanic.eva.adapters.declarative.configurePackage
 import com.colonelpanic.eva.adapters.declarative.httpBindings
 import com.colonelpanic.eva.capability.InteractionMode
 import com.colonelpanic.eva.capability.WaitBudget
+import com.colonelpanic.eva.capability.extensions.InstalledExtension
 import com.colonelpanic.eva.capability.extensions.PackageIdentity
+import com.colonelpanic.eva.capability.extensions.rethrowFatalExtensionFailure
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.UUID
@@ -26,23 +29,49 @@ data class PackageConfigurationEntry(
 
 class PackageSettings(
     context: Context,
+    listPackages: () -> List<String> = {
+        context.assets
+            .list("")
+            .orEmpty()
+            .toList()
+    },
+    readPackage: (String) -> String = { name -> context.assets.open(name).use { it.readBytes().toString(Charsets.UTF_8) } },
 ) {
     private val secrets = SecretStore(context)
     private val prefs = context.getSharedPreferences("eva.packages", Context.MODE_PRIVATE)
-    private val sources: Map<PackageIdentity, PackageDefinition> =
-        context.assets.list("").orEmpty().filter { it.endsWith(".json") }.associate { name ->
-            val source =
-                context.assets.open(name).use { input ->
-                    val bytes = input.readBytes()
-                    PackageCodec.decode(bytes.toString(Charsets.UTF_8))
-                }
-            val identityKey = "instance:$name"
-            val id =
-                prefs.getString(identityKey, null) ?: UUID.randomUUID().toString().also {
-                    savePreferences { putString(identityKey, it) }
-                }
-            PackageIdentity(id) to source
+    private val rejected = mutableListOf<InstalledExtension>()
+
+    fun unavailable(): List<InstalledExtension> = rejected.toList()
+
+    private fun <T> loadOrReject(
+        name: String,
+        block: () -> T,
+    ): T? =
+        try {
+            block()
+        } catch (failure: Throwable) {
+            rethrowFatalExtensionFailure(failure)
+            Log.e("EvaExtensions", "Could not load package $name", failure)
+            rejected +=
+                InstalledExtension(name, null, null, "Package could not be loaded. Update or remove this package, then restart EVA.")
+            null
         }
+
+    private val sources: Map<PackageIdentity, PackageDefinition> =
+        loadOrReject("Bundled packages", listPackages)
+            .orEmpty()
+            .filter { it.endsWith(".json") }
+            .mapNotNull { name ->
+                loadOrReject(name) {
+                    val source = PackageCodec.decode(readPackage(name))
+                    val identityKey = "instance:$name"
+                    val id =
+                        prefs.getString(identityKey, null) ?: UUID.randomUUID().toString().also {
+                            savePreferences { putString(identityKey, it) }
+                        }
+                    PackageIdentity(id) to source
+                }
+            }.toMap()
     private val mutable = MutableStateFlow(entries())
     val state = mutable.asStateFlow()
     private val defaults = MutableStateFlow(modeDefaults())

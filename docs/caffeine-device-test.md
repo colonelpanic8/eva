@@ -1,6 +1,8 @@
 # Caffeine declarative package device test
 
-Status: JVM-tested; physical-device execution is not yet verified. Caffeine needs
+Status: the first Pixel attempt (185c710) crashed before UI during regex initialization.
+The portable-regex/startup-isolation fix is JVM-tested; reinstallation and physical
+action verification are pending. Caffeine needs
 no modification, server, credentials, Shizuku or EVA-specific service.
 
 1. Install `app/build/outputs/apk/debug/app-debug.apk` (package
