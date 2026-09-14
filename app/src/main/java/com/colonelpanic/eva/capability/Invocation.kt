@@ -10,6 +10,9 @@ data class ToolProposal(
     val catalogRevision: String,
     val threadId: String? = null,
     val turnId: String? = null,
+    val interactionMode: InteractionMode = InteractionMode.TYPED,
+    val onWaiting: () -> Unit = {},
+    val waitBudget: WaitBudget? = null,
 ) {
     fun fingerprint(): String {
         val fields = listOf(capabilityId, catalogRevision) + arguments.toSortedMap().flatMap { listOf(it.key, it.value) }
@@ -76,6 +79,8 @@ data class ExecutionOutcome(
 }
 
 interface ExecutionBackend {
+    fun prepare(proposal: ToolProposal): ToolProposal = proposal
+
     /** Local authorization only, checked under the registry's durable admission lock. */
     fun dispatchRejection(): String? = null
 

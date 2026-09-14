@@ -19,6 +19,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -387,6 +388,39 @@ class ProviderSessionControllerTest {
             assertEquals(0, executions)
             controller.disconnect()
             advanceUntilIdle()
+        }
+
+    @Test
+    fun `disconnect preserves submitted work and journals its eventual receipt without sending to closed session`() =
+        runTest {
+            val submitted = kotlinx.coroutines.CompletableDeferred<Unit>()
+            val finish = kotlinx.coroutines.CompletableDeferred<Unit>()
+            val backend =
+                object : ExecutionBackend {
+                    override suspend fun unavailableReason(): String? = null
+
+                    override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome {
+                        submitted.complete(Unit)
+                        finish.await()
+                        return ExecutionOutcome(InvocationStatus.COMPLETED, "Done after disconnect")
+                    }
+                }
+            val registry = CapabilityRegistry(mapOf(definition.id to backend), listOf(definition))
+            val controller = ProviderSessionController(registry, CapabilityDispatcher(registry, repository), repository, this, { provider })
+            advanceUntilIdle()
+            controller.connect("unused")
+            advanceUntilIdle()
+            controller.submit("Run it")
+            advanceUntilIdle()
+            provider.call("pending")
+            runCurrent()
+            submitted.await()
+            controller.disconnect()
+            finish.complete(Unit)
+            advanceUntilIdle()
+            assertEquals(InvocationStatus.COMPLETED, repository.history().single().status)
+            assertEquals("Done after disconnect", repository.history().single().message)
+            assertEquals(0, provider.results.size)
         }
 
     private class FakeProvider :

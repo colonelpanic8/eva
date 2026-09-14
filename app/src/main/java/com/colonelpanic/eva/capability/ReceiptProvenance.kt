@@ -21,8 +21,28 @@ data class CapabilitySource(
 data class ReceiptProvenance(
     val source: CapabilitySource,
     val bindingRevision: String,
+    val waitBudget: WaitBudget? = null,
 ) {
-    fun toJson() = JsonObject(mapOf("source" to source.toJson(), "bindingRevision" to JsonPrimitive(bindingRevision)))
+    fun toJson() =
+        JsonObject(
+            buildMap {
+                put("source", source.toJson())
+                put("bindingRevision", JsonPrimitive(bindingRevision))
+                waitBudget?.let { budget ->
+                    put(
+                        "waitBudget",
+                        JsonObject(
+                            buildMap {
+                                put("mode", JsonPrimitive(budget.mode.name))
+                                put("modeDefaultMillis", JsonPrimitive(budget.modeDefaultMillis))
+                                budget.capabilityDefaultMillis?.let { put("capabilityDefaultMillis", JsonPrimitive(it)) }
+                                budget.instanceOverrideMillis?.let { put("instanceOverrideMillis", JsonPrimitive(it)) }
+                            },
+                        ),
+                    )
+                }
+            },
+        )
 
     companion object {
         fun fromJson(value: JsonObject): ReceiptProvenance {
@@ -30,6 +50,17 @@ data class ReceiptProvenance(
             return ReceiptProvenance(
                 CapabilitySource(source.getValue("id").jsonPrimitive.content, source.getValue("title").jsonPrimitive.content),
                 value.getValue("bindingRevision").jsonPrimitive.content,
+                (value["waitBudget"] as? JsonObject)?.let { budget ->
+                    WaitBudget(
+                        InteractionMode.valueOf(budget.getValue("mode").jsonPrimitive.content),
+                        budget
+                            .getValue("modeDefaultMillis")
+                            .jsonPrimitive.content
+                            .toLong(),
+                        budget["capabilityDefaultMillis"]?.jsonPrimitive?.content?.toLong(),
+                        budget["instanceOverrideMillis"]?.jsonPrimitive?.content?.toLong(),
+                    )
+                },
             )
         }
     }
@@ -37,7 +68,13 @@ data class ReceiptProvenance(
 
 fun InvocationRecord.displayMessage(): String =
     provenance?.let {
-        "${it.source.title} (${it.source.id}) · $status\n$message"
+        "${it.source.title} (${it.source.id}) · $status\n$message" +
+            (
+                it.waitBudget
+                    ?.receipt()
+                    ?.takeUnless { budget -> message.contains(budget) }
+                    ?.let { budget -> "\n$budget" } ?: ""
+            )
     } ?: message
 
 fun CapabilityDefinition.modelDescription(): String =

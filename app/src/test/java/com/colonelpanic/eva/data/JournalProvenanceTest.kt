@@ -24,7 +24,13 @@ class JournalProvenanceTest {
         runBlocking {
             val context = RuntimeEnvironment.getApplication()
             val name = "provenance-${UUID.randomUUID()}.db"
-            val source = ReceiptProvenance(CapabilitySource("user0:fixture/.Service:signer", "Original provider"), "approved-digest")
+            val source =
+                ReceiptProvenance(
+                    CapabilitySource("user0:fixture/.Service:signer", "Original provider"),
+                    "approved-digest",
+                    com.colonelpanic.eva.capability
+                        .WaitBudget(com.colonelpanic.eva.capability.InteractionMode.VOICE, 20_000, 30_000, 45_000),
+                )
             val record =
                 InvocationRecord(
                     "call",
@@ -54,6 +60,7 @@ class JournalProvenanceTest {
                     assertEquals("Original action", recovered.title)
                     assertEquals("fp", recovered.fingerprint)
                     assertTrue(recovered.displayMessage().contains("Original provider"))
+                    assertTrue(recovered.displayMessage().contains("extension=45000"))
                 }
             } finally {
                 context.deleteDatabase(name)

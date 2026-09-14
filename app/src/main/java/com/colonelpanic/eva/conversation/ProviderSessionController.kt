@@ -357,7 +357,6 @@ class ProviderSessionController(
                         append(ConversationEntry("boundary-end:${it.connectionEpoch}", "", "Session ended", EntryStatus.SESSION))
                     }
                     if (thisAttempt == attempt) {
-                        actionJobs.toList().forEach { it.cancel() }
                         session = null
                         media?.close()
                         media = null
@@ -393,7 +392,6 @@ class ProviderSessionController(
         connectionJob?.cancel()
         media?.close()
         media = null
-        actionJobs.toList().forEach { it.cancel() }
         session = null
         finishInput("Disconnected before the response completed.")
         mutableState.update {
@@ -477,7 +475,33 @@ class ProviderSessionController(
         val argumentError = if (arguments.values.any { it == null }) "This action binding requires scalar arguments." else null
         val id = "provider:${event.call.providerSessionId}:${event.call.callId}"
         val request = input.text.ifBlank { lastUserTranscript ?: VOICE_REQUEST }
-        val proposal = ToolProposal(id, event.capabilityId, arguments.mapValues { it.value.orEmpty() }, request, registrySnapshot.revision)
+        val mode =
+            if (mutableState.value.voiceMode) {
+                com.colonelpanic.eva.capability.InteractionMode.VOICE
+            } else {
+                com.colonelpanic.eva.capability.InteractionMode.TYPED
+            }
+        val proposal =
+            ToolProposal(
+                id,
+                event.capabilityId,
+                arguments.mapValues { it.value.orEmpty() },
+                request,
+                registrySnapshot.revision,
+                interactionMode = mode,
+                onWaiting = {
+                    upsert(
+                        ConversationEntry(
+                            id,
+                            "",
+                            "Still waiting for the action…",
+                            EntryStatus.PENDING,
+                            actionTitle = definition?.title,
+                            parentId = input.id,
+                        ),
+                    )
+                },
+            )
 
         fun record(entry: ConversationEntry) = upsert(entry.copy(request = "", actionTitle = definition?.title, parentId = input.id))
         record(ConversationEntry(id, "", "Preparing action…", EntryStatus.PENDING))

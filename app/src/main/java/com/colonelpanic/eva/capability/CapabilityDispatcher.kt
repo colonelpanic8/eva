@@ -14,21 +14,22 @@ class CapabilityDispatcher(
     private val repository: InvocationRepository,
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) {
-    private val submissions = Mutex()
+    private val submissions = CallLocks()
     val catalogRevision: String get() = registry.snapshot.revision
 
     suspend fun execute(
         proposal: ToolProposal,
         rejection: String? = null,
     ): InvocationRecord =
-        submissions.withLock {
-            val snapshot = proposal.copy(arguments = Collections.unmodifiableMap(proposal.arguments.toMap()))
+        submissions.withLock(proposal.callId) {
+            var snapshot = proposal.copy(arguments = Collections.unmodifiableMap(proposal.arguments.toMap()))
             if (proposal.callId.isBlank() || proposal.callId.length > 256 || proposal.request.length > 1000) {
                 throw ProposalRejectedException("The request has invalid metadata. No app was opened.")
             }
             val catalog = registry.snapshot
             val validationError = rejection ?: catalog.validationError(snapshot)
             val definition = catalog.takeIf { it.revision == proposal.catalogRevision }?.definitions?.get(proposal.capabilityId)
+            if (validationError == null) snapshot = checkNotNull(catalog.resolve(snapshot)).prepare(snapshot)
             val initial =
                 InvocationRecord(
                     callId = proposal.callId,
@@ -47,6 +48,7 @@ class CapabilityDispatcher(
                             ReceiptProvenance(
                                 it,
                                 catalog.bindingRevisions.getValue(proposal.capabilityId),
+                                snapshot.waitBudget,
                             )
                         },
                     threadId = proposal.threadId,
@@ -129,5 +131,28 @@ class CapabilityDispatcher(
 
     companion object {
         const val UNKNOWN_MESSAGE = "The action outcome is unknown. Check the other app before trying again."
+    }
+}
+
+private class CallLocks {
+    private data class Entry(
+        val mutex: Mutex = Mutex(),
+        var users: Int = 0,
+    )
+
+    private val locks = mutableMapOf<String, Entry>()
+
+    suspend fun <T> withLock(
+        id: String,
+        action: suspend () -> T,
+    ): T {
+        val entry = synchronized(locks) { locks.getOrPut(id) { Entry() }.also { it.users++ } }
+        try {
+            return entry.mutex.withLock { action() }
+        } finally {
+            synchronized(locks) {
+                if (--entry.users == 0) locks.remove(id)
+            }
+        }
     }
 }
