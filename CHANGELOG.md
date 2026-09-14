@@ -2,6 +2,16 @@
 
 All notable changes to EVA will be documented here.
 
+## [Unreleased]
+
+### Added
+
+- Spotify queueing through the Web API. Settings accepts a Client ID from the user's Spotify developer app and connects with PKCE; queueing requires Spotify Premium and an available playback device.
+
+### Fixed
+
+- "Play X on Spotify" now plays instead of stopping at Spotify's search screen. Spotify turns EVA away as a media browser client, and answers the standard play-by-name intent with a results page rather than playback. EVA now asks the app's own media session to play the words first when it has one, which needs no screen, and after falling back to the intent it asks the session the intent brought up to play them. Confirmation waits for the track to change rather than reporting whatever was already playing.
+
 ## [0.15.0] - 2026-09-14
 
 ### Added

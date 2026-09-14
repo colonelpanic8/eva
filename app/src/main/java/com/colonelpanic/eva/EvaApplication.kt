@@ -1,6 +1,7 @@
 package com.colonelpanic.eva
 
 import android.app.Application
+import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
 import androidx.core.content.pm.PackageInfoCompat
@@ -16,6 +17,7 @@ import com.colonelpanic.eva.adapters.android.IntentBackend
 import com.colonelpanic.eva.adapters.android.MapIntentBackend
 import com.colonelpanic.eva.adapters.android.MediaControlBackend
 import com.colonelpanic.eva.adapters.android.MediaPlayBackend
+import com.colonelpanic.eva.adapters.android.MediaQueueBackend
 import com.colonelpanic.eva.adapters.android.MessageIntentBackend
 import com.colonelpanic.eva.adapters.android.MessageTargets
 import com.colonelpanic.eva.adapters.android.MessagingReadBackend
@@ -39,6 +41,7 @@ import com.colonelpanic.eva.data.AppearanceSettings
 import com.colonelpanic.eva.data.ChatGptAccountStore
 import com.colonelpanic.eva.data.ChosenNumbers
 import com.colonelpanic.eva.data.OpenAiSettings
+import com.colonelpanic.eva.data.SpotifyAccountStore
 import com.colonelpanic.eva.data.SqliteInvocationRepository
 import com.colonelpanic.eva.providers.BrokerConversationProvider
 import com.colonelpanic.eva.providers.BrokerEndpoint
@@ -50,6 +53,9 @@ import com.colonelpanic.eva.providers.openai.OpenAiModelCatalog
 import com.colonelpanic.eva.providers.openai.OpenAiRealtimeProvider
 import com.colonelpanic.eva.providers.openai.OpenAiResponsesProvider
 import com.colonelpanic.eva.providers.openai.SubscriptionAccess
+import com.colonelpanic.eva.providers.spotify.SpotifyApi
+import com.colonelpanic.eva.providers.spotify.SpotifyConnect
+import com.colonelpanic.eva.providers.spotify.SpotifyLogin
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -90,6 +96,10 @@ class EvaApplication :
     val appearance by lazy { AppearanceSettings(this) }
     val chatGpt by lazy { ChatGptAccountStore(this) }
     val signIn by lazy { ChatGptSignIn(save = chatGpt::save) }
+    private val spotifyLogin by lazy { SpotifyLogin() }
+    val spotify by lazy { SpotifyAccountStore(this, spotifyLogin) }
+    val spotifyConnect by lazy { SpotifyConnect(spotifyLogin, spotify::save) }
+    private val spotifyApi by lazy { SpotifyApi(spotify::accessToken) }
     private var signInJob: Job? = null
     private val catalog = OpenAiModelCatalog()
     private val mutableModels = MutableStateFlow<Map<ModelKind, List<String>>>(emptyMap())
@@ -150,6 +160,10 @@ class EvaApplication :
         refreshModels()
     }
 
+    fun completeSpotifyRedirect(uri: Uri) {
+        scope.launch { spotifyConnect.complete(uri) }
+    }
+
     val registry by lazy {
         CapabilityRegistry(
             buildMap {
@@ -207,6 +221,11 @@ class EvaApplication :
                                 intent("Asked a music app to play that.", "No app on this phone offers to play a request by name.") {
                                     NativeIntents.playMedia(this@EvaApplication, it)
                                 },
+                            ),
+                        CapabilityRegistry.MEDIA_QUEUE to
+                            MediaQueueBackend(
+                                spotifyApi,
+                                connected = { spotify.account.value != null && spotify.clientId.value != null },
                             ),
                     ),
                 )

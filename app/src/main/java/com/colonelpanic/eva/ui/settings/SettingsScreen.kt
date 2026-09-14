@@ -39,6 +39,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.colonelpanic.eva.providers.openai.OpenAiModels
 import com.colonelpanic.eva.providers.openai.SignInState
+import com.colonelpanic.eva.providers.spotify.SpotifyConnectState
 import com.colonelpanic.eva.ui.MenuButton
 import com.colonelpanic.eva.ui.ModelPicker
 import com.colonelpanic.eva.ui.ReasoningEffortPicker
@@ -84,6 +85,8 @@ fun SettingsScreen(
             AssistantSection(state, actions)
             SettingsDivider()
             MediaSection(state, actions)
+            SettingsDivider()
+            SpotifySection(state, actions)
             SettingsDivider()
             AppearanceSection(state, actions)
             Spacer(Modifier.height(24.dp))
@@ -229,6 +232,80 @@ private fun MediaSection(
                 },
         ) {
             TextButton(onClick = actions.onOpenMediaControlSettings) { Text("Change") }
+        }
+    }
+}
+
+@Composable
+private fun SpotifySection(
+    state: SettingsUiState,
+    actions: SettingsActions,
+) {
+    val uriHandler = LocalUriHandler.current
+    var clientId by remember(state.spotifyClientId) { mutableStateOf(state.spotifyClientId.orEmpty()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    SettingsSection("Spotify") {
+        SettingsBlock {
+            Text(
+                "Queueing songs goes through Spotify's own API, which needs a Client ID from a free Spotify " +
+                    "developer app. Create one at developer.spotify.com/dashboard, add the redirect URI " +
+                    "eva://spotify, and paste the Client ID here.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+                value = clientId,
+                onValueChange = {
+                    clientId = it
+                    error = null
+                },
+                label = { Text("Spotify Client ID") },
+                supportingText = error?.let { message -> { Text(message) } },
+                isError = error != null,
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedButton(
+                onClick = { error = actions.onSaveSpotifyClientId(clientId) },
+                enabled = clientId.trim() != state.spotifyClientId.orEmpty(),
+            ) { Text("Save") }
+        }
+        if (state.spotifyAccount != null) {
+            SettingsRow(title = state.spotifyAccount, supporting = "Connected") {
+                TextButton(onClick = actions.onDisconnectSpotify) { Text("Disconnect") }
+            }
+            if (state.spotifyPremium == false) {
+                SettingsBlock {
+                    Text(
+                        "Spotify only lets Premium accounts queue songs.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        } else if (state.spotifyClientId != null) {
+            SettingsBlock {
+                when (val connect = state.spotifyConnect) {
+                    is SpotifyConnectState.Idle -> {
+                        Button(onClick = { actions.onConnectSpotify()?.let(uriHandler::openUri) }) {
+                            Text("Connect Spotify")
+                        }
+                    }
+
+                    is SpotifyConnectState.Waiting -> {
+                        Text("Finish signing in with Spotify in your browser.")
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { uriHandler.openUri(connect.authorizationUrl) }) { Text("Open sign-in page") }
+                            TextButton(onClick = actions.onCancelSpotifyConnect) { Text("Cancel") }
+                        }
+                    }
+
+                    is SpotifyConnectState.Failed -> {
+                        Text(connect.message, color = MaterialTheme.colorScheme.error)
+                        Button(onClick = { actions.onConnectSpotify()?.let(uriHandler::openUri) }) { Text("Retry") }
+                    }
+                }
+            }
         }
     }
 }

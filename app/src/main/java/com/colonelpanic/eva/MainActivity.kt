@@ -156,6 +156,9 @@ class MainActivity : ComponentActivity() {
         val models by eva.availableModels.collectAsStateWithLifecycle()
         val account by eva.chatGpt.account.collectAsStateWithLifecycle()
         val signIn by eva.signIn.state.collectAsStateWithLifecycle()
+        val spotifyClientId by eva.spotify.clientId.collectAsStateWithLifecycle()
+        val spotifyAccount by eva.spotify.account.collectAsStateWithLifecycle()
+        val spotifyConnect by eva.spotifyConnect.state.collectAsStateWithLifecycle()
         return SettingsUiState(
             account = account?.description,
             signIn = signIn,
@@ -169,6 +172,10 @@ class MainActivity : ComponentActivity() {
             voiceLookupRetries = voiceLookupRetries,
             isDeviceAssistant = deviceAssistant,
             canSeeMediaSessions = mediaControlAccess,
+            spotifyClientId = spotifyClientId,
+            spotifyAccount = spotifyAccount?.description,
+            spotifyPremium = spotifyAccount?.product.equals("premium", ignoreCase = true),
+            spotifyConnect = spotifyConnect,
             dynamicColor = dynamicColor,
         )
     }
@@ -201,6 +208,18 @@ class MainActivity : ComponentActivity() {
                 onVoiceLookupRetriesChange = settings::saveVoiceLookupRetries,
                 onOpenAssistantSettings = ::openAssistantSettings,
                 onOpenMediaControlSettings = ::openMediaControlSettings,
+                onSaveSpotifyClientId = { clientId -> save { eva.spotify.saveClientId(clientId) } },
+                onConnectSpotify = {
+                    eva.spotifyConnect.begin(
+                        eva.spotify.clientId.value
+                            .orEmpty(),
+                    )
+                },
+                onCancelSpotifyConnect = eva.spotifyConnect::cancel,
+                onDisconnectSpotify = {
+                    eva.spotifyConnect.cancel()
+                    eva.spotify.clear()
+                },
                 onDynamicColorChange = eva.appearance::saveDynamicColor,
             )
         }

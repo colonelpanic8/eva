@@ -106,6 +106,24 @@
                 android:resource="@mipmap/ic_launcher" />
         </activity>
 
+        <!-- Receives Spotify's browser redirect and returns the existing EVA task to settings. -->
+        <activity
+            android:name=".SpotifyRedirectActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data
+                    android:host="spotify"
+                    android:scheme="eva" />
+            </intent-filter>
+        </activity>
+
         <!-- Carries EVA's notification access, which is the only grant an unprivileged app can hold
              that lets MediaSessionManager reveal other apps' media sessions. It overrides nothing:
              notifications arrive while the grant is on and are ignored. Without the grant, media

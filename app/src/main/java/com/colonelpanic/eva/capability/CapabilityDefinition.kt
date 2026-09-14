@@ -315,6 +315,31 @@ object BundledCapabilities {
                 }
             },
             CapabilityDefinition(
+                CapabilityRegistry.MEDIA_QUEUE,
+                "Queue something next",
+                "Add a song to the queue in Spotify so it plays after what is playing now, without interrupting it. " +
+                    "Use this when the user says queue, play next, or add to the queue; use the play action when they " +
+                    "want it to start now. Needs the user's Spotify connection from EVA's settings; the reply says so " +
+                    "when it is missing. EVA searches Spotify for the words and queues the top match, and reports the " +
+                    "track it queued.",
+                schema(
+                    """
+                {"type":"object","properties":{
+                "query":{"type":"string","minLength":1,"maxLength":300,
+                "description":"The song, as the user would say it, with the artist when known"},
+                "app":{"type":"string","minLength":1,"maxLength":100,
+                "description":"Which app; only Spotify is supported"}},
+                "required":["query"],"additionalProperties":false}
+            """,
+                ),
+            ) { args ->
+                if (args.getValue("query").isBlank() || args.getValue("query").any(Char::isISOControl)) {
+                    "Say what to queue on one line."
+                } else {
+                    null
+                }
+            },
+            CapabilityDefinition(
                 CapabilityRegistry.MEDIA_VOLUME,
                 "Change the media volume",
                 "Set or step this phone's media volume. It moves music and video only, not the ringer, alarms, " +

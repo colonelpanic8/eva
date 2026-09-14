@@ -30,15 +30,23 @@ to a broker is still not implemented in the Android app.
 Media control works through Android's media session rather than through any
 app-specific integration: pausing, resuming, skipping, stopping, reading what is
 playing, and media volume reach any app that publishes transport controls.
-Starting something by name prefers the media browser interface Android Auto uses,
-which starts a cold app and reports what actually began playing, and falls back to
-the documented play-from-search intent for an app that rejects EVA as a client.
+Starting something by name asks the app's own media session when it has one,
+the same request a car's voice button makes, then the media browser interface
+Android Auto uses to start a cold app, and finally the documented play-from-search
+intent for an app that rejects EVA as a client; an app like Spotify that answers
+that intent with a results screen is then asked through the session it brought
+up, and EVA reports what actually began playing.
 Seeing what is playing, choosing between two playing apps, and confirming a
 command took effect need notification access, which the settings screen explains
 and opens; without it the media button still carries play, pause, and skip
 unconfirmed. Media sessions answer from the background, so these are the first
-capabilities that work with EVA off screen. None of this has been exercised
-against a real media app on a device yet.
+capabilities that work with EVA off screen. Beyond the report that Spotify
+answers the play-by-name intent with a search screen, none of this has been
+exercised against a real media app on a device yet.
+
+Queue requests use an optional user-configured Spotify developer Client ID and
+PKCE connection to search Spotify and add the top track through its Web API;
+Spotify requires Premium and an available playback device for this operation.
 
 EVA now registers a voice interaction service, so it can be selected as the
 phone's digital assistant rather than only answering an assist intent. The

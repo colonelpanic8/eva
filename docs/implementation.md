@@ -86,35 +86,56 @@ returns `NOT_EXECUTED` rather than a claimed change. EVA's own voice runs on
 
 ### Starting something by name
 
-Starting content that is not already loaded is a different problem, and the media
-session API cannot do it: a session exists only once an app is running, so
-"play Black Hole Sun on Spotify" from cold has nothing to talk to.
-`eva.android.media.play` uses `MediaPlayBackend`, which tries two general
+Starting content that is not already loaded is a different problem, and a
+media session alone cannot do it: a session exists only once an app is running,
+so "play Black Hole Sun on Spotify" from cold has nothing to talk to.
+`eva.android.media.play` uses `MediaPlayBackend`, which tries three general
 mechanisms in order.
 
-`MediaBrowserService` is preferred. It is the platform interface Android Auto and
-Wear OS use to play content in arbitrary media apps: connecting starts the app's
-media service, and the session it hands back accepts
-`MediaController.TransportControls.playFromSearch`. It targets one app exactly,
-needs no screen, and leaves a session EVA can read back, so the outcome can say
-what actually started rather than that a request was sent. The framework
-`android.media.browse.MediaBrowser` is used directly; no media-compat dependency
-was added. Connection is bounded at four seconds and the browser is held briefly
-before disconnecting, because an app may stop a media service that has no clients
-and nothing playing yet. Disconnecting does not stop playback: the session
-outlives the browser connection that revealed it.
+A session the app already holds comes first. `MediaController.TransportControls.playFromSearch`
+on it is the same request a car's voice button makes, and it reaches an app that
+refuses EVA as a media browser client, because the controller came from the
+notification-listener grant rather than from the app's own allow list. Named,
+the session must belong to that app; unnamed, a session that declares
+`ACTION_PLAY_FROM_SEARCH` is the app the user is already using, so it is asked
+rather than a chooser. This works from a locked phone. Only a session that
+declares the action is used this way, so an app that does not take searches
+falls through instead of silently ignoring the request.
+
+With no such session, `MediaBrowserService` is tried for a named app. It is the
+platform interface Android Auto and Wear OS use to play content in arbitrary
+media apps: connecting starts the app's media service, and the session it hands
+back accepts the same `playFromSearch`. It needs no screen and leaves a session
+EVA can read back. The framework `android.media.browse.MediaBrowser` is used
+directly; no media-compat dependency was added. Connection is bounded at four
+seconds and the browser is held briefly before disconnecting, because an app may
+stop a media service that has no clients and nothing playing yet. Disconnecting
+does not stop playback: the session outlives the browser connection that
+revealed it.
 
 The app decides in `onGetRoot` whether to accept the caller, and many allow-list
-Android Auto, Wear OS, and Google's assistant by package and signature. A refusal
-is therefore an expected answer and not a failure. `MediaPlayBackend` falls back
-to `MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH`, the documented intent any
-app can register, which needs EVA on screen to launch. When the browser refused
-and no screen is available, the outcome states both facts rather than one.
+Android Auto, Wear OS, and Google's assistant by package and signature; Spotify
+is one of them. A refusal is therefore an expected answer and not a failure.
+`MediaPlayBackend` falls back to `MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH`,
+the documented intent any app can register, which needs EVA on screen to launch.
+When the browser refused and no screen is available, the outcome states both
+facts rather than one.
 
-With no app named, an app already holding a session that declares
-`ACTION_PLAY_FROM_SEARCH` is preferred, because that is the app the user is
-already using and it works from a locked phone. Anything less certain is left to
-the intent, where the phone's own chooser applies.
+Spotify answers that intent with a results screen and does not play, which is
+what made "play X on Spotify" from cold end at a search page. The intent still
+brings the app up, and with it a session, so after the intent has been sent the
+backend waits, reads the sessions again, and asks the session that the intent
+produced to play the words after all. Named, that is whichever session now
+carries the app's name; unnamed, only a session that was not there before is
+attributed to the intent. A session the intent has already started playing is
+not asked twice, and a session that does not declare `ACTION_PLAY_FROM_SEARCH`
+is left alone, so the intent's own outcome stands for apps that do play from it.
+
+Confirmation reads the session back up to three times, a settle apart, and stops
+as soon as it shows something new: playing where it was paused, or a different
+title. A track the session already showed before the request is not evidence
+that the request matched, so "still playing the old song" is reported as unknown
+rather than as success.
 
 This is the part of Google's assistant that is not reproducible in full. Its
 "play X on Y" also rests on App Actions built-in intents (`actions.intent.PLAY_MEDIA`),
@@ -124,10 +145,40 @@ on `MEDIA_CONTENT_CONTROL`, which is privileged. What is left to a third-party
 assistant is the browser path plus the intent, which is what EVA does.
 
 JVM tests cover routing, toggle resolution, the confirmation rules, the ungranted
-fallback, the refused volume change, the media-service refusal falling back to the
-intent, and target selection with and without a named app. None of the media
-behaviour has been exercised against a real media app on a device yet, so which
-apps accept EVA as a `MediaBrowserService` client is unmeasured.
+fallback, the refused volume change, a live session being asked ahead of the
+browser, the media-service refusal falling back to the intent, the intent being
+followed up through the session it brought up and not being followed up when it
+already played, and target selection with and without a named app. That "play X on
+Spotify" ended at Spotify's search screen was reported from a device, which is
+the intent path; that Spotify's session honours `playFromSearch` from EVA's
+controller has not been confirmed on a device yet.
+
+### Queueing on Spotify
+
+`eva.android.media.queue` uses Spotify's Web API because Android's generic media
+session has no play-from-search equivalent for queueing, and adding a session
+queue item requires an app-specific media ID that EVA cannot discover through
+the framework API. EVA searches Spotify for the requested words, chooses the
+top track, and adds its Spotify URI after the current track without interrupting
+playback.
+
+The optional connection uses OAuth Authorization Code with PKCE and no client
+secret. The user supplies the Client ID from their own Spotify developer app,
+whose redirect URI must include `eva://spotify`. EVA generates a one-time
+verifier, S256 challenge, and state; `SpotifyRedirectActivity` receives the
+browsable redirect, verifies the state through the pending coordinator, trades
+the code for tokens, fetches the account profile, and returns the existing EVA
+task to settings. The Client ID stays in ordinary settings preferences. Tokens
+and the profile are serialized in `SecretStore`, and an expiring access token is
+refreshed under a mutex.
+
+Spotify restricts queue changes to Premium accounts. It also needs an available
+playback device: EVA prefers the active device, uses the only device when there
+is exactly one, and otherwise lets Spotify select or report that nothing is
+active. JVM tests cover PKCE, redirect-state checking, token-refresh timing,
+queue routing, device selection, and user-facing failures. This flow has not
+been exercised against Spotify on a device, including the developer dashboard's
+current redirect-URI acceptance rules.
 
 ## Sending a text message
 
