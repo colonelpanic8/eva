@@ -11,6 +11,35 @@ transcript containing 37, an assistant transcript containing 95, the entire
 fixture sent, and nonzero decoded output PCM. It runs with an empty tool catalog.
 Normal instrumentation skips this test unless both explicit arguments are set.
 
+## Direct subscription voice on a signed-in phone
+
+Sign in to ChatGPT in the debug app, build and install the debug application and
+test APK, and push the synthetic arithmetic fixture as shown below. Run the
+same native test with `evaSubscriptionVoice` instead of `evaBrokerLink`:
+
+```sh
+direnv exec . adb -s "$EVA_TEST_DEVICE" shell am instrument -w \
+  -e class com.colonelpanic.eva.providers.NativeVoiceLiveTest \
+  -e evaSubscriptionVoice true \
+  -e evaSpeechPcmPath /data/local/tmp/eva-native-speech.pcm \
+  com.colonelpanic.eva.debug.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+This uses the phone's encrypted account store and production Realtime provider;
+no broker, API key, or exported subscription token is needed. Do not supply both
+route arguments. On 2026-09-14 this passed on a Pixel 11 Pro Fold: 467,332
+synthetic input bytes, the expected question and arithmetic answer, and 30,969
+nonzero decoded output bytes. The direct subscription action test also passed:
+timer handoff, spoken confirmation, and a connection that survived Clock taking
+the foreground. See the [evidence record](../experiments/voice-poc/evidence/2026-09-14-direct-subscription-voice.json).
+It verifies synthesized speech, not acoustic quality.
+
+The failure preceding this fix was caused by the transcription option
+`delay: "high"`: otherwise identical subscription signaling requests succeeded
+without it. `gpt-transcribe`, language hints, and contact keyword hints remain
+enabled. Subscription access is evaluated by the service instead of a local
+blanket rejection.
+
 ## Run on a dedicated emulator
 
 Start a fresh broker using the instructions in
@@ -115,8 +144,9 @@ no-op while history is loading, which is why the UI disables the button then.
 ## Direct OpenAI voice action test
 
 `OpenAiVoiceActionLiveTest` is the workstation-free variant: no broker, the
-phone opens its own Realtime session. Supply the key as an instrumentation
-argument; it is not read from disk.
+phone opens its own Realtime session. Use `-e evaSubscriptionVoice true` with a
+saved ChatGPT sign-in, or supply an API key as an instrumentation argument.
+The fixture asks Clock to start a real three-minute timer.
 
 ```sh
 adb -s DEVICE shell am instrument -w \

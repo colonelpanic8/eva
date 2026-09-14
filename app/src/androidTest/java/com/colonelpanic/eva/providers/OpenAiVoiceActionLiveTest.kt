@@ -25,6 +25,7 @@ import com.colonelpanic.eva.conversation.ProviderStatus
 import com.colonelpanic.eva.data.SqliteInvocationRepository
 import com.colonelpanic.eva.providers.openai.ApiKeyAccess
 import com.colonelpanic.eva.providers.openai.OpenAiRealtimeProvider
+import com.colonelpanic.eva.providers.openai.SubscriptionAccess
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -41,7 +42,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Opt-in live test of the workstation-free voice path: the phone opens its own
- * OpenAI Realtime session with an API key supplied as an instrumentation argument,
+ * OpenAI Realtime session with its saved subscription or an explicit API key,
  * synthetic speech asks for a timer, and the real backend hands off to Clock.
  */
 @RunWith(AndroidJUnit4::class)
@@ -51,8 +52,10 @@ class OpenAiVoiceActionLiveTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val args = InstrumentationRegistry.getArguments()
         val apiKey = args.getString("evaOpenAiKey")
+        val subscription = args.getString("evaSubscriptionVoice") == "true"
         val path = args.getString("evaSpeechPcmPath")
-        assumeTrue("Requires evaOpenAiKey and a synthetic PCM fixture", !apiKey.isNullOrBlank() && path != null)
+        assumeTrue("Requires an explicit voice route and synthetic PCM fixture", (subscription || !apiKey.isNullOrBlank()) && path != null)
+        require(!(subscription && !apiKey.isNullOrBlank()))
         require(checkNotNull(path).matches(Regex("/data/local/tmp/eva-[a-z0-9-]+\\.pcm")))
         val fixture =
             instrumentation.uiAutomation.executeShellCommand("cat $path").use {
@@ -64,6 +67,13 @@ class OpenAiVoiceActionLiveTest {
         val context = instrumentation.targetContext
         instrumentation.uiAutomation.grantRuntimePermission(context.packageName, MicrophonePermission.PERMISSION)
         val app = context.applicationContext as EvaApplication
+        val access =
+            if (subscription) {
+                check(app.chatGpt.signedIn) { "The debug app needs a ChatGPT sign-in for this test." }
+                SubscriptionAccess(app.chatGpt, "1.0.0")
+            } else {
+                ApiKeyAccess(checkNotNull(apiKey))
+            }
         ActivityScenario.launch(MainActivity::class.java).use {
             runBlocking(Dispatchers.Main.immediate) {
                 val armed = AtomicBoolean(false)
@@ -102,16 +112,16 @@ class OpenAiVoiceActionLiveTest {
                         repository = repository,
                         scope = this,
                         providerFactory = { error("Typed path is not exercised here") },
-                        mediaFactory = { mode ->
+                        mediaFactory = {
                             RealtimeMediaController(
-                                RealtimeMediaConfig(mode),
-                                PeerLinkFactory { linkMode -> WebRtcPeerLink(factory, linkMode) },
+                                RealtimeMediaConfig(),
+                                PeerLinkFactory { WebRtcPeerLink(factory) },
                                 AndroidAudioRoute(audioManager),
                                 { true },
                                 this,
                             )
                         },
-                        voiceProviderFactory = { _, audio -> OpenAiRealtimeProvider(ApiKeyAccess(checkNotNull(apiKey)), audio) },
+                        voiceProviderFactory = { _, audio -> OpenAiRealtimeProvider(access, audio) },
                     )
                 VoiceSessionService.start(context)
                 try {
@@ -156,6 +166,7 @@ class OpenAiVoiceActionLiveTest {
                                 "evaDirectVoiceEvidence",
                                 "PASS direct OpenAI session, spoken request, timer handoff, spoken confirmation",
                             )
+                            putString("route", if (subscription) "direct-subscription" else "api-key")
                             putString("journalRequest", record.request)
                             putString("handoffMessage", handoff.response)
                             putString("spokenConfirmation", spoken.response)

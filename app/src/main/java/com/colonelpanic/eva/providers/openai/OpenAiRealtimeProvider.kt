@@ -28,7 +28,9 @@ import kotlinx.serialization.json.put
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.IOException
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 
 /**
  * Direct WebRTC session with the OpenAI Realtime API. The phone posts its own SDP offer
@@ -39,7 +41,7 @@ class OpenAiRealtimeProvider(
     private val access: OpenAiAccess,
     private val media: RealtimeMediaSession,
     private val model: String = OpenAiModels.REALTIME,
-    private val client: OkHttpClient = OkHttpClient(),
+    private val client: OkHttpClient = realtimeCallClient(),
     private val voice: String = "marin",
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ConversationProvider {
@@ -53,24 +55,7 @@ class OpenAiRealtimeProvider(
         )
         request.catalog.tools.forEach { ToolSchema.check(it.inputSchema) }
         val named = toolNames(request.catalog.tools)
-        val session =
-            buildJsonObject {
-                put("type", "realtime")
-                put("model", model)
-                put("instructions", request.instructions)
-                put("output_modalities", JsonArray(listOf(JsonPrimitive("audio"))))
-                put(
-                    "audio",
-                    buildJsonObject {
-                        put("input", buildJsonObject { put("transcription", transcription(request.keywords)) })
-                        put("output", buildJsonObject { put("voice", voice) })
-                    },
-                )
-                if (named.isNotEmpty()) {
-                    put("tools", functionTools(named))
-                    put("tool_choice", "auto")
-                }
-            }
+        val session = publicApiSession(model, request, named, voice)
         val offer = media.createOffer()
         val answer =
             withContext(ioDispatcher) {
@@ -81,29 +66,44 @@ class OpenAiRealtimeProvider(
                         .addFormDataPart("sdp", offer)
                         .addFormDataPart("session", session.toString())
                         .build()
-                val http =
-                    access
-                        .authorize(Request.Builder().url(access.realtimeCallsUrl))
-                        .post(body)
-                        .build()
-                client.newCall(http).execute().use { response ->
-                    val text = response.body.string()
-                    check(response.isSuccessful) { openAiErrorMessage(response.code, text, "the voice session") }
+                val http = access.authorize(Request.Builder().url(access.realtimeCallsUrl)).post(body).build()
+                val response =
+                    try {
+                        client.newCall(http).execute()
+                    } catch (error: IOException) {
+                        // A bare socket message names nothing the person can act on.
+                        throw IllegalStateException(
+                            "EVA could not complete the voice session request to ${http.url.host}: " +
+                                "${error.message ?: error::class.simpleName}.",
+                            error,
+                        )
+                    }
+                response.use {
+                    val text = it.body.string()
+                    check(it.isSuccessful) { openAiErrorMessage(it.code, text, "the voice session") }
                     check(text.startsWith("v=")) { "OpenAI returned an unexpected answer." }
                     text
                 }
             }
         media.acceptAnswer(answer)
         withTimeout(30_000) { media.eventsReady.first { it } }
-        return OpenAiRealtimeSession(media, named, request.catalog.revision, model)
+        return OpenAiRealtimeSession(media, named, request.catalog.revision, model, access.label)
     }
 }
+
+/** A stalled negotiation should surface quickly rather than sit on a default socket timeout. */
+private fun realtimeCallClient(): OkHttpClient =
+    OkHttpClient
+        .Builder()
+        .callTimeout(20, TimeUnit.SECONDS)
+        .build()
 
 private class OpenAiRealtimeSession(
     private val media: RealtimeMediaSession,
     private val tools: Map<String, ProviderToolDefinition>,
     private val catalogRevision: String,
     private val model: String,
+    private val accountLabel: String,
 ) : ConversationSession {
     override val connectionEpoch: String = UUID.randomUUID().toString()
     private var sessionId: String? = null
@@ -117,7 +117,7 @@ private class OpenAiRealtimeSession(
 
     override val events: Flow<ProviderEvent> =
         flow {
-            emit(ProviderEvent.Account(OpenAiModels.ACCOUNT_LABEL))
+            emit(ProviderEvent.Account(accountLabel))
             media.events.collect { raw ->
                 val message = runCatching { json.parseToJsonElement(raw).jsonObject }.getOrNull() ?: return@collect
                 when (message.str("type")) {
@@ -265,17 +265,36 @@ private class OpenAiRealtimeSession(
     override suspend fun close() = Unit
 }
 
-/**
- * The transcriber runs beside the speech model rather than in front of it, so it starts with no
- * knowledge of the session. Giving it the setting, the expected vocabulary and a fixed language
- * is what keeps captions readable; the extra delay buys word accuracy the captions are never
- * racing anything to deliver.
- */
+/** The GA shape: the caller names the model, the transcriber, and its own tools. */
+private fun publicApiSession(
+    model: String,
+    request: SessionOpenRequest,
+    named: Map<String, ProviderToolDefinition>,
+    voice: String,
+): JsonObject =
+    buildJsonObject {
+        put("type", "realtime")
+        put("model", model)
+        put("instructions", request.instructions)
+        put("output_modalities", JsonArray(listOf(JsonPrimitive("audio"))))
+        put(
+            "audio",
+            buildJsonObject {
+                put("input", buildJsonObject { put("transcription", transcription(request.keywords)) })
+                put("output", buildJsonObject { put("voice", voice) })
+            },
+        )
+        if (named.isNotEmpty()) {
+            put("tools", functionTools(named))
+            put("tool_choice", "auto")
+        }
+    }
+
+/** The caption model receives context separately from the speech model. */
 private fun transcription(keywords: List<String>): JsonObject =
     buildJsonObject {
         put("model", OpenAiModels.TRANSCRIPTION)
         put("prompt", OpenAiModels.TRANSCRIPTION_PROMPT)
-        put("delay", OpenAiModels.TRANSCRIPTION_DELAY)
         put("languages", JsonArray(OpenAiModels.TRANSCRIPTION_LANGUAGES.map(::JsonPrimitive)))
         val bounded = keywords.filter { it.isNotBlank() }.distinct().take(OpenAiModels.TRANSCRIPTION_KEYWORD_LIMIT)
         if (bounded.isNotEmpty()) put("keywords", JsonArray(bounded.map(::JsonPrimitive)))

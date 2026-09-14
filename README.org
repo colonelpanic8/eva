@@ -17,15 +17,15 @@ uses is asked for together when the app opens, because a session that continues
 while the phone is locked or another app is in front cannot show a dialog. Voice mode performs phone actions through the same catalog and
 dispatcher as typed mode, verified end to end with synthetic speech on an
 emulator. EVA signs in to a ChatGPT account
-on the phone with a one-time device code, and both typed conversation and
-realtime voice are then carried by that subscription; an OpenAI API key remains
-available as the metered alternative. Either way no workstation is needed, and
-the paired host bridge stays available. Microphone capture and speaker playout are verified on a physical
+on the phone with a one-time device code. Typed conversation and direct realtime
+voice use that sign-in; an OpenAI API key remains the separately billed
+alternative. No workstation is required for direct voice. Microphone capture
+and speaker playout are verified on a physical
 phone; acoustic quality and interruption behaviour are not yet measured.
 An opt-in [[file:docs/native-voice-testing.md][native speech test]] verifies generated speech, live transcripts,
 and decoded provider audio on the emulator.
 Native subscription login covers typed conversation and voice. Remote pairing
-to a broker is still not implemented.
+to a broker is still not implemented in the Android app.
 
 Paseo, AppFunctions, capability-package import, and privileged extensions are not
 integrated. A separate [[file:experiments/device-control/README.md][device-control experiment]] verified Shizuku-backed

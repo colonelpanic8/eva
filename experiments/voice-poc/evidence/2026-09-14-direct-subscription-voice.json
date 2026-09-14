@@ -1,0 +1,55 @@
+{
+  "date": "2026-09-14",
+  "device": "Pixel 11 Pro Fold",
+  "authentication": "Phone encrypted ChatGPT account store; no API key or broker",
+  "endpoint": "https://api.openai.com/v1/realtime/calls",
+  "rootCause": {
+    "field": "audio.input.transcription.delay",
+    "value": "high",
+    "withField": "Android read timeout; workstation timeout or HTTP 504",
+    "withoutField": "HTTP 201 and completed native speech exchange",
+    "retained": [
+      "gpt-transcribe",
+      "languages",
+      "prompt",
+      "keywords",
+      "originator: eva",
+      "chatgpt-account-id"
+    ]
+  },
+  "nativeSpeech": {
+    "test": "NativeVoiceLiveTest",
+    "result": "PASS",
+    "syntheticInputBytes": 467332,
+    "nonzeroDecodedOutputBytes": 30969,
+    "questionTranscribed": true,
+    "arithmeticAnswerCorrect": true,
+    "ambientMicrophoneTransmitted": false
+  },
+  "nativeAction": {
+    "test": "OpenAiVoiceActionLiveTest",
+    "result": "PASS",
+    "model": "gpt-realtime-2.1",
+    "timerHandoff": true,
+    "spokenConfirmation": true,
+    "connectedFiveSecondsAfterHandoff": true
+  },
+  "checks": {
+    "just check": "PASS",
+    "jvmTests": 129,
+    "releaseLint": "PASS",
+    "productionCertificateVerified": true
+  },
+  "installation": {
+    "package": "com.colonelpanic.eva",
+    "versionName": "0.11.1",
+    "versionCode": 11001,
+    "kind": "local signed fix; not published",
+    "apkSha256": "80e1176571368dd455fc7b011bddc0e1451e32a165d92f82f0a2ba0883c7002e",
+    "dataPreserved": true
+  },
+  "limitations": [
+    "Live instrumentation ran against the debug package; the corresponding production APK was signed, installed, and opened.",
+    "Acoustic microphone/speaker quality and interruption were not tested."
+  ]
+}

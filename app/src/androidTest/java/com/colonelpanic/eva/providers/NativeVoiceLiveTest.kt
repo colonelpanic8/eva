@@ -6,6 +6,7 @@ import android.os.Bundle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.colonelpanic.eva.EvaApplication
 import com.colonelpanic.eva.MainActivity
 import com.colonelpanic.eva.audio.AndroidAudioRoute
 import com.colonelpanic.eva.audio.MicrophonePermission
@@ -14,6 +15,8 @@ import com.colonelpanic.eva.audio.RealtimeMediaConfig
 import com.colonelpanic.eva.audio.RealtimeMediaController
 import com.colonelpanic.eva.audio.RealtimeMediaState
 import com.colonelpanic.eva.audio.webrtc.WebRtcPeerLink
+import com.colonelpanic.eva.providers.openai.OpenAiRealtimeProvider
+import com.colonelpanic.eva.providers.openai.SubscriptionAccess
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
@@ -38,8 +41,10 @@ class NativeVoiceLiveTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val args = InstrumentationRegistry.getArguments()
         val link = args.getString("evaBrokerLink")
+        val subscription = args.getString("evaSubscriptionVoice") == "true"
         val path = args.getString("evaSpeechPcmPath")
-        assumeTrue("Requires an explicit broker link and synthetic PCM fixture", link != null && path != null)
+        assumeTrue("Requires an explicit voice route and synthetic PCM fixture", (link != null || subscription) && path != null)
+        require(!(subscription && link != null))
         require(checkNotNull(path).matches(Regex("/data/local/tmp/eva-[a-z0-9-]+\\.pcm")))
         val fixture =
             instrumentation.uiAutomation.executeShellCommand("cat $path").use {
@@ -92,7 +97,7 @@ class NativeVoiceLiveTest {
                 val media =
                     RealtimeMediaController(
                         RealtimeMediaConfig(),
-                        PeerLinkFactory { mode -> WebRtcPeerLink(factory, mode) },
+                        PeerLinkFactory { WebRtcPeerLink(factory) },
                         AndroidAudioRoute(context.getSystemService(AudioManager::class.java)),
                         { true },
                         this,
@@ -100,11 +105,17 @@ class NativeVoiceLiveTest {
                 var session: ConversationSession? = null
                 try {
                     val provider =
-                        BrokerConversationProvider(
-                            BrokerEndpoint.parse(checkNotNull(link)),
-                            offerSdp = media.createOffer(),
-                            onAnswer = media::acceptAnswer,
-                        )
+                        if (subscription) {
+                            val account = (context.applicationContext as EvaApplication).chatGpt
+                            check(account.signedIn) { "The debug app needs a ChatGPT sign-in for this test." }
+                            OpenAiRealtimeProvider(SubscriptionAccess(account, "1.0.0"), media)
+                        } else {
+                            BrokerConversationProvider(
+                                BrokerEndpoint.parse(checkNotNull(link)),
+                                offerSdp = media.createOffer(),
+                                onAnswer = media::acceptAnswer,
+                            )
+                        }
                     session =
                         provider.open(
                             SessionOpenRequest(
@@ -131,6 +142,10 @@ class NativeVoiceLiveTest {
 
                                     is ProviderEvent.Failure -> {
                                         error(event.message)
+                                    }
+
+                                    is ProviderEvent.AssistantText -> {
+                                        if (Regex("(?i)(ninety.five|95)").containsMatchIn(event.text)) heardAnswer.complete(Unit)
                                     }
 
                                     else -> {}
@@ -163,6 +178,7 @@ class NativeVoiceLiveTest {
                                 )
                                 putInt("syntheticBytes", sentBytes.get())
                                 putInt("nonzeroDecodedBytes", receivedNonzeroBytes.get())
+                                putString("route", if (subscription) "direct-subscription" else "broker")
                             },
                         )
                     } finally {

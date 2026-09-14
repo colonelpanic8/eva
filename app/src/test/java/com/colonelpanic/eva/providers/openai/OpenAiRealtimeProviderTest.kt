@@ -78,10 +78,9 @@ class OpenAiRealtimeProviderTest {
             assertTrue(posted.contains("\"type\":\"realtime\""))
             assertTrue(posted.contains("eva_tool_0"))
             assertTrue(posted.contains("gpt-transcribe"))
-            assertTrue(posted.contains("\"delay\":\"high\""))
             assertTrue(posted.contains("\"languages\":[\"en\"]"))
-            // Blanks and duplicates are dropped so the keyword list stays useful to the transcriber.
             assertTrue(posted.contains("\"keywords\":[\"Ana Beltrán\"]"))
+            assertTrue(!posted.contains("\"delay\""))
             val events = mutableListOf<ProviderEvent>()
             val collector = launch { session.events.collect { events += it } }
             media.incoming.send("""{"type":"session.created","session":{"id":"sess_1","model":"gpt-realtime-2.1"}}""")
@@ -137,24 +136,46 @@ class OpenAiRealtimeProviderTest {
             collector.cancel()
         }
 
-    /**
-     * A subscription takes a realtime call on the public host against the same token that
-     * pays for typed turns, so voice needs no second credential.
-     */
     @Test
-    fun `a signed-in subscription opens the voice call on its own token`() =
+    fun `a signed-in subscription opens voice with its current token and account`() =
         runTest {
             val tokens = ChatGptTokens("id", "access-1", "refresh-1", "acct-1", "eva@example.test", "pro", 0)
+            val media = FakeMedia()
+            val session =
+                OpenAiRealtimeProvider(
+                    SubscriptionAccess({ tokens }, "0.5.0", "https://backend.test", "https://example.test"),
+                    media,
+                    client = client,
+                    ioDispatcher = StandardTestDispatcher(testScheduler),
+                ).open(SessionOpenRequest("You are EVA.", catalog))
+            val call = calls.single()
+            assertEquals("https://example.test/v1/realtime/calls", call.url.toString())
+            assertEquals("Bearer access-1", call.header("Authorization"))
+            assertEquals("acct-1", call.header("chatgpt-account-id"))
+            assertEquals("eva", call.header("originator"))
+            assertEquals("v=0 answer", media.answer)
+            val events = mutableListOf<ProviderEvent>()
+            val collector = launch { session.events.collect { events += it } }
+            advanceUntilIdle()
+            assertEquals(ProviderEvent.Account(ChatGpt.ACCOUNT_LABEL), events.first())
+            collector.cancel()
+        }
+
+    /** An API key still reaches the public host, which takes the call as multipart form parts. */
+    @Test
+    fun `an api key opens the voice call on the public host as multipart`() =
+        runTest {
             OpenAiRealtimeProvider(
-                SubscriptionAccess({ tokens }, "0.5.0", "https://backend.test", "https://example.test"),
+                ApiKeyAccess("sk-test", "https://example.test"),
                 FakeMedia(),
                 client = client,
                 ioDispatcher = StandardTestDispatcher(testScheduler),
             ).open(SessionOpenRequest("You are EVA.", catalog))
             val call = calls.single()
             assertEquals("https://example.test/v1/realtime/calls", call.url.toString())
-            assertEquals("Bearer access-1", call.header("Authorization"))
-            assertEquals("acct-1", call.header("chatgpt-account-id"))
+            assertEquals("multipart", call.body?.contentType()?.type)
+            assertTrue(requests.single().contains("name=\"sdp\""))
+            assertTrue(requests.single().contains("\"type\":\"realtime\""))
         }
 
     @Test

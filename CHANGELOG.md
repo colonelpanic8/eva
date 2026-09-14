@@ -2,6 +2,16 @@
 
 All notable changes to EVA will be documented here.
 
+## [0.12.0] - 2026-09-14
+
+### Added
+
+- Direct realtime voice now works with a signed-in ChatGPT subscription on the phone, without a broker or API key. Voice actions use the same capability dispatcher and can hand off to Android apps such as Clock.
+
+### Fixed
+
+- Removed an invalid local rejection of subscription voice and corrected the transcription session options that could make realtime negotiation time out.
+
 ## [0.11.0] - 2026-09-13
 
 ### Changed

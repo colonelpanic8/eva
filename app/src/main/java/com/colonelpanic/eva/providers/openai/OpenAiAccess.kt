@@ -17,7 +17,7 @@ sealed interface OpenAiAccess {
     val responsesUrl: String
     val modelsUrl: String
 
-    /** Realtime calls are served by the public API host whichever credential pays for them. */
+    /** Where the phone posts its SDP offer to open a realtime call. */
     val realtimeCallsUrl: String
 
     /** Whether the provider retains the turn, or the phone must resend the conversation. */
@@ -49,10 +49,6 @@ class SubscriptionAccess(
     override val responsesUrl = "$baseUrl/responses"
     override val modelsUrl = "$baseUrl/models?client_version=${modelsClientVersion(clientVersion)}"
 
-    /**
-     * Typed turns go to the account's backend, but a realtime call is taken by the public
-     * host against the same subscription token, so voice needs no second credential.
-     */
     override val realtimeCallsUrl = "$realtimeBaseUrl/v1/realtime/calls"
 
     /** The subscription backend rejects stored responses, so continuity is the phone's job. */

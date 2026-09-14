@@ -14,7 +14,9 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okio.ByteString.Companion.decodeBase64
+import java.io.IOException
 import java.net.URLEncoder
+import java.util.concurrent.TimeUnit
 
 /**
  * A ChatGPT subscription pays for these requests, so nothing here is a metered API key.
@@ -55,7 +57,7 @@ data class ChatGptTokens(
  * phone itself, so the same flow works from the assistant surface or a headless install.
  */
 class ChatGptLogin(
-    private val client: OkHttpClient = OkHttpClient(),
+    private val client: OkHttpClient = signInClient(),
     private val issuer: String = ChatGpt.ISSUER,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
@@ -80,7 +82,9 @@ class ChatGptLogin(
 
     /**
      * Polls until the code is approved. A pending code answers 403 or 404, so those are the
-     * wait states rather than failures; anything else is reported as it arrived.
+     * wait states rather than failures; anything else is reported as it arrived. The person is
+     * approving on another device, so a poll that cannot reach the account is another wait
+     * state: giving up on the first one would abandon a sign-in that is already succeeding.
      */
     suspend fun awaitApproval(code: ChatGptDeviceCode): ChatGptTokens {
         val attempts = (APPROVAL_WINDOW_SECONDS / code.pollSeconds).coerceAtLeast(1)
@@ -89,20 +93,30 @@ class ChatGptLogin(
                 put("device_auth_id", code.deviceAuthId)
                 put("user_code", code.userCode)
             }
+        var reached = false
+        var unreachable: IOException? = null
         repeat(attempts.toInt()) {
             var pending = false
             val granted =
-                postJson("$issuer/api/accounts/deviceauth/token", body) { status, text ->
-                    if (status == 403 || status == 404) {
-                        pending = true
-                        JsonObject(emptyMap())
-                    } else {
-                        error(authErrorMessage(status, text))
-                    }
+                try {
+                    postJson("$issuer/api/accounts/deviceauth/token", body) { status, text ->
+                        if (status == 403 || status == 404) {
+                            pending = true
+                            JsonObject(emptyMap())
+                        } else {
+                            error(authErrorMessage(status, text))
+                        }
+                    }.also { reached = true }
+                } catch (error: IOException) {
+                    unreachable = error
+                    pending = true
+                    JsonObject(emptyMap())
                 }
             if (!pending) return exchange(granted)
             delay(code.pollSeconds * 1000)
         }
+        // Only call it a network failure when no poll ever got an answer.
+        unreachable?.takeUnless { reached }?.let { throw it }
         error("That sign-in code expired before it was approved.")
     }
 
@@ -190,6 +204,13 @@ class ChatGptLogin(
         const val APPROVAL_WINDOW_SECONDS = 15L * 60
     }
 }
+
+/** A stalled sign-in request should give up in time to poll again, not sit on socket defaults. */
+private fun signInClient(): OkHttpClient =
+    OkHttpClient
+        .Builder()
+        .callTimeout(20, TimeUnit.SECONDS)
+        .build()
 
 internal class ChatGptClaims(
     val accountId: String?,

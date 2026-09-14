@@ -12,6 +12,7 @@ import okio.ByteString.Companion.encodeUtf8
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.net.SocketTimeoutException
 
 class ChatGptLoginTest {
     private val claims =
@@ -22,6 +23,8 @@ class ChatGptLoginTest {
     private val token = "aGVhZGVy.${claims.encodeUtf8().base64Url()}.c2ln"
     private val sent = mutableMapOf<String, String>()
     private var pendingPolls = 2
+    private var unreachablePolls = 0
+    private var tokenPolls = 0
 
     private fun client(vararg overrides: Pair<String, Pair<Int, String>>) =
         OkHttpClient
@@ -30,6 +33,13 @@ class ChatGptLoginTest {
                 val path = chain.request().url.encodedPath
                 val buffer = Buffer().also { chain.request().body?.writeTo(it) }
                 sent[path] = buffer.readUtf8()
+                if (path == "/api/accounts/deviceauth/token") {
+                    tokenPolls++
+                    if (unreachablePolls > 0) {
+                        unreachablePolls--
+                        throw SocketTimeoutException("timeout")
+                    }
+                }
                 val override = overrides.toMap()[path]
                 val (code, body) =
                     override ?: when (path) {
@@ -109,6 +119,34 @@ class ChatGptLoginTest {
             val refreshed = login.refresh(previous)
             assertEquals("refresh-1", refreshed.refreshToken)
             assertEquals(token, refreshed.accessToken)
+        }
+
+    /**
+     * The approval happens in a browser elsewhere, so a poll that cannot reach the account is
+     * a wait state. Ending the sign-in there abandoned approvals that had already succeeded.
+     */
+    @Test
+    fun `a poll that cannot reach the account keeps waiting for approval`() =
+        runTest {
+            unreachablePolls = 2
+            pendingPolls = 1
+            val login = login(client(), testScheduler)
+            val code = login.requestCode()
+            val tokens = login.awaitApproval(code)
+            assertEquals("acct-1", tokens.accountId)
+            // Two unreachable polls, one pending answer, then the approval.
+            assertEquals(4, tokenPolls)
+        }
+
+    /** A sign-in that never reaches the account at all still reports the network failure. */
+    @Test
+    fun `a sign-in that never reaches the account reports the network failure`() =
+        runTest {
+            unreachablePolls = Int.MAX_VALUE
+            val login = login(client(), testScheduler)
+            val code = login.requestCode()
+            val error = runCatching { login.awaitApproval(code) }.exceptionOrNull()
+            assertTrue(error is java.io.IOException)
         }
 
     @Test

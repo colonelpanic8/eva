@@ -25,13 +25,6 @@ object OpenAiModels {
 
     const val TRANSCRIPTION = "gpt-transcribe"
 
-    /**
-     * Input transcription is a second model pass that only produces the on-screen captions; the
-     * speech model hears the audio itself. Accuracy is therefore worth more than latency here, so
-     * the transcriber is given the most audio context it offers.
-     */
-    const val TRANSCRIPTION_DELAY = "high"
-
     val TRANSCRIPTION_LANGUAGES = listOf("en")
 
     const val TRANSCRIPTION_PROMPT =

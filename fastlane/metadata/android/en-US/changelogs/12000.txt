@@ -1,0 +1,3 @@
+* Added: Direct realtime voice works with a signed-in ChatGPT subscription on the phone, without a broker or API key.
+* Fixed: Voice negotiation no longer times out because of an invalid transcription option.
+* ...see CHANGELOG.md for the rest.

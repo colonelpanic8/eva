@@ -321,9 +321,9 @@ Input transcription is a second model pass that produces only the on-screen
 captions; the speech model hears the audio itself, so caption errors never
 reach it. That pass starts with no knowledge of the session, which is what made
 its output poor, so it is given the setting as a prompt, `en` as the expected
-language, `delay: high` to trade caption latency for word accuracy, and the
-user's contact display names as `keywords`. Nothing is racing the captions, so
-the added delay costs nothing the user sees. Contact names are read only when
+language, and the user's contact display names as `keywords`. The WebRTC call
+omits `delay`: adding `delay: high` made otherwise identical live subscription
+calls time out on 2026-09-14. Contact names are read only when
 contacts access has already been granted for an earlier lookup; the read never
 prompts, is skipped entirely for typed sessions, and is bounded to the 200
 most-contacted names.
@@ -373,38 +373,30 @@ passes it; it reads only slugs. Live slugs on the test account are
 `gpt-daybreak-blue-latest`, `gpt-5.5`, `gpt-5.3-codex-spark`, and
 `codex-auto-review`, each carrying its own supported reasoning levels and
 default. `SubscriptionAccess` and `ApiKeyAccess` differ only in
-URL, headers, and those two flags; the session, controller, dispatcher, and
+URL, headers, and history handling; the session, controller, dispatcher, and
 journal are unchanged.
 
-Voice runs on the subscription as well, and needs no second credential. The
-realtime call is taken by the public API host rather than the account backend,
-and that host accepts the subscription's own access token: posting EVA's
-existing multipart offer to `api.openai.com/v1/realtime/calls` with the
-subscription bearer returns an answer, opens the `oai-events` data channel, and
-delivers `session.created` with EVA's instructions, tools, transcription model,
-and voice intact. So the realtime adapter changed only in where its
-authorization comes from; the event protocol, correlation, and media path are
-untouched. `gpt-realtime-2.1`, `gpt-realtime`, and `gpt-realtime-mini` were all
-accepted on this account.
+Direct voice uses the signed-in subscription token on the public
+`https://api.openai.com/v1/realtime/calls` endpoint, with EVA's existing
+`originator` and `chatgpt-account-id` headers. Access is decided by the server;
+EVA does not reject subscription accounts locally or require a paired host.
+An API key remains a separately billed alternative.
 
-The account's own Codex realtime route is a different thing and is not used.
-`chatgpt.com/backend-api/codex/realtime/calls` demands
-`openai-alpha: quicksilver=v2` and then rejects every session shape sent to it,
-including an empty one, with "Field `session.model` is not allowed for this
-Codex realtime session"; its quicksilver variant on the public host answers
-"Voice session access denied". That route carries Codex's own delegated
-architecture and a sideband control socket, neither of which EVA needs.
+On 2026-09-14 live signaling accepted the subscription bearer for
+`gpt-realtime-2.1`, `gpt-realtime`, and `gpt-realtime-mini`. Reproducing the app's
+full payload isolated the timeout to `audio.input.transcription.delay: "high"`.
+With `gpt-transcribe`, the model alone, `languages: ["en"]`, and prompt/keyword
+hints each returned HTTP 201; adding only `delay: "high"` timed out. Multipart
+part content types did not change the outcome. A separate Codex quicksilver
+route's `403 Voice session access denied` does not establish that the public
+Realtime route rejects subscription credentials.
 
-Verification: the device-code request, the subscription responses call
-(including a custom EVA tool being selected and its arguments returned), and a
-full subscription-authorized realtime call were exercised against the live
-services from a workstation before the adapters were written. The realtime run
-completed the WebRTC handshake, opened the data channel, received
-`session.created`/`session.updated` for EVA's session payload, and received the
-remote audio track. The token endpoint rejects a bogus code with the structured
-error the app surfaces. The approval-to-token exchange and refresh are covered
-by JVM tests against canned traffic, not by a live approval. Signing in on a
-phone, and a conversation of either kind from the app itself, are unverified.
+The opt-in native speech test can exercise the phone's saved ChatGPT login
+without a host or exported token; see [native voice verification](native-voice-testing.md).
+Both native speech and a voice-driven timer handoff passed on the Pixel 11 Pro
+Fold with the saved subscription. `just check` passed all 129 JVM tests,
+formatting, fatal Android lint, and debug assembly. Release lint and production
+APK signature verification also passed before installing the local signed fix.
 
 ## Development connection
 

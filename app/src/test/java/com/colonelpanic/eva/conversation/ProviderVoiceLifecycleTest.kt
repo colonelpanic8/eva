@@ -62,6 +62,8 @@ class ProviderVoiceLifecycleTest {
             assertTrue(media.closed)
             assertEquals(1, provider.closes)
             assertEquals(ProviderStatus.DISCONNECTED, controller.state.value.providerStatus)
+            assertFalse(controller.state.value.voiceMode)
+            assertEquals(RealtimeMediaState.Closed, controller.state.value.mediaState)
         }
 
     @Test
@@ -78,6 +80,8 @@ class ProviderVoiceLifecycleTest {
             assertTrue(media.closed)
             assertEquals(1, provider.closes)
             assertEquals(ProviderStatus.DISCONNECTED, controller.state.value.providerStatus)
+            assertFalse(controller.state.value.voiceMode)
+            assertEquals(RealtimeMediaState.Closed, controller.state.value.mediaState)
         }
 
     @Test
@@ -109,6 +113,8 @@ class ProviderVoiceLifecycleTest {
             assertTrue(media.closed)
             assertEquals(1, provider.closes)
             assertEquals("Connection lost", controller.state.value.providerMessage)
+            assertFalse(controller.state.value.voiceMode)
+            assertEquals(RealtimeMediaState.Closed, controller.state.value.mediaState)
         }
 
     @Test

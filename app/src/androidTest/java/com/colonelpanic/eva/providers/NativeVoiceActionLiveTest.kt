@@ -100,10 +100,10 @@ class NativeVoiceActionLiveTest {
                         repository = repository,
                         scope = this,
                         providerFactory = { error("Typed path is not exercised here") },
-                        mediaFactory = { mode ->
+                        mediaFactory = {
                             RealtimeMediaController(
-                                RealtimeMediaConfig(mode),
-                                PeerLinkFactory { linkMode -> WebRtcPeerLink(factory, linkMode) },
+                                RealtimeMediaConfig(),
+                                PeerLinkFactory { WebRtcPeerLink(factory) },
                                 AndroidAudioRoute(audioManager),
                                 { true },
                                 this,

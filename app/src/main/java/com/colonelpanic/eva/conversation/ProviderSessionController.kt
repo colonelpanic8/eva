@@ -293,7 +293,14 @@ class ProviderSessionController(
                         media?.close()
                         media = null
                         finishInput("The connection ended before the response completed.")
-                        mutableState.update { it.copy(providerStatus = ProviderStatus.DISCONNECTED, providerModel = null) }
+                        mutableState.update {
+                            it.copy(
+                                providerStatus = ProviderStatus.DISCONNECTED,
+                                providerModel = null,
+                                voiceMode = false,
+                                mediaState = if (it.voiceMode) RealtimeMediaState.Closed else it.mediaState,
+                            )
+                        }
                     }
                     withContext(NonCancellable) {
                         try {
@@ -318,7 +325,14 @@ class ProviderSessionController(
         actionJobs.toList().forEach { it.cancel() }
         session = null
         finishInput("Disconnected before the response completed.")
-        mutableState.update { it.copy(providerStatus = ProviderStatus.DISCONNECTED, providerModel = null) }
+        mutableState.update {
+            it.copy(
+                providerStatus = ProviderStatus.DISCONNECTED,
+                providerModel = null,
+                voiceMode = false,
+                mediaState = if (it.voiceMode) RealtimeMediaState.Closed else it.mediaState,
+            )
+        }
     }
 
     fun submit(text: String) {
