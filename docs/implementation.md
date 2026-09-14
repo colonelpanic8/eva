@@ -93,8 +93,12 @@ hard ceiling; they are not yet applied to live execution or settings.
 The [package spec](declarative-packages.md) includes exact codec fields and the
 planned HTTPS index/import format. The [org-agenda example](examples/org-agenda.json)
 contains agenda, capture, and a mova intent. JVM codec tests exercise policy
-boundaries and budget precedence. Binding execution, local/HTTPS imports, preview
-UI, and generalized AppFunctions remain to be implemented. There is no device
+boundaries and budget precedence. `BindingArguments`, `BindingResults`, and `DeclarativeBackend` now construct
+encoded intent/HTTP requests, bind constrained content predicates, project bounded
+results, and require exact completion evidence for writes. Fake-host JVM tests
+exercise handoffs, content reads, deadline propagation, and uncertain failures
+without retries. Android hosts, local/HTTPS imports, preview UI, and generalized
+AppFunctions remain to be implemented. There is no device
 verification for these declarations yet.
 
 ## Android provider and action runtime
