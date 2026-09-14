@@ -296,3 +296,33 @@ The existing forbidden-scheme rules still apply. The shipped
 phoneNumber validator and maps the message into the fixed sms_body extra. It
 uses ACTION_SENDTO so Android chooses an installed messaging handler. No package
 name, app modification, extension service, or privileged API is required.
+
+## Local result filtering
+
+An item projection may contain:
+
+```json
+"filter": {"fields": ["/title", "/category"], "argument": "q"}
+```
+
+`argument` must name a string input in the tool schema. `fields` is a nonempty,
+distinct list of at most 16 JSON pointers relative to each item. An item matches
+when any pointed-to string contains the argument, ignoring case using Unicode
+simple case comparison. Missing, null, numeric, object, and array values do not
+match. An omitted optional argument disables the filter; an empty string matches
+any present string. Input schema constraints can require a nonempty query.
+There are no scripts, regexes, normalization, ranking, or recursive array searches.
+
+Filtering occurs before maxItems and line/byte projection. An unfiltered source
+with many rows does not imply truncation if all matching rows fit. More matching
+rows than maxItems, or exhausted line/byte space, does imply truncation. A declared
+totalPointer always describes the source rows before local filtering: when it
+exceeds the returned source count, EVA explicitly warns that additional matches
+may exist, including when the local result is empty. Without source completeness
+metadata, the filter makes claims only about the returned data. It does not fetch
+other pages or recover data excluded by a server cap or response-size limit.
+
+A read-only HTTP package can therefore GET an unfiltered collection and define q
+only in its tool schema/filter, omitting it from HTTP query mappings. That needs
+no server-side search changes. The existing org-agenda fixture still records its
+confirmed q/limit/total and strict server contract; its device test remains deferred.

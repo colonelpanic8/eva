@@ -125,6 +125,7 @@ data class ItemProjection(
     val maxItems: Int,
     val truncationNote: String,
     val totalPointer: String?,
+    val filter: ItemFilter? = null,
 )
 
 data class ItemField(
@@ -136,4 +137,9 @@ data class ItemField(
 data class Evidence(
     val pointer: String,
     val expected: JsonElement,
+)
+
+data class ItemFilter(
+    val fields: List<String>,
+    val argument: String,
 )

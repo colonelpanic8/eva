@@ -74,7 +74,11 @@ class DeclarativeBackend(
                     }
 
                     is DeclarativeBinding.Http -> {
-                        BindingResults.http(capability.copy(binding = binding), host.request(request as HttpRequest, wait.effectiveMillis))
+                        BindingResults.http(
+                            capability.copy(binding = binding),
+                            host.request(request as HttpRequest, wait.effectiveMillis),
+                            proposal.arguments,
+                        )
                     }
                 }
             } catch (notSubmitted: BindingNotSubmitted) {

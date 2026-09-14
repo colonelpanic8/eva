@@ -269,7 +269,7 @@ object PackageCodec {
         val result = root.getValue("result").obj()
         result.fields(setOf("maxBytes"), setOf("pointer", "items", "evidence", "notExecutedStatuses"))
         require(("pointer" in result) != ("items" in result))
-        val items = result["items"]?.obj()?.let(::items)
+        val items = result["items"]?.obj()?.let { items(it, properties) }
         val rejectedStatuses =
             result["notExecutedStatuses"]
                 ?.array()
@@ -312,8 +312,11 @@ object PackageCodec {
         )
     }
 
-    private fun items(root: JsonObject): ItemProjection {
-        root.fields(setOf("arrayPaths", "line", "fields", "maxItems", "truncationNote"), setOf("totalPointer"))
+    private fun items(
+        root: JsonObject,
+        properties: JsonObject,
+    ): ItemProjection {
+        root.fields(setOf("arrayPaths", "line", "fields", "maxItems", "truncationNote"), setOf("totalPointer", "filter"))
         val paths =
             root.getValue("arrayPaths").array().also { require(it.size in 1..4) }.map {
                 pointer(JsonObject(mapOf("pointer" to it))).also { path ->
@@ -333,7 +336,19 @@ object PackageCodec {
         require(pathSlot.replace(line, "").none { it == '{' || it == '}' })
         val note = root.text("truncationNote", 500).also { require(it.none(Char::isISOControl)) }
         val total = root["totalPointer"]?.let { pointer(JsonObject(mapOf("pointer" to it))) }
-        return ItemProjection(paths, line, fields, root.bounded("maxItems", 100), note, total)
+        val filter =
+            root["filter"]?.obj()?.let { value ->
+                value.fields(setOf("fields", "argument"))
+                val argument = value.text("argument", 64)
+                require(properties[argument]?.obj()?.get("type") == JsonPrimitive("string")) { "Filter argument must name a string input" }
+                val pointers =
+                    value.getValue("fields").array().also { require(it.size in 1..16) }.map {
+                        pointer(JsonObject(mapOf("pointer" to it)))
+                    }
+                require(pointers.distinct().size == pointers.size)
+                ItemFilter(pointers, argument)
+            }
+        return ItemProjection(paths, line, fields, root.bounded("maxItems", 100), note, total, filter)
     }
 
     private fun pointer(root: JsonObject): String =

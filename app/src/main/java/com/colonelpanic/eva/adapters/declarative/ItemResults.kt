@@ -14,6 +14,7 @@ object ItemResults {
         root: JsonElement,
         projection: ItemProjection,
         maxBytes: Int,
+        arguments: Map<String, String> = emptyMap(),
     ): String {
         val arrays = projection.arrayPaths.firstNotNullOfOrNull { arrays(root, it) } ?: error("No declared result array was present")
         val returned = arrays.sumOf { it.size.toLong() }
@@ -25,10 +26,24 @@ object ItemResults {
                     count
                 }
             }
-        var truncated = (total ?: returned) > returned || returned > projection.maxItems
+        val query = projection.filter?.let { arguments[it.argument] }
+        val matches =
+            arrays
+                .asSequence()
+                .flatMap { it.asSequence() }
+                .filter { item ->
+                    query == null ||
+                        checkNotNull(projection.filter).fields.any { path ->
+                            val text = BindingResults.pointer(item, path) as? JsonPrimitive
+                            text?.isString == true && text.content.contains(query, ignoreCase = true)
+                        }
+                }.take(projection.maxItems + 1)
+                .toList()
+        val sourceTruncated = (total ?: returned) > returned
+        var truncated = sourceTruncated || matches.size > projection.maxItems
         val lines = mutableListOf<String>()
         var bytes = 0
-        for (item in arrays.asSequence().flatMap { it.asSequence() }.take(projection.maxItems)) {
+        for (item in matches.take(projection.maxItems)) {
             require(item is JsonObject)
             val fields =
                 projection.fields.mapValues { (_, field) ->
@@ -52,8 +67,30 @@ object ItemResults {
             lines += line
             bytes += size
         }
-        val data = lines.joinToString("\n").ifEmpty { if (returned == 0L) "No items." else "No complete item fits the result budget." }
-        return data + if (truncated) "\n[Truncated] ${projection.truncationNote}" else ""
+        val data =
+            lines.joinToString("\n").ifEmpty {
+                when {
+                    matches.isEmpty() && query != null -> "No matching items in the returned data."
+                    matches.isEmpty() -> "No items."
+                    else -> "No complete item fits the result budget."
+                }
+            }
+        return data +
+            if (truncated) {
+                "\n[Truncated] " +
+                    (
+                        if (sourceTruncated &&
+                            query != null
+                        ) {
+                            "The source returned only part of its data; additional matches may exist. "
+                        } else {
+                            ""
+                        }
+                    ) +
+                    projection.truncationNote
+            } else {
+                ""
+            }
     }
 
     private fun arrays(

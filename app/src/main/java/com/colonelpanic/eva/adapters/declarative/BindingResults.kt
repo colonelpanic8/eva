@@ -24,6 +24,7 @@ object BindingResults {
     fun http(
         capability: PackageCapability,
         response: HttpResponse,
+        arguments: Map<String, String> = emptyMap(),
     ): ExecutionOutcome {
         val binding = capability.binding as DeclarativeBinding.Http
         val read = capability.effect == PackageEffect.READ
@@ -51,7 +52,7 @@ object BindingResults {
         binding.result.items?.let {
             return ExecutionOutcome(
                 if (read) InvocationStatus.COMPLETED else InvocationStatus.UNKNOWN,
-                ItemResults.render(root, it, binding.result.maxBytes),
+                ItemResults.render(root, it, binding.result.maxBytes, arguments),
             )
         }
         val result =
