@@ -2,8 +2,10 @@ package com.colonelpanic.eva.capability
 
 import com.colonelpanic.eva.adapters.android.ContactField
 import com.colonelpanic.eva.adapters.android.ConversationSummaries
+import com.colonelpanic.eva.adapters.android.MediaCommand
 import com.colonelpanic.eva.adapters.android.MessageRecipients
 import com.colonelpanic.eva.adapters.android.NativeIntents
+import com.colonelpanic.eva.adapters.android.VolumeAction
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -258,6 +260,81 @@ object BundledCapabilities {
             """,
                 ),
             ),
+            CapabilityDefinition(
+                CapabilityRegistry.MEDIA_CONTROL,
+                "Control what is playing",
+                "Pause, resume, skip, or stop media that is already playing on this phone, whatever app is playing it: " +
+                    "Spotify, a podcast player, a video, a browser tab. EVA drives the same media session the lock " +
+                    "screen and headset buttons drive, so it needs no support for any particular app. " +
+                    "It starts nothing that is not already loaded; use the play action for that. " +
+                    "Name an app only when more than one is playing at once, and read the now-playing action first " +
+                    "when you need to know which apps those are.",
+                schema(
+                    """
+                {"type":"object","properties":{
+                "action":{"type":"string","enum":${MediaCommand.arguments.quoted()},
+                "description":"toggle flips between playing and paused"},
+                "app":{"type":"string","minLength":1,"maxLength":100,
+                "description":"The visible name of the playing app; omit to control whatever is playing"}},
+                "required":["action"],"additionalProperties":false}
+            """,
+                ),
+            ),
+            CapabilityDefinition(
+                CapabilityRegistry.MEDIA_NOW_PLAYING,
+                "Read what is playing",
+                "Report which apps are playing or paused on this phone, what track each one shows, how far into it " +
+                    "playback is, and the current media volume. Returns what the apps publish; it opens, starts, " +
+                    "and changes nothing.",
+                schema("""{"type":"object","properties":{},"required":[],"additionalProperties":false}"""),
+            ),
+            CapabilityDefinition(
+                CapabilityRegistry.MEDIA_PLAY,
+                "Play something",
+                "Ask a music or podcast app to start playing a song, artist, album, playlist, or show by name, " +
+                    "starting the app if it is not already running. Name the app when the user does: " +
+                    "\"play Black Hole Sun on Spotify\". " +
+                    "The words go to the app, which decides what they match, so what plays is that app's choice " +
+                    "and not a track EVA picked. EVA reports back what actually started when it can see it. " +
+                    "Use the control action instead for something already playing.",
+                schema(
+                    """
+                {"type":"object","properties":{
+                "query":{"type":"string","minLength":1,"maxLength":300,
+                "description":"What to play, as the user would say it"},
+                "app":{"type":"string","minLength":1,"maxLength":100,
+                "description":"Which app should play it; omit to let the phone choose"}},
+                "required":["query"],"additionalProperties":false}
+            """,
+                ),
+            ) { args ->
+                if (args.getValue("query").isBlank() || args.getValue("query").any(Char::isISOControl)) {
+                    "Say what to play on one line."
+                } else {
+                    null
+                }
+            },
+            CapabilityDefinition(
+                CapabilityRegistry.MEDIA_VOLUME,
+                "Change the media volume",
+                "Set or step this phone's media volume. It moves music and video only, not the ringer, alarms, " +
+                    "or EVA's own speaking voice. Give percent with the set action; up and down move one step.",
+                schema(
+                    """
+                {"type":"object","properties":{
+                "action":{"type":"string","enum":${VolumeAction.arguments.quoted()}},
+                "percent":{"type":"integer","minimum":0,"maximum":100,
+                "description":"Required by set, ignored otherwise"}},
+                "required":["action"],"additionalProperties":false}
+            """,
+                ),
+            ) { args ->
+                if (args["action"] == VolumeAction.SET.argument && args["percent"]?.toIntOrNull() == null) {
+                    "Give percent between 0 and 100 to set the volume."
+                } else {
+                    null
+                }
+            },
             CapabilityDefinition(
                 CapabilityRegistry.OPEN_SETTINGS,
                 "Open a settings screen",

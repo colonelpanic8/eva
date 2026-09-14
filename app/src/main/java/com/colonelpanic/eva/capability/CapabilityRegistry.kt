@@ -44,7 +44,11 @@ class CapabilityRegistry(
         const val DEVICE_STATE_GET = "eva.android.device.state.get"
         const val DEVICE_STATE_SET = "eva.android.device.state.set"
         const val DEVICE_STATE_METADATA = "eva.android.device.state.metadata"
-        const val REVISION = 7
+        const val MEDIA_CONTROL = "eva.android.media.control"
+        const val MEDIA_NOW_PLAYING = "eva.android.media.nowplaying"
+        const val MEDIA_PLAY = "eva.android.media.play"
+        const val MEDIA_VOLUME = "eva.android.media.volume"
+        const val REVISION = 8
         const val MAX_DESTINATION_LENGTH = 500
     }
 }
