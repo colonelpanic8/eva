@@ -199,13 +199,15 @@ object BundledCapabilities {
                 "Search contacts",
                 "Find phone numbers in the user's contacts by name. Use this when the user names a person " +
                     "to text or call, then pass the returned number to the send, message, or dialer action. " +
-                    "Returns matches only; it opens nothing. Choose what to match with field: name searches the whole " +
-                    "displayed name, given searches first names, family searches last names. Search a single name part " +
-                    "when the full name may be stored in another order or with a nickname, and search again with a " +
-                    "different field or spelling instead of settling for a poor match. " +
-                    "Results are ranked, and a heard name may be spelled or " +
-                    "shortened differently, so judge which match the user most plausibly meant and act on it. " +
-                    "Ask which person only when two matches are equally plausible.",
+                    "Returns matches only; it opens nothing. Names match approximately, so pass the whole name as heard: " +
+                    "a misspelled or misheard name still finds the contact, and a full name ranks the right person above " +
+                    "others who share one part of it. Choose what to match with field: name searches the whole displayed " +
+                    "name and nicknames, given searches first names, family searches last names. Search again with " +
+                    "another spelling or field only when the result reports no match for every part of the name. " +
+                    "Results are ranked, with the people the user has been in touch with breaking ties, so judge which " +
+                    "match the user most plausibly meant and act on it; ask which person only when the result says " +
+                    "matches are equally plausible. Use a contact's first number, which is the one the user last used " +
+                    "or else their mobile; use another only when the user asks for it.",
                 schema(
                     """
                 {"type":"object","properties":{

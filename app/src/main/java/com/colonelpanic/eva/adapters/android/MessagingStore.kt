@@ -47,6 +47,32 @@ class MessagingStore(
                 ?: readThreads(null).take(MAX_SCANNED_THREADS).firstOrNull { it.id == id }?.toConversation(names)
         }
 
+    /**
+     * When each number's one-to-one thread last had a message, keyed by [ContactHistory.key]. Group
+     * threads are left out: being in a group chat says little about who "text Sarah" means. Silent,
+     * like caption keywords: a contacts search never asks for SMS access just to rank its results.
+     */
+    suspend fun lastMessaged(): Map<String, Long> =
+        withContext(Dispatchers.IO) {
+            if (ContextCompat.checkSelfPermission(app, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+                return@withContext emptyMap()
+            }
+            val direct = readThreads(null).filter { it.recipientIds.size == 1 }
+            val numbers =
+                direct
+                    .map { it.recipientIds.single() }
+                    .distinct()
+                    .chunked(ContactLookups.MAX_CONTACT_IDS)
+                    .fold(emptyMap<Long, String>()) { found, chunk -> found + addressesById(chunk) }
+            buildMap {
+                // Threads arrive newest first, so the first time a number appears is its latest.
+                for (thread in direct) {
+                    val key = numbers[thread.recipientIds.single()]?.let(ContactHistory::key) ?: continue
+                    if (key.isNotEmpty() && key !in this) put(key, thread.dateMillis)
+                }
+            }
+        }
+
     suspend fun messages(
         threadId: Long,
         limit: Int,
@@ -103,12 +129,17 @@ class MessagingStore(
 
     /** Thread rows name their recipients by ID; the numbers themselves live in one shared table. */
     private fun addresses(recipientIds: List<Long>): List<String> {
-        if (recipientIds.isEmpty()) return emptyList()
+        val byId = addressesById(recipientIds)
+        return recipientIds.mapNotNull(byId::get)
+    }
+
+    private fun addressesById(recipientIds: List<Long>): Map<Long, String> {
+        if (recipientIds.isEmpty()) return emptyMap()
         val (selection, arguments) = ContactLookups.idSelection("_id", recipientIds)
         val cursor =
             runCatching {
                 resolver.query(CANONICAL_ADDRESSES, arrayOf("_id", "address"), selection, arguments, null)
-            }.getOrNull() ?: return emptyList()
+            }.getOrNull() ?: return emptyMap()
         val byId = mutableMapOf<Long, String>()
         cursor.use { rows ->
             while (rows.moveToNext()) {
@@ -116,7 +147,7 @@ class MessagingStore(
                 byId[rows.getLong(0)] = address
             }
         }
-        return recipientIds.mapNotNull(byId::get)
+        return byId
     }
 
     private fun readSms(

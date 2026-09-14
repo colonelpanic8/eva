@@ -2,6 +2,14 @@
 
 All notable changes to EVA will be documented here.
 
+## [0.14.1] - 2026-09-14
+
+### Fixed
+
+- Contact lookup tolerates misheard spellings such as “Alex Mallison” for “Alex Malison”, searches nicknames, and distinguishes partial matches from clear choices.
+- Recent direct conversations break contact-name ties and prioritize voice transcription hints. EVA remembers numbers used for texts and calls and offers the last-used number first unless another is requested.
+- Different people with identical names remain separate candidates.
+
 ## [0.14.0] - 2026-09-14
 
 ### Added

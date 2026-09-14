@@ -3,7 +3,7 @@ package com.colonelpanic.eva.adapters.android
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
-import android.provider.ContactsContract.Contacts
+import android.provider.ContactsContract.CommonDataKinds.Phone
 import androidx.core.content.ContextCompat
 import com.colonelpanic.eva.providers.openai.OpenAiModels
 import kotlinx.coroutines.Dispatchers
@@ -16,6 +16,7 @@ import kotlinx.coroutines.withContext
  */
 class ContactNameKeywords(
     context: Context,
+    private val history: suspend () -> ContactHistory = { ContactHistory.NONE },
 ) {
     private val context = context.applicationContext
 
@@ -23,30 +24,45 @@ class ContactNameKeywords(
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
             return emptyList()
         }
-        return withContext(Dispatchers.IO) { query() }
+        val history = history()
+        return withContext(Dispatchers.IO) { query(history) }
     }
 
-    private fun query(): List<String> {
+    private fun query(history: ContactHistory): List<String> {
         val cursor =
             runCatching {
                 context.contentResolver.query(
-                    Contacts.CONTENT_URI,
-                    arrayOf(Contacts.DISPLAY_NAME_PRIMARY),
-                    "${Contacts.IN_VISIBLE_GROUP} = 1",
+                    Phone.CONTENT_URI,
+                    arrayOf(Phone.DISPLAY_NAME_PRIMARY, Phone.NUMBER, Phone.STARRED),
+                    "${Phone.IN_VISIBLE_GROUP} = 1",
                     null,
-                    "${Contacts.TIMES_CONTACTED} DESC",
+                    null,
                 )
             }.getOrNull() ?: return emptyList()
-        val names = LinkedHashSet<String>()
+        val people = linkedMapOf<String, Person>()
         cursor.use {
-            // Most contacted first, so the bound keeps the names the user actually speaks.
-            while (it.moveToNext() && names.size < OpenAiModels.TRANSCRIPTION_KEYWORD_LIMIT) {
+            while (it.moveToNext()) {
                 val name = it.getString(0)?.trim()?.takeIf(String::isNotBlank) ?: continue
-                if (name.length <= MAX_NAME_LENGTH && name.any(Char::isLetter)) names += name
+                if (name.length > MAX_NAME_LENGTH || name.none(Char::isLetter)) continue
+                val used = it.getString(1)?.let(history::lastUsed)
+                val person = people.getOrPut(name) { Person(name) }
+                person.lastUsed = listOfNotNull(person.lastUsed, used).maxOrNull()
+                person.starred = person.starred || it.getInt(2) == 1
             }
         }
-        return names.toList()
+        // The bound keeps the names the user actually speaks: people in touch lately, then favourites.
+        // Android no longer reports how often a contact is used, so the phone's own history stands in.
+        return people.values
+            .sortedWith(compareByDescending<Person> { it.lastUsed ?: Long.MIN_VALUE }.thenByDescending { it.starred })
+            .take(OpenAiModels.TRANSCRIPTION_KEYWORD_LIMIT)
+            .map { it.name }
     }
+
+    private class Person(
+        val name: String,
+        var lastUsed: Long? = null,
+        var starred: Boolean = false,
+    )
 
     private companion object {
         const val MAX_NAME_LENGTH = 64

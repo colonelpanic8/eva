@@ -30,10 +30,6 @@ enum class ContactField(
 object ContactLookups {
     const val MAX_CONTACT_IDS = 50
 
-    fun escapeLike(value: String) = value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-
-    fun contains(value: String) = "%${escapeLike(value)}%"
-
     /** A bounded `IN` clause: SQLite takes a fixed argument list, and a huge name match must not build one unbounded. */
     fun idSelection(
         column: String,
