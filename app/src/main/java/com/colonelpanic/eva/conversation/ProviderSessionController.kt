@@ -11,6 +11,9 @@ import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.ProposalRejectedException
 import com.colonelpanic.eva.capability.ToolProposal
 import com.colonelpanic.eva.capability.ToolSchema
+import com.colonelpanic.eva.conversation.prompt.PromptConfig
+import com.colonelpanic.eva.conversation.prompt.PromptContext
+import com.colonelpanic.eva.conversation.prompt.PromptDefaults
 import com.colonelpanic.eva.providers.ConversationInput
 import com.colonelpanic.eva.providers.ConversationProvider
 import com.colonelpanic.eva.providers.ConversationSession
@@ -56,6 +59,8 @@ class ProviderSessionController(
     private val voiceKeywords: suspend () -> List<String> = { emptyList() },
     /** Capabilities the user has switched off. They are left out of the catalog entirely. */
     private val hiddenCapabilities: () -> Set<String> = { emptySet() },
+    /** Read at every connection, so an edit to the prompt file applies to the next session. */
+    private val prompt: suspend () -> PromptConfig = { PromptDefaults.config },
 ) {
     private val mutableState = MutableStateFlow(ConversationState())
     val state = mutableState.asStateFlow()
@@ -85,11 +90,6 @@ class ProviderSessionController(
         registry.catalog
             .filterNot { it.id in hiddenCapabilities() }
             .map { ProviderToolDefinition(it.id, it.title, it.description, it.inputSchema) }
-
-    private fun typedCatalog() = catalogOf(phoneTools())
-
-    // Only a spoken session is something the model can hang up.
-    private fun voiceCatalog() = catalogOf(phoneTools() + END_CONVERSATION)
 
     private var ending = false
     private var assistantSpeaking = false
@@ -132,7 +132,15 @@ class ProviderSessionController(
             scope.launch {
                 var openedSession: ConversationSession? = null
                 try {
-                    val connectionCatalog = if (voice) voiceCatalog() else typedCatalog()
+                    // Assembled before any provider work so a broken file fails here, with its message.
+                    val assembled =
+                        prompt().validated(PromptDefaults.VARIABLES).assemble(
+                            PromptContext(voice, mapOf("clock" to clock(), "lookup_retries" to voiceLookupRetries().toString())),
+                        )
+                    // Only a spoken session is something the model can hang up. The catalog is built per
+                    // connection because a switched-off capability and the enabled components both decide
+                    // which tools are offered and what they say.
+                    val connectionCatalog = catalogOf(assembled.apply(phoneTools() + if (voice) listOf(END_CONVERSATION) else emptyList()))
                     val provider =
                         if (!voice) {
                             providerFactory(link)
@@ -161,32 +169,7 @@ class ProviderSessionController(
                     val opened =
                         provider.open(
                             SessionOpenRequest(
-                                if (!voice) {
-                                    "You are EVA, an assistant running on the user's Android phone. " +
-                                        "Help conversationally and use the supplied tools for phone actions. " +
-                                        "Ask for missing information. Never claim sending a message when only a draft was opened. " +
-                                        clock()
-                                } else {
-                                    "You are EVA, a voice assistant running on the user's Android phone. " +
-                                        "Keep spoken replies short. Use the supplied tools for phone actions and say " +
-                                        "what the tool result reports. Never claim sending a message when only a draft was opened. " +
-                                        "Spoken names may be transcribed with the wrong spelling. For read-only lookups such as " +
-                                        "contacts search, first assess how ambiguous the name you heard is. If it could reasonably " +
-                                        "have multiple spellings, generate and rank the plausible spellings and phonetic variants, " +
-                                        "deduplicate them, and proactively search the most likely variants. After the initial lookup, " +
-                                        "make up to ${voiceLookupRetries()} additional lookup queries in total. Use that budget for " +
-                                        "the best spelling variants and, when a full name does not find a clear match, the first name " +
-                                        "or last name by itself. Do not spend queries on implausible variations. " +
-                                        "Use only query forms supported by the tool; do not put several alternatives into one query " +
-                                        "unless the tool supports it. Respect spellings explicitly supplied by the user. " +
-                                        "Use returned records to identify matches; never invent a person or contact detail. " +
-                                        "If different people plausibly match, ask which one the user means before acting. " +
-                                        "If these lookups still find nothing, ask for the spelling or another identifying detail. " +
-                                        "Apply these retries only to read-only lookups, never to sending, calling, or opening apps. " +
-                                        "When the user is finished, because they say goodbye, say that is all, or ask you to " +
-                                        "hang up, say a brief goodbye and then end the conversation with its tool. " +
-                                        clock()
-                                },
+                                assembled.instructions,
                                 connectionCatalog,
                                 // Captions only; a typed session has no audio to transcribe.
                                 if (voice) voiceKeywords() else emptyList(),
@@ -548,14 +531,16 @@ class ProviderSessionController(
         const val END_SPEECH_LIMIT_MILLIS = 10_000L
         const val PLAYOUT_TAIL_MILLIS = 500L
 
-        /** Hangs up rather than acting on the phone, so it bypasses the dispatcher and journal. */
+        /**
+         * Hangs up rather than acting on the phone, so it bypasses the dispatcher and journal. This
+         * wording is what the model sees when no enabled component describes the tool itself.
+         */
         val END_CONVERSATION =
             ProviderToolDefinition(
-                "eva.session.end",
+                PromptDefaults.END_CONVERSATION_ID,
                 "End the conversation",
-                "Hang up this voice conversation. Call it when the user says goodbye, says they are done, or asks " +
-                    "you to hang up, after a brief spoken goodbye; the goodbye finishes playing before the call ends. " +
-                    "Do not call it while a request is unfinished or you are waiting for the user to answer.",
+                "Hang up this voice conversation after a brief spoken goodbye; the goodbye finishes playing before " +
+                    "the call ends. Do not call it while a request is unfinished or you are waiting for the user to answer.",
                 Json.parseToJsonElement("""{"type":"object","properties":{},"required":[],"additionalProperties":false}""").jsonObject,
             )
 
