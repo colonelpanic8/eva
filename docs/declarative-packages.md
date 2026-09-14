@@ -1,6 +1,6 @@
 # Declarative capability packages
 
-Status: design being implemented. No declarative adapter or import UI is wired
+Status: codec implemented; execution and import integration are being built. No declarative adapter or import UI is wired
 into EVA yet. Packages, AppFunctions, and [installed extension apps](extension-protocol.md)
 are three supported extension paths. Packages are the next implementation slice;
 installed extension apps already have executable code and focused JVM tests.
@@ -9,7 +9,7 @@ installed extension apps already have executable code and focused JVM tests.
 
 A package is one self-contained JSON file, without scripts or embedded secrets.
 Its `formatVersion` identifies the codec, `id` is a publisher-chosen descriptive
-name, and `version` is a semantic version. Each capability's `name`, `description`,
+name, and `version` is a three-part `MAJOR.MINOR.PATCH` version (no prerelease/build suffix in v1). Each capability's `name`, `description`,
 and `inputSchema` form an MCP-compatible tool definition using EVA's supported
 JSON Schema subset. Binding metadata and effect declarations are separate from
 that tool definition. Unsupported schema features are rejected, not silently
@@ -107,3 +107,71 @@ untrusted definitions and never grants execution authority. This may let EVA
 offer intents from existing apps without a hand-authored package or app edits.
 
 References for the investigation: [App Actions XML schema](https://developer.android.com/develop/devices/assistant/action-schema) and [static shortcut declarations](https://developer.android.com/develop/ui/compose/system/shortcuts/creating-shortcuts).
+
+## V1 package fields
+
+The root contains exactly `formatVersion: 1`, `id`, `version`, `title`, and
+`capabilities` (1–64 entries); the full UTF-8 document is bounded to 256 KiB.
+Duplicate JSON keys, unknown fields, invalid Unicode, and unsupported versions
+are rejected. Object ordering does not affect the canonical contract digest.
+The package ID is a lowercase dotted name; capability names are ASCII identifiers.
+
+Each capability contains `tool`, `title`, `execution`, `binding`, and optionally
+`effects` (`read`, `write`, `external_handoff`, or `unknown`; omission means
+unknown). `tool` is exactly an MCP tool object: `name`, `description`, `inputSchema`.
+Inputs are a closed object with scalar string/integer/number/boolean properties,
+explicit `required`, and `additionalProperties: false`. The existing EVA subset
+supports descriptions, enums, string length and numeric bounds. Nested objects,
+arrays, null, schema defaults, and extra keywords are not accepted as inputs.
+Descriptions are bounded to 2,000 characters, titles to 120, and names to 64.
+
+Execution has required `mode` (`synchronous` or `handoff`), `requiresForeground`
+(boolean), `cancellation`, `idempotency`, and `reconciliation` (all `none`).
+Optional `maxWaitMillis` is a positive integer or null. Intent bindings require
+handoff plus foreground; HTTP and content bindings require synchronous mode.
+The common wait policy, rather than the file codec, applies the 60-second clamp.
+
+A typed slot is exactly `{"argument":"title","type":"string"}` or
+`{"value":"default","type":"string"}`. Argument types must match the tool
+schema; literal types must match their values. Argument slots never change
+binding authority. Optional query slots omit a missing argument. Required path
+and selection slots must have a value before anything is submitted.
+
+Intent fields: `kind`, `action`, `uri: {base, query?}`, optional `extras` and
+`package`. `query` and `extras` are maps of fixed names to typed slots. The base
+has no existing query, fragment, or user info. Parsed intent, file, content,
+JavaScript, and data URI schemes are rejected by this binding; use the content
+binding for provider reads.
+
+Content fields: `kind`, `authority`, fixed `uri`, `projection` (map of column name
+to scalar type), optional `selection`, `maxRows` (1–100), `maxBytes` (1–16,384).
+Selection is a list of `{column, operator, value}` predicates joined with AND;
+operators are `=`, `!=`, `<`, `<=`, `>`, `>=`, and string-only `LIKE`.
+The compiler produces a fixed selection template with bound selection arguments.
+Columns must be declared in the projection. There is no free-form SQL, sorting,
+subquery, caller-supplied column, or mutation operation. All projected columns
+are rendered to bounded text; extra rows/bytes must be reported as truncated.
+
+HTTP fields: `kind`, `origin`, `method`, `path`, `parameters`, `maxResponseBytes`,
+`result`, optional `requestBody` and `credential`. Origins are HTTPS scheme/host
+with optional port and no path, credentials, query, or fragment. Methods are GET,
+HEAD, POST, PUT, PATCH, DELETE. Paths start with `/`; typed `{name}` placeholders
+must have matching `parameters` entries. Each parameter has `in` (`path` or
+`query`), `name`, and a typed-slot `value`. No header parameter slots exist.
+`requestBody` is `{fields: {...}}`, recursively containing fields objects or
+scalar slots; GET/HEAD have no body. This mirrors OpenAPI operation structure
+without claiming to accept an entire OpenAPI document.
+
+`credential` is a named basic-auth reference such as `org-agenda`, limited to
+lowercase letters, digits, underscores, and hyphens. It is resolved in the
+extension credential namespace, never EVA's model credential namespace.
+`maxResponseBytes` is 1–1,048,576. `result` contains a JSON Pointer `pointer`,
+`maxBytes` (1–16,384), and optional `evidence: {pointer, equals}` for a terminal
+write result. Empty pointer selects the whole JSON response; `equals` is a
+non-null scalar. No scripts, filters, inferred success from prose, or polling
+expressions are supported. HTTP execution is not wired yet.
+
+The [org-agenda example](examples/org-agenda.json) contains agenda, default-template
+capture with `values.Title`, and a mova capture handoff. Replace the example HTTPS
+origin and configure the named basic-auth credential in EVA. It contains no
+credentials. Search is omitted because v1 has no client-side text filter.

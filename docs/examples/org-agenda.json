@@ -1,0 +1,190 @@
+{
+  "formatVersion": 1,
+  "id": "community.org-agenda",
+  "version": "0.1.0",
+  "title": "Org agenda",
+  "capabilities": [
+    {
+      "tool": {
+        "name": "agenda",
+        "description": "Read the agenda from the configured org-agenda API.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "span": {
+              "type": "string",
+              "enum": [
+                "day",
+                "week",
+                "month"
+              ]
+            },
+            "date": {
+              "type": "string",
+              "maxLength": 10
+            },
+            "include_overdue": {
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "title": "Read agenda",
+      "effects": "read",
+      "execution": {
+        "mode": "synchronous",
+        "requiresForeground": false,
+        "maxWaitMillis": 30000,
+        "cancellation": "none",
+        "idempotency": "none",
+        "reconciliation": "none"
+      },
+      "binding": {
+        "kind": "http",
+        "origin": "https://agenda.example.org",
+        "credential": "org-agenda",
+        "maxResponseBytes": 262144,
+        "method": "GET",
+        "path": "/agenda",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "span",
+            "value": {
+              "argument": "span",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date",
+            "value": {
+              "argument": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_overdue",
+            "value": {
+              "argument": "include_overdue",
+              "type": "boolean"
+            }
+          }
+        ],
+        "result": {
+          "pointer": "",
+          "maxBytes": 16384
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "capture",
+        "description": "Create a todo using the default capture template.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          },
+          "required": [
+            "title"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "title": "Capture todo",
+      "effects": "write",
+      "execution": {
+        "mode": "synchronous",
+        "requiresForeground": false,
+        "maxWaitMillis": 30000,
+        "cancellation": "none",
+        "idempotency": "none",
+        "reconciliation": "none"
+      },
+      "binding": {
+        "kind": "http",
+        "origin": "https://agenda.example.org",
+        "credential": "org-agenda",
+        "maxResponseBytes": 262144,
+        "method": "POST",
+        "path": "/capture",
+        "parameters": [],
+        "requestBody": {
+          "fields": {
+            "template": {
+              "type": "string",
+              "value": "default"
+            },
+            "values": {
+              "fields": {
+                "Title": {
+                  "argument": "title",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "result": {
+          "pointer": "",
+          "maxBytes": 16384,
+          "evidence": {
+            "pointer": "/status",
+            "equals": "created"
+          }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "open_capture",
+        "description": "Open mova with a title. The user finishes capture in mova.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          },
+          "required": [
+            "title"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "title": "Open mova capture",
+      "effects": "external_handoff",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true,
+        "maxWaitMillis": 30000,
+        "cancellation": "none",
+        "idempotency": "none",
+        "reconciliation": "none"
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.intent.action.VIEW",
+        "uri": {
+          "base": "mova://capture",
+          "query": {
+            "title": {
+              "argument": "title",
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

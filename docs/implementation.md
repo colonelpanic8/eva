@@ -80,6 +80,23 @@ titles, arguments, source labels, and result prose are quoted in a separate
 assistant message as untrusted data. Legacy receipts receive the same treatment.
 External capability descriptions are attributed when their source is supplied.
 
+## Declarative package codec
+
+`PackageCodec` now validates single-file JSON packages with MCP-compatible tool
+objects and typed declarations for `android.intent`, `android.content`, and HTTP.
+It rejects unknown fields, unsupported schemas, origin/authority substitution,
+unbounded results, invalid selection predicates, and unsupported execution
+promises. Binding minimum effects prevent read claims from bypassing mutation
+grants. `ExecutionSemantics` and `WaitBudget` define the layered precedence and
+hard ceiling; they are not yet applied to live execution or settings.
+
+The [package spec](declarative-packages.md) includes exact codec fields and the
+planned HTTPS index/import format. The [org-agenda example](examples/org-agenda.json)
+contains agenda, capture, and a mova intent. JVM codec tests exercise policy
+boundaries and budget precedence. Binding execution, local/HTTPS imports, preview
+UI, and generalized AppFunctions remain to be implemented. There is no device
+verification for these declarations yet.
+
 ## Android provider and action runtime
 
 The Compose app now uses `ProviderSessionController` and a provider-neutral
