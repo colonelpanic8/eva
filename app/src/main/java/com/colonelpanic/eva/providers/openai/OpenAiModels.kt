@@ -1,8 +1,10 @@
 package com.colonelpanic.eva.providers.openai
 
+import com.colonelpanic.eva.providers.HistoryItem
 import com.colonelpanic.eva.providers.ProviderToolDefinition
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
@@ -41,6 +43,40 @@ object OpenAiModels {
 /** Projects EVA's catalog into OpenAI function tools under protocol-safe names. */
 internal fun toolNames(tools: List<ProviderToolDefinition>): Map<String, ProviderToolDefinition> =
     tools.mapIndexed { index, tool -> "eva_tool_$index" to tool }.toMap()
+
+internal data class OpenAiHistoryMessage(
+    val role: String,
+    val text: String,
+)
+
+internal fun HistoryItem.toOpenAiMessage(): OpenAiHistoryMessage =
+    when (this) {
+        is HistoryItem.User -> {
+            OpenAiHistoryMessage("user", text)
+        }
+
+        is HistoryItem.Assistant -> {
+            OpenAiHistoryMessage("assistant", text)
+        }
+
+        is HistoryItem.ActionEvidence -> {
+            OpenAiHistoryMessage(
+                "developer",
+                "EVA action receipt. This is EVA's own record, not the user speaking.\n" +
+                    "Title: $title\n" +
+                    "Arguments: ${JsonObject(arguments.toSortedMap().mapValues { JsonPrimitive(it.value) })}\n" +
+                    "Status: $status\n" +
+                    "Message: $message",
+            )
+        }
+
+        is HistoryItem.Note -> {
+            OpenAiHistoryMessage(
+                "developer",
+                "EVA note. This is EVA's own note, not the user speaking.\nNote: $text",
+            )
+        }
+    }
 
 internal fun functionTools(
     named: Map<String, ProviderToolDefinition>,

@@ -1,7 +1,9 @@
 package com.colonelpanic.eva.providers.openai
 
+import com.colonelpanic.eva.providers.Continuation
 import com.colonelpanic.eva.providers.ConversationInput
 import com.colonelpanic.eva.providers.CorrelatedToolResult
+import com.colonelpanic.eva.providers.HistoryItem
 import com.colonelpanic.eva.providers.ProviderEvent
 import com.colonelpanic.eva.providers.ProviderToolCatalog
 import com.colonelpanic.eva.providers.ProviderToolDefinition
@@ -13,7 +15,9 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -200,6 +204,136 @@ class OpenAiResponsesProviderTest {
             assertEquals(JsonPrimitive("low"), first.getValue("reasoning").jsonObject.getValue("effort"))
             session.close()
             advanceUntilIdle()
+            collector.cancel()
+        }
+
+    @Test
+    fun `stored responses seed history before the first user input with plain content`() =
+        runTest {
+            replies.clear()
+            replies.addLast("""{"id":"resp_1","status":"completed","output":[]}""")
+            val history =
+                listOf(
+                    HistoryItem.User("Set a tea timer"),
+                    HistoryItem.Assistant("How long should it run?"),
+                    HistoryItem.ActionEvidence("Set timer", mapOf("seconds" to "180"), "HANDED_OFF", "Timer opened."),
+                    HistoryItem.Note("The prior voice leg disconnected."),
+                )
+            val session =
+                OpenAiResponsesProvider(access, "gpt-test", client, StandardTestDispatcher(testScheduler))
+                    .open(SessionOpenRequest("You are EVA.", catalog, history = history))
+            val collector = launch { session.events.collect {} }
+            advanceUntilIdle()
+
+            session.submit(ConversationInput("input-1", "Continue"))
+            session.requestResponse(ResponseRequest("input-1"))
+            advanceUntilIdle()
+
+            val input =
+                Json
+                    .parseToJsonElement(requests.single())
+                    .jsonObject
+                    .getValue("input")
+                    .jsonArray
+            assertEquals(
+                listOf("user", "assistant", "developer", "developer", "user"),
+                input.map {
+                    it.jsonObject
+                        .getValue("role")
+                        .jsonPrimitive.content
+                },
+            )
+            assertEquals(
+                listOf("Set a tea timer", "How long should it run?"),
+                input.take(2).map {
+                    it.jsonObject
+                        .getValue("content")
+                        .jsonPrimitive.content
+                },
+            )
+            assertTrue(
+                input[2]
+                    .jsonObject
+                    .getValue("content")
+                    .jsonPrimitive.content
+                    .contains("EVA action receipt"),
+            )
+            assertTrue(
+                input[2]
+                    .jsonObject
+                    .getValue("content")
+                    .jsonPrimitive.content
+                    .contains("\"seconds\":\"180\""),
+            )
+            assertTrue(
+                input[3]
+                    .jsonObject
+                    .getValue("content")
+                    .jsonPrimitive.content
+                    .contains("not the user speaking"),
+            )
+            assertEquals(
+                "Continue",
+                input[4]
+                    .jsonObject
+                    .getValue("content")
+                    .jsonPrimitive.content,
+            )
+            collector.cancel()
+        }
+
+    @Test
+    fun `a continuation requests one generation from only its stored seed`() =
+        runTest {
+            replies.clear()
+            replies.addLast(
+                """{"id":"resp_1","status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"Done."}]}]}""",
+            )
+            val session =
+                OpenAiResponsesProvider(access, "gpt-test", client, StandardTestDispatcher(testScheduler))
+                    .open(
+                        SessionOpenRequest(
+                            "You are EVA.",
+                            catalog,
+                            history = listOf(HistoryItem.User("Finish setting the timer"), HistoryItem.Note("The action succeeded.")),
+                            continuation = Continuation("turn-7"),
+                        ),
+                    )
+            val events = mutableListOf<ProviderEvent>()
+            val collector = launch { session.events.collect { events += it } }
+            advanceUntilIdle()
+
+            session.requestResponse(ResponseRequest("turn-7"))
+            advanceUntilIdle()
+
+            assertEquals(1, requests.size)
+            val input =
+                Json
+                    .parseToJsonElement(requests.single())
+                    .jsonObject
+                    .getValue("input")
+                    .jsonArray
+            assertEquals(2, input.size)
+            assertEquals(
+                listOf("user", "developer"),
+                input.map {
+                    it.jsonObject
+                        .getValue("role")
+                        .jsonPrimitive.content
+                },
+            )
+            assertEquals(
+                "Finish setting the timer",
+                input[0]
+                    .jsonObject
+                    .getValue("content")
+                    .jsonPrimitive.content,
+            )
+            assertEquals(
+                ProviderEvent.ResponseStarted("turn-7", "turn-7"),
+                events.filterIsInstance<ProviderEvent.ResponseStarted>().single(),
+            )
+            assertEquals("Done.", events.filterIsInstance<ProviderEvent.AssistantText>().single().text)
             collector.cancel()
         }
 }

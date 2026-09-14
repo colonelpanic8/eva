@@ -31,6 +31,7 @@ class BrokerConversationProvider(
     private val onAnswer: suspend (String) -> Unit = {},
 ) : ConversationProvider {
     override suspend fun open(request: SessionOpenRequest): ConversationSession {
+        check(request.continuation == null) { "The paired host does not support continuing a turn." }
         require(request.catalog.tools.size <= 32)
         require(
             request.catalog.tools
