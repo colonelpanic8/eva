@@ -123,7 +123,8 @@ class SessionControllerTest {
                     override fun propose(
                         callId: String,
                         input: String,
-                    ) = LocalCommandProvider().propose(callId, input)?.copy(callId = "")
+                        catalogRevision: String,
+                    ) = LocalCommandProvider().propose(callId, input, catalogRevision)?.copy(callId = "")
                 }
             val controller =
                 SessionController(
@@ -225,7 +226,7 @@ class SessionControllerTest {
                     "Opening",
                     1L,
                     CapabilityRegistry.MAP_SEARCH,
-                    CapabilityRegistry.REVISION,
+                    "legacy-revision",
                 ),
             )
             val controller =

@@ -29,7 +29,8 @@ class CapabilityDispatcherTest {
                 return action()
             }
         }
-    private val dispatcher = CapabilityDispatcher(CapabilityRegistry(mapOf(CapabilityRegistry.MAP_SEARCH to backend)), repository) { 10L }
+    private val registry = CapabilityRegistry(mapOf(CapabilityRegistry.MAP_SEARCH to backend))
+    private val dispatcher = CapabilityDispatcher(registry, repository) { 10L }
 
     private fun proposal(
         id: String = "session:call",
@@ -39,6 +40,7 @@ class CapabilityDispatcherTest {
         CapabilityRegistry.MAP_SEARCH,
         mapOf("destination" to destination),
         "map $destination",
+        registry.snapshot.revision,
     )
 
     @Test
@@ -82,7 +84,7 @@ class CapabilityDispatcherTest {
                     proposal(destination = "one\ntwo"),
                     proposal().copy(arguments = mapOf("destination" to "Park", "uri" to "intent://bad")),
                     proposal().copy(capabilityId = "unknown"),
-                    proposal().copy(catalogRevision = CapabilityRegistry.REVISION + 1),
+                    proposal().copy(catalogRevision = "stale"),
                 )
             invalid.forEachIndexed { index, request ->
                 assertEquals(InvocationStatus.NOT_EXECUTED, dispatcher.execute(request.copy(callId = "invalid:$index")).status)

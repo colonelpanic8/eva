@@ -129,7 +129,7 @@ class AppFunctionsDeviceTest {
         checkNotNull(
             eva.registry.resolve(
                 com.colonelpanic.eva.capability
-                    .ToolProposal("device-test", id, emptyMap(), "test"),
+                    .ToolProposal("device-test", id, emptyMap(), "test", eva.registry.snapshot.revision),
             ),
         )
 

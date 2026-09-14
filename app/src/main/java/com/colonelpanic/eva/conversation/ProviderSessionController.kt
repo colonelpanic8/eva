@@ -2,6 +2,7 @@ package com.colonelpanic.eva.conversation
 
 import com.colonelpanic.eva.audio.RealtimeMediaSession
 import com.colonelpanic.eva.audio.RealtimeMediaState
+import com.colonelpanic.eva.capability.BoundedJson
 import com.colonelpanic.eva.capability.CapabilityDispatcher
 import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.capability.InvocationPersistenceException
@@ -38,9 +39,10 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
-import java.security.MessageDigest
 import java.util.UUID
 
 /** Calls and the supplied scope are confined to the UI dispatcher. */
@@ -75,21 +77,20 @@ class ProviderSessionController(
     private var currentInput: ConversationInput? = null
     private var claimedCall: String? = null
     private var lastUserTranscript: String? = null
-    private val definitions = registry.catalog.associateBy { it.id }
 
     /**
      * Read when a session opens, not once at construction, so switching a capability off takes
      * effect on the next connection. A live session keeps the catalog it was opened with.
      */
-    private fun phoneTools() =
-        registry.catalog
+    private fun phoneTools(snapshot: CapabilityRegistry.Snapshot) =
+        snapshot.catalog
             .filterNot { it.id in hiddenCapabilities() }
             .map { ProviderToolDefinition(it.id, it.title, it.description, it.inputSchema) }
 
-    private fun typedCatalog() = catalogOf(phoneTools())
+    private fun typedCatalog(snapshot: CapabilityRegistry.Snapshot) = catalogOf(snapshot.revision, phoneTools(snapshot))
 
     // Only a spoken session is something the model can hang up.
-    private fun voiceCatalog() = catalogOf(phoneTools() + END_CONVERSATION)
+    private fun voiceCatalog(snapshot: CapabilityRegistry.Snapshot) = catalogOf(snapshot.revision, phoneTools(snapshot) + END_CONVERSATION)
 
     private var ending = false
     private var assistantSpeaking = false
@@ -132,7 +133,8 @@ class ProviderSessionController(
             scope.launch {
                 var openedSession: ConversationSession? = null
                 try {
-                    val connectionCatalog = if (voice) voiceCatalog() else typedCatalog()
+                    val registrySnapshot = registry.snapshot
+                    val connectionCatalog = if (voice) voiceCatalog(registrySnapshot) else typedCatalog(registrySnapshot)
                     val provider =
                         if (!voice) {
                             providerFactory(link)
@@ -269,7 +271,7 @@ class ProviderSessionController(
                                         hangUp()
                                     }
                                 } else {
-                                    dispatch(event, opened, thisAttempt)
+                                    dispatch(event, opened, thisAttempt, registrySnapshot, connectionCatalog)
                                 }
                             }
 
@@ -440,23 +442,34 @@ class ProviderSessionController(
         event: ProviderEvent.ToolCallReady,
         opened: ConversationSession,
         thisAttempt: Int,
+        registrySnapshot: CapabilityRegistry.Snapshot,
+        connectionCatalog: ProviderToolCatalog,
     ) {
         val input = currentInput ?: error("Tool call arrived without a user input")
         check(event.call.connectionEpoch == opened.connectionEpoch && event.call.inputId == input.id)
-        val definition = checkNotNull(definitions[event.capabilityId])
+        val definition = registrySnapshot.definitions[event.capabilityId]
         val rejection =
             when {
-                claimedCall != null && claimedCall != event.call.callId -> "One phone action is permitted per request."
-                else -> ToolSchema.error(definition.inputSchema, event.arguments)
+                claimedCall != null && claimedCall != event.call.callId -> {
+                    "One phone action is permitted per request."
+                }
+
+                definition == null || connectionCatalog.tools.none { it.capabilityId == event.capabilityId } -> {
+                    "This action was not offered in this connection. Nothing was executed."
+                }
+
+                else -> {
+                    ToolSchema.error(definition.inputSchema, event.arguments)
+                }
             }
         if (claimedCall == null) claimedCall = event.call.callId
         val arguments = event.arguments.mapValues { (_, value) -> (value as? JsonPrimitive)?.content }
         val argumentError = if (arguments.values.any { it == null }) "This action binding requires scalar arguments." else null
         val id = "provider:${event.call.providerSessionId}:${event.call.callId}"
         val request = input.text.ifBlank { lastUserTranscript ?: VOICE_REQUEST }
-        val proposal = ToolProposal(id, event.capabilityId, arguments.mapValues { it.value.orEmpty() }, request)
+        val proposal = ToolProposal(id, event.capabilityId, arguments.mapValues { it.value.orEmpty() }, request, registrySnapshot.revision)
 
-        fun record(entry: ConversationEntry) = upsert(entry.copy(request = "", actionTitle = definition.title, parentId = input.id))
+        fun record(entry: ConversationEntry) = upsert(entry.copy(request = "", actionTitle = definition?.title, parentId = input.id))
         record(ConversationEntry(id, "", "Preparing action…", EntryStatus.PENDING))
         val job =
             scope.launch {
@@ -559,14 +572,32 @@ class ProviderSessionController(
                 Json.parseToJsonElement("""{"type":"object","properties":{},"required":[],"additionalProperties":false}""").jsonObject,
             )
 
-        fun catalogOf(tools: List<ProviderToolDefinition>) =
-            ProviderToolCatalog(
-                MessageDigest
-                    .getInstance("SHA-256")
-                    .digest(tools.joinToString { "${it.capabilityId}:${it.description}:${it.inputSchema}" }.toByteArray())
-                    .joinToString("") { "%02x".format(it) },
-                tools,
-            )
+        fun catalogOf(
+            registryRevision: String,
+            tools: List<ProviderToolDefinition>,
+        ) = ProviderToolCatalog(
+            BoundedJson.digest(
+                JsonObject(
+                    mapOf(
+                        "registry" to JsonPrimitive(registryRevision),
+                        "tools" to
+                            JsonArray(
+                                tools.map {
+                                    JsonObject(
+                                        mapOf(
+                                            "id" to JsonPrimitive(it.capabilityId),
+                                            "title" to JsonPrimitive(it.title),
+                                            "description" to JsonPrimitive(it.description),
+                                            "schema" to it.inputSchema,
+                                        ),
+                                    )
+                                },
+                            ),
+                    ),
+                ),
+            ),
+            tools,
+        )
     }
 
     private fun clock(): String {

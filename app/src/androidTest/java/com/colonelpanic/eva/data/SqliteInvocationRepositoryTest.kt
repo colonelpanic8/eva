@@ -37,6 +37,8 @@ class SqliteInvocationRepositoryTest {
                 SqliteInvocationRepository(context, name).use { repository ->
                     val old = repository.history().single()
                     assertEquals("old", old.callId)
+                    assertEquals("2", old.catalogRevision)
+                    assertEquals("fp", old.fingerprint)
                     assertNull(old.title)
                     repository.claim(old.copy(callId = "new", title = "Search maps"))
                 }
@@ -54,7 +56,13 @@ class SqliteInvocationRepositoryTest {
             val context = InstrumentationRegistry.getInstrumentation().targetContext
             val name = "test-${UUID.randomUUID()}.db"
             val proposal =
-                ToolProposal("session:'call", CapabilityRegistry.MAP_SEARCH, mapOf("destination" to "Park & café"), "map Park & café")
+                ToolProposal(
+                    "session:'call",
+                    CapabilityRegistry.MAP_SEARCH,
+                    mapOf("destination" to "Park & café"),
+                    "map Park & café",
+                    "legacy-revision",
+                )
             val record =
                 InvocationRecord(
                     proposal.callId,
@@ -115,7 +123,7 @@ class SqliteInvocationRepositoryTest {
                             "Pending",
                             1,
                             CapabilityRegistry.MAP_SEARCH,
-                            CapabilityRegistry.REVISION,
+                            "legacy-revision",
                         ),
                     )
                     repository.claim(
@@ -128,7 +136,7 @@ class SqliteInvocationRepositoryTest {
                             "Opened",
                             0,
                             CapabilityRegistry.MAP_SEARCH,
-                            CapabilityRegistry.REVISION,
+                            "legacy-revision",
                         ),
                     )
                 }

@@ -127,19 +127,19 @@ class SqliteInvocationRepository(
             message = getString(getColumnIndexOrThrow("message")),
             createdAtMillis = getLong(getColumnIndexOrThrow("created_at")),
             capabilityId = getString(getColumnIndexOrThrow("capability_id")),
-            catalogRevision = getInt(getColumnIndexOrThrow("catalog_revision")),
+            catalogRevision = getString(getColumnIndexOrThrow("catalog_revision")),
             title = getColumnIndexOrThrow("title").let { if (isNull(it)) null else getString(it) },
         )
 
     private class JournalDatabase(
         context: Context,
         name: String,
-    ) : SQLiteOpenHelper(context, name, null, 2) {
+    ) : SQLiteOpenHelper(context, name, null, 3) {
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL(
                 "CREATE TABLE invocations (call_id TEXT PRIMARY KEY NOT NULL, fingerprint TEXT NOT NULL, " +
                     "request TEXT NOT NULL, destination TEXT, status TEXT NOT NULL, message TEXT NOT NULL, created_at INTEGER NOT NULL, " +
-                    "capability_id TEXT NOT NULL, catalog_revision INTEGER NOT NULL, title TEXT)",
+                    "capability_id TEXT NOT NULL, catalog_revision TEXT NOT NULL, title TEXT)",
             )
         }
 
@@ -148,8 +148,16 @@ class SqliteInvocationRepository(
             oldVersion: Int,
             newVersion: Int,
         ) {
-            check(oldVersion == 1 && newVersion == 2)
-            db.execSQL("ALTER TABLE invocations ADD COLUMN title TEXT")
+            check(oldVersion in 1..2 && newVersion == 3)
+            if (oldVersion == 1) db.execSQL("ALTER TABLE invocations ADD COLUMN title TEXT")
+            db.execSQL("ALTER TABLE invocations RENAME TO invocations_legacy")
+            onCreate(db)
+            db.execSQL(
+                "INSERT INTO invocations (call_id, fingerprint, request, destination, status, message, created_at, " +
+                    "capability_id, catalog_revision, title) SELECT call_id, fingerprint, request, destination, status, message, " +
+                    "created_at, capability_id, CAST(catalog_revision AS TEXT), title FROM invocations_legacy ORDER BY rowid",
+            )
+            db.execSQL("DROP TABLE invocations_legacy")
         }
     }
 

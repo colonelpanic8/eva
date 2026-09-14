@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import java.security.MessageDigest
+import java.util.Collections
 
 /** Strict bounded JSON with duplicate-key rejection before map construction. */
 object BoundedJson {
@@ -16,6 +17,13 @@ object BoundedJson {
         require(text.length <= maxBytes && text.toByteArray(Charsets.UTF_8).size <= maxBytes) { "JSON exceeds byte limit" }
         return Reader(text).read()
     }
+
+    fun freeze(value: JsonElement): JsonElement =
+        when (value) {
+            is JsonObject -> JsonObject(Collections.unmodifiableMap(value.mapValues { freeze(it.value) }))
+            is JsonArray -> JsonArray(Collections.unmodifiableList(value.map(::freeze)))
+            else -> value
+        }
 
     fun canonical(value: JsonElement): String =
         when (value) {

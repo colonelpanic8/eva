@@ -239,6 +239,112 @@ class ProviderSessionControllerTest {
             )
         }
 
+    @Test
+    fun `connection keeps its original revision and removed calls get durable rejections`() =
+        runTest {
+            val oldRevision = registry.snapshot.revision
+            val controller = ProviderSessionController(registry, CapabilityDispatcher(registry, repository), repository, this, { provider })
+            advanceUntilIdle()
+            controller.connect("unused")
+            advanceUntilIdle()
+            val projection = provider.request.catalog.revision
+            registry.replace(emptyMap(), emptyList())
+            controller.submit("Open Park")
+            advanceUntilIdle()
+            provider.call("removed")
+            advanceUntilIdle()
+            assertEquals(projection, provider.request.catalog.revision)
+            assertEquals(oldRevision, repository.history().single().catalogRevision)
+            assertEquals("NOT_EXECUTED", provider.results.single().status)
+            assertEquals(0, executions)
+            controller.disconnect()
+            advanceUntilIdle()
+        }
+
+    @Test
+    fun `new definitions are captured on next open rather than controller construction`() =
+        runTest {
+            var active = provider
+            val controller = ProviderSessionController(registry, CapabilityDispatcher(registry, repository), repository, this, { active })
+            advanceUntilIdle()
+            controller.connect("unused")
+            advanceUntilIdle()
+            val oldProjection = active.request.catalog
+            val read = secondDefinition.copy(readOnly = true)
+            val backend =
+                object : ExecutionBackend {
+                    override suspend fun unavailableReason(): String? = null
+
+                    override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome {
+                        executions++
+                        return ExecutionOutcome(InvocationStatus.COMPLETED, "Found Park")
+                    }
+                }
+            registry.replace(mapOf(read.id to backend), listOf(read))
+            assertEquals(oldProjection, active.request.catalog)
+            controller.disconnect()
+            advanceUntilIdle()
+            active = FakeProvider()
+            controller.connect("unused")
+            advanceUntilIdle()
+            assertEquals(
+                listOf(read.id),
+                active.request.catalog.tools
+                    .map { it.capabilityId },
+            )
+            assertNotEquals(oldProjection.revision, active.request.catalog.revision)
+            controller.submit("Find two places")
+            advanceUntilIdle()
+            active.call("read1")
+            advanceUntilIdle()
+            active.call("read2")
+            advanceUntilIdle()
+            assertEquals(listOf("COMPLETED", "NOT_EXECUTED"), active.results.map { it.status })
+            assertEquals(1, executions)
+            controller.disconnect()
+            advanceUntilIdle()
+        }
+
+    @Test
+    fun `unadvertised tool is rejected without disconnecting or executing`() =
+        runTest {
+            val controller =
+                ProviderSessionController(
+                    registry,
+                    CapabilityDispatcher(registry, repository),
+                    repository,
+                    this,
+                    { provider },
+                    hiddenCapabilities = { setOf(definition.id) },
+                )
+            advanceUntilIdle()
+            controller.connect("unused")
+            advanceUntilIdle()
+            controller.submit("Open Park")
+            advanceUntilIdle()
+            provider.channel.send(
+                ProviderEvent.ToolCallReady(
+                    CallIdentity(
+                        provider.connectionEpoch,
+                        "session",
+                        provider.input.id,
+                        provider.input.id,
+                        "turn",
+                        provider.request.catalog.revision,
+                        "hidden",
+                    ),
+                    definition.id,
+                    Json.parseToJsonElement("""{"place":"Park"}""").jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals("NOT_EXECUTED", provider.results.single().status)
+            assertEquals(ProviderStatus.CONNECTED, controller.state.value.providerStatus)
+            assertEquals(0, executions)
+            controller.disconnect()
+            advanceUntilIdle()
+        }
+
     private class FakeProvider :
         ConversationProvider,
         ConversationSession {

@@ -7,6 +7,7 @@ interface TypedInputProvider {
     fun propose(
         callId: String,
         input: String,
+        catalogRevision: String,
     ): ToolProposal?
 }
 
@@ -14,13 +15,26 @@ class LocalCommandProvider : TypedInputProvider {
     override fun propose(
         callId: String,
         input: String,
+        catalogRevision: String,
     ): ToolProposal? {
         val text = input.trim()
         mapCommand.matchEntire(text)?.let {
-            return ToolProposal(callId, CapabilityRegistry.MAP_SEARCH, mapOf("destination" to it.groupValues[1].trim()), input)
+            return ToolProposal(
+                callId,
+                CapabilityRegistry.MAP_SEARCH,
+                mapOf("destination" to it.groupValues[1].trim()),
+                input,
+                catalogRevision,
+            )
         }
         navigationCommand.matchEntire(text)?.let {
-            return ToolProposal(callId, CapabilityRegistry.NAVIGATE, mapOf("destination" to it.groupValues[1].trim()), input)
+            return ToolProposal(
+                callId,
+                CapabilityRegistry.NAVIGATE,
+                mapOf("destination" to it.groupValues[1].trim()),
+                input,
+                catalogRevision,
+            )
         }
         messageCommand.matchEntire(text)?.let {
             return ToolProposal(
@@ -28,6 +42,7 @@ class LocalCommandProvider : TypedInputProvider {
                 CapabilityRegistry.SMS_COMPOSE,
                 mapOf("recipient" to it.groupValues[1].trim(), "message" to it.groupValues[2].trim()),
                 input,
+                catalogRevision,
             )
         }
         return null

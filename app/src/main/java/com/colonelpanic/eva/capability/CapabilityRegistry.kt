@@ -1,30 +1,117 @@
 package com.colonelpanic.eva.capability
 
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import java.util.Collections
+
 class CapabilityRegistry(
     backends: Map<String, ExecutionBackend>,
     definitions: List<CapabilityDefinition> = BundledCapabilities.definitions,
+    bindingRevisions: Map<String, String> = backends.keys.associateWith { "native:9" },
 ) {
-    private val bindings = backends.toMap()
-    val catalog = definitions.filter { it.id in bindings }.toList()
-    private val descriptions = catalog.associateBy { it.id }
+    private val admission = Mutex()
 
-    init {
-        require(descriptions.size == catalog.size) { "Duplicate capability IDs" }
-        require(bindings.keys == descriptions.keys) { "Every backend needs a capability definition" }
-        catalog.forEach { ToolSchema.check(it.inputSchema) }
+    @Volatile private var current = Snapshot.create(backends, definitions, bindingRevisions)
+    val snapshot: Snapshot get() = current
+    val catalog: List<CapabilityDefinition> get() = current.catalog
+
+    /** Callers must change binding revisions when backend authority or semantics change. */
+    suspend fun replace(
+        backends: Map<String, ExecutionBackend>,
+        definitions: List<CapabilityDefinition> = BundledCapabilities.definitions,
+        bindingRevisions: Map<String, String> = backends.keys.associateWith { "native:9" },
+    ) {
+        val candidate = Snapshot.create(backends, definitions, bindingRevisions)
+        admission.withLock { current = candidate }
     }
 
-    fun resolve(proposal: ToolProposal): ExecutionBackend? =
-        if (proposal.catalogRevision == REVISION) bindings[proposal.capabilityId] else null
+    fun resolve(proposal: ToolProposal): ExecutionBackend? = current.resolve(proposal)
 
-    fun validationError(proposal: ToolProposal): String? {
-        if (resolve(proposal) == null) return "This action is unavailable. No app was opened."
-        val definition = descriptions.getValue(proposal.capabilityId)
-        return ToolSchema.error(definition.inputSchema, ToolSchema.coerce(definition.inputSchema, proposal.arguments))
-            ?: definition.validateOperation(proposal.arguments)
+    fun validationError(proposal: ToolProposal): String? = current.validationError(proposal)
+
+    /** Only journal the dispatch transition here; never perform external work under this lock. */
+    internal suspend fun commitDispatch(
+        proposal: ToolProposal,
+        commit: suspend () -> Unit,
+    ): ExecutionBackend? =
+        admission.withLock {
+            val backend = current.resolve(proposal) ?: return@withLock null
+            commit()
+            backend
+        }
+
+    class Snapshot private constructor(
+        val catalog: List<CapabilityDefinition>,
+        private val bindings: Map<String, ExecutionBackend>,
+        val bindingRevisions: Map<String, String>,
+        val revision: String,
+    ) {
+        val definitions: Map<String, CapabilityDefinition> = Collections.unmodifiableMap(catalog.associateBy { it.id })
+
+        fun resolve(proposal: ToolProposal): ExecutionBackend? =
+            if (proposal.catalogRevision ==
+                revision
+            ) {
+                bindings[proposal.capabilityId]
+            } else {
+                null
+            }
+
+        fun validationError(proposal: ToolProposal): String? {
+            if (resolve(proposal) == null) return STALE_MESSAGE
+            val definition = definitions.getValue(proposal.capabilityId)
+            return ToolSchema.error(definition.inputSchema, ToolSchema.coerce(definition.inputSchema, proposal.arguments))
+                ?: definition.validateOperation(proposal.arguments)
+        }
+
+        companion object {
+            internal fun create(
+                backends: Map<String, ExecutionBackend>,
+                definitions: List<CapabilityDefinition>,
+                bindingRevisions: Map<String, String>,
+            ): Snapshot {
+                val catalog =
+                    definitions.filter { it.id in backends }.map {
+                        it.copy(inputSchema = BoundedJson.freeze(it.inputSchema) as JsonObject)
+                    }
+                require(catalog.map { it.id }.distinct().size == catalog.size) { "Duplicate capability IDs" }
+                require(backends.keys == catalog.map { it.id }.toSet()) { "Every backend needs a capability definition" }
+                require(bindingRevisions.keys == backends.keys && bindingRevisions.values.all { it.isNotBlank() })
+                catalog.forEach { ToolSchema.check(it.inputSchema) }
+                val digest =
+                    BoundedJson.digest(
+                        JsonArray(
+                            catalog.sortedBy { it.id }.map {
+                                JsonObject(
+                                    mapOf(
+                                        "id" to JsonPrimitive(it.id),
+                                        "title" to JsonPrimitive(it.title),
+                                        "description" to JsonPrimitive(it.description),
+                                        "schema" to it.inputSchema,
+                                        "readOnly" to JsonPrimitive(it.readOnly),
+                                        "binding" to JsonPrimitive(bindingRevisions.getValue(it.id)),
+                                    ),
+                                )
+                            },
+                        ),
+                    )
+                return Snapshot(
+                    Collections.unmodifiableList(catalog),
+                    Collections.unmodifiableMap(backends.toMap()),
+                    Collections.unmodifiableMap(bindingRevisions.toMap()),
+                    digest,
+                )
+            }
+        }
     }
 
     companion object {
+        const val STALE_MESSAGE =
+            "This action catalog changed or is unavailable. " +
+                "Reconnect before requesting the action again. Nothing was executed."
         const val MAP_SEARCH = "eva.android.maps.search"
         const val NAVIGATE = "eva.android.maps.navigate"
         const val SMS_COMPOSE = "eva.android.messages.compose"
@@ -54,7 +141,6 @@ class CapabilityRegistry(
 
         /** Reading and driving another app's screen, which the user can withhold as a group. */
         val SCREEN_CONTROL = setOf(UI_OBSERVE, UI_TAP, UI_SET_TEXT)
-        const val REVISION = 9
         const val MAX_DESTINATION_LENGTH = 500
     }
 }

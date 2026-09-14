@@ -46,7 +46,7 @@ class SessionController(
             append(ConversationEntry(id, input.take(1000), "Keep requests under 1,000 characters.", EntryStatus.NOT_EXECUTED))
             return
         }
-        val proposal = provider.propose(id, input)
+        val proposal = provider.propose(id, input, dispatcher.catalogRevision)
         if (proposal == null) {
             append(
                 ConversationEntry(

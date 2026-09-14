@@ -28,7 +28,7 @@ class NativeCommandsTest {
         runTest {
             val commands = listOf("map Park", "navigate to 1 Ferry Building", "text +1 (202) 555-0100: Hello: meet at 5 & bring café?")
             commands.forEachIndexed { index, command ->
-                val proposal = checkNotNull(provider.propose("call:$index", command))
+                val proposal = checkNotNull(provider.propose("call:$index", command, registry.snapshot.revision))
                 dispatcher.execute(proposal)
                 dispatcher.execute(proposal)
             }
@@ -60,7 +60,10 @@ class NativeCommandsTest {
                     mapOf("recipient" to "2025550100", "message" to "Hello", "send" to "true"),
                 )
             arguments.forEachIndexed { index, args ->
-                val result = dispatcher.execute(ToolProposal("invalid:$index", CapabilityRegistry.SMS_COMPOSE, args, "text test"))
+                val result =
+                    dispatcher.execute(
+                        ToolProposal("invalid:$index", CapabilityRegistry.SMS_COMPOSE, args, "text test", registry.snapshot.revision),
+                    )
                 assertEquals(InvocationStatus.NOT_EXECUTED, result.status)
             }
             assertEquals(emptyList<Pair<String, Map<String, String>>>(), received)
@@ -72,7 +75,9 @@ class NativeCommandsTest {
             val group = mapOf("recipient" to "2025550100, 2025550101", "message" to "Hello")
             val thread = mapOf("conversationId" to "12", "message" to "Hello")
             listOf(group, thread).forEachIndexed { index, args ->
-                dispatcher.execute(ToolProposal("group:$index", CapabilityRegistry.SMS_COMPOSE, args, "text test"))
+                dispatcher.execute(
+                    ToolProposal("group:$index", CapabilityRegistry.SMS_COMPOSE, args, "text test", registry.snapshot.revision),
+                )
             }
             assertEquals(listOf(CapabilityRegistry.SMS_COMPOSE to group, CapabilityRegistry.SMS_COMPOSE to thread), received)
         }
@@ -86,6 +91,7 @@ class NativeCommandsTest {
                     CapabilityRegistry.NAVIGATE,
                     mapOf("destination" to "Park", "mode" to "b"),
                     "navigate to Park",
+                    registry.snapshot.revision,
                 )
             assertEquals(InvocationStatus.NOT_EXECUTED, dispatcher.execute(proposal).status)
             assertEquals(0, received.size)

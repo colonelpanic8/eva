@@ -2,6 +2,23 @@
 
 Updated: 2026-09-14. Architecture: [architecture.md](architecture.md).
 
+## Installed-extension foundations
+
+The [installed-app v1 contract](extension-protocol.md) and strict bounded JSON
+codecs are implemented. The registry now publishes immutable snapshots with
+content/binding revisions. Connections capture their own registry snapshot and
+provider projection; additions require another connection. Replacement is
+ordered against the durable dispatch transition, so invalidation during preflight
+cannot execute the old binding. A changed registry conservatively rejects calls
+from an older connection, including unaffected tools; reconnect to refresh it.
+Backend owners must change binding revisions when authority or semantics change.
+
+The journal migrates integer revisions to text without rewriting fingerprints
+or historical outcomes. JVM tests cover migration/recovery, snapshot replacement,
+and stale/unadvertised calls. One action per request still includes reads.
+Discovery, Binder execution, persistent grants, and the planned 64-tool admission
+policy remain unimplemented. The codecs do not register or authorize extensions.
+
 ## Android provider and action runtime
 
 The Compose app now uses `ProviderSessionController` and a provider-neutral

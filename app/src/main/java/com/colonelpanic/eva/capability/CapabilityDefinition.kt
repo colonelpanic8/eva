@@ -15,7 +15,7 @@ data class CapabilityDefinition(
     val title: String,
     val description: String,
     val inputSchema: JsonObject,
-    /** Observes without changing anything on the phone, so a turn may run several. */
+    /** Claims observation without mutation; this does not authorize execution or tool chaining. */
     val readOnly: Boolean = false,
     val validateOperation: (Map<String, String>) -> String? = { null },
 )

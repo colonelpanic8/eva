@@ -20,7 +20,7 @@ class ScalarArgumentTest {
     private fun proposal(
         id: String,
         arguments: Map<String, String>,
-    ) = ToolProposal("call", id, arguments, "request", CapabilityRegistry.REVISION)
+    ) = ToolProposal("call", id, arguments, "request", registry.snapshot.revision)
 
     @Test
     fun `integer arguments survive the string round trip`() {

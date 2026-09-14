@@ -7,12 +7,12 @@ data class ToolProposal(
     val capabilityId: String,
     val arguments: Map<String, String>,
     val request: String,
-    val catalogRevision: Int = CapabilityRegistry.REVISION,
+    val catalogRevision: String,
     val threadId: String? = null,
     val turnId: String? = null,
 ) {
     fun fingerprint(): String {
-        val fields = listOf(capabilityId, catalogRevision.toString()) + arguments.toSortedMap().flatMap { listOf(it.key, it.value) }
+        val fields = listOf(capabilityId, catalogRevision) + arguments.toSortedMap().flatMap { listOf(it.key, it.value) }
         val encoded = fields.joinToString("") { "${it.length}:$it" }
         return MessageDigest.getInstance("SHA-256").digest(encoded.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
     }
@@ -37,7 +37,7 @@ data class InvocationRecord(
     val message: String,
     val createdAtMillis: Long,
     val capabilityId: String,
-    val catalogRevision: Int,
+    val catalogRevision: String,
     val title: String? = null,
     /** Null for receipts journaled before threads existed. */
     val threadId: String? = null,

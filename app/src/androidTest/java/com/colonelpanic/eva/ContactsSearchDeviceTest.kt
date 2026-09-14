@@ -50,6 +50,7 @@ class ContactsSearchDeviceTest {
             capabilityId = id,
             arguments = emptyMap(),
             request = "device verification",
+            catalogRevision = eva.registry.snapshot.revision,
         )
 
     private companion object {

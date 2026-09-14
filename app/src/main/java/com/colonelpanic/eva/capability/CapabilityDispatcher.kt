@@ -14,6 +14,7 @@ class CapabilityDispatcher(
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) {
     private val submissions = Mutex()
+    val catalogRevision: String get() = registry.snapshot.revision
 
     suspend fun execute(
         proposal: ToolProposal,
@@ -24,7 +25,8 @@ class CapabilityDispatcher(
             if (proposal.callId.isBlank() || proposal.callId.length > 256 || proposal.request.length > 1000) {
                 throw ProposalRejectedException("The request has invalid metadata. No app was opened.")
             }
-            val validationError = rejection ?: registry.validationError(snapshot)
+            val catalog = registry.snapshot
+            val validationError = rejection ?: catalog.validationError(snapshot)
             val initial =
                 InvocationRecord(
                     callId = proposal.callId,
@@ -36,7 +38,12 @@ class CapabilityDispatcher(
                     createdAtMillis = nowMillis(),
                     capabilityId = proposal.capabilityId,
                     catalogRevision = proposal.catalogRevision,
-                    title = registry.catalog.find { it.id == proposal.capabilityId }?.title,
+                    title =
+                        catalog
+                            .takeIf { it.revision == proposal.catalogRevision }
+                            ?.definitions
+                            ?.get(proposal.capabilityId)
+                            ?.title,
                     threadId = proposal.threadId,
                     turnId = proposal.turnId,
                 )
@@ -47,7 +54,7 @@ class CapabilityDispatcher(
             var phase = InvocationStatus.CLAIMED
             try {
                 currentCoroutineContext().ensureActive()
-                val backend = checkNotNull(registry.resolve(snapshot))
+                val backend = checkNotNull(catalog.resolve(snapshot))
                 val unavailable =
                     try {
                         backend.unavailableReason()
@@ -61,14 +68,22 @@ class CapabilityDispatcher(
                         repository.transition(proposal.callId, phase, InvocationStatus.NOT_EXECUTED, unavailable)
                     }
                 }
-                journal {
-                    repository.transition(proposal.callId, phase, InvocationStatus.DISPATCHING, "Opening app…")
-                    phase = InvocationStatus.DISPATCHING
+                val admitted =
+                    registry.commitDispatch(snapshot) {
+                        journal {
+                            repository.transition(proposal.callId, phase, InvocationStatus.DISPATCHING, "Dispatching action…")
+                            phase = InvocationStatus.DISPATCHING
+                        }
+                    }
+                if (admitted == null) {
+                    return@withLock journal {
+                        repository.transition(proposal.callId, phase, InvocationStatus.NOT_EXECUTED, CapabilityRegistry.STALE_MESSAGE)
+                    }
                 }
                 currentCoroutineContext().ensureActive()
                 val outcome =
                     try {
-                        backend.execute(snapshot.arguments)
+                        admitted.execute(snapshot.arguments)
                     } catch (error: CancellationException) {
                         throw error
                     } catch (_: Exception) {
