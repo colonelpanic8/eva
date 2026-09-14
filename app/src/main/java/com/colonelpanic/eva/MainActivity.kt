@@ -160,8 +160,12 @@ class MainActivity : ComponentActivity() {
         val signIn by eva.signIn.state.collectAsStateWithLifecycle()
         val screenControl by eva.capabilities.screenControlFlow.collectAsStateWithLifecycle()
         val extensions by eva.extensions.settings.collectAsStateWithLifecycle()
+        val packages by eva.packageSettings.state.collectAsStateWithLifecycle()
+        val waits by eva.packageSettings.waits.collectAsStateWithLifecycle()
         return SettingsUiState(
             extensions = extensions,
+            packages = packages,
+            waitDefaults = waits,
             extensionOverflow =
                 CatalogAdmission.overflowReasons(
                     eva.registry.catalog.filterNot {
@@ -198,6 +202,9 @@ class MainActivity : ComponentActivity() {
         remember {
             val settings = eva.settings
             SettingsActions(
+                onSavePackageServer = eva::savePackageServer,
+                onClearPackageServer = eva::clearPackageServer,
+                onSaveWait = eva.packageSettings::saveWait,
                 onExtensionEnable = eva.extensions::enable,
                 onExtensionMutation = eva.extensions::mutation,
                 onRefreshExtensions = eva.extensions::refresh,

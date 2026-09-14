@@ -1,9 +1,12 @@
 # Declarative capability packages
 
-Status: codec implemented; execution and import integration are being built. No declarative adapter or import UI is wired
-into EVA yet. Packages, AppFunctions, and [installed extension apps](extension-protocol.md)
-are three supported extension paths. Packages are the next implementation slice;
-installed extension apps already have executable code and focused JVM tests.
+Status: the shipped org-agenda package loads through the declarative adapter at
+startup, with settings, grants, encrypted credentials, real HTTP execution,
+intent handoffs, and conversation receipts. Focused JVM checks cover this wiring;
+Pixel verification is pending. Local/HTTPS import and content-provider execution
+remain unimplemented. See [device test steps](org-agenda-device-test.md).
+Packages, AppFunctions, and [installed extension apps](extension-protocol.md)
+are the three extension paths; generalized AppFunctions is still planned.
 
 ## Package and repository identity
 
@@ -169,7 +172,7 @@ extension credential namespace, never EVA's model credential namespace.
 `maxBytes` (1–16,384), and optional `evidence: {pointer, equals}` for a terminal
 write result. Empty pointer selects the whole JSON response; `equals` is a
 non-null scalar. No scripts, filters, inferred success from prose, or polling
-expressions are supported. HTTP execution is not wired yet.
+expressions are supported. HTTP execution is wired for shipped packages.
 
 The [org-agenda example](examples/org-agenda.json) contains agenda, default-template
 capture with `values.Title`, and a mova create handoff. Replace the example HTTPS
@@ -274,8 +277,7 @@ fixed `/custom-view?key=` route. No app-side mova extension code is needed.
 Order after this proving case: bundled intent migration and untyped share, then
 generalized AppFunctions. Installed-service AIDL remains supported and discovered
 but currently has no device-test vehicle. Device verification will be performed
-by the operator after EVA settings/import/execution are reported ready; none of
-these declarations are yet claimed device-ready.
+by the operator using the linked device-test procedure. No device result is claimed yet.
 
 The `open_create` handoff uses `mova://create?title=<encoded text>`. Mova
 creates through its default template and must already be signed in. EVA reports

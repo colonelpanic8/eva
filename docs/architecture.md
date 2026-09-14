@@ -705,9 +705,9 @@ The [installed-service protocol](extension-protocol.md) lets an author expose
 structured result envelopes from their own app on supported stock Android,
 without Shizuku. Discovery is on; it never grants execution authority.
 
-The installed-service path is implemented and JVM-tested; cross-app device
-verification is outstanding. Declarative packages are next, followed by the
-generalized AppFunctions adapter. See [package design](declarative-packages.md)
+Installed-service and shipped declarative HTTP/intent paths are implemented and
+JVM-tested; device verification is outstanding. Declarative imports and
+the generalized AppFunctions adapter remain planned. See [package design](declarative-packages.md)
 for HTTPS repository import, content queries, and the future App Actions
 investigation. Additions appear on the next connection; revocation blocks new
 dispatch. In-turn approval, catalog rotation, polling, and MCP remain deferred.
@@ -725,7 +725,7 @@ than a privileged alternative to the package contract for core actions.
 | Native Android operation | Bundled or imported package referencing an installed operation | Typed Android service/API implementation in EVA |
 | AppFunctions | Authorized discovery of installed apps' function metadata | Target app through the platform execution protocol |
 | MCP | Discovery through an enabled connection | Server process; EVA is the protocol client |
-| HTTP, deferred | Bundled or imported package | EVA's constrained HTTP interpreter |
+| HTTP | Bundled or imported package | EVA's constrained HTTP interpreter |
 
 Device control uses the native Android operation row, not a new binding kind.
 The optional bundled `eva.device-control` package and imported definitions that
@@ -789,13 +789,14 @@ extension does not install a new audio codec or arbitrary Kotlin code.
 Instruction bundles can add vocabulary and workflows referencing installed
 capability IDs. They have no independent execution privileges. Separately
 installed Android extension apps use the versioned IPC contract linked above,
-with caller identity and explicit grants. This is the first planned open
-extension mechanism; declarations and remote servers remain later work.
+with caller identity and explicit grants. Shipped declarative HTTP and intent
+packages are also implemented; file/repository import and remote MCP remain later work.
 
 ### Declarative package sketch
 
-Start with a single JSON document rather than executable archives. This example
-is a proposed EVA format, not an accepted schema or an Android standard:
+Use a single JSON document rather than executable archives. The implemented
+[package spec](declarative-packages.md) is authoritative. This earlier conceptual
+sketch illustrates encoded slots; it is not accepted package JSON:
 
 ```json
 {
@@ -835,9 +836,8 @@ are allowed. Every template-intent mapping has a conservative external-action
 effect floor; its action name alone is not proof of read-only behavior. Grants
 are scoped to the approved binding, not to all uses of the intent interpreter.
 
-HTTP declarations are a later extension subtype, after intent import and MCP
-work; they are not required for the extension MVP. They remain useful for simple
-documented endpoints that should not require running another server. When added,
+HTTP declarations are implemented for shipped packages ahead of general import
+and MCP, so existing documented endpoints can be used without app-side changes.
 HTTP bindings declare a user-approved origin, method, typed path/query/body
 mapping, credential reference, bounded timeout/response size, and explicit result
 mapping. Arguments cannot choose a new origin or authorization header. Credentials

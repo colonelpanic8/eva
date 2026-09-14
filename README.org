@@ -56,7 +56,12 @@ panel taps from dismissing it, and dismissed from the surrounding scrim. The
 keyguard path, assistant activity handoff, and delegated system recognition
 remain unverified; JVM tests cover selection, lifecycle, and dispatch logic.
 
-Paseo and capability-package import are not integrated. The
+The shipped [[file:docs/examples/org-agenda.json][org-agenda package]] now loads through the declarative adapter,
+with HTTPS/basic-auth settings, read enablement and separate write grants,
+bounded HTTP execution, a mova create intent handoff, and attributed receipts.
+JVM tests cover the wiring; [[file:docs/org-agenda-device-test.md][Pixel verification]] is pending.
+Credentials stay encrypted on the phone and bound to the approved origin.
+Local/HTTPS package import, content-provider execution, and Paseo are not integrated. The
 [[file:docs/extension-protocol.md][installed-app extension v1 contract]] now has generic discovery, asynchronous
 AIDL execution, persistent settings grants, attributed receipts, and deterministic
 64-tool admission wired into the app. Extensions appear disabled; enabling grants

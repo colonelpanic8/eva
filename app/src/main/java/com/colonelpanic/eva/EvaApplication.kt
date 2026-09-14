@@ -244,12 +244,59 @@ class EvaApplication :
         )
     }
     private val extensionScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    val packageSettings by lazy {
+        com.colonelpanic.eva.data
+            .PackageSettings(this)
+    }
+    private val boundedExecution by lazy {
+        com.colonelpanic.eva.capability
+            .BoundedExecution(extensionScope)
+    }
+    private val packageAdapter by lazy {
+        com.colonelpanic.eva.adapters.declarative.PackageAdapter(
+            packageSettings::load,
+            { identity ->
+                com.colonelpanic.eva.adapters.android.AndroidDeclarativeHost(
+                    intentHost,
+                    com.colonelpanic.eva.adapters.declarative.PackageHttpClient(credential = { origin, name ->
+                        packageSettings.credential(identity, origin, name)
+                    }),
+                )
+            },
+            boundedExecution,
+        ) { identity, capability, proposal ->
+            packageSettings.budget(identity, capability.execution.maxWaitMillis, proposal.interactionMode)
+        }
+    }
+
+    fun savePackageServer(
+        id: String,
+        url: String,
+        username: String,
+        password: String,
+    ): String? {
+        val error = packageSettings.save(id, url, username, password)
+        if (error == null) packageAdapter.refresh()
+        return error
+    }
+
+    fun clearPackageServer(id: String) {
+        packageSettings.clear(id)
+        packageAdapter.refresh()
+    }
+
     val extensions by lazy {
         val connector = AndroidExtensionConnector(this)
         val connections = ExtensionConnectionManager(connector, SystemClock::elapsedRealtime)
         ExtensionRuntime(
             registry,
-            InstalledServiceAdapter(ExtensionDiscovery(connector::scan, connections, extensionScope), connections),
+            com.colonelpanic.eva.capability.extensions.CompositeCapabilityAdapter(
+                listOf(
+                    InstalledServiceAdapter(ExtensionDiscovery(connector::scan, connections, extensionScope), connections),
+                    packageAdapter,
+                ),
+                extensionScope,
+            ),
             ExtensionGrants(ExtensionGrantFile(this)),
             extensionScope,
         )

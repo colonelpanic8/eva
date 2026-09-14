@@ -91,7 +91,7 @@ It rejects unknown fields, unsupported schemas, origin/authority substitution,
 unbounded results, invalid selection predicates, and unsupported execution
 promises. Binding minimum effects prevent read claims from bypassing mutation
 grants. `ExecutionSemantics` and `WaitBudget` define the layered precedence and
-hard ceiling; they are not yet applied to live execution or settings.
+hard ceiling. Shipped packages now use them in live execution and settings.
 
 The [package spec](declarative-packages.md) includes exact codec fields and the
 planned HTTPS index/import format. The [org-agenda example](examples/org-agenda.json)
@@ -101,9 +101,37 @@ boundaries and budget precedence. `BindingArguments`, `BindingResults`, and `Dec
 encoded intent/HTTP requests, bind constrained content predicates, project bounded
 results, and require exact completion evidence for writes. Fake-host JVM tests
 exercise handoffs, content reads, deadline propagation, and uncertain failures
-without retries. Android hosts, local/HTTPS imports, preview UI, and generalized
-AppFunctions remain to be implemented. There is no device
-verification for these declarations yet.
+without retries. The shipped org-agenda document is an Android asset loaded through
+PackageAdapter at startup, composed with installed-service discovery in EvaApplication.
+It uses shared grants, catalog snapshots, admission, the invocation journal, and
+attributed conversation receipts. HTTP uses PackageHttpClient/OkHttp; intent
+handoffs use AndroidDeclarativeHost and AndroidIntentHost. Content-provider
+execution, local/HTTPS imports, preview UI, and generalized AppFunctions remain
+unimplemented. Pixel verification is pending; see [device test](org-agenda-device-test.md).
+
+Settings store a per-installation package UUID and encrypted origin/username/password
+in SecretStore under a package-only namespace. User approval replaces the template
+origin before codec validation and digesting. Changing it invalidates grants and
+stale proposals. Credentials attach only to that origin. Redirects and automatic
+connection retries are disabled. Credentials never enter package JSON or receipts.
+
+The declarative runtime selects the instance override, then capability default,
+then mode default (voice 20s / typed 30s), capped at 60s. Settings expose global
+mode defaults and package overrides. All layers are snapshotted in receipt
+provenance before dispatch and survive journal recovery. Voice displays a
+half-budget waiting cue. Expiry yields UNKNOWN and does not retry. App-owned work
+survives disconnect; a late-result callback seam exists without threads integration.
+Four imported actions globally and one per instance can run; excess calls are
+refused as busy. Dispatcher serialization is per call ID, preserving duplicate
+suppression without holding a global mutex over network work. Installed-service
+execution retains its existing provider deadline until the shared budget wrapper
+is adopted there.
+
+Focused JVM tests load the actual shipped document and cover grants, writes,
+changed-origin rejection, credential scoping, response limits, Android intent
+construction (Robolectric), wait expiry, busy refusal, disconnect, and late
+completion. Existing pre-namespace installed-app grants fail closed and require
+re-enablement after the adapter identity transition.
 
 ## Android provider and action runtime
 
@@ -830,7 +858,6 @@ actions remain unverified; the microphone and speaker paths themselves are now
 established on hardware. The observed subscription bridge is an experiment, not
 a promise of public API stability.
 
-Implementation order: finish declarative imports and Android execution with the
-org-agenda proving package, then migrate bundled intent templates and add the
+Implementation order: wait for the org-agenda Pixel result, then migrate bundled intent templates and add the
 untyped share handoff, then implement generalized AppFunctions through Shizuku.
 AIDL discovery stays enabled, with ordinary per-extension and mutation grants.
