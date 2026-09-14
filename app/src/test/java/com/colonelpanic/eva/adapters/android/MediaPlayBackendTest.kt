@@ -98,15 +98,71 @@ class MediaPlayBackendTest {
         }
 
     @Test
-    fun `with no app named the session already taking searches is preferred over a chooser`() =
+    fun `with no app named the session already taking searches is asked instead of a chooser`() =
         runTest {
             val active = MediaSnapshot("com.spotify.music", "Spotify", playing = false, canPlayFromSearch = true)
             val launcher = FakeLauncher(listOf(spotifyApp, podcastApp))
             val handoff = FakeHandoff()
-            backend(launcher, FakeMediaSessions(mutableListOf(listOf(active))), handoff).execute(mapOf("query" to "anything"))
+            val sessions = FakeMediaSessions(mutableListOf(listOf(active)))
+            backend(launcher, sessions, handoff).execute(mapOf("query" to "anything"))
 
-            assertEquals(spotifyApp to "anything", launcher.asked)
+            assertEquals(listOf("com.spotify.music" to "anything"), sessions.searches)
+            assertNull(launcher.asked)
             assertNull(handoff.executed)
+        }
+
+    @Test
+    fun `a named app with a live session is asked through it and the answer waits for the track to change`() =
+        runTest {
+            val paused =
+                MediaSnapshot("com.spotify.music", "Spotify", title = "Old Song", artist = "Someone", canPlayFromSearch = true)
+            val started = paused.copy(title = "Black Hole Sun", artist = "Soundgarden", playing = true)
+            val launcher = FakeLauncher(listOf(spotifyApp))
+            val sessions = FakeMediaSessions(mutableListOf(listOf(paused), listOf(paused), listOf(started)))
+            val outcome =
+                backend(launcher, sessions, FakeHandoff())
+                    .execute(mapOf("query" to "black hole sun", "app" to "spotify"))
+
+            assertEquals(listOf("com.spotify.music" to "black hole sun"), sessions.searches)
+            assertNull(launcher.asked)
+            assertEquals(InvocationStatus.COMPLETED, outcome.status)
+            assertEquals(
+                "Spotify is playing \"Black Hole Sun\" by Soundgarden. That is Spotify's match for \"black hole sun\".",
+                outcome.message,
+            )
+        }
+
+    @Test
+    fun `an intent that only brought the app up is followed by asking its new session to play`() =
+        runTest {
+            val opened = MediaSnapshot("com.spotify.music", "Spotify", canPlayFromSearch = true)
+            val started = opened.copy(title = "Black Hole Sun", artist = "Soundgarden", playing = true)
+            val launcher = FakeLauncher(listOf(spotifyApp), delivery = PlayDelivery.REFUSED)
+            val handoff = FakeHandoff()
+            val sessions = FakeMediaSessions(mutableListOf(emptyList(), listOf(opened), listOf(started)))
+            val outcome =
+                backend(launcher, sessions, handoff)
+                    .execute(mapOf("query" to "black hole sun", "app" to "spotify"))
+
+            assertEquals(mapOf("query" to "black hole sun", "app" to "spotify"), handoff.executed)
+            assertEquals(listOf("com.spotify.music" to "black hole sun"), sessions.searches)
+            assertEquals(InvocationStatus.COMPLETED, outcome.status)
+            assertTrue(outcome.message, outcome.message.startsWith("Spotify is playing \"Black Hole Sun\""))
+        }
+
+    @Test
+    fun `an intent that already started playback is not asked a second time`() =
+        runTest {
+            val started =
+                MediaSnapshot("com.spotify.music", "Spotify", title = "Black Hole Sun", playing = true, canPlayFromSearch = true)
+            val launcher = FakeLauncher(listOf(spotifyApp), delivery = PlayDelivery.REFUSED)
+            val sessions = FakeMediaSessions(mutableListOf(emptyList(), listOf(started)))
+            val outcome =
+                backend(launcher, sessions, FakeHandoff())
+                    .execute(mapOf("query" to "black hole sun", "app" to "spotify"))
+
+            assertTrue(sessions.searches.isEmpty())
+            assertEquals(InvocationStatus.COMPLETED, outcome.status)
         }
 
     @Test
