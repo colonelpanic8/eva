@@ -26,6 +26,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,7 +34,9 @@ import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
 import java.security.MessageDigest
 import java.util.UUID
 
@@ -60,15 +63,13 @@ class ProviderSessionController(
     private var claimedCall: String? = null
     private var lastUserTranscript: String? = null
     private val definitions = registry.catalog.associateBy { it.id }
-    private val catalog =
-        ProviderToolCatalog(
-            MessageDigest
-                .getInstance(
-                    "SHA-256",
-                ).digest(registry.catalog.joinToString { "${it.id}:${it.description}:${it.inputSchema}" }.toByteArray())
-                .joinToString("") { "%02x".format(it) },
-            registry.catalog.map { ProviderToolDefinition(it.id, it.title, it.description, it.inputSchema) },
-        )
+    private val phoneTools = registry.catalog.map { ProviderToolDefinition(it.id, it.title, it.description, it.inputSchema) }
+    private val typedCatalog = catalogOf(phoneTools)
+
+    // Only a spoken session is something the model can hang up.
+    private val voiceCatalog = catalogOf(phoneTools + END_CONVERSATION)
+    private var ending = false
+    private var assistantSpeaking = false
 
     init {
         scope.launch {
@@ -108,7 +109,7 @@ class ProviderSessionController(
             scope.launch {
                 var openedSession: ConversationSession? = null
                 try {
-                    val connectionCatalog = catalog
+                    val connectionCatalog = if (voice) voiceCatalog else typedCatalog
                     val provider =
                         if (!voice) {
                             providerFactory(link)
@@ -159,6 +160,8 @@ class ProviderSessionController(
                                         "If different people plausibly match, ask which one the user means before acting. " +
                                         "If these lookups still find nothing, ask for the spelling or another identifying detail. " +
                                         "Apply these retries only to read-only lookups, never to sending, calling, or opening apps. " +
+                                        "When the user is finished, because they say goodbye, say that is all, or ask you to " +
+                                        "hang up, say a brief goodbye and then end the conversation with its tool. " +
                                         clock()
                                 },
                                 connectionCatalog,
@@ -227,7 +230,29 @@ class ProviderSessionController(
                             }
 
                             is ProviderEvent.ToolCallReady -> {
-                                dispatch(event, opened, thisAttempt)
+                                check(event.call.catalogRevision == connectionCatalog.revision)
+                                if (voice && event.capabilityId == END_CONVERSATION.capabilityId) {
+                                    // Nothing runs on the phone and no result is returned, so the model
+                                    // is not prompted to speak again. Its goodbye plays out first.
+                                    ending = true
+                                    launch {
+                                        if (assistantSpeaking) delay(END_SPEECH_LIMIT_MILLIS)
+                                        hangUp()
+                                    }
+                                } else {
+                                    dispatch(event, opened, thisAttempt)
+                                }
+                            }
+
+                            is ProviderEvent.AssistantSpeaking -> {
+                                assistantSpeaking = event.speaking
+                                if (ending && !event.speaking) {
+                                    launch {
+                                        // The phone still holds a little audio after the server drains.
+                                        delay(PLAYOUT_TAIL_MILLIS)
+                                        hangUp()
+                                    }
+                                }
                             }
 
                             is ProviderEvent.ResponseEnded -> {
@@ -319,6 +344,8 @@ class ProviderSessionController(
 
     fun disconnect() {
         attempt++
+        ending = false
+        assistantSpeaking = false
         connectionJob?.cancel()
         media?.close()
         media = null
@@ -383,10 +410,7 @@ class ProviderSessionController(
         thisAttempt: Int,
     ) {
         val input = currentInput ?: error("Tool call arrived without a user input")
-        check(
-            event.call.connectionEpoch == opened.connectionEpoch && event.call.inputId == input.id &&
-                event.call.catalogRevision == catalog.revision,
-        )
+        check(event.call.connectionEpoch == opened.connectionEpoch && event.call.inputId == input.id)
         val definition = checkNotNull(definitions[event.capabilityId])
         val rejection =
             when {
@@ -461,6 +485,11 @@ class ProviderSessionController(
         job.invokeOnCompletion { actionJobs.remove(job) }
     }
 
+    private fun hangUp() {
+        finishInput("Conversation ended.")
+        disconnect()
+    }
+
     private fun finishInput(message: String) {
         val id = currentInput?.id
         currentInput = null
@@ -484,6 +513,30 @@ class ProviderSessionController(
 
     private companion object {
         const val VOICE_REQUEST = "Voice request"
+
+        /** Bounds the wait for a goodbye whose end is never reported. */
+        const val END_SPEECH_LIMIT_MILLIS = 10_000L
+        const val PLAYOUT_TAIL_MILLIS = 500L
+
+        /** Hangs up rather than acting on the phone, so it bypasses the dispatcher and journal. */
+        val END_CONVERSATION =
+            ProviderToolDefinition(
+                "eva.session.end",
+                "End the conversation",
+                "Hang up this voice conversation. Call it when the user says goodbye, says they are done, or asks " +
+                    "you to hang up, after a brief spoken goodbye; the goodbye finishes playing before the call ends. " +
+                    "Do not call it while a request is unfinished or you are waiting for the user to answer.",
+                Json.parseToJsonElement("""{"type":"object","properties":{},"required":[],"additionalProperties":false}""").jsonObject,
+            )
+
+        fun catalogOf(tools: List<ProviderToolDefinition>) =
+            ProviderToolCatalog(
+                MessageDigest
+                    .getInstance("SHA-256")
+                    .digest(tools.joinToString { "${it.capabilityId}:${it.description}:${it.inputSchema}" }.toByteArray())
+                    .joinToString("") { "%02x".format(it) },
+                tools,
+            )
     }
 
     private fun clock(): String {

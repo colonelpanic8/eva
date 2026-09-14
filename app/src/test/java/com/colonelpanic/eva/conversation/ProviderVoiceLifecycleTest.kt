@@ -27,7 +27,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -196,7 +198,7 @@ class ProviderVoiceLifecycleTest {
             controller.connectVoice("test")
             advanceUntilIdle()
             assertEquals(
-                listOf("test.timer"),
+                listOf("test.timer", "eva.session.end"),
                 provider.request.catalog.tools
                     .map { it.capabilityId },
             )
@@ -275,6 +277,118 @@ class ProviderVoiceLifecycleTest {
             controller.disconnect()
             advanceUntilIdle()
         }
+
+    @Test
+    fun `only a spoken session offers to end the conversation`() =
+        runTest {
+            val provider = VoiceProvider()
+            val controller = controller(provider, { VoiceMedia() })
+            advanceUntilIdle()
+
+            controller.connect("test")
+            advanceUntilIdle()
+            assertEquals(
+                emptyList<String>(),
+                provider.request.catalog.tools
+                    .map { it.capabilityId },
+            )
+            val typedRevision = provider.request.catalog.revision
+            controller.disconnect()
+            advanceUntilIdle()
+
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            assertEquals(
+                listOf("eva.session.end"),
+                provider.request.catalog.tools
+                    .map { it.capabilityId },
+            )
+            assertTrue(provider.request.instructions.contains("brief goodbye"))
+            assertTrue(provider.request.catalog.revision != typedRevision)
+            controller.disconnect()
+            advanceUntilIdle()
+        }
+
+    @Test
+    fun `ending the conversation waits for the goodbye to finish playing`() =
+        runTest {
+            val provider = VoiceProvider()
+            val media = VoiceMedia()
+            val controller = controller(provider, { media })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+
+            provider.channel.send(ProviderEvent.ResponseStarted("voice:turn-1", "voice:turn-1"))
+            provider.channel.send(ProviderEvent.AssistantSpeaking(true))
+            provider.channel.send(ProviderEvent.AssistantText("voice:turn-1", "Goodbye!", false))
+            provider.channel.send(endCall(provider, "turn-1"))
+            runCurrent()
+            advanceTimeBy(5_000)
+            assertEquals(ProviderStatus.CONNECTED, controller.state.value.providerStatus)
+            assertFalse(media.closed)
+
+            provider.channel.send(ProviderEvent.AssistantSpeaking(false))
+            runCurrent()
+            assertFalse(media.closed)
+            advanceTimeBy(1_000)
+            assertTrue(media.closed)
+            assertEquals(ProviderStatus.DISCONNECTED, controller.state.value.providerStatus)
+            assertEquals(1, provider.closes)
+            // Hanging up is not a phone action, and answering it would prompt the model to speak again.
+            assertEquals(emptyList<CorrelatedToolResult>(), provider.results)
+            assertEquals(
+                "Goodbye!",
+                controller.state.value.entries
+                    .first { it.id == "voice:turn-1" }
+                    .response,
+            )
+        }
+
+    @Test
+    fun `ending without reported speech hangs up at once and an unreported end is bounded`() =
+        runTest {
+            val provider = VoiceProvider()
+            val media = VoiceMedia()
+            val controller = controller(provider, { media })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            provider.channel.send(ProviderEvent.ResponseStarted("voice:turn-1", "voice:turn-1"))
+            provider.channel.send(endCall(provider, "turn-1"))
+            runCurrent()
+            assertTrue(media.closed)
+            assertEquals(ProviderStatus.DISCONNECTED, controller.state.value.providerStatus)
+            assertEquals(
+                "Conversation ended.",
+                controller.state.value.entries
+                    .first { it.id == "voice:turn-1" }
+                    .response,
+            )
+
+            val stuck = VoiceProvider()
+            val stuckMedia = VoiceMedia()
+            val second = controller(stuck, { stuckMedia })
+            advanceUntilIdle()
+            second.connectVoice("test")
+            advanceUntilIdle()
+            stuck.channel.send(ProviderEvent.ResponseStarted("voice:turn-1", "voice:turn-1"))
+            stuck.channel.send(ProviderEvent.AssistantSpeaking(true))
+            stuck.channel.send(endCall(stuck, "turn-1"))
+            runCurrent()
+            assertFalse(stuckMedia.closed)
+            advanceTimeBy(11_000)
+            assertTrue(stuckMedia.closed)
+        }
+
+    private fun endCall(
+        provider: VoiceProvider,
+        turn: String,
+    ) = ProviderEvent.ToolCallReady(
+        CallIdentity("test-epoch", "test-session", "voice:$turn", "voice:$turn", turn, provider.request.catalog.revision, "end-$turn"),
+        "eva.session.end",
+        buildJsonObject {},
+    )
 
     private fun TestScope.controller(
         provider: VoiceProvider,

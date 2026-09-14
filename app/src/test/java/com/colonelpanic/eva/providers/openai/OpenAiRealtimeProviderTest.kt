@@ -204,6 +204,32 @@ class OpenAiRealtimeProviderTest {
             collector.cancel()
         }
 
+    @Test
+    fun `playback reports when the reply starts and stops reaching the phone`() =
+        runTest {
+            val media = FakeMedia()
+            val session =
+                OpenAiRealtimeProvider(
+                    ApiKeyAccess("sk-test", "https://example.test"),
+                    media,
+                    client = client,
+                    ioDispatcher = StandardTestDispatcher(testScheduler),
+                ).open(SessionOpenRequest("You are EVA.", catalog))
+            val events = mutableListOf<ProviderEvent>()
+            val collector = launch { session.events.collect { events += it } }
+            media.incoming.send("""{"type":"session.created","session":{"id":"sess_1"}}""")
+            media.incoming.send("""{"type":"output_audio_buffer.started","response_id":"resp_1"}""")
+            media.incoming.send("""{"type":"output_audio_buffer.stopped","response_id":"resp_1"}""")
+            media.incoming.send("""{"type":"output_audio_buffer.started","response_id":"resp_2"}""")
+            media.incoming.send("""{"type":"output_audio_buffer.cleared","response_id":"resp_2"}""")
+            advanceUntilIdle()
+            assertEquals(
+                listOf(true, false, true, false),
+                events.filterIsInstance<ProviderEvent.AssistantSpeaking>().map { it.speaking },
+            )
+            collector.cancel()
+        }
+
     private class FakeMedia : RealtimeMediaSession {
         override val state = MutableStateFlow<RealtimeMediaState>(RealtimeMediaState.Idle)
         override val controls = MutableStateFlow(MediaControls())

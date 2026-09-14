@@ -180,6 +180,16 @@ private class OpenAiRealtimeSession(
                         emit(ProviderEvent.ToolCallReady(identity, tool.capabilityId, arguments))
                     }
 
+                    // WebRTC only: the server paces audio out after generating it, so these, not
+                    // response.done, say when the reply has finished reaching the phone.
+                    "output_audio_buffer.started" -> {
+                        emit(ProviderEvent.AssistantSpeaking(true))
+                    }
+
+                    "output_audio_buffer.stopped", "output_audio_buffer.cleared" -> {
+                        emit(ProviderEvent.AssistantSpeaking(false))
+                    }
+
                     "response.done" -> {
                         val input = activeInput ?: return@collect
                         if (awaitingTool && pending.isNotEmpty()) return@collect
