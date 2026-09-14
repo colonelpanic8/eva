@@ -150,7 +150,7 @@ latency baseline, and recovers without misleading success or duplicate work.
 
 Add one useful capability without rebuilding the core: a declarative Android
 adapter or an MCP connection. Verify discovery, schema validation, enablement,
-failure reporting, and removal. Defer a marketplace and arbitrary-code plugin
+failure reporting, and removal. Defer a marketplace and arbitrary-code extension
 runtime. Run AppFunctions/Shizuku compatibility experiments independently so
 privilege uncertainty cannot block the ordinary voice-and-intent prototype.
 

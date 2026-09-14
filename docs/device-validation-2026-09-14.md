@@ -62,12 +62,12 @@ app icon; matching does not guess a specific messaging app from its display name
 
 ## Published repository and import surfaces
 
-The public eva-plugins GitHub repository was published with Caffeine, Messages and
+The public eva-extensions GitHub repository was published with Caffeine, Messages and
 org-agenda. All live package hashes match the index. On the Pixel, Extensions →
-Browse → Refresh plugin repository loaded all three listings and recognized
+Settings → Refresh extension repository loaded all three listings and recognized
 Caffeine as installed. Installed, Browse and Settings are separate tabs.
 
-The final build adds Import plugin file. Android's document picker selected a
+The final build adds Import extension file. Android's document picker selected a
 Caffeine JSON from Downloads; EVA rendered its bounded preview, source, effects
 and fixed component. No extra Caffeine installation or grants were created during
 that preview test. File persistence/isolation and invalid/oversized input are

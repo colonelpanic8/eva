@@ -13,29 +13,30 @@ import com.colonelpanic.eva.adapters.declarative.PluginBrowserState
 import com.colonelpanic.eva.adapters.declarative.appTargets
 
 @Composable
-internal fun PluginRepositorySection(
+internal fun ExtensionCatalogSection(
     state: PluginBrowserState,
     actions: SettingsActions,
 ) {
-    var source by remember(state.source) { mutableStateOf(state.source) }
-    SettingsSection("Plugin repository") {
+    var packageUrl by remember { mutableStateOf("") }
+    SettingsSection("Available extensions") {
         SettingsBlock {
             Text(
-                "Add capabilities from JSON plugin files without updating EVA or the target app. Review a plugin before installing; installation grants no actions.",
+                "Review an extension before installing it. Installation does not enable any actions.",
             )
-            OutlinedTextField(
-                value = source,
-                onValueChange = { source = it },
-                label = { Text("HTTPS index or package URL") },
-                singleLine = true,
-            )
-            Button(onClick = { actions.onRepositoryRefresh(source) }, enabled = !state.busy) { Text("Refresh plugin repository") }
-            TextButton(onClick = { actions.onPluginUrlPreview(source) }, enabled = !state.busy) { Text("Preview a package URL") }
-            TextButton(onClick = actions.onPluginFileImport, enabled = !state.busy) { Text("Import plugin file") }
             if (state.busy) Text("Loading…")
             state.error?.let { Text(it) }
             state.notice?.let { Text(it) }
-            Text("App matching happens on this phone. Apps Android does not reveal may still work with a manually selected plugin.")
+            Text("App matching happens on this phone. Apps Android does not reveal may still work with a manually selected extension.")
+            OutlinedTextField(
+                value = packageUrl,
+                onValueChange = { packageUrl = it },
+                label = { Text("Extension package URL") },
+                singleLine = true,
+            )
+            TextButton(onClick = { actions.onPluginUrlPreview(packageUrl) }, enabled = !state.busy) {
+                Text("Preview extension URL")
+            }
+            TextButton(onClick = actions.onPluginFileImport, enabled = !state.busy) { Text("Import extension file") }
         }
         for (listing in state.listings.sortedByDescending { it.androidPackages.any(state.visibleApps::contains) }) {
             val installed = state.installed.find { it.source == state.source && it.definition.id == listing.id }
@@ -66,29 +67,9 @@ internal fun PluginRepositorySection(
                     Text("Destination/binding: ${bindingDestination(capability.binding)}")
                 }
                 Text(
-                    "Plugin text is supplied by its author. Reads disclose returned data to your configured model. Updates with changed content require enabling actions again.",
+                    "Extension text is supplied by its author. Reads disclose returned data to your configured model. Updates with changed content require enabling actions again.",
                 )
-                Button(onClick = actions.onPluginInstall, enabled = !state.busy) { Text("Install reviewed plugin") }
-            }
-        }
-    }
-}
-
-@Composable
-internal fun RepositoryInstallationsSection(
-    state: PluginBrowserState,
-    actions: SettingsActions,
-) {
-    if (state.installed.isNotEmpty()) {
-        SettingsSection("Repository installations") {
-            state.installed.forEach { installed ->
-                SettingsRow(
-                    installed.definition.title,
-                    "${installed.definition.version}\n${installed.source}",
-                    leading = { InstalledAppIcon(installed.definition.appTargets()) },
-                ) {
-                    TextButton(onClick = { actions.onPluginRemove(installed.identity.id) }, enabled = !state.busy) { Text("Remove plugin") }
-                }
+                Button(onClick = actions.onPluginInstall, enabled = !state.busy) { Text("Install reviewed extension") }
             }
         }
     }

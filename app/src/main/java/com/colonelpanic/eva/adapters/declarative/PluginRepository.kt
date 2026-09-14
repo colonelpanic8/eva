@@ -70,7 +70,7 @@ class PluginRepository(
                     },
                 )
             }
-        require(result.map { it.id }.distinct().size == result.size) { "Duplicate plugin ID in index" }
+        require(result.map { it.id }.distinct().size == result.size) { "Duplicate extension ID in index" }
         return result
     }
 
@@ -89,13 +89,13 @@ class PluginRepository(
         val bytes = fetch(listing.url, PackageCodec.MAX_BYTES)
         require(bytes.size <= PackageCodec.MAX_BYTES)
         val digest = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
-        require(digest == listing.sha256) { "Plugin file changed since the index was fetched. Refresh the repository." }
+        require(digest == listing.sha256) { "Extension file changed since the index was fetched. Refresh the repository." }
         val json = bytes.toString(Charsets.UTF_8)
         val definition = PackageCodec.decode(json)
         require(
             definition.id == listing.id && definition.version == listing.version && definition.androidPackages == listing.androidPackages,
         ) {
-            "Plugin identity, version or app targets disagree with its index"
+            "Extension identity, version or app targets disagree with its index"
         }
         return PluginPreview(repositoryUrl(source).toString(), listing.url, json, definition)
     }
@@ -110,7 +110,7 @@ class PluginRepository(
                 while (true) {
                     val count = it.read(buffer)
                     if (count < 0) break
-                    require(bytes.size() + count <= PackageCodec.MAX_BYTES) { "Plugin file is too large" }
+                    require(bytes.size() + count <= PackageCodec.MAX_BYTES) { "Extension file is too large" }
                     bytes.write(buffer, 0, count)
                 }
             }

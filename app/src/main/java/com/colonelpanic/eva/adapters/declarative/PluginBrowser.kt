@@ -18,7 +18,7 @@ data class PluginBrowserState(
     val notice: String? = null,
 )
 
-const val DEFAULT_PLUGIN_INDEX = "https://raw.githubusercontent.com/colonelpanic8/eva-plugins/main/index.json"
+const val DEFAULT_PLUGIN_INDEX = "https://raw.githubusercontent.com/colonelpanic8/eva-extensions/main/index.json"
 
 class PluginBrowser(
     private val repository: PluginRepository,
@@ -65,7 +65,7 @@ class PluginBrowser(
 
     fun installPreview() =
         run {
-            val preview = requireNotNull(mutable.value.preview) { "Preview a plugin first" }
+            val preview = requireNotNull(mutable.value.preview) { "Preview an extension first" }
             install(preview)
             mutable.value =
                 mutable.value.copy(
@@ -78,7 +78,7 @@ class PluginBrowser(
     fun remove(instance: String) =
         run {
             remove.invoke(instance)
-            mutable.value = mutable.value.copy(installed = installed(), notice = "Plugin removed. Its Android app is unchanged.")
+            mutable.value = mutable.value.copy(installed = installed(), notice = "Extension removed. Its Android app is unchanged.")
         }
 
     private fun run(block: suspend () -> Unit) {

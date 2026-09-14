@@ -63,7 +63,7 @@ baseline in EVA's own AGENTS.md and cannot be the primary answer.
 ## Decisions (2026-09-14, after review)
 
 Principles Ivan set: use existing apps as much as possible; do it without code
-edits to those apps or to EVA; where that is not enough, a no-code plugin
+edits to those apps or to EVA; where that is not enough, a no-code extension
 system whose packages live in a git repository as a starter marketplace is
 acceptable. Three extension paths follow, all feeding one registry, one grant
 model, one journal, and one admission policy in EVA:

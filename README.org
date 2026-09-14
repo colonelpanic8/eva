@@ -87,9 +87,9 @@ or app-side extension code is needed. JVM tests cover the wiring;
 [[file:docs/device-validation-2026-09-14.md][Pixel verification]] passed with an unsent draft. The org-agenda HTTP example is not bundled.
 The Extensions page supports HTTPS repository refresh, app matching, preview,
 installation, updates and removal. Matched extensions show icons from installed
-Android apps. The separate [[https://github.com/colonelpanic8/eva-plugins][eva-plugins repository]] publishes starter
-packages and an index generator. Extensions separates Installed, Browse and Settings;
-Browse includes an explicit Refresh plugin repository button. Repository imports
+Android apps. The separate [[https://github.com/colonelpanic8/eva-extensions][eva-extensions repository]] publishes starter
+packages and an index generator. Extensions separates extension-specific controls from Settings;
+Settings includes an explicit Refresh extension repository button. Repository imports
 are JVM-tested.
 Browse also imports standalone HTTPS package URLs and JSON files selected through
 Android's file picker. Content-provider execution and Paseo are not integrated. The

@@ -73,7 +73,7 @@ class PackageSettings(
                 }
             }.toMap()
     private val imports =
-        loadOrReject("Repository plugins") {
+        loadOrReject("Repository extensions") {
             com.colonelpanic.eva.adapters.declarative.PluginInstallations(
                 { prefs.getString("imports", null) },
                 { encoded -> savePreferences { putString("imports", encoded) } },
@@ -91,7 +91,7 @@ class PackageSettings(
     fun saveRepository(source: String) = savePreferences { putString("repository", source) }
 
     fun installPlugin(preview: com.colonelpanic.eva.adapters.declarative.PluginPreview) {
-        checkNotNull(imports) { "Plugin storage could not be loaded" }.install(preview)
+        checkNotNull(imports) { "Extension storage could not be loaded" }.install(preview)
         mutable.value = entries()
     }
 

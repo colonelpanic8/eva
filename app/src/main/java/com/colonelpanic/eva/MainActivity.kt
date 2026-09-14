@@ -62,7 +62,7 @@ class MainActivity : ComponentActivity() {
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) {
                 eva.pluginBrowser.previewFile {
-                    checkNotNull(contentResolver.openInputStream(uri)) { "Could not open the selected plugin file" }
+                    checkNotNull(contentResolver.openInputStream(uri)) { "Could not open the selected extension file" }
                 }
             }
         }

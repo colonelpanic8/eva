@@ -13,19 +13,25 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.colonelpanic.eva.capability.InteractionMode
 
 @Composable
-internal fun PackageConfigurationSection(
+internal fun GeneralExtensionSettingsSection(
     state: SettingsUiState,
     actions: SettingsActions,
 ) {
-    val hasServers = state.packages.any { it.credentialName != null }
-    SettingsSection(if (hasServers) "Package servers and wait budgets" else "Extension wait budgets") {
+    var source by remember(state.plugins.source) { mutableStateOf(state.plugins.source) }
+    SettingsSection("General extension settings") {
         SettingsBlock {
-            if (hasServers) {
-                Text(
-                    "Server credentials stay encrypted on this phone. Saving a URL approves that origin only; changing it requires enabling the package again.",
-                )
+            Text("These settings apply to extensions generally, not to a particular app.")
+            TextButton(onClick = actions.onRefreshExtensions) { Text("Refresh installed extensions") }
+            OutlinedTextField(
+                value = source,
+                onValueChange = { source = it },
+                label = { Text("Extension index URL") },
+                singleLine = true,
+            )
+            OutlinedButton(onClick = { actions.onRepositoryRefresh(source) }, enabled = !state.plugins.busy) {
+                Text("Refresh extension repository")
             }
-            Text("Reads disclose returned data to the configured model. A timeout does not undo an action. No automatic retries.")
+            Text("A timeout does not undo an action. EVA does not retry actions automatically.")
         }
         for (mode in InteractionMode.entries) {
             WaitField(
@@ -35,50 +41,47 @@ internal fun PackageConfigurationSection(
                 actions,
             )
         }
-        for (entry in state.packages) {
-            SettingsRow(
-                entry.title,
-                if (entry.credentialName ==
-                    null
-                ) {
-                    "Uses installed Android apps; no server credentials needed"
-                } else {
-                    entry.origin ?: "Server not configured"
-                },
+    }
+}
+
+@Composable
+internal fun ExtensionConfiguration(
+    entry: com.colonelpanic.eva.data.PackageConfigurationEntry,
+    actions: SettingsActions,
+) {
+    if (entry.credentialName != null) {
+        SettingsBlock {
+            var url by remember(entry.id, entry.origin) { mutableStateOf(entry.origin.orEmpty()) }
+            var username by remember(entry.id) { mutableStateOf("") }
+            var password by remember(entry.id) { mutableStateOf("") }
+            var error by remember(entry.id) { mutableStateOf<String?>(null) }
+            Text("Server configuration")
+            Text("Credentials stay encrypted on this phone. Saving a URL approves only that origin.")
+            Text("Credential reference: ${entry.credentialName}")
+            OutlinedTextField(url, { url = it }, label = { Text("HTTPS server URL (origin only)") }, singleLine = true)
+            OutlinedTextField(username, { username = it }, label = { Text("Username") }, singleLine = true)
+            OutlinedTextField(
+                password,
+                { password = it },
+                label = { Text("Password") },
+                visualTransformation = PasswordVisualTransformation(),
+                singleLine = true,
             )
-            if (entry.credentialName != null) {
-                SettingsBlock {
-                    var url by remember(entry.id, entry.origin) { mutableStateOf(entry.origin.orEmpty()) }
-                    var username by remember(entry.id) { mutableStateOf("") }
-                    var password by remember(entry.id) { mutableStateOf("") }
-                    var error by remember(entry.id) { mutableStateOf<String?>(null) }
-                    Text("Credential reference: ${entry.credentialName}")
-                    OutlinedTextField(url, { url = it }, label = { Text("HTTPS server URL (origin only)") }, singleLine = true)
-                    OutlinedTextField(username, { username = it }, label = { Text("Username") }, singleLine = true)
-                    OutlinedTextField(
-                        password,
-                        { password = it },
-                        label = { Text("Password") },
-                        visualTransformation = PasswordVisualTransformation(),
-                        singleLine = true,
-                    )
-                    error?.let { Text(it) }
-                    OutlinedButton(onClick = {
-                        error = actions.onSavePackageServer(entry.id, url, username, password)
-                        if (error == null) {
-                            username = ""
-                            password = ""
-                        }
-                    }) { Text("Save server and credentials") }
-                    if (entry.origin != null) {
-                        Text("Credentials saved. Values are never read back into these fields.")
-                        TextButton(onClick = { actions.onClearPackageServer(entry.id) }) { Text("Remove server credentials") }
-                    }
+            error?.let { Text(it) }
+            OutlinedButton(onClick = {
+                error = actions.onSavePackageServer(entry.id, url, username, password)
+                if (error == null) {
+                    username = ""
+                    password = ""
                 }
+            }) { Text("Save server and credentials") }
+            if (entry.origin != null) {
+                Text("Credentials saved. Values are never read back into these fields.")
+                TextButton(onClick = { actions.onClearPackageServer(entry.id) }) { Text("Remove server credentials") }
             }
-            WaitField("${entry.title} wait override (blank uses package default)", entry.id, entry.waitMillis, actions)
         }
     }
+    WaitField("Wait override (blank uses extension default)", entry.id, entry.waitMillis, actions)
 }
 
 @Composable
@@ -96,7 +99,7 @@ private fun WaitField(
             { draft = it },
             label = { Text(label) },
             singleLine = true,
-            supportingText = { Text(error ?: "Seconds, 1–60. Extension override > package default > mode default.") },
+            supportingText = { Text(error ?: "Seconds, 1–60. Extension override > action default > mode default.") },
         )
         TextButton(onClick = { error = actions.onSaveWait(id, draft) }) { Text("Save wait") }
     }

@@ -19,28 +19,29 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.colonelpanic.eva.capability.extensions.Effect
-import com.colonelpanic.eva.capability.extensions.ExtensionSettings
 
 @Composable
 internal fun ExtensionsSection(
-    state: ExtensionSettings,
+    state: SettingsUiState,
     actions: SettingsActions,
-    overflow: Map<String, String>,
 ) {
-    SettingsSection("Installed extensions") {
+    val extensions = state.extensions
+    SettingsSection("Your extensions") {
         SettingsBlock {
             Text(
                 "Enable only extensions you trust. Read actions can disclose private data to your configured model. " +
                     "Apps declare their own effects; EVA cannot verify those claims.",
             )
             Text("Newly enabled actions appear on your next connection. Search and complete require separate requests.")
-            state.error?.let { Text(it) }
-            TextButton(onClick = actions.onRefreshExtensions) { Text("Refresh extensions") }
-            if (state.entries.isEmpty()) Text("No extension providers discovered yet.")
+            extensions.error?.let { Text(it) }
+            if (extensions.entries.isEmpty()) Text("No extensions installed or discovered yet.")
         }
-        for (entry in state.entries) {
+        for (entry in extensions.entries) {
             val installed = entry.installed
             val descriptor = installed.descriptor
+            val packageId = installed.identity?.instanceId?.removePrefix("package:")
+            val configuration = state.packages.find { it.id == packageId }
+            val repositoryInstallation = state.plugins.installed.find { it.identity.id == packageId }
             var expanded by rememberSaveable(entry.key) { mutableStateOf(false) }
             SettingsRow(
                 title = descriptor?.title ?: installed.packageName,
@@ -70,7 +71,7 @@ internal fun ExtensionsSection(
             if (expanded) {
                 Column(Modifier.padding(start = 32.dp)) {
                     descriptor?.capabilities?.forEach { capability ->
-                        val unavailable = overflow["${installed.capabilityPrefix}.${capability.name}"]
+                        val unavailable = state.extensionOverflow["${installed.capabilityPrefix}.${capability.name}"]
                         if (unavailable != null) SettingsRow(capability.title, unavailable)
                         if (capability.effect == Effect.READ) {
                             SettingsRow(capability.title, "Provider claims read-only. ${capability.description}")
@@ -87,6 +88,13 @@ internal fun ExtensionsSection(
                                 )
                             }
                         }
+                    }
+                    configuration?.let { ExtensionConfiguration(it, actions) }
+                    if (repositoryInstallation != null) {
+                        TextButton(
+                            onClick = { actions.onPluginRemove(repositoryInstallation.identity.id) },
+                            enabled = !state.plugins.busy,
+                        ) { Text("Remove extension") }
                     }
                 }
             }

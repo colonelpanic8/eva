@@ -44,7 +44,7 @@ Discovery runs at startup, activity resume, manual refresh, and debounced packag
 events on an IO scope, with at most four concurrent descriptions and one in-flight
 transaction per provider. Describe has a five-second elapsedRealtime deadline.
 
-Installed extensions appear as collapsed plugin rows; expanding a row shows
+Installed extensions appear as collapsed extension rows; expanding a row shows
 indented action permissions. Existing grants persist across restarts and unchanged
 contracts. Providers are listed disabled. Enabling grants claimed reads; write and unknown
 effects require individual switches. Settings explains disclosure to the configured
@@ -1098,8 +1098,8 @@ the exact reviewed bytes. Persistent imports feed PackageAdapter alongside bundl
 assets. Updates retain instance identity, require increasing versions when content
 changes, and revoke grants through the shared descriptor digest. JVM tests cover
 remote additions reaching the registry without a rebuild, persistence failures,
-digest/origin rejection, updates and grant revocation. The default eva-plugins
-GitHub source is published at [eva-plugins](https://github.com/colonelpanic8/eva-plugins).
+digest/origin rejection, updates and grant revocation. The default eva-extensions
+GitHub source is published at [eva-extensions](https://github.com/colonelpanic8/eva-extensions).
 Live index and package hashes were verified. Android document-picker import uses
 the same bounded codec, preview and installation path. File imports get fresh source
 identities and cannot replace another installation; copied bytes survive restart.
@@ -1109,10 +1109,11 @@ Extension and repository rows display the first visible matching installed app's
 icon, loaded locally off the UI thread. Declarative matches use package metadata
 and fixed intent targets; installed-service matches use the discovered package.
 Missing or hidden apps have no icon. Matching does not alter grants or destinations.
-The separate `eva-plugins` repository publishes Caffeine, Messages, org-agenda and
-a generated index. Extensions now has Installed, Browse and Settings tabs, separating
-the app list and grants from repository operations, server credentials and wait budgets.
-Browse has an explicit Refresh plugin repository action; refresh does not install packages.
+The separate `eva-extensions` repository publishes Caffeine, Messages, org-agenda and
+a generated index. The Extensions tab now keeps the catalog, previews, installation,
+grants, server credentials, wait overrides, updates, and removal together per extension.
+The Settings tab contains only repository controls and global wait defaults.
+Settings has an explicit Refresh extension repository action; refresh does not install packages.
 
 ### Pixel extension checks on installed build 0f53e78
 

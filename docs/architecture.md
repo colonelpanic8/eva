@@ -42,7 +42,7 @@ assumption of this architecture.
 Start with packages inside the existing `:app` module and explicit constructor
 injection. Keep core contracts free of Android and vendor SDK types so they can
 be tested on the JVM and extracted into modules when needed. Do not build a
-general plugin runtime before proving one voice-to-action vertical slice.
+general extension runtime before proving one voice-to-action vertical slice.
 
 ## 2. Components and dependency boundaries
 

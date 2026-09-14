@@ -368,7 +368,7 @@ for upgrades regardless of download channel.
 | M5: daily-driver polish | Persistence, lifecycle, notifications, battery, optional wake word | Repeated real-world use meets measured reliability and latency targets |
 
 Run [risk-first proof-of-concept experiments](proof-of-concept.md) alongside
-the scaffold; polished UI, general plugin packaging, and wake words are not
+the scaffold; polished UI, general extension packaging, and wake words are not
 prerequisites for proving the voice/action loop.
 
 Run the Shizuku discovery experiment early if the target phone is available,
@@ -381,7 +381,7 @@ Before M3, specify adapter packaging/versioning and connection authentication.
 
 Proposed defaults: native Kotlin shell; EVA-owned conversation and dispatch;
 direct voice audio; standard Android contracts first; Paseo as an adapter;
-optional privileged integration; declarations and MCP before a plugin runtime.
+optional privileged integration; declarations and MCP before an extension runtime.
 
 Each implementation milestone should add its decisions, measured evidence, and
 compatibility limits here or in a linked focused document. Keep aspirations,

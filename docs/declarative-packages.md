@@ -58,14 +58,14 @@ Installation uses those exact previewed bytes, without a second download.
 Source and package ID are retained for explicit update checks. A changed version
 does not retain grants, and a digest is not publisher authentication. A package
 can also be copied and hosted independently at a raw HTTPS URL.
-The Browse tab also offers Import plugin file. The system document picker grants
+The Settings tab also offers Import extension file. The system document picker grants
 temporary read access; EVA bounds the stream to the same package size limit and
 copies its exact bytes before preview. No persistent file permission is needed.
 Every file import gets a fresh source and instance identity; reimporting a file
 creates a separate disabled installation. Use a stable HTTPS source for updates.
 Packages optionally declare `androidPackages`, a list of up to 16 Android package
 IDs used only as matching hints. The index requires this field (empty for a
-server-only plugin), and its value must match the downloaded package.
+server-only extension), and its value must match the downloaded package.
 
 ## Binding boundaries
 
@@ -359,19 +359,19 @@ therefore offers no read capability. See [Caffeine's contract](https://lab.zhs.m
 
 ## Extensions page and installed-app matching direction
 
-The Extensions destination owns installed plugins/providers, grants, configuration
+The Extensions destination owns installed extensions/providers, grants, configuration
 and wait budgets. It also supports repository refresh, package preview, explicit
 installation/update, and removal. JVM tests exercise a new remote listing reaching
 the registry without rebuilding EVA, plus update grant revocation.
 
-Plugin definitions live in the separate [eva-plugins repository](https://github.com/colonelpanic8/eva-plugins).
+Extension definitions live in the separate [eva-extensions repository](https://github.com/colonelpanic8/eva-extensions).
 Its index and self-contained package files are
-fetched over HTTPS. Codec-compatible plugin changes require no EVA release.
+fetched over HTTPS. Codec-compatible extension changes require no EVA release.
 New execution mechanisms or unsupported schema features still require app support.
 Bundled files are initial examples/seeds, not the long-term update channel.
 
-The Installed tab contains installed extensions and grants. Browse contains the
-repository URL, Refresh plugin repository, listings and previews. Settings contains
+The Extensions tab contains listings, previews, installed extensions, grants, and per-extension configuration. Settings contains the
+repository URL, Refresh extension repository, imports, and global defaults.
 server credentials and wait budgets. Refreshing listings never installs or grants actions.
 
 The browser prioritizes matching installed apps and labels available updates. Match locally
@@ -389,14 +389,14 @@ intent targets to find an icon, without changing the approved package digest.
 Download the shared index and perform matching on-device; never upload the user's
 app inventory. Android filters package visibility, so distinguish "not detected"
 from proven incompatible. Preserve manual URL/file import for undetected apps and
-server-only plugins. Reuse generic visibility needed by supported app interactions;
+server-only extensions. Reuse generic visibility needed by supported app interactions;
 repository entries cannot add Android manifest queries at runtime. See
 [Android package visibility](https://developer.android.com/training/package-visibility).
 
-A match suggests a plugin; it never installs or enables it automatically. Preview
+A match suggests an extension; it never installs or enables it automatically. Preview
 shows the source/version, target apps, capabilities and effects. Keep the installed
 instance ID across explicit updates, retain the previous working bytes until
 replacement validates, and require re-enablement when the approved digest changes.
-Users can remove a plugin without uninstalling its target app. Installed-service
+Users can remove an extension without uninstalling its target app. Installed-service
 and AppFunctions providers appear on the same page with their source clearly shown;
-a provider APK update is distinct from a declarative plugin-file update.
+a provider APK update is distinct from a declarative extension-file update.
