@@ -11,7 +11,7 @@ import java.util.Collections
 class CapabilityRegistry(
     backends: Map<String, ExecutionBackend>,
     definitions: List<CapabilityDefinition> = BundledCapabilities.definitions,
-    bindingRevisions: Map<String, String> = backends.keys.associateWith { "native:10" },
+    bindingRevisions: Map<String, String> = backends.keys.associateWith { "native:11" },
 ) {
     private val admission = Mutex()
 
@@ -23,7 +23,7 @@ class CapabilityRegistry(
     suspend fun replace(
         backends: Map<String, ExecutionBackend>,
         definitions: List<CapabilityDefinition> = BundledCapabilities.definitions,
-        bindingRevisions: Map<String, String> = backends.keys.associateWith { "native:10" },
+        bindingRevisions: Map<String, String> = backends.keys.associateWith { "native:11" },
     ) {
         val candidate = Snapshot.create(backends, definitions, bindingRevisions)
         admission.withLock { current = candidate }
@@ -43,7 +43,7 @@ class CapabilityRegistry(
     ): ExecutionBackend? =
         admission.withLock {
             val backend = current.resolve(proposal) ?: return@withLock null
-            backend.dispatchRejection()?.let {
+            backend.dispatchRejection(proposal)?.let {
                 onRejected(it)
                 return@withLock null
             }

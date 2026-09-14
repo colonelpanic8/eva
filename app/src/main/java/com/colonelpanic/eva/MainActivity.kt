@@ -20,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import com.colonelpanic.eva.adapters.android.EvaNotificationListener
 import com.colonelpanic.eva.adapters.android.MediaControlAccess
 import com.colonelpanic.eva.assist.AssistantRole
 import com.colonelpanic.eva.audio.MicrophonePermission
@@ -181,6 +182,8 @@ class MainActivity : ComponentActivity() {
         val models by eva.availableModels.collectAsStateWithLifecycle()
         val account by eva.chatGpt.account.collectAsStateWithLifecycle()
         val signIn by eva.signIn.state.collectAsStateWithLifecycle()
+        val messaging by eva.messagingSettings.state.collectAsStateWithLifecycle()
+        val messagingApps by eva.notificationMessages.apps.collectAsStateWithLifecycle()
         val screenControl by eva.capabilities.screenControlFlow.collectAsStateWithLifecycle()
         val extensions by eva.extensions.settings.collectAsStateWithLifecycle()
         val plugins by eva.pluginBrowser.state.collectAsStateWithLifecycle()
@@ -190,6 +193,8 @@ class MainActivity : ComponentActivity() {
         val spotifyAccount by eva.spotify.account.collectAsStateWithLifecycle()
         val spotifyConnect by eva.spotifyConnect.state.collectAsStateWithLifecycle()
         return SettingsUiState(
+            messaging = messaging,
+            messagingApps = messagingApps,
             plugins = plugins,
             extensions = extensions,
             packages = packages,
@@ -296,6 +301,20 @@ class MainActivity : ComponentActivity() {
                 onSelectReasoningEffort = { effort -> save { settings.saveReasoningEffort(effort) } },
                 onVoiceLookupRetriesChange = settings::saveVoiceLookupRetries,
                 onOpenAssistantSettings = ::openAssistantSettings,
+                onMessagingEnable = { enabled ->
+                    lifecycleScope.launch {
+                        eva.registry.changeAuthorization {
+                            eva.messagingSettings.enable(enabled)
+                            eva.notificationMessages.clear()
+                        }
+                        EvaNotificationListener
+                            .refreshMessages()
+                    }
+                },
+                onMessagingReply = { identity, allowed ->
+                    lifecycleScope.launch { eva.registry.changeAuthorization { eva.messagingSettings.allowReply(identity, allowed) } }
+                },
+                onMessagingRefresh = EvaNotificationListener::refreshMessages,
                 onOpenMediaControlSettings = ::openMediaControlSettings,
                 onScreenControlChange = eva.capabilities::saveScreenControl,
                 onSaveSpotifyClientId = { clientId -> save { eva.spotify.saveClientId(clientId) } },
@@ -381,6 +400,8 @@ class MainActivity : ComponentActivity() {
         // Both grants are made in system settings, so the answers only change while EVA is away.
         deviceAssistant = AssistantRole.isEva(this)
         mediaControlAccess = MediaControlAccess.isGranted(this)
+        EvaNotificationListener
+            .refreshMessages()
         if (surface.locked && !isLocked()) surface = Launch.HANDS_FREE
         // The file may have been edited while EVA was away.
         eva.editPrompt { reload() }

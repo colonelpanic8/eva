@@ -1,12 +1,17 @@
 package com.colonelpanic.eva.ui.settings
 
 import com.colonelpanic.eva.capability.extensions.ExtensionSettings
+import com.colonelpanic.eva.data.MessagingPreferences
+import com.colonelpanic.eva.messaging.MessagingApp
 import com.colonelpanic.eva.providers.openai.OpenAiModels
 import com.colonelpanic.eva.providers.openai.SignInState
 import com.colonelpanic.eva.providers.spotify.SpotifyConnectState
 
 /** Everything the settings screen renders, collected once by the activity. */
 data class SettingsUiState(
+    val messaging: MessagingPreferences =
+        MessagingPreferences(),
+    val messagingApps: List<MessagingApp> = emptyList(),
     val plugins: com.colonelpanic.eva.adapters.declarative.PluginBrowserState =
         com.colonelpanic.eva.adapters.declarative
             .PluginBrowserState(),
@@ -44,6 +49,9 @@ data class SettingsUiState(
  * connection panel behaved, and it left nothing on screen to explain the failure.
  */
 data class SettingsActions(
+    val onMessagingEnable: (Boolean) -> Unit = {},
+    val onMessagingReply: (String, Boolean) -> Unit = { _, _ -> },
+    val onMessagingRefresh: () -> Unit = {},
     val onRepositoryRefresh: (String) -> Unit = {},
     val onPluginFileImport: () -> Unit = {},
     val onPluginUrlPreview: (String) -> Unit = {},

@@ -44,7 +44,7 @@ class CapabilityDispatcher(
                     title = definition?.title,
                     arguments = snapshot.arguments,
                     provenance =
-                        definition?.source?.let {
+                        (definition?.source ?: catalog.resolve(snapshot)?.receiptSource())?.let {
                             ReceiptProvenance(
                                 it,
                                 catalog.bindingRevisions.getValue(proposal.capabilityId),

@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">EVA</string>
     <string name="recognition_service_name">EVA speech recognition</string>
-    <string name="media_control_service_name">EVA media controls</string>
+    <string name="media_control_service_name">EVA media and messaging</string>
 </resources>

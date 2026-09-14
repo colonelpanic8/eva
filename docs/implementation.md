@@ -2,6 +2,14 @@
 
 Updated: 2026-09-14. Architecture: [architecture.md](architecture.md).
 
+## Unified messaging
+
+SMS/MMS and app-notification conversations now share search/read/send tools.
+Ivan reported a verified real SMS send on 2026-09-14. Notification discovery,
+opaque reply references, per-app grants, expiry/revocation, routing, and Android
+reply payloads have focused JVM/Robolectric coverage; real app reply execution
+is not yet device-verified. See [messaging setup and boundaries](messaging.md).
+
 ## Installed-app extensions (v1)
 
 The [installed-app v1 contract](extension-protocol.md) and strict bounded JSON
@@ -189,9 +197,9 @@ Android's general mechanism is the media session. Every app that puts transport
 controls on the lock screen publishes one, and `MediaSessionManager` exposes them
 to an app holding either the privileged `MEDIA_CONTENT_CONTROL` permission or an
 enabled notification listener of its own. EVA declares
-`adapters.android.EvaNotificationListener` for the second path. The component
-overrides nothing: notifications are delivered while the grant is on and ignored,
-and the grant exists only so `getActiveSessions` will answer. Settings shows
+`adapters.android.EvaNotificationListener` for the second path. The grant lets
+`getActiveSessions` answer. The listener also collects message notifications when
+the separate Settings → Messaging opt-in is enabled. Settings shows
 whether the grant is on, says what it also gives away, and opens EVA's own row
 where Android 11 or later has one.
 

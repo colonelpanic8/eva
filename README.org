@@ -3,6 +3,10 @@
 
 * Status
 
+Messaging now has a shared SMS/MMS and notification-reply interface.
+Ivan has verified a real SMS send. The new app-notification path is JVM-tested;
+WhatsApp/Telegram device execution remains unverified. See [[file:docs/messaging.md][messaging setup and limits]].
+
 EVA is an open, extensible Android assistant project. The Kotlin/Compose app
 connects to a development broker using the host's existing ChatGPT login.
 Natural-language typed requests reach a model, which can select map search,

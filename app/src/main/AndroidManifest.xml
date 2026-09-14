@@ -131,10 +131,8 @@
             </intent-filter>
         </activity>
 
-        <!-- Carries EVA's notification access, which is the only grant an unprivileged app can hold
-             that lets MediaSessionManager reveal other apps' media sessions. It overrides nothing:
-             notifications arrive while the grant is on and are ignored. Without the grant, media
-             control falls back to the media button, which needs no permission at all. -->
+        <!-- Notification access supports media controls; message collection requires a separate
+             in-app opt-in. -->
         <service
             android:name=".adapters.android.EvaNotificationListener"
             android:exported="true"
