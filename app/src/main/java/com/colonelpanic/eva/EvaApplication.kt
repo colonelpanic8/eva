@@ -5,6 +5,7 @@ import android.os.Build
 import androidx.core.content.pm.PackageInfoCompat
 import com.colonelpanic.eva.adapters.android.AndroidIntentHost
 import com.colonelpanic.eva.adapters.android.AppFunctionsBackend
+import com.colonelpanic.eva.adapters.android.ContactHistory
 import com.colonelpanic.eva.adapters.android.ContactNameKeywords
 import com.colonelpanic.eva.adapters.android.ContactsQueryBackend
 import com.colonelpanic.eva.adapters.android.IntentBackend
@@ -28,6 +29,7 @@ import com.colonelpanic.eva.conversation.ProviderSessionController
 import com.colonelpanic.eva.conversation.ProviderStatus
 import com.colonelpanic.eva.data.AppearanceSettings
 import com.colonelpanic.eva.data.ChatGptAccountStore
+import com.colonelpanic.eva.data.ChosenNumbers
 import com.colonelpanic.eva.data.OpenAiSettings
 import com.colonelpanic.eva.data.SqliteInvocationRepository
 import com.colonelpanic.eva.providers.BrokerConversationProvider
@@ -64,6 +66,10 @@ class EvaApplication :
 
     private val messagingStore by lazy { MessagingStore(this) }
     private val messageTargets by lazy { MessageTargets(intentHost, messagingStore) }
+    private val chosenNumbers by lazy { ChosenNumbers(this) }
+
+    private suspend fun contactHistory() = ContactHistory(messagingStore.lastMessaged(), chosenNumbers.all())
+
     private val mediaFactory by lazy { WebRtcMediaSessionFactory(this) }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val settings by lazy { OpenAiSettings(this) }
@@ -137,9 +143,12 @@ class EvaApplication :
                     mapOf(
                         CapabilityRegistry.MAP_SEARCH to MapIntentBackend(intentHost),
                         CapabilityRegistry.NAVIGATE to NavigationIntentBackend(intentHost),
-                        CapabilityRegistry.SMS_COMPOSE to MessageIntentBackend(intentHost, messageTargets),
-                        CapabilityRegistry.SMS_SEND to SmsSendBackend(this@EvaApplication, intentHost, messageTargets),
-                        CapabilityRegistry.CONTACTS_SEARCH to ContactsQueryBackend(this@EvaApplication, intentHost),
+                        CapabilityRegistry.SMS_COMPOSE to
+                            chosenNumbers.remembering(MessageIntentBackend(intentHost, messageTargets), "recipient"),
+                        CapabilityRegistry.SMS_SEND to
+                            chosenNumbers.remembering(SmsSendBackend(this@EvaApplication, intentHost, messageTargets), "recipient"),
+                        CapabilityRegistry.CONTACTS_SEARCH to
+                            ContactsQueryBackend(this@EvaApplication, intentHost, ::contactHistory),
                         CapabilityRegistry.CONVERSATIONS_SEARCH to
                             MessagingReadBackend(intentHost, messagingStore, MessagingReadBackend.Operation.CONVERSATIONS),
                         CapabilityRegistry.CONVERSATION_READ to
@@ -149,7 +158,10 @@ class EvaApplication :
                         CapabilityRegistry.SET_TIMER to
                             intent("Timer started.", "No clock app accepted this timer.", NativeIntents::timer),
                         CapabilityRegistry.DIAL to
-                            intent("Dialer opened.", "No phone app is available.", NativeIntents::dial),
+                            chosenNumbers.remembering(
+                                intent("Dialer opened.", "No phone app is available.", NativeIntents::dial),
+                                "number",
+                            ),
                         CapabilityRegistry.WEB_SEARCH to
                             intent("Web search opened.", "No browser or search app is available.", NativeIntents::webSearch),
                         CapabilityRegistry.OPEN_URL to
@@ -187,7 +199,7 @@ class EvaApplication :
             },
         )
     }
-    private val contactKeywords by lazy { ContactNameKeywords(this) }
+    private val contactKeywords by lazy { ContactNameKeywords(this, ::contactHistory) }
     val controller by lazy {
         val repository = SqliteInvocationRepository(this)
         ProviderSessionController(

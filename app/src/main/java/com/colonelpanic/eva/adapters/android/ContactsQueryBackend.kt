@@ -2,6 +2,7 @@ package com.colonelpanic.eva.adapters.android
 
 import android.Manifest
 import android.content.Context
+import android.provider.ContactsContract.CommonDataKinds.Nickname
 import android.provider.ContactsContract.CommonDataKinds.Phone
 import android.provider.ContactsContract.CommonDataKinds.StructuredName
 import android.provider.ContactsContract.Data
@@ -11,9 +12,15 @@ import com.colonelpanic.eva.capability.InvocationStatus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/**
+ * Finds contacts by a heard name. Every contact with a phone number is read and ranked in memory
+ * rather than filtered by SQL, because a misheard spelling matches nothing in a `LIKE` query; an
+ * address book is small enough that reading it whole costs little.
+ */
 class ContactsQueryBackend(
     context: Context,
     private val host: AndroidIntentHost,
+    private val history: suspend () -> ContactHistory = { ContactHistory.NONE },
 ) : ExecutionBackend {
     private val resolver = context.applicationContext.contentResolver
 
@@ -25,60 +32,30 @@ class ContactsQueryBackend(
         if (!host.ensurePermission(Manifest.permission.READ_CONTACTS)) {
             return ExecutionOutcome(InvocationStatus.NOT_EXECUTED, PERMISSION_DENIED)
         }
-        val matches = withContext(Dispatchers.IO) { lookup(query, field) }
-        return ExecutionOutcome(InvocationStatus.COMPLETED, ContactMatches.describe(query, matches))
+        val contacts = withContext(Dispatchers.IO) { contacts() }
+        return ExecutionOutcome(InvocationStatus.COMPLETED, ContactMatches.describe(query, contacts, field, history()))
     }
 
-    private fun lookup(
-        query: String,
-        field: ContactField,
-    ): List<ContactMatch> =
-        when (val column = field.column) {
-            null -> byDisplayName(query).ifEmpty { byFirstWord(query) }
-            else -> byNamePart(query, column)
+    private fun contacts(): List<ContactMatch> {
+        val phones = phones()
+        if (phones.isEmpty()) return emptyList()
+        val names = structuredNames()
+        val nicknames = nicknames()
+        return phones.map { (id, match) ->
+            val (given, family) = names[id] ?: (null to null)
+            match.copy(givenName = given, familyName = family, nicknames = nicknames[id].orEmpty())
         }
-
-    /** Only the whole-name search guesses: a dictated full name may not match how the contact is stored. */
-    private fun byFirstWord(query: String): List<ContactMatch> =
-        query
-            .split(' ')
-            .filter { it.length > 1 }
-            .firstNotNullOfOrNull { token -> byDisplayName(token).ifEmpty { null } }
-            .orEmpty()
-
-    private fun byDisplayName(query: String): List<ContactMatch> =
-        phones("${Phone.DISPLAY_NAME_PRIMARY} LIKE ? ESCAPE '\\'", arrayOf(ContactLookups.contains(query)))
-
-    private fun byNamePart(
-        query: String,
-        column: String,
-    ): List<ContactMatch> {
-        val ids = linkedSetOf<Long>()
-        resolver
-            .query(
-                Data.CONTENT_URI,
-                arrayOf(Data.CONTACT_ID),
-                "${Data.MIMETYPE} = ? AND $column LIKE ? ESCAPE '\\'",
-                arrayOf(StructuredName.CONTENT_ITEM_TYPE, ContactLookups.contains(query)),
-                null,
-            )?.use { cursor -> while (cursor.moveToNext()) ids.add(cursor.getLong(0)) }
-        if (ids.isEmpty()) return emptyList()
-        val (selection, arguments) = ContactLookups.idSelection(Phone.CONTACT_ID, ids)
-        return phones(selection, arguments)
     }
 
-    private fun phones(
-        selection: String,
-        arguments: Array<String>,
-    ): List<ContactMatch> {
+    private fun phones(): Map<Long, ContactMatch> {
         val cursor =
             resolver.query(
                 Phone.CONTENT_URI,
                 arrayOf(Phone.CONTACT_ID, Phone.DISPLAY_NAME_PRIMARY, Phone.NUMBER, Phone.TYPE, Phone.LABEL),
-                selection,
-                arguments,
-                "${Phone.DISPLAY_NAME_PRIMARY} COLLATE NOCASE ASC",
-            ) ?: return emptyList()
+                null,
+                null,
+                null,
+            ) ?: return emptyMap()
         val found = linkedMapOf<Long, Pair<String, LinkedHashMap<String, ContactPhone>>>()
         cursor.use {
             while (it.moveToNext()) {
@@ -88,7 +65,41 @@ class ContactsQueryBackend(
                 entry.second.getOrPut(number.filter(Char::isDigit)) { ContactPhone(number, kind(it.getInt(3), it.getString(4))) }
             }
         }
-        return found.values.map { (name, numbers) -> ContactMatch(name, numbers.values.toList()) }
+        return found.mapValues { (_, entry) -> ContactMatch(entry.first, entry.second.values.toList()) }
+    }
+
+    private fun structuredNames(): Map<Long, Pair<String?, String?>> =
+        data(StructuredName.CONTENT_ITEM_TYPE, StructuredName.GIVEN_NAME, StructuredName.FAMILY_NAME).associate { (id, given, family) ->
+            id to (given to family)
+        }
+
+    private fun nicknames(): Map<Long, List<String>> =
+        data(Nickname.CONTENT_ITEM_TYPE, Nickname.NAME, null)
+            .filter { it.second != null }
+            .groupBy({ it.first }, { checkNotNull(it.second) })
+
+    private fun data(
+        mimeType: String,
+        first: String,
+        second: String?,
+    ): List<Triple<Long, String?, String?>> {
+        val cursor =
+            resolver.query(
+                Data.CONTENT_URI,
+                listOfNotNull(Data.CONTACT_ID, first, second).toTypedArray(),
+                "${Data.MIMETYPE} = ?",
+                arrayOf(mimeType),
+                null,
+            ) ?: return emptyList()
+        return cursor.use {
+            buildList {
+                while (it.moveToNext()) {
+                    val one = it.getString(1)?.trim()?.takeIf(String::isNotBlank)
+                    val two = if (second != null) it.getString(2)?.trim()?.takeIf(String::isNotBlank) else null
+                    add(Triple(it.getLong(0), one, two))
+                }
+            }
+        }
     }
 
     private fun kind(
