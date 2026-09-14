@@ -4,7 +4,6 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
-import android.database.sqlite.SQLiteOpenHelper
 import com.colonelpanic.eva.capability.CapabilityDispatcher
 import com.colonelpanic.eva.capability.ClaimResult
 import com.colonelpanic.eva.capability.InvocationRecord
@@ -14,11 +13,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class SqliteInvocationRepository(
-    context: Context,
-    databaseName: String = DATABASE_NAME,
+    private val helper: JournalDatabase,
 ) : InvocationRepository,
     AutoCloseable {
-    private val helper = JournalDatabase(context.applicationContext, databaseName)
+    constructor(
+        context: Context,
+        databaseName: String = DATABASE_NAME,
+    ) : this(JournalDatabase(context, databaseName))
 
     override suspend fun recoverInterrupted() =
         withContext(Dispatchers.IO) {
@@ -56,6 +57,8 @@ class SqliteInvocationRepository(
                             put("capability_id", record.capabilityId)
                             put("catalog_revision", record.catalogRevision)
                             put("title", record.title)
+                            put("thread_id", record.threadId)
+                            put("turn_id", record.turnId)
                         }
                     db.insertOrThrow("invocations", null, values)
                     ClaimResult(record, true)
@@ -84,6 +87,23 @@ class SqliteInvocationRepository(
         withContext(Dispatchers.IO) {
             helper.readableDatabase.query("invocations", null, null, null, null, null, "rowid DESC", "100").use { cursor ->
                 buildList { while (cursor.moveToNext()) add(cursor.record()) }.reversed()
+            }
+        }
+
+    override suspend fun byCallIds(ids: Collection<String>): Map<String, InvocationRecord> =
+        withContext(Dispatchers.IO) {
+            buildMap {
+                ids.distinct().chunked(MAX_QUERY_ARGUMENTS).forEach { chunk ->
+                    val placeholders = chunk.joinToString(",") { "?" }
+                    helper.readableDatabase
+                        .query("invocations", null, "call_id IN ($placeholders)", chunk.toTypedArray(), null, null, null)
+                        .use { cursor ->
+                            while (cursor.moveToNext()) {
+                                val record = cursor.record()
+                                put(record.callId, record)
+                            }
+                        }
+                }
             }
         }
 
@@ -129,31 +149,12 @@ class SqliteInvocationRepository(
             capabilityId = getString(getColumnIndexOrThrow("capability_id")),
             catalogRevision = getInt(getColumnIndexOrThrow("catalog_revision")),
             title = getColumnIndexOrThrow("title").let { if (isNull(it)) null else getString(it) },
+            threadId = getColumnIndexOrThrow("thread_id").let { if (isNull(it)) null else getString(it) },
+            turnId = getColumnIndexOrThrow("turn_id").let { if (isNull(it)) null else getString(it) },
         )
-
-    private class JournalDatabase(
-        context: Context,
-        name: String,
-    ) : SQLiteOpenHelper(context, name, null, 2) {
-        override fun onCreate(db: SQLiteDatabase) {
-            db.execSQL(
-                "CREATE TABLE invocations (call_id TEXT PRIMARY KEY NOT NULL, fingerprint TEXT NOT NULL, " +
-                    "request TEXT NOT NULL, destination TEXT, status TEXT NOT NULL, message TEXT NOT NULL, created_at INTEGER NOT NULL, " +
-                    "capability_id TEXT NOT NULL, catalog_revision INTEGER NOT NULL, title TEXT)",
-            )
-        }
-
-        override fun onUpgrade(
-            db: SQLiteDatabase,
-            oldVersion: Int,
-            newVersion: Int,
-        ) {
-            check(oldVersion == 1 && newVersion == 2)
-            db.execSQL("ALTER TABLE invocations ADD COLUMN title TEXT")
-        }
-    }
 
     companion object {
         const val DATABASE_NAME = "eva-actions.db"
+        private const val MAX_QUERY_ARGUMENTS = 900
     }
 }

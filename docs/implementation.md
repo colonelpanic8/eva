@@ -441,10 +441,17 @@ and the user can keep talking; the session ends when the user stops voice, the
 model ends the conversation, or the broker lifetime expires.
 
 A spoken session also advertises one tool that is not a phone action: ending the
-conversation. The model is told to say a brief goodbye and then call it when the
-user says goodbye, says they are done, or asks it to hang up. The controller
-handles it without the dispatcher or journal and returns no result, because a
-result would prompt the model to speak again. It hangs up once the provider
+conversation. When the model should call it is not fixed: it is said by whichever
+prompt components are enabled, and the stock file ships two alternatives in one
+slot. "One request" is the phone-assistant call, told to say a short closing line
+and hang up once nothing is outstanding without asking whether there is anything
+else; "Open conversation" is told that a finished request is no reason to hang up
+and to end the call only when the user says goodbye, says that is all, or asks
+for it. Each rewords the tool through its `describe` entry, so the two produce
+different catalog revisions and a connection still pins exactly one. See
+[the prompt file](prompt.md) for the mechanism. The controller handles the call without the
+dispatcher or journal and returns no result, because a result would prompt the
+model to speak again. It hangs up once the provider
 reports that the goodbye has finished reaching the phone, plus a short playout
 tail, and at most ten seconds after the call if that report never comes. The
 direct realtime provider reports this from the WebRTC `output_audio_buffer`
@@ -457,6 +464,35 @@ see [the assistant role](#the-assistant-role).
 
 No automatic reconnect, requirement tokens, or provider history seeding is
 included.
+
+## The prompt file
+
+There is no prompt text in the app that the user cannot see. The system prompt is
+assembled at every connection from `eva-prompt.yaml`, a list of components each
+with an instruction, whether it applies to voice, text, or both, an `enabled`
+flag, an optional slot in which only one component may be enabled, and optional
+tool adjustments: `describe` replaces a tool's description by id and `hide`
+withholds tools from the model. `{{clock}}` and `{{lookup_retries}}` are
+substituted; a reference to anything else, a duplicate id, a malformed id, or two
+enabled components in one slot is reported with the component's id, and an
+unknown key is reported with its line, because the file is meant to be edited by
+hand. Wrapped lines inside an instruction join with spaces and a blank line
+starts a new paragraph, so the file can be wrapped like prose and still diff.
+
+`PromptDefaults` is the stock prompt, written to the file when the file is
+absent or empty and again on reset; after that the file is the only source.
+`PromptStore` keeps EVA's own copy in the external files directory, reachable
+over USB and `adb` without a permission, or adopts a document the user picks
+through the system picker with the persisted grant those pickers give, which is
+how the file can live in a synced folder or a checkout. A picked file is parsed
+before it replaces anything and an empty one is filled with the current prompt.
+The store reads the file for every session and writes it only for an edit made
+in the app, so an external edit applies to the next session without a reload
+step, and a file that fails to parse fails the connection with the parser's
+message instead of falling back to something the user did not write. The prompt
+screen shows the components as switches over their `enabled` fields, edits one
+component's text and scope, and adds or removes components; slots and tool
+adjustments are edited in the file. `docs/prompt.md` documents the format.
 
 ## The assistant role
 
@@ -775,6 +811,27 @@ The home screen accepts ordinary language and exposes connection and audio state
 The provider receives available capabilities and chooses structured calls; EVA
 retains validation, admission, and execution. Success receipts use concise copy,
 with uncertainty reserved for interrupted or unknown outcomes.
+
+The conversation is rendered as grouped turns rather than a flat stream. Each session
+is bracketed by dividers naming its mode and model ("Text session ·
+gpt-5.6-sol", "Session ended"), and each turn shows its request, the actions the
+model ran for it on a branch beneath, then the answer.
+
+Conversations are durable threads, and a voice call or text connection is an
+attachment to one. `ThreadController` gives each accepted request a turn task
+in a thread-owned scope, so ending the attachment no longer cancels it: an
+unfinished turn re-homes onto a background Responses leg seeded with the
+thread's history and finishes there, reported by notification when nothing is
+attached. Turn identity belongs to the store, because a realtime session
+numbers its own turns from scratch and two sessions on one thread would
+otherwise collide. A turn reserves at most one side-effecting action in the
+store, so a fresh leg cannot claim a second, and may make up to eight
+read-only lookups. Hands-free and assist launches start a new thread; the
+drawer lists threads and reopens them, which seeds the session with what was
+said. One attachment is live at a time; background legs may coexist with it.
+`TurnWorkService` (`shortService`) covers work with no voice session live and
+interrupts it rather than leaving it half-done if Android runs out of
+patience. Design and remaining slices: [threads](threads.md).
 
 ## Voice recheck
 

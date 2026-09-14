@@ -1,0 +1,865 @@
+package com.colonelpanic.eva.conversation
+
+import com.colonelpanic.eva.audio.MediaControls
+import com.colonelpanic.eva.audio.MediaTimeline
+import com.colonelpanic.eva.audio.RealtimeMediaSession
+import com.colonelpanic.eva.audio.RealtimeMediaState
+import com.colonelpanic.eva.capability.CapabilityDefinition
+import com.colonelpanic.eva.capability.CapabilityDispatcher
+import com.colonelpanic.eva.capability.CapabilityRegistry
+import com.colonelpanic.eva.capability.ExecutionBackend
+import com.colonelpanic.eva.capability.ExecutionOutcome
+import com.colonelpanic.eva.capability.InvocationStatus
+import com.colonelpanic.eva.capability.MemoryInvocationRepository
+import com.colonelpanic.eva.conversation.prompt.PromptComponent
+import com.colonelpanic.eva.conversation.prompt.PromptConfig
+import com.colonelpanic.eva.conversation.prompt.PromptConfigException
+import com.colonelpanic.eva.conversation.prompt.PromptDefaults
+import com.colonelpanic.eva.providers.CallIdentity
+import com.colonelpanic.eva.providers.ConversationInput
+import com.colonelpanic.eva.providers.ConversationProvider
+import com.colonelpanic.eva.providers.ConversationSession
+import com.colonelpanic.eva.providers.CorrelatedToolResult
+import com.colonelpanic.eva.providers.HistoryItem
+import com.colonelpanic.eva.providers.ProviderEvent
+import com.colonelpanic.eva.providers.ResponseRequest
+import com.colonelpanic.eva.providers.SessionOpenRequest
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class ThreadControllerTest {
+    private val repository = MemoryInvocationRepository()
+    private val store = MemoryConversationStore()
+    private var executions = 0
+    private val answers = mutableListOf<ThreadController.BackgroundAnswer>()
+
+    private val action =
+        CapabilityDefinition(
+            "test.custom",
+            "Custom action",
+            "Execute a custom test action",
+            schema(
+                """{"type":"object","properties":{"place":{"type":"string","minLength":1}},"required":["place"],"additionalProperties":false}""",
+            ),
+        )
+    private val lookup =
+        CapabilityDefinition(
+            "test.lookup",
+            "Look something up",
+            "Read-only lookup",
+            schema(
+                """{"type":"object","properties":{"query":{"type":"string","minLength":1}},"required":["query"],"additionalProperties":false}""",
+            ),
+            readOnly = true,
+        )
+    private val registry =
+        CapabilityRegistry(
+            mapOf(
+                action.id to backend { ExecutionOutcome(InvocationStatus.HANDED_OFF, "Opened ${it.getValue("place")}") },
+                lookup.id to backend { ExecutionOutcome(InvocationStatus.COMPLETED, "Found ${it.getValue("query")}") },
+            ),
+            listOf(action, lookup),
+        )
+
+    private fun schema(text: String) = Json.parseToJsonElement(text).jsonObject
+
+    private fun backend(outcome: (Map<String, String>) -> ExecutionOutcome) =
+        object : ExecutionBackend {
+            override suspend fun unavailableReason(): String? = null
+
+            override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome {
+                executions++
+                return outcome(arguments)
+            }
+        }
+
+    private fun TestScope.controller(
+        provider: FakeProvider,
+        background: FakeProvider = provider,
+        media: (() -> RealtimeMediaSession)? = null,
+        voiceProvider: FakeProvider = provider,
+        voiceKeywords: suspend () -> List<String> = { emptyList() },
+        hiddenCapabilities: () -> Set<String> = { emptySet() },
+        prompt: suspend () -> PromptConfig = { PromptDefaults.config },
+    ) = ThreadController(
+        registry = registry,
+        dispatcher = CapabilityDispatcher(registry, repository),
+        repository = repository,
+        store = store,
+        scope = liveScope(),
+        providerFactory = { provider },
+        mediaFactory = media,
+        voiceProviderFactory = { _, _ -> voiceProvider },
+        backgroundProviderFactory = { background },
+        voiceKeywords = voiceKeywords,
+        hiddenCapabilities = hiddenCapabilities,
+        prompt = prompt,
+        onBackgroundAnswer = { answers += it },
+    )
+
+    /**
+     * The controller watches the store for as long as it lives, so it gets a scope that shares
+     * the test scheduler without being a child of the test body.
+     */
+    private fun TestScope.liveScope() = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+
+    private fun entry(
+        controller: ThreadController,
+        id: String,
+    ) = controller.state.value.entries
+        .first { it.id == id }
+
+    /** The store owns turn identity; a provider's input id is only meaningful to its own leg. */
+    private suspend fun latestTurn(controller: ThreadController) = store.turns(controller.state.value.threadId!!).last().id
+
+    // ---- text ----
+
+    @Test
+    fun `a typed request runs its action on the phone and the answer closes the turn`() =
+        runTest {
+            val provider = FakeProvider()
+            val controller = controller(provider)
+            advanceUntilIdle()
+            controller.connect("unused")
+            advanceUntilIdle()
+            assertEquals(
+                "Text session",
+                controller.state.value.entries
+                    .single { it.status == EntryStatus.SESSION }
+                    .response,
+            )
+            controller.submit("Please show me the park")
+            advanceUntilIdle()
+            assertTrue(controller.state.value.working)
+            provider.call("first", action.id, "place" to "Park")
+            advanceUntilIdle()
+            assertEquals(1, executions)
+            assertEquals("HANDED_OFF", provider.results.single().status)
+            assertEquals("Opened Park", provider.results.single().message)
+            val turn = latestTurn(controller)
+            assertEquals(turn, entry(controller, "provider:session:first").parentId)
+            assertEquals(turn, repository.history().single().turnId)
+            provider.channel.send(ProviderEvent.AssistantText(provider.input.id, "The park is open.", false))
+            provider.channel.send(ProviderEvent.ResponseEnded(provider.input.id, "completed"))
+            advanceUntilIdle()
+            assertFalse(controller.state.value.isSubmitting)
+            assertFalse(controller.state.value.working)
+            assertEquals("The park is open.", entry(controller, turn).response)
+            assertEquals(TurnStatus.ANSWERED, store.turns(controller.state.value.threadId!!).single().status)
+            assertEquals("Please show me the park", store.threads().single().title)
+            controller.disconnect()
+            advanceUntilIdle()
+            assertEquals(
+                listOf("Text session", "Session ended"),
+                controller.state.value.entries
+                    .filter {
+                        it.status == EntryStatus.SESSION
+                    }.map { it.response },
+            )
+        }
+
+    @Test
+    fun `a second side-effecting call in a turn is rejected but lookups may repeat`() =
+        runTest {
+            val provider = FakeProvider()
+            val controller = controller(provider)
+            advanceUntilIdle()
+            controller.connect("unused")
+            advanceUntilIdle()
+            controller.submit("Open two places")
+            advanceUntilIdle()
+            provider.call("first", action.id, "place" to "Park")
+            provider.call("second", action.id, "place" to "Beach")
+            provider.call("look-1", lookup.id, "query" to "a")
+            provider.call("look-2", lookup.id, "query" to "b")
+            advanceUntilIdle()
+            assertEquals(3, executions)
+            assertEquals(
+                mapOf("first" to "HANDED_OFF", "second" to "NOT_EXECUTED", "look-1" to "COMPLETED", "look-2" to "COMPLETED"),
+                provider.results.associate { it.call.callId to it.status },
+            )
+            assertEquals("One phone action is permitted per request.", provider.results.first { it.call.callId == "second" }.message)
+        }
+
+    @Test
+    fun `the lookup budget is bounded`() =
+        runTest {
+            val provider = FakeProvider()
+            val controller = controller(provider)
+            advanceUntilIdle()
+            controller.connect("unused")
+            advanceUntilIdle()
+            controller.submit("Look everywhere")
+            advanceUntilIdle()
+            repeat(ThreadController.READ_ONLY_CALLS_PER_TURN + 1) { provider.call("look-$it", lookup.id, "query" to "q$it") }
+            advanceUntilIdle()
+            assertEquals(ThreadController.READ_ONLY_CALLS_PER_TURN, executions)
+            assertEquals("Too many lookups for one request.", provider.results.last().message)
+        }
+
+    @Test
+    fun `a new request is refused while the thread is still working`() =
+        runTest {
+            val provider = FakeProvider()
+            val controller = controller(provider)
+            advanceUntilIdle()
+            controller.connect("unused")
+            advanceUntilIdle()
+            controller.submit("First")
+            advanceUntilIdle()
+            provider.channel.send(ProviderEvent.ResponseEnded(provider.input.id, "completed"))
+            advanceUntilIdle()
+            controller.submit("Second")
+            advanceUntilIdle()
+            assertEquals(2, provider.submissions)
+            controller.submit("Third")
+            advanceUntilIdle()
+            assertEquals(2, provider.submissions)
+            assertEquals("EVA is still working on the last request.", controller.state.value.providerMessage)
+        }
+
+    @Test
+    fun `claim storage failure stops the session without executing an action`() =
+        runTest {
+            val provider = FakeProvider()
+            val controller = controller(provider)
+            advanceUntilIdle()
+            controller.connect("unused")
+            advanceUntilIdle()
+            controller.submit("Open the park")
+            advanceUntilIdle()
+            repository.failClaim = true
+            provider.call("first", action.id, "place" to "Park")
+            advanceUntilIdle()
+            assertEquals(0, executions)
+            assertNotNull(controller.state.value.errorMessage)
+            assertEquals(ProviderStatus.DISCONNECTED, controller.state.value.providerStatus)
+            assertFalse(controller.state.value.isSubmitting)
+            assertFalse(controller.state.value.working)
+        }
+
+    // ---- work outlives the attachment ----
+
+    @Test
+    fun `hanging up leaves the turn running and it finishes on a background leg`() =
+        runTest {
+            val provider = FakeProvider()
+            val background = FakeProvider(epoch = "background")
+            val controller = controller(provider, background = background)
+            advanceUntilIdle()
+            controller.connect("unused")
+            advanceUntilIdle()
+            controller.submit("Open the park")
+            advanceUntilIdle()
+            val turn = latestTurn(controller)
+            provider.call("first", action.id, "place" to "Park")
+            advanceUntilIdle()
+            assertEquals(1, executions)
+
+            // The user hangs up before the model has answered.
+            controller.disconnect()
+            advanceUntilIdle()
+            assertEquals(ProviderStatus.DISCONNECTED, controller.state.value.providerStatus)
+            assertTrue(controller.state.value.working)
+            assertEquals(setOf(controller.state.value.threadId), controller.working.value)
+
+            // The turn re-homed: the background leg was seeded with the receipt and asked to continue.
+            val opened = background.request
+            assertEquals(turn, opened.continuation?.turnId)
+            assertTrue(opened.history.any { it is HistoryItem.User && it.text == "Open the park" })
+            val evidence = opened.history.filterIsInstance<HistoryItem.ActionEvidence>().single()
+            assertEquals("HANDED_OFF", evidence.status)
+            assertEquals("Opened Park", evidence.message)
+            assertEquals(listOf(turn), background.responseRequests)
+            assertEquals(0, background.submissions)
+
+            background.channel.send(ProviderEvent.AssistantText(turn, "The park is open.", false))
+            background.channel.send(ProviderEvent.ResponseEnded(turn, "completed"))
+            advanceUntilIdle()
+            assertFalse(controller.state.value.working)
+            assertEquals("The park is open.", entry(controller, turn).response)
+            assertEquals("The park is open.", answers.single().answer)
+            assertEquals(1, background.closes)
+            assertTrue(
+                controller.state.value.entries
+                    .any { it.status == EntryStatus.SESSION && it.response.contains("Continuing") },
+            )
+        }
+
+    @Test
+    fun `the side-effect claim survives re-homing`() =
+        runTest {
+            val provider = FakeProvider()
+            val background = FakeProvider(epoch = "background")
+            val controller = controller(provider, background = background)
+            advanceUntilIdle()
+            controller.connect("unused")
+            advanceUntilIdle()
+            controller.submit("Open the park")
+            advanceUntilIdle()
+            val turn = latestTurn(controller)
+            provider.call("first", action.id, "place" to "Park")
+            advanceUntilIdle()
+            controller.disconnect()
+            advanceUntilIdle()
+            background.input = ConversationInput(turn, "")
+            background.call("second", action.id, "place" to "Beach")
+            advanceUntilIdle()
+            assertEquals(1, executions)
+            assertEquals("One phone action is permitted per request.", background.results.single().message)
+        }
+
+    @Test
+    fun `stopping the task interrupts it and re-homing happens only once`() =
+        runTest {
+            val provider = FakeProvider()
+            val background = FakeProvider(epoch = "background")
+            val controller = controller(provider, background = background)
+            advanceUntilIdle()
+            controller.connect("unused")
+            advanceUntilIdle()
+            controller.submit("Open the park")
+            advanceUntilIdle()
+            val turn = latestTurn(controller)
+            controller.disconnect()
+            advanceUntilIdle()
+            assertTrue(controller.state.value.working)
+            controller.stopTask()
+            advanceUntilIdle()
+            assertFalse(controller.state.value.working)
+            assertEquals(TurnStatus.INTERRUPTED, store.turns(controller.state.value.threadId!!).single().status)
+            assertEquals("Interrupted.", entry(controller, turn).response)
+            assertEquals(1, background.closes)
+
+            // A background leg that fails does not get a second chance.
+            controller.connect("unused")
+            advanceUntilIdle()
+            controller.submit("Again")
+            advanceUntilIdle()
+            val second = latestTurn(controller)
+            controller.disconnect()
+            advanceUntilIdle()
+            background.channel.send(ProviderEvent.Failure("boom"))
+            advanceUntilIdle()
+            assertFalse(controller.state.value.working)
+            assertEquals(TurnStatus.FAILED, store.turns(controller.state.value.threadId!!).first { it.id == second }.status)
+        }
+
+    // ---- threads ----
+
+    @Test
+    fun `a hands-free launch starts a new thread and old threads can be shown again`() =
+        runTest {
+            val provider = FakeProvider()
+            val controller = controller(provider, media = { VoiceMedia() })
+            advanceUntilIdle()
+            controller.connect("unused")
+            advanceUntilIdle()
+            controller.submit("First thread")
+            advanceUntilIdle()
+            provider.channel.send(ProviderEvent.ResponseEnded(provider.input.id, "completed"))
+            advanceUntilIdle()
+            val first = controller.state.value.threadId!!
+            controller.connectVoice("unused", newThread = true)
+            advanceUntilIdle()
+            val second = controller.state.value.threadId!!
+            assertTrue(first != second)
+            assertEquals(2, controller.threads.value.size)
+            assertEquals(
+                listOf("Voice session"),
+                controller.state.value.entries
+                    .filter { it.status == EntryStatus.SESSION }
+                    .map { it.response },
+            )
+            controller.disconnect()
+            advanceUntilIdle()
+            controller.showThread(first)
+            advanceUntilIdle()
+            assertEquals(first, controller.state.value.threadId)
+            assertEquals(
+                "First thread",
+                controller.state.value.entries
+                    .first { it.request.isNotBlank() }
+                    .request,
+            )
+        }
+
+    @Test
+    fun `resuming a thread seeds the session with what was said`() =
+        runTest {
+            val provider = FakeProvider()
+            val controller = controller(provider)
+            advanceUntilIdle()
+            controller.connect("unused")
+            advanceUntilIdle()
+            controller.submit("Remember the park")
+            advanceUntilIdle()
+            provider.channel.send(ProviderEvent.AssistantText(provider.input.id, "Noted.", false))
+            provider.channel.send(ProviderEvent.ResponseEnded(provider.input.id, "completed"))
+            advanceUntilIdle()
+            controller.disconnect()
+            advanceUntilIdle()
+            controller.connect("unused")
+            advanceUntilIdle()
+            val history = provider.request.history
+            assertTrue(history.any { it is HistoryItem.User && it.text == "Remember the park" })
+            assertTrue(history.any { it is HistoryItem.Assistant && it.text == "Noted." })
+            assertNull(provider.request.continuation)
+        }
+
+    // ---- voice ----
+
+    @Test
+    fun `a spoken turn is the input and its tool call executes on the phone`() =
+        runTest {
+            val provider = FakeProvider()
+            val media = VoiceMedia()
+            val controller = controller(provider, media = { media })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            assertEquals(
+                listOf(action.id, lookup.id, "eva.session.end"),
+                provider.request.catalog.tools
+                    .map { it.capabilityId },
+            )
+            provider.input = ConversationInput("voice:turn-1", "")
+            provider.channel.send(ProviderEvent.ResponseStarted("voice:turn-1", "voice:turn-1"))
+            provider.channel.send(ProviderEvent.Transcript("user", "Show me the park"))
+            provider.call("call-1", action.id, "place" to "Park")
+            advanceUntilIdle()
+            assertEquals(1, executions)
+            assertEquals(
+                "voice:turn-1",
+                provider.results
+                    .single()
+                    .call.inputId,
+            )
+            assertEquals("Show me the park", repository.history().single().request)
+            provider.channel.send(ProviderEvent.AssistantText("voice:turn-1", "Opened.", false))
+            provider.channel.send(ProviderEvent.ResponseEnded("voice:turn-1", "completed"))
+            advanceUntilIdle()
+            val spoken = latestTurn(controller)
+            assertEquals("Show me the park", entry(controller, spoken).request)
+            assertEquals("Opened.", entry(controller, spoken).response)
+
+            provider.input = ConversationInput("voice:turn-2", "")
+            provider.channel.send(ProviderEvent.ResponseStarted("voice:turn-2", "voice:turn-2"))
+            provider.call("call-2", action.id, "place" to "Beach")
+            advanceUntilIdle()
+            assertEquals(2, executions)
+            assertEquals("Voice request", repository.history().first { it.callId.endsWith("call-2") }.request)
+            controller.disconnect()
+            advanceUntilIdle()
+            assertTrue(media.closed)
+        }
+
+    @Test
+    fun `a voice session takes no typed submissions and disconnect releases both connections`() =
+        runTest {
+            val provider = FakeProvider()
+            val media = VoiceMedia()
+            val controller = controller(provider, media = { media })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            assertEquals(
+                listOf("eva.session.end"),
+                provider.request.catalog.tools
+                    .map { it.capabilityId }
+                    .filter { it.startsWith("eva.") },
+            )
+            assertTrue(provider.request.instructions.contains("short closing line"))
+            controller.submit("Open a map")
+            advanceUntilIdle()
+            assertEquals(0, provider.submissions)
+            controller.disconnect()
+            advanceUntilIdle()
+            assertTrue(media.closed)
+            assertEquals(1, provider.closes)
+            assertEquals(ProviderStatus.DISCONNECTED, controller.state.value.providerStatus)
+            assertFalse(controller.state.value.voiceMode)
+            assertEquals(RealtimeMediaState.Closed, controller.state.value.mediaState)
+        }
+
+    @Test
+    fun `provider failure closes its session and preserves the failure message`() =
+        runTest {
+            val provider = FakeProvider()
+            val media = VoiceMedia()
+            val controller = controller(provider, media = { media })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            provider.channel.send(ProviderEvent.Failure("Connection lost"))
+            advanceUntilIdle()
+            assertTrue(media.closed)
+            assertEquals(1, provider.closes)
+            assertEquals("Connection lost", controller.state.value.providerMessage)
+            assertEquals(ProviderStatus.DISCONNECTED, controller.state.value.providerStatus)
+        }
+
+    @Test
+    fun `late open from a canceled attempt is closed without replacing the new session`() =
+        runTest {
+            val old = FakeProvider(openGate = CompletableDeferred())
+            val current = FakeProvider()
+            val oldMedia = VoiceMedia()
+            val currentMedia = VoiceMedia()
+            var attempts = 0
+            val controller =
+                ThreadController(
+                    registry = registry,
+                    dispatcher = CapabilityDispatcher(registry, repository),
+                    repository = repository,
+                    store = store,
+                    scope = liveScope(),
+                    providerFactory = { current },
+                    mediaFactory = { if (attempts++ == 0) oldMedia else currentMedia },
+                    voiceProviderFactory = { link, _ -> if (link == "old") old else current },
+                )
+            advanceUntilIdle()
+            controller.connectVoice("old")
+            advanceUntilIdle()
+            controller.connectVoice("current")
+            advanceUntilIdle()
+            old.openGate!!.complete(Unit)
+            advanceUntilIdle()
+            assertEquals(1, old.closes)
+            assertTrue(oldMedia.closed)
+            assertFalse(currentMedia.closed)
+            assertEquals(0, current.closes)
+            assertEquals(ProviderStatus.CONNECTED, controller.state.value.providerStatus)
+            controller.disconnect()
+            advanceUntilIdle()
+            assertEquals(1, current.closes)
+            assertTrue(currentMedia.closed)
+        }
+
+    @Test
+    fun `contact keywords reach a spoken session and are never gathered for a typed one`() =
+        runTest {
+            val provider = FakeProvider()
+            var reads = 0
+            val controller =
+                controller(provider, media = { VoiceMedia() }, voiceKeywords = {
+                    reads++
+                    listOf("Ana Beltrán")
+                })
+            advanceUntilIdle()
+            controller.connect("test")
+            advanceUntilIdle()
+            assertEquals(emptyList<String>(), provider.request.keywords)
+            assertEquals(0, reads)
+            controller.disconnect()
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            assertEquals(listOf("Ana Beltrán"), provider.request.keywords)
+            assertEquals(1, reads)
+        }
+
+    @Test
+    fun `ending the conversation waits for the goodbye to finish playing`() =
+        runTest {
+            val provider = FakeProvider()
+            val media = VoiceMedia()
+            val controller = controller(provider, media = { media })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            provider.input = ConversationInput("voice:turn-1", "")
+            provider.channel.send(ProviderEvent.ResponseStarted("voice:turn-1", "voice:turn-1"))
+            provider.channel.send(ProviderEvent.AssistantSpeaking(true))
+            provider.channel.send(ProviderEvent.AssistantText("voice:turn-1", "Goodbye!", false))
+            provider.channel.send(provider.endCall("turn-1"))
+            runCurrent()
+            advanceTimeBy(5_000)
+            assertEquals(ProviderStatus.CONNECTED, controller.state.value.providerStatus)
+            assertFalse(media.closed)
+            provider.channel.send(ProviderEvent.AssistantSpeaking(false))
+            runCurrent()
+            assertFalse(media.closed)
+            advanceTimeBy(1_000)
+            assertTrue(media.closed)
+            assertEquals(ProviderStatus.DISCONNECTED, controller.state.value.providerStatus)
+            // Hanging up is not a phone action, and answering it would prompt the model to speak again.
+            assertEquals(emptyList<CorrelatedToolResult>(), provider.results)
+            advanceUntilIdle()
+            assertEquals("Goodbye!", entry(controller, latestTurn(controller)).response)
+            assertFalse(controller.state.value.working)
+        }
+
+    @Test
+    fun `ending without reported speech hangs up at once and an unreported end is bounded`() =
+        runTest {
+            val provider = FakeProvider()
+            val media = VoiceMedia()
+            val controller = controller(provider, media = { media })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            provider.input = ConversationInput("voice:turn-1", "")
+            provider.channel.send(ProviderEvent.ResponseStarted("voice:turn-1", "voice:turn-1"))
+            provider.channel.send(provider.endCall("turn-1"))
+            runCurrent()
+            assertTrue(media.closed)
+            assertEquals(ProviderStatus.DISCONNECTED, controller.state.value.providerStatus)
+            advanceUntilIdle()
+            assertEquals("Response completed.", entry(controller, latestTurn(controller)).response)
+
+            val stuck = FakeProvider()
+            val stuckMedia = VoiceMedia()
+            val second = controller(stuck, media = { stuckMedia }, voiceProvider = stuck)
+            advanceUntilIdle()
+            second.connectVoice("test")
+            advanceUntilIdle()
+            stuck.input = ConversationInput("voice:turn-1", "")
+            stuck.channel.send(ProviderEvent.ResponseStarted("voice:turn-1", "voice:turn-1"))
+            stuck.channel.send(ProviderEvent.AssistantSpeaking(true))
+            stuck.channel.send(stuck.endCall("turn-1"))
+            runCurrent()
+            assertFalse(stuckMedia.closed)
+            advanceTimeBy(11_000)
+            assertTrue(stuckMedia.closed)
+        }
+
+    // ---- catalog and prompt, per connection ----
+
+    @Test
+    fun `a switched off capability is never offered to the model`() =
+        runTest {
+            val provider = FakeProvider()
+            val controller = controller(provider, hiddenCapabilities = { setOf(lookup.id) })
+            advanceUntilIdle()
+            controller.connect("unused")
+            advanceUntilIdle()
+            assertEquals(
+                listOf(action.id),
+                provider.request.catalog.tools
+                    .map { it.capabilityId },
+            )
+        }
+
+    @Test
+    fun `switching a capability back on offers it again under a different catalog revision`() =
+        runTest {
+            val provider = FakeProvider()
+            var hidden = setOf(lookup.id)
+            val controller = controller(provider, hiddenCapabilities = { hidden })
+            advanceUntilIdle()
+            controller.connect("unused")
+            advanceUntilIdle()
+            val without = provider.request.catalog
+            controller.disconnect()
+            advanceUntilIdle()
+
+            hidden = emptySet()
+            controller.connect("unused")
+            advanceUntilIdle()
+            val with = provider.request.catalog
+            assertEquals(listOf(action.id, lookup.id), with.tools.map { it.capabilityId })
+            assertNotEquals(without.revision, with.revision)
+        }
+
+    @Test
+    fun `the prompt file decides the instructions and the tool wording`() =
+        runTest {
+            val provider = FakeProvider()
+            val controller = controller(provider, media = { VoiceMedia() })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            assertTrue(provider.request.instructions.startsWith("You are EVA"))
+            assertTrue(provider.request.instructions.contains("The user's current local time is"))
+            controller.disconnect()
+            advanceUntilIdle()
+
+            val muted = FakeProvider()
+            val mutedController =
+                controller(muted, media = { VoiceMedia() }, prompt = {
+                    PromptConfig(
+                        listOf(
+                            PromptComponent(
+                                id = "no-hangup",
+                                instruction = "Never hang up.",
+                                hide = listOf(PromptDefaults.END_CONVERSATION_ID),
+                            ),
+                        ),
+                    )
+                })
+            advanceUntilIdle()
+            mutedController.connectVoice("test")
+            advanceUntilIdle()
+            assertEquals("Never hang up.", muted.request.instructions)
+            assertFalse(
+                muted.request.catalog.tools
+                    .any { it.capabilityId == PromptDefaults.END_CONVERSATION_ID },
+            )
+        }
+
+    @Test
+    fun `a broken prompt file fails the connection with its own message`() =
+        runTest {
+            val provider = FakeProvider()
+            val controller = controller(provider, prompt = { throw PromptConfigException("Line 4, column 3: no such field") })
+            advanceUntilIdle()
+            controller.connect("unused")
+            advanceUntilIdle()
+            assertEquals(ProviderStatus.DISCONNECTED, controller.state.value.providerStatus)
+            assertEquals("Line 4, column 3: no such field", controller.state.value.providerMessage)
+        }
+
+    @Test
+    fun `the model hanging up is signalled to call surfaces, and a user disconnect is not`() =
+        runTest {
+            val stopped = FakeProvider()
+            val byUser = controller(stopped, media = { VoiceMedia() })
+            advanceUntilIdle()
+            var userHangUps = 0
+            val userWatcher = launch { byUser.hangUps.collect { userHangUps++ } }
+            runCurrent()
+            byUser.connectVoice("test")
+            advanceUntilIdle()
+            byUser.disconnect()
+            advanceUntilIdle()
+            assertEquals(0, userHangUps)
+            userWatcher.cancel()
+
+            val provider = FakeProvider()
+            val byModel = controller(provider, media = { VoiceMedia() })
+            advanceUntilIdle()
+            var modelHangUps = 0
+            val modelWatcher = launch { byModel.hangUps.collect { modelHangUps++ } }
+            runCurrent()
+            byModel.connectVoice("test")
+            advanceUntilIdle()
+            provider.input = ConversationInput("voice:turn-1", "")
+            provider.channel.send(ProviderEvent.ResponseStarted("voice:turn-1", "voice:turn-1"))
+            provider.channel.send(provider.endCall("turn-1"))
+            advanceUntilIdle()
+            assertEquals(1, modelHangUps)
+            modelWatcher.cancel()
+        }
+
+    private class FakeProvider(
+        val openGate: CompletableDeferred<Unit>? = null,
+        epoch: String = "epoch",
+    ) : ConversationProvider,
+        ConversationSession {
+        override val connectionEpoch = epoch
+
+        /** A fresh channel per open, so one fake can serve a reconnect or a background leg. */
+        var channel = Channel<ProviderEvent>(Channel.UNLIMITED)
+            private set
+        override val events: Flow<ProviderEvent> get() = channel.receiveAsFlow()
+        lateinit var request: SessionOpenRequest
+        lateinit var input: ConversationInput
+        val results = mutableListOf<CorrelatedToolResult>()
+        val responseRequests = mutableListOf<String>()
+        var submissions = 0
+        var closes = 0
+
+        override suspend fun open(request: SessionOpenRequest): ConversationSession {
+            this.request = request
+            if (channel.isClosedForSend) channel = Channel(Channel.UNLIMITED)
+            withContext(NonCancellable) { openGate?.await() }
+            channel.send(ProviderEvent.Connected("session", request.catalog.revision))
+            return this
+        }
+
+        override suspend fun submit(input: ConversationInput) {
+            this.input = input
+            submissions++
+        }
+
+        override suspend fun requestResponse(request: ResponseRequest) {
+            responseRequests += request.inputId
+        }
+
+        override suspend fun submitToolResult(result: CorrelatedToolResult) {
+            results.add(result)
+        }
+
+        override suspend fun close() {
+            closes++
+            channel.close()
+        }
+
+        suspend fun call(
+            id: String,
+            capabilityId: String,
+            vararg arguments: Pair<String, String>,
+        ) {
+            channel.send(
+                ProviderEvent.ToolCallReady(
+                    CallIdentity(connectionEpoch, "session", input.id, input.id, "turn", request.catalog.revision, id),
+                    capabilityId,
+                    buildJsonObject { arguments.forEach { (key, value) -> put(key, value) } },
+                ),
+            )
+        }
+
+        fun endCall(turn: String) =
+            ProviderEvent.ToolCallReady(
+                CallIdentity(connectionEpoch, "session", "voice:$turn", "voice:$turn", turn, request.catalog.revision, "end-$turn"),
+                "eva.session.end",
+                buildJsonObject {},
+            )
+    }
+
+    private class VoiceMedia : RealtimeMediaSession {
+        override val state = MutableStateFlow<RealtimeMediaState>(RealtimeMediaState.Connected(true))
+        override val controls = MutableStateFlow(MediaControls())
+        override val timeline = MutableStateFlow(MediaTimeline())
+        override val events = emptyFlow<String>()
+        override val eventsReady = MutableStateFlow(false)
+        var closed = false
+
+        override fun send(event: String) = Unit
+
+        override suspend fun createOffer() = "test-offer"
+
+        override suspend fun acceptAnswer(sdp: String) = Unit
+
+        override fun setMicrophoneMuted(muted: Boolean) {
+            controls.value = controls.value.copy(microphoneMuted = muted)
+        }
+
+        override fun setPlaybackMuted(muted: Boolean) {
+            controls.value = controls.value.copy(playbackMuted = muted)
+        }
+
+        override fun close() {
+            closed = true
+        }
+    }
+}

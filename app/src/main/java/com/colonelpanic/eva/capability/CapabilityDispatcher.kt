@@ -37,6 +37,8 @@ class CapabilityDispatcher(
                     capabilityId = proposal.capabilityId,
                     catalogRevision = proposal.catalogRevision,
                     title = registry.catalog.find { it.id == proposal.capabilityId }?.title,
+                    threadId = proposal.threadId,
+                    turnId = proposal.turnId,
                 )
             val claim = journal { repository.claim(initial) }
             if (claim.record.fingerprint != initial.fingerprint) throw ConflictingCallException()

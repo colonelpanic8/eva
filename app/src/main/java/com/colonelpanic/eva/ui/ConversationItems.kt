@@ -5,13 +5,18 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
@@ -98,9 +103,19 @@ internal fun StorageErrorBanner(message: String) {
     }
 }
 
+/**
+ * One turn: the request, the actions the model ran for it on a branch beneath, then the
+ * answer. A session marker renders as a divider so each session reads as its own thread.
+ */
 @Composable
-internal fun ConversationEntryItem(entry: ConversationEntry) {
-    val status = entry.status.presentation()
+internal fun ConversationEntryItem(
+    entry: ConversationEntry,
+    actions: List<ConversationEntry> = emptyList(),
+) {
+    if (entry.status == EntryStatus.SESSION) {
+        SessionDivider(entry.response)
+        return
+    }
     Column(
         modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -124,23 +139,58 @@ internal fun ConversationEntryItem(entry: ConversationEntry) {
                 }
             }
         }
-        if (entry.response.isNotBlank()) {
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                contentColor = MaterialTheme.colorScheme.onSurface,
-                shape = RoundedCornerShape(topStart = 4.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 18.dp),
-                modifier = Modifier.maxWidthFraction(0.92f),
-            ) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    if (entry.status !in setOf(EntryStatus.ANSWER, EntryStatus.SESSION)) StatusLine(status)
-                    entry.actionTitle?.let { Text(it, style = MaterialTheme.typography.labelLarge) }
-                    Text(text = entry.response, style = MaterialTheme.typography.bodyMedium)
-                }
-            }
+        if (actions.isNotEmpty()) ActionBranch(actions)
+        if (entry.response.isNotBlank()) ResponseBubble(entry)
+    }
+}
+
+@Composable
+private fun ResponseBubble(entry: ConversationEntry) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = RoundedCornerShape(topStart = 4.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 18.dp),
+        modifier = Modifier.maxWidthFraction(0.92f),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            if (entry.status != EntryStatus.ANSWER) StatusLine(entry.status.presentation())
+            entry.actionTitle?.let { Text(it, style = MaterialTheme.typography.labelLarge) }
+            Text(text = entry.response, style = MaterialTheme.typography.bodyMedium)
         }
+    }
+}
+
+/** Actions hang off a rail under the request, so what the model did reads as a branch of the turn. */
+@Composable
+private fun ActionBranch(actions: List<ConversationEntry>) {
+    Row(
+        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(start = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(modifier = Modifier.width(2.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outlineVariant))
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            actions.forEach { ResponseBubble(it) }
+        }
+    }
+}
+
+@Composable
+private fun SessionDivider(label: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).semantics { contentDescription = label },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        HorizontalDivider(modifier = Modifier.weight(1f))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        HorizontalDivider(modifier = Modifier.weight(1f))
     }
 }
 

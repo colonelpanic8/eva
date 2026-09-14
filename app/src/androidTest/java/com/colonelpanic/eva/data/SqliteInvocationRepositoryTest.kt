@@ -38,10 +38,14 @@ class SqliteInvocationRepositoryTest {
                     val old = repository.history().single()
                     assertEquals("old", old.callId)
                     assertNull(old.title)
-                    repository.claim(old.copy(callId = "new", title = "Search maps"))
+                    assertNull(old.threadId)
+                    assertNull(old.turnId)
+                    repository.claim(old.copy(callId = "new", title = "Search maps", threadId = "thread", turnId = "turn"))
                 }
                 SqliteInvocationRepository(context, name).use { repository ->
                     assertEquals(listOf(null, "Search maps"), repository.history().map { it.title })
+                    assertEquals(listOf(null, "thread"), repository.history().map { it.threadId })
+                    assertEquals(listOf(null, "turn"), repository.history().map { it.turnId })
                 }
             } finally {
                 context.deleteDatabase(name)

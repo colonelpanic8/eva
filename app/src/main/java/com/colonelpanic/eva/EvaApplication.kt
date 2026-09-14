@@ -38,13 +38,20 @@ import com.colonelpanic.eva.audio.VoiceSessionStatus
 import com.colonelpanic.eva.audio.webrtc.WebRtcMediaSessionFactory
 import com.colonelpanic.eva.capability.CapabilityDispatcher
 import com.colonelpanic.eva.capability.CapabilityRegistry
-import com.colonelpanic.eva.conversation.ProviderSessionController
 import com.colonelpanic.eva.conversation.ProviderStatus
+import com.colonelpanic.eva.conversation.ThreadController
+import com.colonelpanic.eva.conversation.TurnWorkHost
+import com.colonelpanic.eva.conversation.TurnWorkService
+import com.colonelpanic.eva.conversation.WorkNotifications
 import com.colonelpanic.eva.data.AppearanceSettings
+import com.colonelpanic.eva.data.CapabilitySettings
 import com.colonelpanic.eva.data.ChatGptAccountStore
 import com.colonelpanic.eva.data.ChosenNumbers
+import com.colonelpanic.eva.data.JournalDatabase
 import com.colonelpanic.eva.data.OpenAiSettings
+import com.colonelpanic.eva.data.PromptStore
 import com.colonelpanic.eva.data.SpotifyAccountStore
+import com.colonelpanic.eva.data.SqliteConversationStore
 import com.colonelpanic.eva.data.SqliteInvocationRepository
 import com.colonelpanic.eva.providers.BrokerConversationProvider
 import com.colonelpanic.eva.providers.BrokerEndpoint
@@ -65,13 +72,15 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 class EvaApplication :
     Application(),
-    VoiceSessionHost {
+    VoiceSessionHost,
+    TurnWorkHost {
     val intentHost = AndroidIntentHost()
     val shizukuShellHost by lazy { if (Build.VERSION.SDK_INT >= 37) ShizukuShellHost(this) else null }
 
@@ -98,6 +107,8 @@ class EvaApplication :
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val settings by lazy { OpenAiSettings(this) }
     val appearance by lazy { AppearanceSettings(this) }
+    val capabilities by lazy { CapabilitySettings(this) }
+    val prompts by lazy { PromptStore(this) }
     val chatGpt by lazy { ChatGptAccountStore(this) }
     val signIn by lazy { ChatGptSignIn(save = chatGpt::save) }
     private val spotifyLogin by lazy { SpotifyLogin() }
@@ -119,6 +130,8 @@ class EvaApplication :
 
     override fun endVoiceSession() = controller.disconnect()
 
+    override fun interruptWork(reason: String) = controller.interruptAll(reason)
+
     private val packageInfo by lazy { runCatching { packageManager.getPackageInfo(packageName, 0) }.getOrNull() }
 
     /** Also what the about screen reports; absent when the package cannot be read. */
@@ -134,6 +147,11 @@ class EvaApplication :
             settings.apiKey() != null -> ApiKeyAccess(settings.requireApiKey())
             else -> null
         }
+
+    /** Prompt edits outlive the screen that made them, so they run here rather than in an activity scope. */
+    fun editPrompt(action: suspend PromptStore.() -> Unit) {
+        scope.launch { prompts.action() }
+    }
 
     /** Best effort: the picker still accepts a typed model name when this fails. */
     fun refreshModels() {
@@ -251,19 +269,23 @@ class EvaApplication :
                     )
                 }
                 deviceControlHost?.let { host ->
-                    put(CapabilityRegistry.UI_OBSERVE, UiControlBackend(host, observations, UiControlBackend.Operation.OBSERVE))
-                    put(CapabilityRegistry.UI_TAP, UiControlBackend(host, observations, UiControlBackend.Operation.TAP))
-                    put(CapabilityRegistry.UI_SET_TEXT, UiControlBackend(host, observations, UiControlBackend.Operation.SET_TEXT))
+                    val exposed = { capabilities.screenControlEnabled }
+                    put(CapabilityRegistry.UI_OBSERVE, UiControlBackend(host, observations, UiControlBackend.Operation.OBSERVE, exposed))
+                    put(CapabilityRegistry.UI_TAP, UiControlBackend(host, observations, UiControlBackend.Operation.TAP, exposed))
+                    put(CapabilityRegistry.UI_SET_TEXT, UiControlBackend(host, observations, UiControlBackend.Operation.SET_TEXT, exposed))
                 }
             },
         )
     }
     private val contactKeywords by lazy { ContactNameKeywords(this, ::contactHistory) }
     val controller by lazy {
-        val repository = SqliteInvocationRepository(this)
-        ProviderSessionController(
+        val journal = JournalDatabase(this, SqliteInvocationRepository.DATABASE_NAME)
+        val repository = SqliteInvocationRepository(journal)
+        ThreadController(
             registry = registry,
             dispatcher = CapabilityDispatcher(registry, repository),
+            store = SqliteConversationStore(journal),
+            onBackgroundAnswer = { WorkNotifications.answered(this, it) },
             // A blank link means the phone talks to OpenAI itself; a link means the paired host bridge.
             providerFactory = { link ->
                 if (link.isBlank()) {
@@ -287,6 +309,8 @@ class EvaApplication :
             scope = scope,
             voiceLookupRetries = { settings.voiceLookupRetries },
             voiceKeywords = { contactKeywords.names() },
+            hiddenCapabilities = { if (capabilities.screenControlEnabled) emptySet() else CapabilityRegistry.SCREEN_CONTROL },
+            prompt = { prompts.load() },
         ).also { controller ->
             scope.launch {
                 controller.state.collect { mutableVoiceSession.value = VoiceSessionStatus(it.mediaState, it.mediaControls) }
@@ -297,6 +321,15 @@ class EvaApplication :
                     .distinctUntilChanged()
                     .collect { active ->
                         if (active) VoiceSessionService.start(this@EvaApplication) else VoiceSessionService.stop(this@EvaApplication)
+                    }
+            }
+            scope.launch {
+                // A turn that outlives its call needs the process kept alive; the voice service already does that.
+                combine(controller.working, controller.state) { working, state ->
+                    working.isNotEmpty() && !(state.voiceMode && state.providerStatus != ProviderStatus.DISCONNECTED)
+                }.distinctUntilChanged()
+                    .collect { active ->
+                        if (active) TurnWorkService.start(this@EvaApplication) else TurnWorkService.stop(this@EvaApplication)
                     }
             }
         }

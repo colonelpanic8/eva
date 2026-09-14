@@ -23,6 +23,39 @@ data class SessionOpenRequest(
      * affects the displayed captions; providers without input transcription ignore them.
      */
     val keywords: List<String> = emptyList(),
+    /** Prior conversation a resumed or re-homed leg is seeded with, oldest first. */
+    val history: List<HistoryItem> = emptyList(),
+    /** Present only on a re-homed leg: produce this turn's next generation without new user input. */
+    val continuation: Continuation? = null,
+)
+
+/**
+ * The provider-facing view of a thread. Evidence and notes are EVA's own words, not the
+ * user's, and providers must present them that way (a developer or system role).
+ */
+sealed interface HistoryItem {
+    data class User(
+        val text: String,
+    ) : HistoryItem
+
+    data class Assistant(
+        val text: String,
+    ) : HistoryItem
+
+    data class ActionEvidence(
+        val title: String,
+        val arguments: Map<String, String>,
+        val status: String,
+        val message: String,
+    ) : HistoryItem
+
+    data class Note(
+        val text: String,
+    ) : HistoryItem
+}
+
+data class Continuation(
+    val turnId: String,
 )
 
 data class ConversationInput(

@@ -6,6 +6,7 @@ import com.colonelpanic.eva.providers.ConversationInput
 import com.colonelpanic.eva.providers.ConversationProvider
 import com.colonelpanic.eva.providers.ConversationSession
 import com.colonelpanic.eva.providers.CorrelatedToolResult
+import com.colonelpanic.eva.providers.HistoryItem
 import com.colonelpanic.eva.providers.ProviderEvent
 import com.colonelpanic.eva.providers.ProviderToolDefinition
 import com.colonelpanic.eva.providers.ResponseRequest
@@ -58,7 +59,8 @@ class OpenAiResponsesProvider(
 
 private sealed interface Command {
     data class Respond(
-        val input: ConversationInput,
+        val inputId: String,
+        val input: JsonArray,
     ) : Command
 
     data class ToolResult(
@@ -79,10 +81,22 @@ private class OpenAiResponsesSession(
     private val sessionId = UUID.randomUUID().toString()
     private val commands = Channel<Command>(Channel.UNLIMITED)
     private var buffered: ConversationInput? = null
+    private var continuationTurnId = request.continuation?.turnId
     private var previousResponseId: String? = null
 
     /** Only needed where the provider keeps nothing: the phone then resends the conversation. */
-    private val history = mutableListOf<JsonElement>()
+    private val history: MutableList<JsonElement> =
+        if (access.serverKeepsHistory) {
+            mutableListOf()
+        } else {
+            request.history.mapTo(mutableListOf<JsonElement>(), ::historyMessage)
+        }
+    private var storedSeed =
+        if (access.serverKeepsHistory) {
+            request.history.map(::historyMessage)
+        } else {
+            emptyList()
+        }
     private val pending = mutableMapOf<String, CallIdentity>()
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -91,10 +105,12 @@ private class OpenAiResponsesSession(
             emit(ProviderEvent.Account(access.label))
             emit(ProviderEvent.Connected(sessionId, request.catalog.revision, model))
             for (command in commands) {
-                val input = (command as? Command.Respond)?.input ?: continue
-                emit(ProviderEvent.ResponseStarted(input.id, input.id))
+                val response = command as? Command.Respond ?: continue
+                emit(ProviderEvent.ResponseStarted(response.inputId, response.inputId))
                 try {
-                    var body = post(JsonArray(listOf(userMessage(input.text))))
+                    val firstInput = JsonArray(storedSeed + response.input)
+                    storedSeed = emptyList()
+                    var body = post(firstInput)
                     while (true) {
                         val responseId = body.str("id") ?: error("The provider returned no response ID.")
                         previousResponseId = responseId
@@ -108,8 +124,8 @@ private class OpenAiResponsesSession(
                                     .flatMap { it["content"]?.jsonArray.orEmpty() }
                                     .mapNotNull { (it as? JsonObject)?.takeIf { part -> part.str("type") == "output_text" }?.str("text") }
                                     .joinToString("\n")
-                            if (text.isNotBlank()) emit(ProviderEvent.AssistantText(input.id, text, false))
-                            emit(ProviderEvent.ResponseEnded(input.id, body.str("status") ?: "completed"))
+                            if (text.isNotBlank()) emit(ProviderEvent.AssistantText(response.inputId, text, false))
+                            emit(ProviderEvent.ResponseEnded(response.inputId, body.str("status") ?: "completed"))
                             break
                         }
                         for (call in calls) {
@@ -119,7 +135,15 @@ private class OpenAiResponsesSession(
                                 runCatching { json.parseToJsonElement(call.str("arguments").orEmpty()).jsonObject }
                                     .getOrDefault(JsonObject(emptyMap()))
                             val identity =
-                                CallIdentity(connectionEpoch, sessionId, input.id, input.id, responseId, request.catalog.revision, callId)
+                                CallIdentity(
+                                    connectionEpoch,
+                                    sessionId,
+                                    response.inputId,
+                                    response.inputId,
+                                    responseId,
+                                    request.catalog.revision,
+                                    callId,
+                                )
                             pending[callId] = identity
                             emit(ProviderEvent.ToolCallReady(identity, tool.capabilityId, arguments))
                         }
@@ -157,16 +181,22 @@ private class OpenAiResponsesSession(
      * The stored path shipped with the plain content form; the subscription backend is
      * exercised with the explicit item form, so each keeps the shape it was proven against.
      */
-    private fun userMessage(text: String): JsonObject =
+    private fun historyMessage(item: HistoryItem): JsonObject =
+        item.toOpenAiMessage().let { message -> inputMessage(message.role, message.text) }
+
+    private fun inputMessage(
+        role: String,
+        text: String,
+    ): JsonObject =
         if (access.serverKeepsHistory) {
             buildJsonObject {
-                put("role", "user")
+                put("role", role)
                 put("content", text)
             }
         } else {
             buildJsonObject {
                 put("type", "message")
-                put("role", "user")
+                put("role", role)
                 put(
                     "content",
                     JsonArray(
@@ -273,10 +303,16 @@ private class OpenAiResponsesSession(
     }
 
     override suspend fun requestResponse(request: ResponseRequest) {
-        val input = checkNotNull(buffered)
-        check(input.id == request.inputId)
-        buffered = null
-        commands.send(Command.Respond(input))
+        val input = buffered
+        if (input != null) {
+            check(input.id == request.inputId)
+            buffered = null
+            commands.send(Command.Respond(input.id, JsonArray(listOf(inputMessage("user", input.text)))))
+            return
+        }
+        check(continuationTurnId == request.inputId)
+        continuationTurnId = null
+        commands.send(Command.Respond(request.inputId, JsonArray(emptyList())))
     }
 
     override suspend fun submitToolResult(result: CorrelatedToolResult) {

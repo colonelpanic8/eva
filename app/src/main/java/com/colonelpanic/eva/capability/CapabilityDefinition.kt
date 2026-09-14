@@ -15,6 +15,8 @@ data class CapabilityDefinition(
     val title: String,
     val description: String,
     val inputSchema: JsonObject,
+    /** Observes without changing anything on the phone, so a turn may run several. */
+    val readOnly: Boolean = false,
     val validateOperation: (Map<String, String>) -> String? = { null },
 )
 
@@ -219,6 +221,7 @@ object BundledCapabilities {
                 "required":["query"],"additionalProperties":false}
             """,
                 ),
+                readOnly = true,
             ) { args ->
                 val query = args.getValue("query")
                 if (query.isBlank() || query.any { it.isISOControl() }) "Enter part of a name." else null
@@ -240,6 +243,7 @@ object BundledCapabilities {
                 "required":[],"additionalProperties":false}
             """,
                 ),
+                readOnly = true,
             ) { args ->
                 val query = args["query"].orEmpty()
                 if (query.any(Char::isISOControl)) "Enter part of a name or number." else null
@@ -259,6 +263,7 @@ object BundledCapabilities {
                 "required":["conversationId"],"additionalProperties":false}
             """,
                 ),
+                readOnly = true,
             ),
             CapabilityDefinition(
                 CapabilityRegistry.MEDIA_CONTROL,
@@ -307,6 +312,7 @@ object BundledCapabilities {
                 "required":["query"],"additionalProperties":false}
             """,
                 ),
+                readOnly = true,
             ) { args ->
                 if (args.getValue("query").isBlank() || args.getValue("query").any(Char::isISOControl)) {
                     "Say what to play on one line."
@@ -384,6 +390,7 @@ object BundledCapabilities {
                 "required":["category"],"additionalProperties":false}
             """,
                 ),
+                readOnly = true,
             ),
             CapabilityDefinition(
                 CapabilityRegistry.DEVICE_STATE_SET,
@@ -411,6 +418,7 @@ object BundledCapabilities {
                 "required":["search"],"additionalProperties":false}
             """,
                 ),
+                readOnly = true,
             ) { args ->
                 val search = args.getValue("search")
                 if (search.isBlank() || search.any(Char::isISOControl)) "Enter a setting name or key to search for." else null
@@ -427,6 +435,7 @@ object BundledCapabilities {
                 {"type":"object","properties":{},"required":[],"additionalProperties":false}
             """,
                 ),
+                readOnly = true,
             ),
             CapabilityDefinition(
                 CapabilityRegistry.UI_TAP,
