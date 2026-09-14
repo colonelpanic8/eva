@@ -148,6 +148,28 @@ class ContactMatchesTest {
         )
     }
 
+    @Test
+    fun `different people with identical names remain ambiguous`() {
+        val matches =
+            listOf(
+                ContactMatch("Alex Malison", listOf(ContactPhone("2025550101", "mobile"))),
+                ContactMatch("Alex Malison", listOf(ContactPhone("2025550102", "mobile"))),
+            )
+        assertEquals(2, ContactMatches.rank("Alex Mallison", matches).size)
+        assertTrue(ContactMatches.describe("Alex Mallison", matches).endsWith(ContactMatches.AMBIGUOUS))
+        val history = ContactHistory(messaged = mapOf("5550102" to NOW))
+        assertEquals(
+            "2025550102",
+            ContactMatches
+                .rank("Alex Mallison", matches, history = history)
+                .first()
+                .phones
+                .first()
+                .number,
+        )
+        assertTrue(ContactMatches.describe("Alex Mallison", matches, history = history).endsWith(ContactMatches.PICK_RECENT))
+    }
+
     private companion object {
         const val DAY = 86_400_000L
         const val NOW = 1_800_000_000_000L

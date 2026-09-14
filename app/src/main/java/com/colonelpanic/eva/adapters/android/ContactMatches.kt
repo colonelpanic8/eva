@@ -141,11 +141,16 @@ object ContactMatches {
 
     /** One person often has an entry per account, and listing them twice only invites a needless question. */
     private fun merge(matches: List<ContactMatch>): List<ContactMatch> {
-        val byName = linkedMapOf<String, ContactMatch>()
+        val merged = mutableListOf<ContactMatch>()
         for (match in matches) {
-            val key = match.name.lowercase()
-            val previous = byName[key]
-            byName[key] =
+            val numbers = match.phones.map { it.number.filter(Char::isDigit) }.toSet()
+            val index =
+                merged.indexOfFirst { candidate ->
+                    candidate.name.equals(match.name, ignoreCase = true) &&
+                        candidate.phones.any { it.number.filter(Char::isDigit) in numbers }
+                }
+            val previous = merged.getOrNull(index)
+            val combined =
                 if (previous == null) {
                     match.copy(phones = match.phones.distinctBy { it.number.filter(Char::isDigit) })
                 } else {
@@ -156,8 +161,9 @@ object ContactMatches {
                         nicknames = (previous.nicknames + match.nicknames).distinct(),
                     )
                 }
+            if (index < 0) merged.add(combined) else merged[index] = combined
         }
-        return byName.values.toList()
+        return merged
     }
 
     private fun phoneRank(kind: String) = kindOrder.indexOf(kind).takeIf { it >= 0 } ?: kindOrder.size
