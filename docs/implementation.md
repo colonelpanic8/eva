@@ -161,24 +161,32 @@ framework's transport controls carry play, pause, skip, seek, and
 readable through `getQueue` and cannot be added to; the session callback an app
 implements has no add-to-queue entry; and the framework `MediaBrowser` has no
 search, so there is also no generic way to turn spoken words into the media ID
-a queue item would need. The compat library does add an add-queue-item call and
-a browser search, but both only work over a connection made through the app's
-own `MediaBrowserService`, which is the same gate that refuses EVA.
+a queue item would need.
+
+Media3 adds an optional public library contract on top of those framework
+limits. A `MediaLibraryService` can expose search results as items with its own
+media IDs and can grant a controller permission to change its playlist. EVA
+discovers exported services advertising that contract, searches the named app,
+inserts the first playable result immediately after the current item, and reads
+the timeline back before reporting success. Apps remain free to reject the
+connection, omit search, or withhold playlist editing, so this is an open
+extension point rather than universal queue access.
 
 `eva.android.media.queue` therefore works through `QueueProvider`: one
-implementation per app that offers a route of its own. A provider carries the
-label the user would say, decides whether a spoken app name means it, says
-whether the user has finished connecting it, and queues the best match for the
-words. `MediaQueueBackend` holds the list and chooses between them. An app that
-EVA can play through but not queue on is the expected case rather than a
-failure: it has no provider, and the reply names the apps that do have one
-instead of only refusing. A named app that no provider covers, a provider the
-user has not connected yet, and more than one connected provider with no app
-named are each answered with what to do about it. Nothing is queued in any of
-those cases, and the message says so.
+implementation per queue route. A provider carries the label the user would
+say, decides whether a spoken app name means it, says whether it is available,
+and queues the best match for the words. `MediaQueueBackend` holds the list and
+chooses between them. `SpotifyQueueProvider` is registered explicitly, while
+`MediaLibraryQueueProvider` instances are created from the compatible services
+installed on the phone. An app that EVA can play through but not queue on is the
+expected case rather than a failure: it has no provider, and the reply names the
+apps that do have one instead of only refusing. A named app that no provider
+covers, a provider the user has not connected yet, and more than one available
+provider with no app named are each answered with what to do about it. Nothing
+is queued in any of those cases, and the message says so.
 
-`SpotifyQueueProvider` is the only implementation today. Spotify refuses EVA as
-a media browser client, so its Web API is the only route to its queue. The
+Spotify refuses EVA as a media browser client, so its Web API is the only route
+to its queue. The
 optional connection uses OAuth Authorization Code with PKCE and no client
 secret. The user supplies the Client ID from their own Spotify developer app,
 whose redirect URI must include `eva://spotify`. EVA generates a one-time
@@ -200,6 +208,17 @@ success. JVM tests cover PKCE, redirect-state checking, token-refresh timing,
 provider selection and every refusal message, device selection, and user-facing
 failures. This flow has not been exercised against Spotify on a device,
 including the developer dashboard's current redirect-URI acceptance rules.
+
+The official Jellyfin Android app is the first concrete candidate for the open
+Media3 route: its exported `LibraryService` implements search-result lookup,
+resolves its media IDs in `onAddMediaItems`, and grants playlist operations
+through its session callback. EVA's JVM tests cover discovery-independent
+provider matching and delegation, while compilation verifies the Media3 client
+surface. No device is attached to this development host, so queue insertion has
+not yet been exercised against Jellyfin or YouTube Music. YouTube's documented
+Data API exposes videos, playlists, and library data rather than the YouTube
+Music app's live playback queue; YouTube Music will only work here if the
+installed app advertises and grants the Media3 library contract.
 
 ## Sending a text message
 

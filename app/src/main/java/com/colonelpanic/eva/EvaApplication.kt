@@ -7,6 +7,7 @@ import android.os.SystemClock
 import androidx.core.content.pm.PackageInfoCompat
 import com.colonelpanic.eva.adapters.android.AndroidIntentHost
 import com.colonelpanic.eva.adapters.android.AndroidMediaLauncher
+import com.colonelpanic.eva.adapters.android.AndroidMediaLibraryQueueClient
 import com.colonelpanic.eva.adapters.android.AndroidMediaSessions
 import com.colonelpanic.eva.adapters.android.AppFunctionsBackend
 import com.colonelpanic.eva.adapters.android.ContactHistory
@@ -16,6 +17,7 @@ import com.colonelpanic.eva.adapters.android.DeviceControlHost
 import com.colonelpanic.eva.adapters.android.IntentBackend
 import com.colonelpanic.eva.adapters.android.MapIntentBackend
 import com.colonelpanic.eva.adapters.android.MediaControlBackend
+import com.colonelpanic.eva.adapters.android.MediaLibraryQueueProvider
 import com.colonelpanic.eva.adapters.android.MediaPlayBackend
 import com.colonelpanic.eva.adapters.android.MediaQueueBackend
 import com.colonelpanic.eva.adapters.android.MessageIntentBackend
@@ -86,6 +88,7 @@ class EvaApplication :
     private val messagingStore by lazy { MessagingStore(this) }
     private val mediaSessions by lazy { AndroidMediaSessions(this) }
     private val mediaLauncher by lazy { AndroidMediaLauncher(this) }
+    private val mediaLibraryQueue by lazy { AndroidMediaLibraryQueueClient(this) }
     private val messageTargets by lazy { MessageTargets(intentHost, messagingStore) }
     private val chosenNumbers by lazy { ChosenNumbers(this) }
 
@@ -166,6 +169,12 @@ class EvaApplication :
     }
 
     val registry by lazy {
+        val queueProviders =
+            listOf(
+                SpotifyQueueProvider(spotifyApi) {
+                    spotify.account.value != null && spotify.clientId.value != null
+                },
+            ) + mediaLibraryQueue.apps().map { MediaLibraryQueueProvider(it, mediaLibraryQueue) }
         CapabilityRegistry(
             buildMap {
                 putAll(
@@ -224,13 +233,7 @@ class EvaApplication :
                                 },
                             ),
                         CapabilityRegistry.MEDIA_QUEUE to
-                            MediaQueueBackend(
-                                listOf(
-                                    SpotifyQueueProvider(spotifyApi) {
-                                        spotify.account.value != null && spotify.clientId.value != null
-                                    },
-                                ),
-                            ),
+                            MediaQueueBackend(queueProviders),
                     ),
                 )
                 shizukuShellHost?.let { host ->

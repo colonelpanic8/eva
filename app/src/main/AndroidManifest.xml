@@ -39,6 +39,10 @@
         <intent>
             <action android:name="android.media.browse.MediaBrowserService" />
         </intent>
+        <!-- Media3 library apps that expose searchable items and accept queue additions. -->
+        <intent>
+            <action android:name="androidx.media3.session.MediaLibraryService" />
+        </intent>
     </queries>
 
     <application

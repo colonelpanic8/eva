@@ -319,17 +319,17 @@ object BundledCapabilities {
                 "Queue something next",
                 "Add a song to the queue in a music app so it plays after what is playing now, without " +
                     "interrupting it. Use this when the user says queue, play next, or add to the queue; use the " +
-                    "play action when they want it to start now. Android offers no general way into another app's " +
-                    "queue, so this reaches only apps the user has connected in EVA's settings, and an app EVA " +
-                    "cannot queue on is answered by naming the ones it can. EVA searches the app for the words and " +
-                    "queues the top match, then reports the track it queued.",
+                    "play action when they want it to start now. Android offers no universal way into another app's " +
+                    "queue, so this reaches Spotify when connected or an installed player that exposes searchable " +
+                    "Media3 library queueing. An unsupported app is answered by naming the ones EVA can reach. EVA " +
+                    "searches the app for the words and queues the top match, then reports the track it queued.",
                 schema(
                     """
                 {"type":"object","properties":{
                 "query":{"type":"string","minLength":1,"maxLength":300,
                 "description":"The song, as the user would say it, with the artist when known"},
                 "app":{"type":"string","minLength":1,"maxLength":100,
-                "description":"Which app should queue it; omit to use the connected one"}},
+                "description":"Which app should queue it; omit when only one available app can queue"}},
                 "required":["query"],"additionalProperties":false}
             """,
                 ),

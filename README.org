@@ -44,14 +44,13 @@ capabilities that work with EVA off screen. Beyond the report that Spotify
 answers the play-by-name intent with a search screen, none of this has been
 exercised against a real media app on a device yet.
 
-Queueing is the exception to all of that, because Android exposes no way to add
-to another app's queue: transport controls stop at play, skip, and seek, and a
-session's queue can only be read. EVA instead keeps one queue provider per app
-that offers a route of its own, and an app with no provider is answered by
-naming the apps that have one. Spotify is the only provider so far, reached
-through its Web API with an optional connection the user sets up from a Client
-ID for their own Spotify developer app; Spotify requires Premium and an
-available playback device.
+Queueing is the exception to all of that, because Android's framework transport
+controls cannot add to another app's queue. EVA uses Spotify's Web API when the
+user connects it, and also discovers installed players that expose searchable,
+editable queues through the public Media3 library contract. Jellyfin implements
+that contract; YouTube Music has no documented queue API and can work only if
+its installed app exposes the Media3 route. Unsupported apps are answered by
+naming the available providers instead of a bare refusal.
 
 EVA now registers a voice interaction service, so it can be selected as the
 phone's digital assistant rather than only answering an assist intent. The
