@@ -39,6 +39,8 @@ sealed interface ScalarSlot {
     data class Argument(
         val name: String,
         override val type: String,
+        val default: JsonPrimitive? = null,
+        val required: Boolean = false,
     ) : ScalarSlot
 
     data class Literal(
@@ -58,6 +60,12 @@ sealed interface BodyValue {
 }
 
 sealed interface DeclarativeBinding {
+    data class Select(
+        val argument: String,
+        val present: DeclarativeBinding,
+        val absent: DeclarativeBinding,
+    ) : DeclarativeBinding
+
     data class Intent(
         val action: String,
         val uriBase: String,
@@ -105,6 +113,23 @@ data class ResultProjection(
     val pointer: String,
     val maxBytes: Int,
     val evidence: Evidence?,
+    val items: ItemProjection? = null,
+    val notExecutedStatuses: Set<Int> = emptySet(),
+)
+
+data class ItemProjection(
+    val arrayPaths: List<String>,
+    val line: String,
+    val fields: Map<String, ItemField>,
+    val maxItems: Int,
+    val truncationNote: String,
+    val totalPointer: String?,
+)
+
+data class ItemField(
+    val pointer: String,
+    val type: String,
+    val required: Boolean,
 )
 
 data class Evidence(

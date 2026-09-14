@@ -56,8 +56,15 @@ class BindingArguments(
 
     private fun value(slot: ScalarSlot): JsonPrimitive? =
         when (slot) {
-            is ScalarSlot.Argument -> values[slot.name] as? JsonPrimitive
-            is ScalarSlot.Literal -> slot.value
+            is ScalarSlot.Argument -> {
+                ((values[slot.name] as? JsonPrimitive) ?: slot.default).also {
+                    require(it != null || !slot.required) { "A required binding argument is missing" }
+                }
+            }
+
+            is ScalarSlot.Literal -> {
+                slot.value
+            }
         }
 
     fun intent(binding: DeclarativeBinding.Intent): IntentRequest {
@@ -73,6 +80,13 @@ class BindingArguments(
             }
         return IntentRequest(binding.action, uri, extras, binding.targetPackage, binding.mimeType, appName, capability.receipts)
     }
+
+    fun select(binding: DeclarativeBinding): DeclarativeBinding =
+        if (binding is DeclarativeBinding.Select) {
+            if (binding.argument in values) binding.present else binding.absent
+        } else {
+            binding
+        }
 
     fun content(binding: DeclarativeBinding.Content): ContentRequest {
         val arguments = binding.selection.map { requireNotNull(value(it.slot)) { "A selection argument is missing" }.content }

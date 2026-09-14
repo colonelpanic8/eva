@@ -62,9 +62,12 @@ ambiguity/debouncing, execute outcome mapping, persistent grants and scope chang
 revocation after preflight, runtime discovery-to-execution-to-removal, and typed/
 voice admission boundaries. Robolectric exercises the grant file and journal.
 **Device verification against a real installed provider has not happened yet.**
-No fixture APK was added. The planned device test uses the same mova build
-through installed-service AIDL and AppFunctions, comparing discovery, grants,
-results, cold starts, timeouts, and duplicate suppression. Still needed on a device: cold-process binding, signing
+No fixture APK was added. The installed-service adapter currently has no app-side test vehicle: mova is
+not shipping extension code for this pass. Its existing fake-connection tests
+remain. The proving device plan is EVA debug on the Pixel, with the org-agenda API
+origin and basic-auth credential configured in EVA, then typed agenda, search,
+capture, and strict complete as separate user requests. The operator will run it
+after the adapter and package are reported ready. Still needed on a device: cold-process binding, signing
 and UID checks across app boundaries, package update/removal broadcasts, background
 execution restrictions, real Binder death, and settings interaction.
 
@@ -92,7 +95,8 @@ hard ceiling; they are not yet applied to live execution or settings.
 
 The [package spec](declarative-packages.md) includes exact codec fields and the
 planned HTTPS index/import format. The [org-agenda example](examples/org-agenda.json)
-contains agenda, capture, and a mova intent. JVM codec tests exercise policy
+contains agenda, server-filtered search, capture with a default template, strict
+completion, custom-view list/run, and a mova intent. JVM codec tests exercise policy
 boundaries and budget precedence. `BindingArguments`, `BindingResults`, and `DeclarativeBackend` now construct
 encoded intent/HTTP requests, bind constrained content predicates, project bounded
 results, and require exact completion evidence for writes. Fake-host JVM tests
@@ -825,3 +829,8 @@ Acoustic quality, echo behaviour, natural barge-in, and voice-driven phone
 actions remain unverified; the microphone and speaker paths themselves are now
 established on hardware. The observed subscription bridge is an experiment, not
 a promise of public API stability.
+
+Implementation order: finish declarative imports and Android execution with the
+org-agenda proving package, then migrate bundled intent templates and add the
+untyped share handoff, then implement generalized AppFunctions through Shizuku.
+AIDL discovery stays enabled, with ordinary per-extension and mutation grants.

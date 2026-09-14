@@ -27,6 +27,12 @@ object BindingResults {
     ): ExecutionOutcome {
         val binding = capability.binding as DeclarativeBinding.Http
         val read = capability.effect == PackageEffect.READ
+        if (response.status in binding.result.notExecutedStatuses) {
+            return ExecutionOutcome(
+                InvocationStatus.NOT_EXECUTED,
+                "The server refused the action before execution (HTTP ${response.status}).",
+            )
+        }
         if (response.status ==
             202
         ) {
@@ -42,6 +48,12 @@ object BindingResults {
             )
         }
         val root = BoundedJson.parse(response.body, binding.maxResponseBytes)
+        binding.result.items?.let {
+            return ExecutionOutcome(
+                if (read) InvocationStatus.COMPLETED else InvocationStatus.UNKNOWN,
+                ItemResults.render(root, it, binding.result.maxBytes),
+            )
+        }
         val result =
             pointer(root, binding.result.pointer) ?: return ExecutionOutcome(
                 if (read) InvocationStatus.FAILED else InvocationStatus.UNKNOWN,
@@ -74,7 +86,7 @@ object BindingResults {
         return ExecutionOutcome(InvocationStatus.COMPLETED, (if (truncated) "Rows truncated. " else "") + text)
     }
 
-    private fun pointer(
+    internal fun pointer(
         root: JsonElement,
         path: String,
     ): JsonElement? {

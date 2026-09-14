@@ -62,6 +62,7 @@ object PackageCodec {
                 )
             } ?: ReceiptText()
         val binding = binding(root.getValue("binding").obj(), properties)
+        val alternatives = if (binding is DeclarativeBinding.Select) listOf(binding.present, binding.absent) else listOf(binding)
         val claimed =
             when (root["effects"]?.string()) {
                 "read" -> PackageEffect.READ
@@ -72,14 +73,31 @@ object PackageCodec {
             }
         val effect =
             when {
-                claimed == PackageEffect.UNKNOWN -> claimed
-                binding is DeclarativeBinding.Intent -> if (claimed == PackageEffect.WRITE) claimed else PackageEffect.HANDOFF
-                binding is DeclarativeBinding.Http && binding.method !in setOf("GET", "HEAD") -> PackageEffect.WRITE
-                else -> claimed
+                claimed == PackageEffect.UNKNOWN -> {
+                    claimed
+                }
+
+                alternatives.any { it is DeclarativeBinding.Http && it.method !in setOf("GET", "HEAD") } -> {
+                    PackageEffect.WRITE
+                }
+
+                alternatives.any { it is DeclarativeBinding.Intent } -> {
+                    if (claimed ==
+                        PackageEffect.WRITE
+                    ) {
+                        claimed
+                    } else {
+                        PackageEffect.HANDOFF
+                    }
+                }
+
+                else -> {
+                    claimed
+                }
             }
         val execution = execution(root.getValue("execution").obj())
-        require((execution.mode == ExecutionMode.HANDOFF) == (binding is DeclarativeBinding.Intent))
-        require(binding !is DeclarativeBinding.Intent || execution.requiresForeground)
+        require(alternatives.all { (execution.mode == ExecutionMode.HANDOFF) == (it is DeclarativeBinding.Intent) })
+        require(alternatives.none { it is DeclarativeBinding.Intent } || execution.requiresForeground)
         return PackageCapability(
             name,
             root.text("title", 120),
@@ -116,12 +134,35 @@ object PackageCodec {
     private fun binding(
         root: JsonObject,
         properties: JsonObject,
+        allowSelect: Boolean = true,
     ): DeclarativeBinding =
         when (root.text("kind", 30)) {
-            "android.intent" -> intent(root, properties)
-            "android.content" -> content(root, properties)
-            "http" -> http(root, properties)
-            else -> error("Unsupported binding")
+            "select" -> {
+                require(allowSelect)
+                root.fields(setOf("kind", "argument", "present", "absent"))
+                val argument = root.text("argument", 64).also { require(it in properties) }
+                DeclarativeBinding.Select(
+                    argument,
+                    binding(root.getValue("present").obj(), properties, false),
+                    binding(root.getValue("absent").obj(), properties, false),
+                )
+            }
+
+            "android.intent" -> {
+                intent(root, properties)
+            }
+
+            "android.content" -> {
+                content(root, properties)
+            }
+
+            "http" -> {
+                http(root, properties)
+            }
+
+            else -> {
+                error("Unsupported binding")
+            }
         }
 
     private fun intent(
@@ -220,7 +261,20 @@ object PackageCodec {
         require(body == null || method !in setOf("GET", "HEAD"))
         val credential = root["credential"]?.string()?.also { require(Regex("[a-z][a-z0-9_-]{0,63}").matches(it)) }
         val result = root.getValue("result").obj()
-        result.fields(setOf("pointer", "maxBytes"), setOf("evidence"))
+        result.fields(setOf("maxBytes"), setOf("pointer", "items", "evidence", "notExecutedStatuses"))
+        require(("pointer" in result) != ("items" in result))
+        val items = result["items"]?.obj()?.let(::items)
+        val rejectedStatuses =
+            result["notExecutedStatuses"]
+                ?.array()
+                ?.map {
+                    it
+                        .long()
+                        .also { code ->
+                            require(code in 400..499)
+                        }.toInt()
+                }?.toSet()
+                .orEmpty()
         val evidence =
             result["evidence"]?.obj()?.let {
                 it.fields(setOf("pointer", "equals"))
@@ -236,8 +290,44 @@ object PackageCodec {
             body,
             credential,
             root.bounded("maxResponseBytes", 1_048_576),
-            ResultProjection(pointer(result), result.bounded("maxBytes", 16_384), evidence),
+            ResultProjection(
+                if (items ==
+                    null
+                ) {
+                    pointer(result)
+                } else {
+                    ""
+                },
+                result.bounded("maxBytes", 16_384),
+                evidence,
+                items,
+                rejectedStatuses,
+            ),
         )
+    }
+
+    private fun items(root: JsonObject): ItemProjection {
+        root.fields(setOf("arrayPaths", "line", "fields", "maxItems", "truncationNote"), setOf("totalPointer"))
+        val paths =
+            root.getValue("arrayPaths").array().also { require(it.size in 1..4) }.map {
+                pointer(JsonObject(mapOf("pointer" to it))).also { path ->
+                    require(path.split('/').count { segment -> segment == "*" } <= 1)
+                }
+            }
+        val line = root.text("line", 2000).also { require(it.none(Char::isISOControl)) }
+        val fields =
+            root.getValue("fields").obj().also { require(it.size in 1..32) }.mapValues { (name, field) ->
+                require(identifier.matches(name))
+                val value = field.obj()
+                value.fields(setOf("pointer", "type"), setOf("required"))
+                val type = value.text("type", 20).also { require(it in scalarTypes || it == "stringArray") }
+                ItemField(pointer(value), type, value["required"]?.bool() ?: false)
+            }
+        require(pathSlot.findAll(line).map { it.groupValues[1] }.toSet() == fields.keys)
+        require(pathSlot.replace(line, "").none { it == '{' || it == '}' })
+        val note = root.text("truncationNote", 500).also { require(it.none(Char::isISOControl)) }
+        val total = root["totalPointer"]?.let { pointer(JsonObject(mapOf("pointer" to it))) }
+        return ItemProjection(paths, line, fields, root.bounded("maxItems", 100), note, total)
     }
 
     private fun pointer(root: JsonObject): String =
@@ -278,10 +368,15 @@ object PackageCodec {
     ): ScalarSlot {
         val type = root.text("type", 10).also { require(it in scalarTypes) }
         return if ("argument" in root) {
-            root.fields(setOf("argument", "type"))
+            root.fields(setOf("argument", "type"), setOf("default", "required"))
             val name = root.text("argument", 64)
             require(properties[name]?.obj()?.get("type") == JsonPrimitive(type)) { "Slot type does not match tool schema" }
-            ScalarSlot.Argument(name, type)
+            val default =
+                root["default"]?.let {
+                    require(it is JsonPrimitive && it != JsonNull && ToolSchema.error(properties.getValue(name).obj(), it) == null)
+                    it
+                }
+            ScalarSlot.Argument(name, type, default, root["required"]?.bool() ?: false)
         } else {
             root.fields(setOf("value", "type"))
             val value = root.getValue("value") as? JsonPrimitive ?: error("Expected scalar literal")
@@ -306,6 +401,9 @@ object PackageCodec {
     private fun JsonElement.string(): String = (this as? JsonPrimitive)?.takeIf { it.isString }?.content ?: error("Expected string")
 
     private fun JsonElement.long(): Long = (this as? JsonPrimitive)?.takeUnless { it.isString }?.longOrNull ?: error("Expected integer")
+
+    private fun JsonElement.bool(): Boolean =
+        (this as? JsonPrimitive)?.takeUnless { it.isString }?.booleanOrNull ?: error("Expected boolean")
 
     private fun JsonObject.text(
         key: String,

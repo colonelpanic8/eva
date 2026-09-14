@@ -37,11 +37,14 @@ class DeclarativeBackend(
     override suspend fun execute(proposal: ToolProposal): ExecutionOutcome {
         val wait = budget(proposal)
         val arguments: BindingArguments
+        val binding: DeclarativeBinding
         val request: Any
         try {
             arguments = BindingArguments(capability, proposal.arguments)
+            binding = arguments.select(capability.binding)
             request =
-                when (val binding = capability.binding) {
+                when (binding) {
+                    is DeclarativeBinding.Select -> error("Nested selection is unsupported")
                     is DeclarativeBinding.Intent -> arguments.intent(binding)
                     is DeclarativeBinding.Content -> arguments.content(binding)
                     is DeclarativeBinding.Http -> arguments.http(binding)
@@ -54,7 +57,11 @@ class DeclarativeBackend(
         }
         val outcome =
             try {
-                when (val binding = capability.binding) {
+                when (binding) {
+                    is DeclarativeBinding.Select -> {
+                        error("Nested selection is unsupported")
+                    }
+
                     is DeclarativeBinding.Intent -> {
                         host.launch(request as IntentRequest)
                     }
@@ -67,7 +74,7 @@ class DeclarativeBackend(
                     }
 
                     is DeclarativeBinding.Http -> {
-                        BindingResults.http(capability, host.request(request as HttpRequest, wait.effectiveMillis))
+                        BindingResults.http(capability.copy(binding = binding), host.request(request as HttpRequest, wait.effectiveMillis))
                     }
                 }
             } catch (cancelled: CancellationException) {

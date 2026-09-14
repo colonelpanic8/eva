@@ -174,7 +174,7 @@ expressions are supported. HTTP execution is not wired yet.
 The [org-agenda example](examples/org-agenda.json) contains agenda, default-template
 capture with `values.Title`, and a mova capture handoff. Replace the example HTTPS
 origin and configure the named basic-auth credential in EVA. It contains no
-credentials. Search is omitted because v1 has no client-side text filter.
+credentials. Search uses the server-side `q` and `limit` parameters; it does not filter items locally.
 
 ## Named validation, receipt copy, and bundled migration
 
@@ -200,7 +200,7 @@ If declared, an absent or blank app name is refused, never changed to a chooser.
 This supports an untyped `ACTION_SEND` / `text/plain` handoff after host integration.
 A URI may be omitted for intents that carry only extras.
 
-After declarative and generalized AppFunctions adapters land, migrate bundled
+After the declarative adapter and proving package land, migrate bundled
 pure intent capabilities into bundled files using this codec, preserving native
 operations in Kotlin. The migration includes map search, navigation, SMS compose,
 alarm, timer, dial, web search, URL opening, email compose, calendar event, and
@@ -210,3 +210,62 @@ recipient resolution, calendar end-time calculation, and fixed settings-action
 selection must not silently disappear during the template migration. Any remaining
 native resolution belongs behind a declared native operation, not arbitrary
 scripts or model-controlled intent fields. No bundled capability has migrated yet.
+
+## Bounded item projection and proving package
+
+HTTP `result` chooses exactly one of `pointer` (existing text/JSON projection) or
+`items`, along with `maxBytes`. `items` contains:
+
+- `arrayPaths`: 1–4 explicit JSON Pointer-like paths, tried in order until a
+  declared array location exists. A single `*` segment may enumerate an array or
+  object's values, allowing `/days/*` to collect the grouped agenda arrays.
+  Traversal is bounded to 4,096 nodes and the response byte limit still applies.
+- `line`: one fixed line template using `{fieldName}` slots, with no control
+  characters or executable expressions.
+- `fields`: a map of slot names to `{pointer, type, required?}`. Pointers resolve
+  relative to the current item. Types are scalar string/integer/number/boolean
+  or `stringArray`; missing/null optional fields render `null`. Required or
+  wrongly typed fields fail validation. Every declared slot must occur in `line`.
+- `maxItems`: 1–100. `truncationNote`: bounded display text, shown when items or
+  bytes were capped. Only whole lines are emitted, so identifiers never become
+  partial references. Strings and string arrays use JSON quoting, preserving
+  exact content while keeping embedded newlines on one output line.
+- Optional `totalPointer`: a pointer to a nonnegative integer count in the root
+  response. A total greater than the returned array item count means the server
+  truncated its response, independently of EVA's item/byte cap.
+
+The mapping cannot filter, sort, join records, calculate values, run regexes,
+execute scripts, fetch additional pages, poll jobs, or infer completion from text.
+It does not silently flatten arbitrary objects or guess alternate response paths.
+
+Argument slots optionally carry `default` (a scalar satisfying the argument's
+schema) and `required: true` (refuse before submission if neither input nor default
+provides a value). These are binding rules, not additions to the MCP input schema.
+A single `select` binding has `argument`, `present`, and `absent` branches; it
+chooses between two fully declared bindings based only on argument presence.
+Nested selects are rejected. Both branches must use the capability's execution
+mode, and effect floors account for both. It cannot construct new destinations.
+
+The org-agenda package is the proving case. It exposes `agenda`, `search_todos`,
+`capture`, `complete_todo`, `custom_view`, and a mova capture handoff. Capture
+always supplies `template` (default `default`) and `values.Title`. Completion
+selects an ID-only request, otherwise requires file, position, and exact title;
+both branches send the literal `strict: true`. The server must implement the
+strict contract before testing: a stale position/title returns HTTP 409 without
+completing anything. The binding declares `result.notExecutedStatuses: [409]`;
+these are explicit documented pre-execution rejections (4xx only), never inferred
+from a generic HTTP error. Other uncertain write errors remain `UNKNOWN`.
+
+Search sends `q` and `limit` to `/get-all-todos`. Its `/total` projection follows
+the additive server contract: total matches before limiting, present when q or
+limit was supplied. This field name awaits the server agent's final confirmation.
+Item lines carry state, priority, title, scheduled/deadline date and time, tags,
+ID, file, and position. Those fields support strict completion in a subsequent
+request. Omitted custom-view key lists `/custom-views`; a supplied key runs the
+fixed `/custom-view?key=` route. No app-side mova extension code is needed.
+
+Order after this proving case: bundled intent migration and untyped share, then
+generalized AppFunctions. Installed-service AIDL remains supported and discovered
+but currently has no device-test vehicle. Device verification will be performed
+by the operator after EVA settings/import/execution are reported ready; none of
+these declarations are yet claimed device-ready.

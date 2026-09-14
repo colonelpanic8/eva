@@ -1,13 +1,13 @@
 {
   "formatVersion": 1,
   "id": "community.org-agenda",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "title": "Org agenda",
   "capabilities": [
     {
       "tool": {
         "name": "agenda",
-        "description": "Read the agenda from the configured org-agenda API.",
+        "description": "Read an agenda span. Results carry references for a later complete_todo request.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -15,12 +15,12 @@
               "type": "string",
               "enum": [
                 "day",
-                "week",
-                "month"
+                "week"
               ]
             },
             "date": {
               "type": "string",
+              "minLength": 1,
               "maxLength": 10
             },
             "include_overdue": {
@@ -44,8 +44,6 @@
       "binding": {
         "kind": "http",
         "origin": "https://agenda.example.org",
-        "credential": "org-agenda",
-        "maxResponseBytes": 262144,
         "method": "GET",
         "path": "/agenda",
         "parameters": [
@@ -54,7 +52,8 @@
             "name": "span",
             "value": {
               "argument": "span",
-              "type": "string"
+              "type": "string",
+              "default": "day"
             }
           },
           {
@@ -74,16 +73,195 @@
             }
           }
         ],
+        "credential": "org-agenda",
+        "maxResponseBytes": 1048576,
         "result": {
-          "pointer": "",
-          "maxBytes": 16384
+          "maxBytes": 16384,
+          "items": {
+            "arrayPaths": [
+              "/entries",
+              "/days/*"
+            ],
+            "line": "state={state} priority={priority} title={title} scheduled={scheduled} time={scheduledTime} deadline={deadline} time={deadlineTime} tags={tags} id={id} file={file} pos={pos}",
+            "fields": {
+              "state": {
+                "pointer": "/todo",
+                "type": "string"
+              },
+              "priority": {
+                "pointer": "/priority",
+                "type": "string"
+              },
+              "title": {
+                "pointer": "/title",
+                "type": "string",
+                "required": true
+              },
+              "scheduled": {
+                "pointer": "/scheduled/date",
+                "type": "string"
+              },
+              "scheduledTime": {
+                "pointer": "/scheduled/time",
+                "type": "string"
+              },
+              "deadline": {
+                "pointer": "/deadline/date",
+                "type": "string"
+              },
+              "deadlineTime": {
+                "pointer": "/deadline/time",
+                "type": "string"
+              },
+              "tags": {
+                "pointer": "/tags",
+                "type": "stringArray"
+              },
+              "id": {
+                "pointer": "/id",
+                "type": "string"
+              },
+              "file": {
+                "pointer": "/file",
+                "type": "string"
+              },
+              "pos": {
+                "pointer": "/pos",
+                "type": "integer"
+              }
+            },
+            "maxItems": 50,
+            "truncationNote": "Not all matching items are shown. Narrow the search or request a smaller agenda span."
+          }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "search_todos",
+        "description": "Find todos by text. Preserve returned identifiers when completing an item in a separate user request.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "q": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          },
+          "required": [
+            "q"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "title": "Search todos",
+      "effects": "read",
+      "execution": {
+        "mode": "synchronous",
+        "requiresForeground": false,
+        "maxWaitMillis": 30000,
+        "cancellation": "none",
+        "idempotency": "none",
+        "reconciliation": "none"
+      },
+      "binding": {
+        "kind": "http",
+        "origin": "https://agenda.example.org",
+        "method": "GET",
+        "path": "/get-all-todos",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "value": {
+              "argument": "q",
+              "type": "string",
+              "required": true
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "value": {
+              "argument": "limit",
+              "type": "integer",
+              "default": 20
+            }
+          }
+        ],
+        "credential": "org-agenda",
+        "maxResponseBytes": 1048576,
+        "result": {
+          "maxBytes": 16384,
+          "items": {
+            "arrayPaths": [
+              "/todos"
+            ],
+            "line": "state={state} priority={priority} title={title} scheduled={scheduled} time={scheduledTime} deadline={deadline} time={deadlineTime} tags={tags} id={id} file={file} pos={pos}",
+            "fields": {
+              "state": {
+                "pointer": "/todo",
+                "type": "string"
+              },
+              "priority": {
+                "pointer": "/priority",
+                "type": "string"
+              },
+              "title": {
+                "pointer": "/title",
+                "type": "string",
+                "required": true
+              },
+              "scheduled": {
+                "pointer": "/scheduled/date",
+                "type": "string"
+              },
+              "scheduledTime": {
+                "pointer": "/scheduled/time",
+                "type": "string"
+              },
+              "deadline": {
+                "pointer": "/deadline/date",
+                "type": "string"
+              },
+              "deadlineTime": {
+                "pointer": "/deadline/time",
+                "type": "string"
+              },
+              "tags": {
+                "pointer": "/tags",
+                "type": "stringArray"
+              },
+              "id": {
+                "pointer": "/id",
+                "type": "string"
+              },
+              "file": {
+                "pointer": "/file",
+                "type": "string"
+              },
+              "pos": {
+                "pointer": "/pos",
+                "type": "integer"
+              }
+            },
+            "maxItems": 50,
+            "truncationNote": "Not all matching items are shown. Narrow the search or request a smaller agenda span.",
+            "totalPointer": "/total"
+          }
         }
       }
     },
     {
       "tool": {
         "name": "capture",
-        "description": "Create a todo using the default capture template.",
+        "description": "Create a todo. Template defaults to default; title supplies the Title capture value.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -91,6 +269,11 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 500
+            },
+            "template": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
             }
           },
           "required": [
@@ -112,33 +295,299 @@
       "binding": {
         "kind": "http",
         "origin": "https://agenda.example.org",
-        "credential": "org-agenda",
-        "maxResponseBytes": 262144,
         "method": "POST",
         "path": "/capture",
         "parameters": [],
+        "credential": "org-agenda",
+        "maxResponseBytes": 1048576,
+        "result": {
+          "pointer": "",
+          "maxBytes": 4096,
+          "evidence": {
+            "pointer": "/status",
+            "equals": "created"
+          }
+        },
         "requestBody": {
           "fields": {
             "template": {
+              "argument": "template",
               "type": "string",
-              "value": "default"
+              "default": "default"
             },
             "values": {
               "fields": {
                 "Title": {
                   "argument": "title",
-                  "type": "string"
+                  "type": "string",
+                  "required": true
                 }
               }
             }
           }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "complete_todo",
+        "description": "Complete exactly the entry identified by id, or by file, pos, and exact title from a prior read. Stale references are refused. Search and completion require separate user requests.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            },
+            "file": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            "pos": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "title": "Complete todo",
+      "effects": "write",
+      "execution": {
+        "mode": "synchronous",
+        "requiresForeground": false,
+        "maxWaitMillis": 30000,
+        "cancellation": "none",
+        "idempotency": "none",
+        "reconciliation": "none"
+      },
+      "binding": {
+        "kind": "select",
+        "argument": "id",
+        "present": {
+          "kind": "http",
+          "origin": "https://agenda.example.org",
+          "method": "POST",
+          "path": "/complete",
+          "parameters": [],
+          "credential": "org-agenda",
+          "maxResponseBytes": 1048576,
+          "result": {
+            "pointer": "",
+            "maxBytes": 4096,
+            "evidence": {
+              "pointer": "/status",
+              "equals": "completed"
+            },
+            "notExecutedStatuses": [
+              409
+            ]
+          },
+          "requestBody": {
+            "fields": {
+              "id": {
+                "argument": "id",
+                "type": "string",
+                "required": true
+              },
+              "strict": {
+                "value": true,
+                "type": "boolean"
+              }
+            }
+          }
         },
-        "result": {
-          "pointer": "",
-          "maxBytes": 16384,
-          "evidence": {
-            "pointer": "/status",
-            "equals": "created"
+        "absent": {
+          "kind": "http",
+          "origin": "https://agenda.example.org",
+          "method": "POST",
+          "path": "/complete",
+          "parameters": [],
+          "credential": "org-agenda",
+          "maxResponseBytes": 1048576,
+          "result": {
+            "pointer": "",
+            "maxBytes": 4096,
+            "evidence": {
+              "pointer": "/status",
+              "equals": "completed"
+            },
+            "notExecutedStatuses": [
+              409
+            ]
+          },
+          "requestBody": {
+            "fields": {
+              "file": {
+                "argument": "file",
+                "type": "string",
+                "required": true
+              },
+              "pos": {
+                "argument": "pos",
+                "type": "integer",
+                "required": true
+              },
+              "title": {
+                "argument": "title",
+                "type": "string",
+                "required": true
+              },
+              "strict": {
+                "value": true,
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "custom_view",
+        "description": "Omit key to list available views; supply a returned key to run that view.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "key": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "title": "Custom agenda view",
+      "effects": "read",
+      "execution": {
+        "mode": "synchronous",
+        "requiresForeground": false,
+        "maxWaitMillis": 30000,
+        "cancellation": "none",
+        "idempotency": "none",
+        "reconciliation": "none"
+      },
+      "binding": {
+        "kind": "select",
+        "argument": "key",
+        "present": {
+          "kind": "http",
+          "origin": "https://agenda.example.org",
+          "method": "GET",
+          "path": "/custom-view",
+          "parameters": [
+            {
+              "in": "query",
+              "name": "key",
+              "value": {
+                "argument": "key",
+                "type": "string",
+                "required": true
+              }
+            }
+          ],
+          "credential": "org-agenda",
+          "maxResponseBytes": 1048576,
+          "result": {
+            "maxBytes": 16384,
+            "items": {
+              "arrayPaths": [
+                "/entries"
+              ],
+              "line": "state={state} priority={priority} title={title} scheduled={scheduled} time={scheduledTime} deadline={deadline} time={deadlineTime} tags={tags} id={id} file={file} pos={pos}",
+              "fields": {
+                "state": {
+                  "pointer": "/todo",
+                  "type": "string"
+                },
+                "priority": {
+                  "pointer": "/priority",
+                  "type": "string"
+                },
+                "title": {
+                  "pointer": "/title",
+                  "type": "string",
+                  "required": true
+                },
+                "scheduled": {
+                  "pointer": "/scheduled/date",
+                  "type": "string"
+                },
+                "scheduledTime": {
+                  "pointer": "/scheduled/time",
+                  "type": "string"
+                },
+                "deadline": {
+                  "pointer": "/deadline/date",
+                  "type": "string"
+                },
+                "deadlineTime": {
+                  "pointer": "/deadline/time",
+                  "type": "string"
+                },
+                "tags": {
+                  "pointer": "/tags",
+                  "type": "stringArray"
+                },
+                "id": {
+                  "pointer": "/id",
+                  "type": "string"
+                },
+                "file": {
+                  "pointer": "/file",
+                  "type": "string"
+                },
+                "pos": {
+                  "pointer": "/pos",
+                  "type": "integer"
+                }
+              },
+              "maxItems": 50,
+              "truncationNote": "Not all matching items are shown. Narrow the search or request a smaller agenda span."
+            }
+          }
+        },
+        "absent": {
+          "kind": "http",
+          "origin": "https://agenda.example.org",
+          "method": "GET",
+          "path": "/custom-views",
+          "parameters": [],
+          "credential": "org-agenda",
+          "maxResponseBytes": 1048576,
+          "result": {
+            "maxBytes": 16384,
+            "items": {
+              "arrayPaths": [
+                "/views"
+              ],
+              "line": "key={key} name={name}",
+              "fields": {
+                "key": {
+                  "pointer": "/key",
+                  "type": "string",
+                  "required": true
+                },
+                "name": {
+                  "pointer": "/name",
+                  "type": "string",
+                  "required": true
+                }
+              },
+              "maxItems": 50,
+              "truncationNote": "Not all matching items are shown. Narrow the search or request a smaller agenda span."
+            }
           }
         }
       }
@@ -146,7 +595,7 @@
     {
       "tool": {
         "name": "open_capture",
-        "description": "Open mova with a title. The user finishes capture in mova.",
+        "description": "Open mova with a title for the user to finish capturing. This is a handoff, not verified creation.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -180,7 +629,8 @@
           "query": {
             "title": {
               "argument": "title",
-              "type": "string"
+              "type": "string",
+              "required": true
             }
           }
         }
