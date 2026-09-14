@@ -8,6 +8,9 @@ All notable changes to EVA will be documented here.
 
 - A Screen control switch removes screen observation, tapping, and text replacement from newly opened provider sessions and rejects calls from stale sessions after it is switched off. It defaults to on so existing installations keep their current behavior.
 - The OpenAI provider layer can seed replacement sessions from prior user and assistant messages, action receipts, and session notes. Responses sessions can continue an existing turn without submitting another user message, while realtime voice waits for every history item to be acknowledged before reconnecting the microphone. The thread controller does not invoke this path yet.
+- The system prompt is now a file you own. `eva-prompt.yaml` lists the components EVA's instructions are built from, each with its text, whether it applies to voice, text, or both, and an on/off switch; a component can also reword or withhold tools. EVA writes its stock prompt there on first run, reads the file at the start of every session, and reports a parse problem with its line instead of quietly using something else. Pick any file with the system picker to keep the prompt in a synced folder or a git checkout; EVA's own copy stays the fallback, reachable with `adb`.
+- A Prompt screen in the drawer that switches components on and off, edits their text and scope, adds and removes them, chooses or creates the file, and resets to the stock prompt.
+- Two ways a call can end, shipped as alternatives in the stock prompt. "One request" is how a phone assistant behaves: EVA answers what you asked, says a short closing line, and hangs up without asking whether there is anything else. "Open conversation" keeps the call going until you end it or ask EVA to hang up, which is what EVA did before. New installs start on "One request".
 
 ### Changed
 

@@ -40,6 +40,7 @@ import com.colonelpanic.eva.data.CapabilitySettings
 import com.colonelpanic.eva.data.ChatGptAccountStore
 import com.colonelpanic.eva.data.ChosenNumbers
 import com.colonelpanic.eva.data.OpenAiSettings
+import com.colonelpanic.eva.data.PromptStore
 import com.colonelpanic.eva.data.SqliteInvocationRepository
 import com.colonelpanic.eva.providers.BrokerConversationProvider
 import com.colonelpanic.eva.providers.BrokerEndpoint
@@ -90,6 +91,7 @@ class EvaApplication :
     val settings by lazy { OpenAiSettings(this) }
     val appearance by lazy { AppearanceSettings(this) }
     val capabilities by lazy { CapabilitySettings(this) }
+    val prompts by lazy { PromptStore(this) }
     val chatGpt by lazy { ChatGptAccountStore(this) }
     val signIn by lazy { ChatGptSignIn(save = chatGpt::save) }
     private var signInJob: Job? = null
@@ -122,6 +124,11 @@ class EvaApplication :
             settings.apiKey() != null -> ApiKeyAccess(settings.requireApiKey())
             else -> null
         }
+
+    /** Prompt edits outlive the screen that made them, so they run here rather than in an activity scope. */
+    fun editPrompt(action: suspend PromptStore.() -> Unit) {
+        scope.launch { prompts.action() }
+    }
 
     /** Best effort: the picker still accepts a typed model name when this fails. */
     fun refreshModels() {
@@ -265,6 +272,7 @@ class EvaApplication :
             voiceLookupRetries = { settings.voiceLookupRetries },
             voiceKeywords = { contactKeywords.names() },
             hiddenCapabilities = { if (capabilities.screenControlEnabled) emptySet() else CapabilityRegistry.SCREEN_CONTROL },
+            prompt = { prompts.load() },
         ).also { controller ->
             scope.launch {
                 controller.state.collect { mutableVoiceSession.value = VoiceSessionStatus(it.mediaState, it.mediaControls) }

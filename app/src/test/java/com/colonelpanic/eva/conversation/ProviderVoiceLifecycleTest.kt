@@ -11,6 +11,10 @@ import com.colonelpanic.eva.capability.ExecutionBackend
 import com.colonelpanic.eva.capability.ExecutionOutcome
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.MemoryInvocationRepository
+import com.colonelpanic.eva.conversation.prompt.PromptComponent
+import com.colonelpanic.eva.conversation.prompt.PromptConfig
+import com.colonelpanic.eva.conversation.prompt.PromptConfigException
+import com.colonelpanic.eva.conversation.prompt.PromptDefaults
 import com.colonelpanic.eva.providers.CallIdentity
 import com.colonelpanic.eva.providers.ConversationInput
 import com.colonelpanic.eva.providers.ConversationProvider
@@ -304,10 +308,84 @@ class ProviderVoiceLifecycleTest {
                 provider.request.catalog.tools
                     .map { it.capabilityId },
             )
-            assertTrue(provider.request.instructions.contains("brief goodbye"))
+            assertTrue(provider.request.instructions.contains("end the conversation with its tool"))
             assertTrue(provider.request.catalog.revision != typedRevision)
             controller.disconnect()
             advanceUntilIdle()
+        }
+
+    @Test
+    fun `the prompt file decides the instructions, the tool wording, and which tools are offered`() =
+        runTest {
+            val provider = VoiceProvider()
+            val controller = controller(provider, { VoiceMedia() })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            val stock = provider.request
+            assertTrue(stock.instructions.startsWith("You are EVA"))
+            assertTrue(stock.instructions.contains("This call is for one request"))
+            assertFalse(stock.instructions.contains("This call stays open"))
+            assertTrue(stock.instructions.contains("The user's current local time is"))
+            assertTrue(
+                stock.catalog.tools
+                    .single()
+                    .description
+                    .contains("as soon as the user's request is complete"),
+            )
+            controller.disconnect()
+            advanceUntilIdle()
+
+            val open = VoiceProvider()
+            val openController = controller(open, { VoiceMedia() }, prompt = { PromptDefaults.config.toggle("open-conversation", true) })
+            advanceUntilIdle()
+            openController.connectVoice("test")
+            advanceUntilIdle()
+            assertTrue(open.request.instructions.contains("This call stays open"))
+            assertFalse(open.request.instructions.contains("This call is for one request"))
+            assertTrue(
+                open.request.catalog.tools
+                    .single()
+                    .description
+                    .contains("A finished request is not a reason to call it"),
+            )
+            // The tool reads differently, so a connection made under one file cannot be confused with the other.
+            assertTrue(open.request.catalog.revision != stock.catalog.revision)
+            openController.disconnect()
+            advanceUntilIdle()
+
+            val muted = VoiceProvider()
+            val mutedController =
+                controller(muted, { VoiceMedia() }, prompt = {
+                    PromptConfig(
+                        listOf(PromptComponent(id = "no-hangup", instruction = "Never hang up.", hide = listOf("eva.session.end"))),
+                    )
+                })
+            advanceUntilIdle()
+            mutedController.connectVoice("test")
+            advanceUntilIdle()
+            assertEquals("Never hang up.", muted.request.instructions)
+            assertEquals(
+                emptyList<String>(),
+                muted.request.catalog.tools
+                    .map { it.capabilityId },
+            )
+            mutedController.disconnect()
+            advanceUntilIdle()
+        }
+
+    @Test
+    fun `a broken prompt file fails the connection with its own message`() =
+        runTest {
+            val provider = VoiceProvider()
+            val media = VoiceMedia()
+            val controller = controller(provider, { media }, prompt = { throw PromptConfigException("Line 4, column 3: no such field") })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            assertEquals(ProviderStatus.DISCONNECTED, controller.state.value.providerStatus)
+            assertEquals("Line 4, column 3: no such field", controller.state.value.providerMessage)
+            assertEquals(0, provider.opens)
         }
 
     @Test
@@ -428,19 +506,21 @@ class ProviderVoiceLifecycleTest {
         voiceProviderFactory: suspend (String, RealtimeMediaSession) -> ConversationProvider = { _, _ -> provider },
         voiceLookupRetries: () -> Int = { 5 },
         voiceKeywords: suspend () -> List<String> = { emptyList() },
+        prompt: suspend () -> PromptConfig = { PromptDefaults.config },
     ): ProviderSessionController {
         val registry = CapabilityRegistry(emptyMap(), emptyList())
         val repository = MemoryInvocationRepository()
         return ProviderSessionController(
-            registry,
-            CapabilityDispatcher(registry, repository),
-            repository,
-            this,
-            { provider },
-            mediaFactory,
-            voiceProviderFactory,
-            voiceLookupRetries,
-            voiceKeywords,
+            registry = registry,
+            dispatcher = CapabilityDispatcher(registry, repository),
+            repository = repository,
+            scope = this,
+            providerFactory = { provider },
+            mediaFactory = mediaFactory,
+            voiceProviderFactory = voiceProviderFactory,
+            voiceLookupRetries = voiceLookupRetries,
+            voiceKeywords = voiceKeywords,
+            prompt = prompt,
         )
     }
 
@@ -452,10 +532,12 @@ class ProviderVoiceLifecycleTest {
         val channel = Channel<ProviderEvent>(Channel.UNLIMITED)
         override val events = channel.receiveAsFlow()
         lateinit var request: SessionOpenRequest
+        var opens = 0
         var closes = 0
         var submissions = 0
 
         override suspend fun open(request: SessionOpenRequest): ConversationSession {
+            opens++
             this.request = request
             withContext(NonCancellable) { openGate?.await() }
             channel.send(ProviderEvent.Connected("test-session", request.catalog.revision))
