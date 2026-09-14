@@ -26,5 +26,4 @@ intent handoff test, not a send/delivery or message-reading test.
    appeared correctly; redact private phone numbers if sharing screenshots.
 
 No org-agenda package is bundled or registered. Its JSON remains a separate HTTP
-interpreter example in docs. The general bundled-capability migration remains
-paused until this device result.
+interpreter example in docs. The implementation queue continues while device verification is pending.

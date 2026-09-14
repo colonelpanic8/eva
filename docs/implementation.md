@@ -858,8 +858,9 @@ actions remain unverified; the microphone and speaker paths themselves are now
 established on hardware. The observed subscription bridge is an experiment, not
 a promise of public API stability.
 
-Implementation order: wait for the Messages Pixel result, then migrate bundled intent templates and add the
-untyped share handoff, then implement generalized AppFunctions through Shizuku.
+Implementation order: declarative result filtering; bundled intent migration and
+untyped share; repository import; generalized AppFunctions through Shizuku.
+The device test does not block this queue.
 AIDL discovery stays enabled, with ordinary per-extension and mutation grants.
 
 The org-agenda JSON remains an HTTP interpreter example/test fixture under docs;
@@ -868,3 +869,12 @@ smsto scheme, a validated encoded phone-number slot, and the sms_body string ext
 It has no HTTP binding or credentials. Success means HANDED_OFF, never sent or
 delivered. Existing native SMS capabilities remain unchanged until the separately
 planned bundled-capability migration.
+
+## Deferred extension device verification
+
+The [org-agenda Pixel test](org-agenda-device-test.md) is deferred, not failed.
+It awaits a server with q/limit/total search and strict exact-reference completion;
+Ivan is not deploying those changes now. Nothing in this extension work is
+device-verified. Messages is also awaiting its physical-phone test, and the
+installed-service adapter still has no test vehicle. All current extension
+verification claims refer to JVM/fake-host or Robolectric checks only.
