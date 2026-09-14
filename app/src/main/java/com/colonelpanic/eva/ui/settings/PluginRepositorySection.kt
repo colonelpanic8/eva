@@ -29,8 +29,9 @@ internal fun PluginRepositorySection(
                 label = { Text("HTTPS index or package URL") },
                 singleLine = true,
             )
-            Button(onClick = { actions.onRepositoryRefresh(source) }, enabled = !state.busy) { Text("Refresh repository") }
+            Button(onClick = { actions.onRepositoryRefresh(source) }, enabled = !state.busy) { Text("Refresh plugin repository") }
             TextButton(onClick = { actions.onPluginUrlPreview(source) }, enabled = !state.busy) { Text("Preview a package URL") }
+            TextButton(onClick = actions.onPluginFileImport, enabled = !state.busy) { Text("Import plugin file") }
             if (state.busy) Text("Loading…")
             state.error?.let { Text(it) }
             state.notice?.let { Text(it) }
@@ -57,7 +58,7 @@ internal fun PluginRepositorySection(
         state.preview?.let { preview ->
             SettingsBlock {
                 Text("Review ${preview.definition.title} ${preview.definition.version}")
-                Text("Source: ${preview.url}")
+                Text("Source: ${if (preview.source.startsWith("file-import:")) "Selected file" else preview.url}")
                 Text("Targets: ${preview.definition.androidPackages.joinToString().ifEmpty { "See destinations below" }}")
                 preview.definition.capabilities.forEach { capability ->
                     Text("${capability.title} · ${capability.effect.name.lowercase()}")
@@ -71,6 +72,13 @@ internal fun PluginRepositorySection(
             }
         }
     }
+}
+
+@Composable
+internal fun RepositoryInstallationsSection(
+    state: PluginBrowserState,
+    actions: SettingsActions,
+) {
     if (state.installed.isNotEmpty()) {
         SettingsSection("Repository installations") {
             state.installed.forEach { installed ->

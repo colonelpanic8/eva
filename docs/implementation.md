@@ -937,15 +937,20 @@ assets. Updates retain instance identity, require increasing versions when conte
 changes, and revoke grants through the shared descriptor digest. JVM tests cover
 remote additions reaching the registry without a rebuild, persistence failures,
 digest/origin rejection, updates and grant revocation. The default eva-plugins
-GitHub source is reserved but has not been published. End-to-end repository device
-verification and local-file import remain pending.
+GitHub source is published at [eva-plugins](https://github.com/colonelpanic8/eva-plugins).
+Live index and package hashes were verified. Android document-picker import uses
+the same bounded codec, preview and installation path. File imports get fresh source
+identities and cannot replace another installation; copied bytes survive restart.
+JVM tests cover size/malformed-input refusal, closing streams and identity isolation.
 
 Extension and repository rows display the first visible matching installed app's
 icon, loaded locally off the UI thread. Declarative matches use package metadata
 and fixed intent targets; installed-service matches use the discovered package.
 Missing or hidden apps have no icon. Matching does not alter grants or destinations.
-The separate `eva-plugins` repository has been seeded locally with Caffeine,
-Messages, org-agenda and a generated index; GitHub publication remains pending.
+The separate `eva-plugins` repository publishes Caffeine, Messages, org-agenda and
+a generated index. Extensions now has Installed, Browse and Settings tabs, separating
+the app list and grants from repository operations, server credentials and wait budgets.
+Browse has an explicit Refresh plugin repository action; refresh does not install packages.
 
 ### Pixel extension checks on installed build 0f53e78
 

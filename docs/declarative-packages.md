@@ -5,8 +5,8 @@ with an SMS-compose intent. It uses settings grants and attributed handoff
 receipts, with no target-app changes or server credentials. Focused JVM tests
 cover it; [Pixel Caffeine and Messages verification](device-validation-2026-09-14.md) passed.
 The org-agenda HTTP example remains a non-bundled interpreter fixture. HTTPS index
-and raw-package imports are implemented with preview and explicit install. Local file import and
-content-provider execution remain unimplemented. Packages, AppFunctions, and
+and raw-package imports and Android document-picker imports are implemented with preview
+and explicit install. Content-provider execution remains unimplemented. Packages, AppFunctions, and
 [installed extension apps](extension-protocol.md) are the three extension paths;
 generalized AppFunctions is still planned.
 
@@ -58,6 +58,11 @@ Installation uses those exact previewed bytes, without a second download.
 Source and package ID are retained for explicit update checks. A changed version
 does not retain grants, and a digest is not publisher authentication. A package
 can also be copied and hosted independently at a raw HTTPS URL.
+The Browse tab also offers Import plugin file. The system document picker grants
+temporary read access; EVA bounds the stream to the same package size limit and
+copies its exact bytes before preview. No persistent file permission is needed.
+Every file import gets a fresh source and instance identity; reimporting a file
+creates a separate disabled installation. Use a stable HTTPS source for updates.
 Packages optionally declare `androidPackages`, a list of up to 16 Android package
 IDs used only as matching hints. The index requires this field (empty for a
 server-only plugin), and its value must match the downloaded package.
@@ -359,12 +364,15 @@ and wait budgets. It also supports repository refresh, package preview, explicit
 installation/update, and removal. JVM tests exercise a new remote listing reaching
 the registry without rebuilding EVA, plus update grant revocation.
 
-Plugin definitions will live in a separate GitHub repository, not only EVA's
-source/assets. A proposed repository name is `eva-plugins`; no repository has been
-published as part of this branch. Its index and self-contained package files are
+Plugin definitions live in the separate [eva-plugins repository](https://github.com/colonelpanic8/eva-plugins).
+Its index and self-contained package files are
 fetched over HTTPS. Codec-compatible plugin changes require no EVA release.
 New execution mechanisms or unsupported schema features still require app support.
 Bundled files are initial examples/seeds, not the long-term update channel.
+
+The Installed tab contains installed extensions and grants. Browse contains the
+repository URL, Refresh plugin repository, listings and previews. Settings contains
+server credentials and wait budgets. Refreshing listings never installs or grants actions.
 
 The browser prioritizes matching installed apps and labels available updates. Match locally
 using explicit Android package IDs in repository/package metadata, not display

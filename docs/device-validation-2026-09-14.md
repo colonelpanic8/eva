@@ -59,3 +59,18 @@ The app-icon update was installed from the same worktree. A Pixel screenshot
 confirmed Caffeine's installed app icon next to its extension row, with existing
 grants still enabled. Generic Messages has no pinned app match and therefore no
 app icon; matching does not guess a specific messaging app from its display name.
+
+## Published repository and import surfaces
+
+The public eva-plugins GitHub repository was published with Caffeine, Messages and
+org-agenda. All live package hashes match the index. On the Pixel, Extensions →
+Browse → Refresh plugin repository loaded all three listings and recognized
+Caffeine as installed. Installed, Browse and Settings are separate tabs.
+
+The final build adds Import plugin file. Android's document picker selected a
+Caffeine JSON from Downloads; EVA rendered its bounded preview, source, effects
+and fixed component. No extra Caffeine installation or grants were created during
+that preview test. File persistence/isolation and invalid/oversized input are
+JVM-tested. `just format` and `just check` pass. Remote installation and subsequent
+execution still need an end-to-end device test; live browsing and file preview
+are verified independently of the earlier bundled Caffeine execution.
