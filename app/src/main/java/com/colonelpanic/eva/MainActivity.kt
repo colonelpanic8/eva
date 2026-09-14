@@ -1,6 +1,7 @@
 package com.colonelpanic.eva
 
 import android.app.KeyguardManager
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -19,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import com.colonelpanic.eva.assist.AssistantRole
 import com.colonelpanic.eva.audio.MicrophonePermission
 import com.colonelpanic.eva.conversation.ProviderStatus
 import com.colonelpanic.eva.providers.openai.ModelKind
@@ -36,6 +38,7 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     private val voice: VoiceAccessModel by viewModels()
     private var surface by mutableStateOf(Launch.MANUAL)
+    private var deviceAssistant by mutableStateOf(false)
     private val runtimePermissions =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
             voice.requestInFlight = false
@@ -86,6 +89,18 @@ class MainActivity : ComponentActivity() {
         startActivity(
             Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)),
         )
+    }
+
+    /** Whichever of the assistant screens this device actually has. */
+    private fun openAssistantSettings() {
+        for (intent in AssistantRole.settingsIntents()) {
+            try {
+                startActivity(intent)
+                return
+            } catch (_: ActivityNotFoundException) {
+                continue
+            }
+        }
     }
 
     private fun currentLaunch(): Launch = launchFor(intent?.action, intent?.getBooleanExtra(RecognizerIntent.EXTRA_SECURE, false) == true)
@@ -145,6 +160,7 @@ class MainActivity : ComponentActivity() {
             availableRealtimeModels = models[ModelKind.REALTIME].orEmpty(),
             reasoningEffort = reasoningEffort,
             voiceLookupRetries = voiceLookupRetries,
+            isDeviceAssistant = deviceAssistant,
             dynamicColor = dynamicColor,
         )
     }
@@ -175,6 +191,7 @@ class MainActivity : ComponentActivity() {
                 onSelectRealtimeModel = { model -> save { settings.saveRealtimeModel(model) } },
                 onSelectReasoningEffort = { effort -> save { settings.saveReasoningEffort(effort) } },
                 onVoiceLookupRetriesChange = settings::saveVoiceLookupRetries,
+                onOpenAssistantSettings = ::openAssistantSettings,
                 onDynamicColorChange = eva.appearance::saveDynamicColor,
             )
         }
@@ -233,6 +250,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        // Granting the role happens in system settings, so the answer only changes while EVA is away.
+        deviceAssistant = AssistantRole.isEva(this)
         if (surface.locked && !isLocked()) surface = Launch.HANDS_FREE
         eva.intentHost.attach(this) { permission -> capabilityPermission.launch(permission) }
         if (Build.VERSION.SDK_INT >= 37) eva.shizukuShellHost?.attach(this)

@@ -15,6 +15,7 @@ data class SettingsUiState(
     val availableRealtimeModels: List<String> = emptyList(),
     val reasoningEffort: String = OpenAiModels.REASONING_EFFORT,
     val voiceLookupRetries: Int = 5,
+    val isDeviceAssistant: Boolean = false,
     val dynamicColor: Boolean = false,
 ) {
     /** Whether any of the three ways to reach a provider is configured. */
@@ -38,5 +39,6 @@ data class SettingsActions(
     val onSelectRealtimeModel: (String) -> Unit = {},
     val onSelectReasoningEffort: (String) -> Unit = {},
     val onVoiceLookupRetriesChange: (Int) -> Unit = {},
+    val onOpenAssistantSettings: () -> Unit = {},
     val onDynamicColorChange: (Boolean) -> Unit = {},
 )

@@ -195,10 +195,12 @@ mapping is implemented, but remains hardware-unverified. The server was not kill
 from ADB.
 
 EVA declares `ACTION_ASSIST` and `ACTION_VOICE_COMMAND`, so it can be selected as
-the system digital assistant and launched by the assistant gesture. `MainActivity`
-is `singleTask` and reuses its instance for a later assist launch. Typed-mode
+an assist target and launched by the assistant gesture. `MainActivity` is
+`singleTask` and reuses its instance for a later assist launch. Typed-mode
 instructions carry the user's current local time and Unix epoch milliseconds so
-alarms and calendar events can be scheduled from relative language.
+alarms and calendar events can be scheduled from relative language. The digital
+assistant role itself is served by a voice interaction service; see
+[the assistant role](#the-assistant-role).
 
 The phone pins a catalog revision to each connection and independently permits
 one action per input. The dispatcher validates, claims, and durably records
@@ -256,15 +258,70 @@ transcript, with a placeholder if it has not landed. Each turn gets a fresh
 one-action budget. An empty catalog still yields a chat-only session.
 
 Phone actions open other apps. A foreground service with the microphone type
-holds the voice session across that handoff so the spoken confirmation can
-play and the user can keep talking; the session ends when the user stops voice
-or the broker lifetime expires. Android does not allow a background app to
-start an activity, so a second action requested while another app is in front
-will report `NOT_EXECUTED` with a prompt to return to EVA; that is the next
-gap, not a correlation problem.
+holds the voice session across that handoff so the spoken confirmation can play
+and the user can keep talking; the session ends when the user stops voice or the
+broker lifetime expires. Android does not allow a background app to start an
+activity, so a second action requested while another app is in front reports
+`NOT_EXECUTED` with a prompt to return to EVA whenever EVA's own screen is the
+only surface available. A shown assistant panel provides another launch surface;
+see [the assistant role](#the-assistant-role).
 
 No automatic reconnect, requirement tokens, or provider history seeding is
 included.
+
+## The assistant role
+
+`EvaVoiceInteractionService` is what makes EVA selectable as the phone's digital
+assistant, which an `ACTION_ASSIST` activity filter alone does not do. The service
+holds no logic; the system keeps it bound for as long as EVA holds the role, which
+also keeps the application object and its controller resident. Android exposes no
+role request for the assistant the way it does for the default dialer or SMS app,
+so settings reports whether EVA holds it and opens the system screen where the
+user can grant it.
+
+`EvaVoiceInteractionSessionService` builds an `EvaVoiceInteractionSession` that
+the system can show and hide repeatedly. The session draws a Compose panel over
+whatever app is in front rather than replacing it. A session is not an Activity,
+so nothing supplies the lifecycle, view-model, and saved-state owners a
+`ComposeView` resolves from its view tree; `SessionViewOwners` drives them from
+the session callbacks instead. On show, the panel waits for stored conversations
+to load and then connects voice, joins a session that is already live, or
+reports that the microphone grant is missing -- a session has no activity from
+which to request one, so it offers the app instead. A locked phone shows
+transport only, the same as the keyguard launch. Screen context is never read:
+`onHandleAssist` and `onHandleScreenshot` are deliberately not implemented, so
+nothing about the app underneath reaches a provider.
+
+Dismissing the panel does not end the conversation, the same as backgrounding EVA's
+own screen: the foreground service, its ongoing notification, and the system
+microphone indicator all remain, and the panel's own control is how a session is
+stopped.
+
+While the panel is shown it is registered with `AndroidIntentHost` as a launch
+surface; EVA's resumed activity is still preferred. Android rejects
+`startAssistantActivity` from hidden or inactive sessions, so hiding or
+destroying the session removes that surface and a raced rejection reports
+`NOT_EXECUTED`. This does not close the second-action gap once the panel has
+been dismissed. Pending startup is cancelled when the panel hides; an already
+connected voice conversation continues.
+
+A voice interaction service must declare a recognition service, and selecting an
+assistant also makes that recognizer the device-wide default, so a stub here
+would break dictation in unrelated apps. EVA does not transcribe speech itself
+-- its own audio goes straight to a realtime provider -- so
+`EvaRecognitionService` forwards each request to on-device recognition where the
+platform offers it, and otherwise to another installed recognizer, preferring a
+preinstalled one and excluding both EVA build variants. With nothing to forward
+to it reports `ERROR_CLIENT` immediately rather than leaving the caller waiting.
+The manifest declares speech-service visibility for Android 11+. Delegates are
+released after terminal callbacks and cancellation; late callbacks from a
+released delegate are ignored.
+
+None of this section is device-verified. JVM tests cover the decision logic,
+recognizer selection, lifecycle transitions, and launch-surface dispatch;
+assistant-gesture invocation, the panel over another app, keyguard behaviour,
+background action dispatch through the session, and third-party recognition
+through the delegate have not been exercised on hardware or an emulator.
 
 ## Voice action verification
 

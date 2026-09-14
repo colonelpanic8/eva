@@ -5,4 +5,12 @@
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:windowBackground">#F7FAF8</item>
     </style>
+
+    <!-- The assistant session draws its own panel over the app underneath, so its window
+         must not paint an opaque background over that app first. -->
+    <style name="Theme.EVA.Assistant">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
 </resources>

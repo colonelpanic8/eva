@@ -27,6 +27,18 @@ and decoded provider audio on the emulator.
 Native subscription login covers typed conversation and voice. Remote pairing
 to a broker is still not implemented in the Android app.
 
+EVA now registers a voice interaction service, so it can be selected as the
+phone's digital assistant rather than only answering an assist intent. The
+assistant session draws its panel over the app already in front, controls a live
+voice session, keeps the conversation hidden on a locked phone, reads no screen
+context, and provides an app-launch surface while the panel is shown. Android
+rejects launches through hidden sessions, so dismissed-panel follow-up actions
+still require returning to EVA. Because selecting an assistant also replaces the
+device's speech recognizer, EVA's required recognition service delegates to
+on-device recognition or another installed recognizer, and reports an error if
+neither is available. None of the assistant-role behaviour has been exercised on
+a device or emulator yet; JVM tests cover selection, lifecycle, and dispatch
+logic.
 Paseo, AppFunctions, capability-package import, and privileged extensions are not
 integrated. A separate [[file:experiments/device-control/README.md][device-control experiment]] verified Shizuku-backed
 screenshots, UI inspection, text replacement and touch on an Android 16 emulator.
