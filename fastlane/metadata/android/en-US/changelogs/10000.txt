@@ -1,2 +1,3 @@
-* Added: Headset voice buttons start a voice session, which stays on the headset that started it.
+* Added: Headset voice buttons start a voice session. A long-press or Bluetooth voice-recognition request opens EVA straight into voice instead of parking on the connect screen, and a locked phone shows transport controls over the keyguard.
+* Added: Voice sessions stay on the headset that started them. Requests made through headphones now answer and listen on the headphones instead of forcing the phone's speaker and microphone.
 * ...see CHANGELOG.md for the rest.

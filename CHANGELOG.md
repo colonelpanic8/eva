@@ -2,6 +2,17 @@
 
 All notable changes to EVA will be documented here.
 
+## [0.11.0] - 2026-09-13
+
+### Changed
+
+- EVA asks for everything it needs the moment you open it: microphone, contacts, reading and sending texts, and notifications. A voice session that keeps running while the phone is locked or another app is in front cannot put a permission dialog on screen, so anything asked for later arrived too late to help.
+- Voice keeps the microphone while EVA is in the background. The ongoing notification now covers both listening and speaking, so a session survives another app taking over the screen.
+
+### Removed
+
+- The listen-only option, where EVA spoke but never heard you. Voice needs the microphone; when it is declined, EVA offers to ask again or open system settings instead of connecting a half-working session.
+
 ## [0.10.0] - 2026-09-13
 
 ### Added

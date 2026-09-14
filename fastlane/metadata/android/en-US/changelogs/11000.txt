@@ -1,0 +1,2 @@
+* Changed: EVA asks for everything it needs the moment you open it: microphone, contacts, reading and sending texts, and notifications. A voice session that keeps running while the phone is locked or another app is in front cannot put a permission dialog on screen, so anything asked for later arrived too late to help.
+* ...see CHANGELOG.md for the rest.
