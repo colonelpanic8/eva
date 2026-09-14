@@ -172,7 +172,7 @@ non-null scalar. No scripts, filters, inferred success from prose, or polling
 expressions are supported. HTTP execution is not wired yet.
 
 The [org-agenda example](examples/org-agenda.json) contains agenda, default-template
-capture with `values.Title`, and a mova capture handoff. Replace the example HTTPS
+capture with `values.Title`, and a mova create handoff. Replace the example HTTPS
 origin and configure the named basic-auth credential in EVA. It contains no
 credentials. Search uses the server-side `q` and `limit` parameters; it does not filter items locally.
 
@@ -247,18 +247,25 @@ Nested selects are rejected. Both branches must use the capability's execution
 mode, and effect floors account for both. It cannot construct new destinations.
 
 The org-agenda package is the proving case. It exposes `agenda`, `search_todos`,
-`capture`, `complete_todo`, `custom_view`, and a mova capture handoff. Capture
+`capture`, `complete_todo`, `custom_view`, and a mova create handoff. Capture
 always supplies `template` (default `default`) and `values.Title`. Completion
 selects an ID-only request, otherwise requires file, position, and exact title;
-both branches send the literal `strict: true`. The server must implement the
-strict contract before testing: a stale position/title returns HTTP 409 without
-completing anything. The binding declares `result.notExecutedStatuses: [409]`;
+both branches send the literal `strict: true`. The confirmed server contract is
+implemented and tested but not yet deployed:
+a missing/mismatched ID or stale position/title returns HTTP 409 with
+`status: "error"`, `code: "strict_lookup_conflict"`, `message`, and
+`foundTitle` (string or null), without completing anything. The binding declares
+`result.notExecutedStatuses: [409]`;
 these are explicit documented pre-execution rejections (4xx only), never inferred
 from a generic HTTP error. Other uncertain write errors remain `UNKNOWN`.
 
 Search sends `q` and `limit` to `/get-all-todos`. Its `/total` projection follows
 the additive server contract: total matches before limiting, present when q or
-limit was supplied. This field name awaits the server agent's final confirmation.
+limit was supplied. Search is case-insensitive over title, tags, todo state,
+category, and effectiveCategory; exact titles rank first, then title prefixes,
+then other matches. Positive integer limits apply after ranking. Invalid limits
+return HTTP 400 with `status: "error"`, `code: "invalid_query_parameter"`, and
+`message`.
 Item lines carry state, priority, title, scheduled/deadline date and time, tags,
 ID, file, and position. Those fields support strict completion in a subsequent
 request. Omitted custom-view key lists `/custom-views`; a supplied key runs the
@@ -269,3 +276,8 @@ generalized AppFunctions. Installed-service AIDL remains supported and discovere
 but currently has no device-test vehicle. Device verification will be performed
 by the operator after EVA settings/import/execution are reported ready; none of
 these declarations are yet claimed device-ready.
+
+The `open_create` handoff uses `mova://create?title=<encoded text>`. Mova
+creates through its default template and must already be signed in. EVA reports
+only `HANDED_OFF`; opening the link is not creation evidence. The separate
+`mova://capture` route opens the native quick-capture dialog and accepts no title.

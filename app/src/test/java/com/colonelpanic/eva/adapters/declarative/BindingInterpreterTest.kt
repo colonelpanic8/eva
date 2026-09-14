@@ -15,7 +15,7 @@ class BindingInterpreterTest {
         val hostile = "x' OR 1=1 -- &other=y#fragment/😀"
         val intent = PackageCodec.decode(packageJson(intentBinding)).capabilities.single()
         val request = BindingArguments(intent, mapOf("title" to hostile)).intent(intent.binding as DeclarativeBinding.Intent)
-        assertTrue(request.uri.startsWith("mova://capture?title=x%27%20OR%201%3D1"))
+        assertTrue(request.uri.startsWith("mova://create?title=x%27%20OR%201%3D1"))
         assertFalse(request.uri.contains("&other"))
         assertFalse(request.uri.contains("#fragment"))
         val content = PackageCodec.decode(packageJson(contentBinding, "synchronous", false)).capabilities.single()

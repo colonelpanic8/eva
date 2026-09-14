@@ -29,7 +29,7 @@ internal fun packageJson(
     """.trimIndent()
 
 internal val intentBinding = """{"kind":"android.intent","action":"android.intent.action.VIEW",
-"uri":{"base":"mova://capture","query":{"title":{"argument":"title","type":"string"}}}}"""
+"uri":{"base":"mova://create","query":{"title":{"argument":"title","type":"string"}}}}"""
 
 internal val contentBinding = """{"kind":"android.content","authority":"example.todos","uri":"content://example.todos/items",
 "projection":{"title":"string"},"selection":[{"column":"title","operator":"=","value":{"argument":"title","type":"string"}}],
@@ -122,7 +122,7 @@ class PackageCodecTest {
         listOf(
             packageJson(intentBinding).replace("\"type\":\"string\",\"maxLength\":100", "\"type\":\"array\""),
             packageJson(intentBinding.replace("\"kind\":", "\"flags\":1,\"kind\":")),
-            packageJson(intentBinding.replace("mova://capture", "intent://capture")),
+            packageJson(intentBinding.replace("mova://create", "intent://capture")),
             packageJson(intentBinding.replace("\"argument\":\"title\",\"type\":\"string\"", "\"argument\":\"title\",\"type\":\"integer\"")),
             packageJson(intentBinding).replace("\"reconciliation\":\"none\"", "\"reconciliation\":\"poll\""),
             packageJson(intentBinding).replace("\"mode\":\"handoff\"", "\"mode\":\"synchronous\""),
@@ -152,7 +152,7 @@ class PackageCodecTest {
         assertEquals(packageDefinition.digest, PackageCodec.decode(reordered.toString()).digest)
         assertNotEquals(
             packageDefinition.digest,
-            PackageCodec.decode(packageJson(intentBinding.replace("mova://capture", "other://capture"))).digest,
+            PackageCodec.decode(packageJson(intentBinding.replace("mova://create", "other://capture"))).digest,
         )
         assertNotEquals(packageDefinition.digest, PackageCodec.decode(packageJson(intentBinding, effect = "unknown")).digest)
         assertThrows(

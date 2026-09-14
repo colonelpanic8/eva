@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "id": "community.org-agenda",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "title": "Org agenda",
   "capabilities": [
     {
@@ -594,8 +594,8 @@
     },
     {
       "tool": {
-        "name": "open_capture",
-        "description": "Open mova with a title for the user to finish capturing. This is a handoff, not verified creation.",
+        "name": "open_create",
+        "description": "Ask mova to create a todo with the default template. Requires mova to be signed in. This is a handoff, not verified creation.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -611,7 +611,7 @@
           "additionalProperties": false
         }
       },
-      "title": "Open mova capture",
+      "title": "Create through mova",
       "effects": "external_handoff",
       "execution": {
         "mode": "handoff",
@@ -625,7 +625,7 @@
         "kind": "android.intent",
         "action": "android.intent.action.VIEW",
         "uri": {
-          "base": "mova://capture",
+          "base": "mova://create",
           "query": {
             "title": {
               "argument": "title",

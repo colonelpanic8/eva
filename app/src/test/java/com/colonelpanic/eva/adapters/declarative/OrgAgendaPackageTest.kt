@@ -56,7 +56,17 @@ class OrgAgendaPackageTest {
         assertEquals(JsonPrimitive(42), Json.parseToJsonElement(byPosition.body).jsonObject["pos"])
         assertThrows(Exception::class.java) { request("complete_todo", mapOf("title" to "Test title")) }
         assertThrows(Exception::class.java) { request("complete_todo", mapOf("file" to "/todos.org", "pos" to "42")) }
-        assertEquals(InvocationStatus.NOT_EXECUTED, BindingResults.http(complete, HttpResponse(409, """{"status":"error"}""")).status)
+        assertEquals(
+            InvocationStatus.NOT_EXECUTED,
+            BindingResults
+                .http(
+                    complete,
+                    HttpResponse(
+                        409,
+                        """{"status":"error","code":"strict_lookup_conflict","message":"Stale reference","foundTitle":null}""",
+                    ),
+                ).status,
+        )
     }
 
     @Test
@@ -89,6 +99,16 @@ class OrgAgendaPackageTest {
             BindingResults.http(list, HttpResponse(200, """{"views":[{"key":"w","name":"Work"}]}""")).message,
         )
         assertTrue(request("custom_view", mapOf("key" to "w")).second.url.endsWith("/custom-view?key=w"))
+    }
+
+    @Test
+    fun `mova create handoff encodes the title without injecting extra parameters`() {
+        val capability = capability("open_create")
+        val binding = capability.binding as DeclarativeBinding.Intent
+        val request = BindingArguments(capability, mapOf("title" to "Pay rent & state=DONE?#")).intent(binding)
+        assertEquals("mova://create?title=Pay%20rent%20%26%20state%3DDONE%3F%23", request.uri)
+        assertEquals(com.colonelpanic.eva.capability.ExecutionMode.HANDOFF, capability.execution.mode)
+        assertEquals(PackageEffect.HANDOFF, capability.effect)
     }
 
     @Test
