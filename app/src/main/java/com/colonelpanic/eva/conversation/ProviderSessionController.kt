@@ -25,10 +25,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.flow.update
@@ -56,6 +59,14 @@ class ProviderSessionController(
 ) {
     private val mutableState = MutableStateFlow(ConversationState())
     val state = mutableState.asStateFlow()
+
+    /**
+     * Signals the model hanging up, as opposed to a disconnect the user or a failure caused.
+     * A surface that only exists to host the call, such as the assistant panel, can close itself
+     * on this; nothing is replayed, so a surface that was not listening at the time stays put.
+     */
+    private val mutableHangUps = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    val hangUps = mutableHangUps.asSharedFlow()
     private var media: RealtimeMediaSession? = null
     private var connectionJob: Job? = null
     private val actionJobs = mutableSetOf<Job>()
@@ -506,6 +517,7 @@ class ProviderSessionController(
     private fun hangUp() {
         finishInput("Conversation ended.")
         disconnect()
+        mutableHangUps.tryEmit(Unit)
     }
 
     private fun finishInput(message: String) {

@@ -4,9 +4,15 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Added
+
+- A Screen control switch removes screen observation, tapping, and text replacement from newly opened provider sessions and rejects calls from stale sessions after it is switched off. It defaults to on so existing installations keep their current behavior.
+- The OpenAI provider layer can seed replacement sessions from prior user and assistant messages, action receipts, and session notes. Responses sessions can continue an existing turn without submitting another user message, while realtime voice waits for every history item to be acknowledged before reconnecting the microphone. The thread controller does not invoke this path yet.
+
 ### Changed
 
 - The conversation reads as threads. Each session opens with a divider naming its mode and model ("Text session · gpt-5.6-sol") and closes with "Session ended"; within a turn, the actions the model ran hang off a branch under the request, ahead of the answer, instead of appearing as unrelated cards.
+- When EVA ends a voice conversation itself, the assistant panel closes with it, so a request that opened an app leaves you in that app instead of behind EVA's panel. Stopping the conversation yourself leaves the panel up, and EVA's own screen is never closed by a hang-up.
 
 ### Fixed
 
