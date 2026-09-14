@@ -6,6 +6,7 @@ import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
+import android.os.Bundle
 import android.view.KeyEvent
 import kotlin.math.roundToInt
 
@@ -25,6 +26,16 @@ interface MediaSessionAccess {
     fun send(
         packageName: String,
         command: MediaCommand,
+    ): Boolean
+
+    /**
+     * Asks a live session to play whatever the words match, the way a car's voice button does.
+     * This reaches an app that refuses EVA as a media browser client, because the session came
+     * from the notification-listener grant rather than from the app's own allow list.
+     */
+    fun playFromSearch(
+        packageName: String,
+        query: String,
     ): Boolean
 
     /** The unprivileged path: a media button reaches whatever is playing, unseen and unconfirmed. */
@@ -69,6 +80,15 @@ class AndroidMediaSessions(
             // A session has no toggle; the caller resolves one against the session's own state first.
             MediaCommand.TOGGLE -> controls.play()
         }
+        return true
+    }
+
+    override fun playFromSearch(
+        packageName: String,
+        query: String,
+    ): Boolean {
+        val controls = controllers().firstOrNull { it.packageName == packageName }?.transportControls ?: return false
+        controls.playFromSearch(query, Bundle.EMPTY)
         return true
     }
 

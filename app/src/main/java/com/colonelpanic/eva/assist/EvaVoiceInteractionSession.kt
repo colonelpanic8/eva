@@ -132,7 +132,7 @@ class EvaVoiceInteractionSession(
                 val loaded = eva.controller.state.first { !it.isLoading }
                 val next = assistantStart(MicrophonePermission.isGranted(context), loaded.voiceMode, loaded.providerStatus)
                 needsMicrophone = next == AssistantStart.NEEDS_MICROPHONE
-                if (next == AssistantStart.CONNECT) eva.controller.connectVoice(eva.settings.hostLink())
+                if (next == AssistantStart.CONNECT) eva.controller.connectVoice(eva.settings.hostLink(), newThread = true)
             }
     }
 

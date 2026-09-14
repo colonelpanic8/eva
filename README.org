@@ -30,15 +30,27 @@ to a broker is still not implemented in the Android app.
 Media control works through Android's media session rather than through any
 app-specific integration: pausing, resuming, skipping, stopping, reading what is
 playing, and media volume reach any app that publishes transport controls.
-Starting something by name prefers the media browser interface Android Auto uses,
-which starts a cold app and reports what actually began playing, and falls back to
-the documented play-from-search intent for an app that rejects EVA as a client.
+Starting something by name asks the app's own media session when it has one,
+the same request a car's voice button makes, then the media browser interface
+Android Auto uses to start a cold app, and finally the documented play-from-search
+intent for an app that rejects EVA as a client; an app like Spotify that answers
+that intent with a results screen is then asked through the session it brought
+up, and EVA reports what actually began playing.
 Seeing what is playing, choosing between two playing apps, and confirming a
 command took effect need notification access, which the settings screen explains
 and opens; without it the media button still carries play, pause, and skip
 unconfirmed. Media sessions answer from the background, so these are the first
-capabilities that work with EVA off screen. None of this has been exercised
-against a real media app on a device yet.
+capabilities that work with EVA off screen. Beyond the report that Spotify
+answers the play-by-name intent with a search screen, none of this has been
+exercised against a real media app on a device yet.
+
+Queueing is the exception to all of that, because Android's framework transport
+controls cannot add to another app's queue. EVA uses Spotify's Web API when the
+user connects it, and also discovers installed players that expose searchable,
+editable queues through the public Media3 library contract. Jellyfin implements
+that contract; YouTube Music has no documented queue API and can work only if
+its installed app exposes the Media3 route. Unsupported apps are answered by
+naming the available providers instead of a bare refusal.
 
 EVA now registers a voice interaction service, so it can be selected as the
 phone's digital assistant rather than only answering an assist intent. The
@@ -86,6 +98,15 @@ blocks new execution. JVM tests cover the runtime with a fake connection layer,
 including uncertainty and removal. *Device verification against a real installed
 provider has not happened yet.* Search then complete still requires separate user
 requests; in-turn approval and live catalog rotation are deferred.
+The system prompt is a YAML file the user owns rather than text inside the app:
+a list of components with their own instructions, scope, and on/off state, which
+EVA assembles at the start of every session. The stock prompt is written to that
+file on first run, and the file can be EVA's own copy or any file chosen through
+the system picker, so it can live in a synced folder or a git checkout and be
+edited there. Ending a call is one such component with two stock alternatives:
+hang up once the request is done, or stay on the line until asked. The format is
+described in [[file:docs/prompt.md][the prompt file]].
+
 AppFunctions settings
 control and an experimental device-control backend use Shizuku when it is
 installed and explicitly authorized. On Android 11 and later, the device backend

@@ -98,6 +98,27 @@ internal fun ConnectBar(
     }
 }
 
+/** A turn task is running on the shown thread. Hanging up does not end it; this does. */
+@Composable
+internal fun WorkingRow(
+    onStop: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = "EVA is working on the last request",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onStop) { Text("Stop") }
+    }
+}
+
 /**
  * Provider trouble outlives the connect area: a media failure or an interrupted tool
  * exchange arrives mid-session, when the connect bar is not on screen at all.

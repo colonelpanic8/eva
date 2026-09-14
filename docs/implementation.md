@@ -14,8 +14,11 @@ from an older connection, including unaffected tools; reconnect to refresh it.
 Backend owners must change binding revisions when authority or semantics change.
 
 The journal migrates integer revisions to text without rewriting fingerprints
-or historical outcomes. JVM tests cover migration/recovery, snapshot replacement,
-and stale/unadvertised calls. One action per request still includes reads.
+or historical outcomes. Schema 5 accepts both the threads and extensions branch
+layouts, preserving thread links, arguments, and receipt provenance. JVM tests
+cover migration/recovery, snapshot replacement, and stale/unadvertised calls.
+The thread controller allows bounded native read chaining and one mutation per
+request. Imported mutations after a tool result require a separate user request.
 `EvaApplication` now composes action-scoped PackageManager discovery, the copied
 asynchronous AIDL contract, a generic execution backend, and settings grants.
 `CapabilityAdapter` owns discovery and yields definitions/backends;
@@ -23,8 +26,8 @@ asynchronous AIDL contract, a generic execution backend, and settings grants.
 Shizuku. Discovery is on; each extension starts disabled and mutations require
 separate grants. The common runtime wraps all adapters with grants; settings,
 admission, journaling, and receipts do not select a transport. Declarative
-packages and a general Shizuku `AppFunctionsAdapter` are being built as sibling
-paths; neither is implemented yet. There is no developer gate.
+packages are implemented as a sibling path; the generalized Shizuku
+`AppFunctionsAdapter` remains queued. There is no developer gate.
 Exactly one advertised service per package is accepted. Bindings use explicit
 components and `BIND_AUTO_CREATE`; identity includes user, package, component,
 current signing certificate set, UID, and installation timestamp. Shared-UID
@@ -33,7 +36,9 @@ Discovery runs at startup, activity resume, manual refresh, and debounced packag
 events on an IO scope, with at most four concurrent descriptions and one in-flight
 transaction per provider. Describe has a five-second elapsedRealtime deadline.
 
-Providers are listed disabled. Enabling grants claimed reads; write and unknown
+Installed extensions appear as collapsed plugin rows; expanding a row shows
+indented action permissions. Existing grants persist across restarts and unchanged
+contracts. Providers are listed disabled. Enabling grants claimed reads; write and unknown
 effects require individual switches. Settings explains disclosure to the configured
 model and that effects are provider claims. Grants are stored atomically in
 no-backup internal storage and bound to identity plus the canonical descriptor
@@ -135,12 +140,12 @@ re-enablement after the adapter identity transition.
 
 ## Android provider and action runtime
 
-The Compose app now uses `ProviderSessionController` and a provider-neutral
+The Compose app now uses `ThreadController` and a provider-neutral
 conversation port. `BrokerConversationProvider` projects the phone catalog into
 Codex dynamic tools, submits ordinary text, adapts correlated events, and returns
 actual dispatcher outcomes. The development `/device` WebSocket uses an ephemeral
-broker code and localhost forwarding. Subscription credentials stay on the host;
-there is no native OpenAI login or API-key fallback.
+broker code and localhost forwarding. Native ChatGPT login and the API-key
+alternative are also implemented; see the account sections below.
 
 Twenty-three bundled capabilities are described by `CapabilityDefinition` records with
 closed JSON Schemas: map search, driving navigation, message drafting, sending a
@@ -217,35 +222,56 @@ returns `NOT_EXECUTED` rather than a claimed change. EVA's own voice runs on
 
 ### Starting something by name
 
-Starting content that is not already loaded is a different problem, and the media
-session API cannot do it: a session exists only once an app is running, so
-"play Black Hole Sun on Spotify" from cold has nothing to talk to.
-`eva.android.media.play` uses `MediaPlayBackend`, which tries two general
+Starting content that is not already loaded is a different problem, and a
+media session alone cannot do it: a session exists only once an app is running,
+so "play Black Hole Sun on Spotify" from cold has nothing to talk to.
+`eva.android.media.play` uses `MediaPlayBackend`, which tries three general
 mechanisms in order.
 
-`MediaBrowserService` is preferred. It is the platform interface Android Auto and
-Wear OS use to play content in arbitrary media apps: connecting starts the app's
-media service, and the session it hands back accepts
-`MediaController.TransportControls.playFromSearch`. It targets one app exactly,
-needs no screen, and leaves a session EVA can read back, so the outcome can say
-what actually started rather than that a request was sent. The framework
-`android.media.browse.MediaBrowser` is used directly; no media-compat dependency
-was added. Connection is bounded at four seconds and the browser is held briefly
-before disconnecting, because an app may stop a media service that has no clients
-and nothing playing yet. Disconnecting does not stop playback: the session
-outlives the browser connection that revealed it.
+A session the app already holds comes first. `MediaController.TransportControls.playFromSearch`
+on it is the same request a car's voice button makes, and it reaches an app that
+refuses EVA as a media browser client, because the controller came from the
+notification-listener grant rather than from the app's own allow list. Named,
+the session must belong to that app; unnamed, a session that declares
+`ACTION_PLAY_FROM_SEARCH` is the app the user is already using, so it is asked
+rather than a chooser. This works from a locked phone. Only a session that
+declares the action is used this way, so an app that does not take searches
+falls through instead of silently ignoring the request.
+
+With no such session, `MediaBrowserService` is tried for a named app. It is the
+platform interface Android Auto and Wear OS use to play content in arbitrary
+media apps: connecting starts the app's media service, and the session it hands
+back accepts the same `playFromSearch`. It needs no screen and leaves a session
+EVA can read back. The framework `android.media.browse.MediaBrowser` is used
+directly; no media-compat dependency was added. Connection is bounded at four
+seconds and the browser is held briefly before disconnecting, because an app may
+stop a media service that has no clients and nothing playing yet. Disconnecting
+does not stop playback: the session outlives the browser connection that
+revealed it.
 
 The app decides in `onGetRoot` whether to accept the caller, and many allow-list
-Android Auto, Wear OS, and Google's assistant by package and signature. A refusal
-is therefore an expected answer and not a failure. `MediaPlayBackend` falls back
-to `MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH`, the documented intent any
-app can register, which needs EVA on screen to launch. When the browser refused
-and no screen is available, the outcome states both facts rather than one.
+Android Auto, Wear OS, and Google's assistant by package and signature; Spotify
+is one of them. A refusal is therefore an expected answer and not a failure.
+`MediaPlayBackend` falls back to `MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH`,
+the documented intent any app can register, which needs EVA on screen to launch.
+When the browser refused and no screen is available, the outcome states both
+facts rather than one.
 
-With no app named, an app already holding a session that declares
-`ACTION_PLAY_FROM_SEARCH` is preferred, because that is the app the user is
-already using and it works from a locked phone. Anything less certain is left to
-the intent, where the phone's own chooser applies.
+Spotify answers that intent with a results screen and does not play, which is
+what made "play X on Spotify" from cold end at a search page. The intent still
+brings the app up, and with it a session, so after the intent has been sent the
+backend waits, reads the sessions again, and asks the session that the intent
+produced to play the words after all. Named, that is whichever session now
+carries the app's name; unnamed, only a session that was not there before is
+attributed to the intent. A session the intent has already started playing is
+not asked twice, and a session that does not declare `ACTION_PLAY_FROM_SEARCH`
+is left alone, so the intent's own outcome stands for apps that do play from it.
+
+Confirmation reads the session back up to three times, a settle apart, and stops
+as soon as it shows something new: playing where it was paused, or a different
+title. A track the session already showed before the request is not evidence
+that the request matched, so "still playing the old song" is reported as unknown
+rather than as success.
 
 This is the part of Google's assistant that is not reproducible in full. Its
 "play X on Y" also rests on App Actions built-in intents (`actions.intent.PLAY_MEDIA`),
@@ -255,10 +281,80 @@ on `MEDIA_CONTENT_CONTROL`, which is privileged. What is left to a third-party
 assistant is the browser path plus the intent, which is what EVA does.
 
 JVM tests cover routing, toggle resolution, the confirmation rules, the ungranted
-fallback, the refused volume change, the media-service refusal falling back to the
-intent, and target selection with and without a named app. None of the media
-behaviour has been exercised against a real media app on a device yet, so which
-apps accept EVA as a `MediaBrowserService` client is unmeasured.
+fallback, the refused volume change, a live session being asked ahead of the
+browser, the media-service refusal falling back to the intent, the intent being
+followed up through the session it brought up and not being followed up when it
+already played, and target selection with and without a named app. That "play X on
+Spotify" ended at Spotify's search screen was reported from a device, which is
+the intent path; that Spotify's session honours `playFromSearch` from EVA's
+controller has not been confirmed on a device yet.
+
+### Queueing a track
+
+Queueing is the one media request that has no general answer on Android. The
+framework's transport controls carry play, pause, skip, seek, and
+`playFromSearch` but nothing that appends to a queue; a session's queue is
+readable through `getQueue` and cannot be added to; the session callback an app
+implements has no add-to-queue entry; and the framework `MediaBrowser` has no
+search, so there is also no generic way to turn spoken words into the media ID
+a queue item would need.
+
+Media3 adds an optional public library contract on top of those framework
+limits. A `MediaLibraryService` can expose search results as items with its own
+media IDs and can grant a controller permission to change its playlist. EVA
+discovers exported services advertising that contract, searches the named app,
+inserts the first playable result immediately after the current item, and reads
+the timeline back before reporting success. Apps remain free to reject the
+connection, omit search, or withhold playlist editing, so this is an open
+extension point rather than universal queue access.
+
+`eva.android.media.queue` therefore works through `QueueProvider`: one
+implementation per queue route. A provider carries the label the user would
+say, decides whether a spoken app name means it, says whether it is available,
+and queues the best match for the words. `MediaQueueBackend` holds the list and
+chooses between them. `SpotifyQueueProvider` is registered explicitly, while
+`MediaLibraryQueueProvider` instances are created from the compatible services
+installed on the phone. An app that EVA can play through but not queue on is the
+expected case rather than a failure: it has no provider, and the reply names the
+apps that do have one instead of only refusing. A named app that no provider
+covers, a provider the user has not connected yet, and more than one available
+provider with no app named are each answered with what to do about it. Nothing
+is queued in any of those cases, and the message says so.
+
+Spotify refuses EVA as a media browser client, so its Web API is the only route
+to its queue. The
+optional connection uses OAuth Authorization Code with PKCE and no client
+secret. The user supplies the Client ID from their own Spotify developer app,
+whose redirect URI must include `eva://spotify`. EVA generates a one-time
+verifier, S256 challenge, and state; `SpotifyRedirectActivity` receives the
+browsable redirect, verifies the state through the pending coordinator, trades
+the code for tokens, fetches the account profile, and returns the existing EVA
+task to settings. The Client ID stays in ordinary settings preferences. Tokens
+and the profile are serialized in `SecretStore`, and an expiring access token is
+refreshed under a mutex. The pending verifier is held in memory only, so a
+process death while the user is in the browser is reported as a mismatched
+sign-in to retry rather than silently accepted.
+
+Spotify restricts queue changes to Premium accounts. It also queues onto a
+device rather than an app, so the provider prefers the device Spotify reports as
+active, uses the only device when there is exactly one, and otherwise leaves the
+choice to Spotify, which answers with its own reason when nothing is active.
+Both restrictions reach the user as stated reasons rather than a claimed
+success. JVM tests cover PKCE, redirect-state checking, token-refresh timing,
+provider selection and every refusal message, device selection, and user-facing
+failures. This flow has not been exercised against Spotify on a device,
+including the developer dashboard's current redirect-URI acceptance rules.
+
+The official Jellyfin Android app is the first concrete candidate for the open
+Media3 route: its exported `LibraryService` implements search-result lookup,
+resolves its media IDs in `onAddMediaItems`, and grants playlist operations
+through its session callback. EVA's JVM tests cover discovery-independent
+provider matching and delegation, while compilation verifies the Media3 client
+surface. No device is attached to this development host, so queue insertion has
+not yet been exercised against Jellyfin or YouTube Music. YouTube's documented
+Data API exposes videos, playlists, and library data rather than the YouTube
+Music app's live playback queue; YouTube Music will only work here if the
+installed app advertises and grants the Media3 library contract.
 
 ## Sending a text message
 
@@ -421,7 +517,8 @@ assistant role itself is served by a voice interaction service; see
 [the assistant role](#the-assistant-role).
 
 The phone pins a catalog revision to each connection and independently permits
-one action per input. The dispatcher validates, claims, and durably records
+bounded reads and one mutation per input. Imported mutations after a tool result
+require a new user request. The dispatcher validates, claims, and durably records
 `Dispatching` before entering Android. Repeated IDs replay receipts; conflicting
 arguments cannot reuse a call. Process recovery marks interrupted dispatches
 `Unknown` and unsent claims `NotExecuted`, without replay. A journal failure
@@ -481,10 +578,17 @@ and the user can keep talking; the session ends when the user stops voice, the
 model ends the conversation, or the broker lifetime expires.
 
 A spoken session also advertises one tool that is not a phone action: ending the
-conversation. The model is told to say a brief goodbye and then call it when the
-user says goodbye, says they are done, or asks it to hang up. The controller
-handles it without the dispatcher or journal and returns no result, because a
-result would prompt the model to speak again. It hangs up once the provider
+conversation. When the model should call it is not fixed: it is said by whichever
+prompt components are enabled, and the stock file ships two alternatives in one
+slot. "One request" is the phone-assistant call, told to say a short closing line
+and hang up once nothing is outstanding without asking whether there is anything
+else; "Open conversation" is told that a finished request is no reason to hang up
+and to end the call only when the user says goodbye, says that is all, or asks
+for it. Each rewords the tool through its `describe` entry, so the two produce
+different catalog revisions and a connection still pins exactly one. See
+[the prompt file](prompt.md) for the mechanism. The controller handles the call without the
+dispatcher or journal and returns no result, because a result would prompt the
+model to speak again. It hangs up once the provider
 reports that the goodbye has finished reaching the phone, plus a short playout
 tail, and at most ten seconds after the call if that report never comes. The
 direct realtime provider reports this from the WebRTC `output_audio_buffer`
@@ -497,6 +601,35 @@ see [the assistant role](#the-assistant-role).
 
 No automatic reconnect, requirement tokens, or provider history seeding is
 included.
+
+## The prompt file
+
+There is no prompt text in the app that the user cannot see. The system prompt is
+assembled at every connection from `eva-prompt.yaml`, a list of components each
+with an instruction, whether it applies to voice, text, or both, an `enabled`
+flag, an optional slot in which only one component may be enabled, and optional
+tool adjustments: `describe` replaces a tool's description by id and `hide`
+withholds tools from the model. `{{clock}}` and `{{lookup_retries}}` are
+substituted; a reference to anything else, a duplicate id, a malformed id, or two
+enabled components in one slot is reported with the component's id, and an
+unknown key is reported with its line, because the file is meant to be edited by
+hand. Wrapped lines inside an instruction join with spaces and a blank line
+starts a new paragraph, so the file can be wrapped like prose and still diff.
+
+`PromptDefaults` is the stock prompt, written to the file when the file is
+absent or empty and again on reset; after that the file is the only source.
+`PromptStore` keeps EVA's own copy in the external files directory, reachable
+over USB and `adb` without a permission, or adopts a document the user picks
+through the system picker with the persisted grant those pickers give, which is
+how the file can live in a synced folder or a checkout. A picked file is parsed
+before it replaces anything and an empty one is filled with the current prompt.
+The store reads the file for every session and writes it only for an edit made
+in the app, so an external edit applies to the next session without a reload
+step, and a file that fails to parse fails the connection with the parser's
+message instead of falling back to something the user did not write. The prompt
+screen shows the components as switches over their `enabled` fields, edits one
+component's text and scope, and adds or removes components; slots and tool
+adjustments are edited in the file. `docs/prompt.md` documents the format.
 
 ## The assistant role
 
@@ -819,10 +952,23 @@ with uncertainty reserved for interrupted or unknown outcomes.
 The conversation is rendered as grouped turns rather than a flat stream. Each session
 is bracketed by dividers naming its mode and model ("Text session ·
 gpt-5.6-sol", "Session ended"), and each turn shows its request, the actions the
-model ran for it on a branch beneath, then the answer. Actions carry the ID of
-the turn that ran them in memory only; restored history still renders one card
-per receipt. There is one provider session at a time; the model cannot open a
-second one.
+model ran for it on a branch beneath, then the answer.
+
+Conversations are durable threads, and a voice call or text connection is an
+attachment to one. `ThreadController` gives each accepted request a turn task
+in a thread-owned scope, so ending the attachment no longer cancels it: an
+unfinished turn re-homes onto a background Responses leg seeded with the
+thread's history and finishes there, reported by notification when nothing is
+attached. Turn identity belongs to the store, because a realtime session
+numbers its own turns from scratch and two sessions on one thread would
+otherwise collide. A turn reserves at most one side-effecting action in the
+store, so a fresh leg cannot claim a second, and may make up to eight
+read-only lookups. Hands-free and assist launches start a new thread; the
+drawer lists threads and reopens them, which seeds the session with what was
+said. One attachment is live at a time; background legs may coexist with it.
+`TurnWorkService` (`shortService`) covers work with no voice session live and
+interrupts it rather than leaving it half-done if Android runs out of
+patience. Design and remaining slices: [threads](threads.md).
 
 ## Voice recheck
 

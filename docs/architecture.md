@@ -705,9 +705,10 @@ The [installed-service protocol](extension-protocol.md) lets an author expose
 structured result envelopes from their own app on supported stock Android,
 without Shizuku. Discovery is on; it never grants execution authority.
 
-Installed-service and shipped declarative HTTP/intent paths are implemented and
-JVM-tested; device verification is outstanding. Declarative imports and
-the generalized AppFunctions adapter remain planned. See [package design](declarative-packages.md)
+Installed-service and declarative HTTP/intent paths and file/HTTPS imports are
+implemented and JVM-tested. Caffeine and Messages intent handoffs are device-tested;
+installed-service IPC and HTTP execution remain unverified on a device.
+The generalized AppFunctions adapter remains planned. See [package design](declarative-packages.md)
 for HTTPS repository import, content queries, and the future App Actions
 investigation. Additions appear on the next connection; revocation blocks new
 dispatch. In-turn approval, catalog rotation, polling, and MCP remain deferred.
@@ -790,7 +791,7 @@ Instruction bundles can add vocabulary and workflows referencing installed
 capability IDs. They have no independent execution privileges. Separately
 installed Android extension apps use the versioned IPC contract linked above,
 with caller identity and explicit grants. Shipped declarative HTTP and intent
-packages are also implemented; file/repository import and remote MCP remain later work.
+packages and file/repository imports are implemented; remote MCP remains later work.
 
 ### Declarative package sketch
 

@@ -1,8 +1,8 @@
 # Threads: sessions as front-ends, work that outlives the call
 
 Design for the thread model. Reviewed by a second model on 2026-09-14; the
-decisions below fold that review in. `docs/implementation.md` says what is
-actually built.
+decisions below fold that review in. Slice 1 is built (see the slice list at
+the end); `docs/implementation.md` says what is actually built.
 
 ## Model
 

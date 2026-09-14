@@ -327,13 +327,11 @@ then bundled tools, then extensions sorted by fully qualified capability ID.
 Overflow remains discovered and is shown unavailable with an explanation; it
 never silently evicts bundled tools or crashes the conversation.
 
-**One action per request, including reads.** Current
-`ProviderSessionController.dispatch()` claims the first call regardless of
-`CapabilityDefinition.readOnly`. A different call in the request is refused.
-The comment saying a turn may run several reads does not describe implemented
-behavior. Search then complete requires separate user requests in v1. Mutations
-proposed after a tool result in the same request are refused. No in-turn/spoken
-confirmation, pending approval tokens, or autonomous mutation grants in this pass.
+**Bounded reads, one mutation per request.** `ThreadController` allows bounded
+read chaining, but imported mutations proposed after a tool result are refused.
+Search then complete therefore requires separate user requests in v1. Enabling
+an extension does not authorize autonomous follow-up mutations. No in-turn/spoken
+confirmation or pending approval tokens are implemented.
 
 Dispatched operations are journaled independently of result delivery. Removal or
 conversation close does not undo external work. Historical receipts retain

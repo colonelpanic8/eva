@@ -8,6 +8,7 @@ class FakeMediaSessions(
 ) : MediaSessionAccess {
     val sent = mutableListOf<Pair<String, MediaCommand>>()
     val buttons = mutableListOf<MediaCommand>()
+    val searches = mutableListOf<Pair<String, String>>()
     var volumeChange: Pair<VolumeAction, Int?>? = null
 
     override fun observable() = granted
@@ -20,6 +21,14 @@ class FakeMediaSessions(
     ): Boolean {
         sent += packageName to command
         return sessions().any { it.packageName == packageName }
+    }
+
+    override fun playFromSearch(
+        packageName: String,
+        query: String,
+    ): Boolean {
+        searches += packageName to query
+        return true
     }
 
     override fun sendMediaButton(command: MediaCommand): Boolean {

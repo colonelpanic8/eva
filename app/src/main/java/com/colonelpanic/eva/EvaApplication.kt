@@ -1,12 +1,14 @@
 package com.colonelpanic.eva
 
 import android.app.Application
+import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
 import androidx.core.content.pm.PackageInfoCompat
 import com.colonelpanic.eva.adapters.android.AndroidExtensionConnector
 import com.colonelpanic.eva.adapters.android.AndroidIntentHost
 import com.colonelpanic.eva.adapters.android.AndroidMediaLauncher
+import com.colonelpanic.eva.adapters.android.AndroidMediaLibraryQueueClient
 import com.colonelpanic.eva.adapters.android.AndroidMediaSessions
 import com.colonelpanic.eva.adapters.android.AppFunctionsBackend
 import com.colonelpanic.eva.adapters.android.ContactHistory
@@ -16,7 +18,9 @@ import com.colonelpanic.eva.adapters.android.DeviceControlHost
 import com.colonelpanic.eva.adapters.android.IntentBackend
 import com.colonelpanic.eva.adapters.android.MapIntentBackend
 import com.colonelpanic.eva.adapters.android.MediaControlBackend
+import com.colonelpanic.eva.adapters.android.MediaLibraryQueueProvider
 import com.colonelpanic.eva.adapters.android.MediaPlayBackend
+import com.colonelpanic.eva.adapters.android.MediaQueueBackend
 import com.colonelpanic.eva.adapters.android.MessageIntentBackend
 import com.colonelpanic.eva.adapters.android.MessageTargets
 import com.colonelpanic.eva.adapters.android.MessagingReadBackend
@@ -26,6 +30,7 @@ import com.colonelpanic.eva.adapters.android.NavigationIntentBackend
 import com.colonelpanic.eva.adapters.android.ObservationStore
 import com.colonelpanic.eva.adapters.android.ShizukuShellHost
 import com.colonelpanic.eva.adapters.android.SmsSendBackend
+import com.colonelpanic.eva.adapters.android.SpotifyQueueProvider
 import com.colonelpanic.eva.adapters.android.UiControlBackend
 import com.colonelpanic.eva.adapters.android.observeExtensionPackages
 import com.colonelpanic.eva.audio.RealtimeMediaConfig
@@ -40,14 +45,21 @@ import com.colonelpanic.eva.capability.extensions.ExtensionDiscovery
 import com.colonelpanic.eva.capability.extensions.ExtensionGrants
 import com.colonelpanic.eva.capability.extensions.ExtensionRuntime
 import com.colonelpanic.eva.capability.extensions.InstalledServiceAdapter
-import com.colonelpanic.eva.conversation.ProviderSessionController
 import com.colonelpanic.eva.conversation.ProviderStatus
+import com.colonelpanic.eva.conversation.ThreadController
+import com.colonelpanic.eva.conversation.TurnWorkHost
+import com.colonelpanic.eva.conversation.TurnWorkService
+import com.colonelpanic.eva.conversation.WorkNotifications
 import com.colonelpanic.eva.data.AppearanceSettings
 import com.colonelpanic.eva.data.CapabilitySettings
 import com.colonelpanic.eva.data.ChatGptAccountStore
 import com.colonelpanic.eva.data.ChosenNumbers
 import com.colonelpanic.eva.data.ExtensionGrantFile
+import com.colonelpanic.eva.data.JournalDatabase
 import com.colonelpanic.eva.data.OpenAiSettings
+import com.colonelpanic.eva.data.PromptStore
+import com.colonelpanic.eva.data.SpotifyAccountStore
+import com.colonelpanic.eva.data.SqliteConversationStore
 import com.colonelpanic.eva.data.SqliteInvocationRepository
 import com.colonelpanic.eva.providers.BrokerConversationProvider
 import com.colonelpanic.eva.providers.BrokerEndpoint
@@ -59,19 +71,24 @@ import com.colonelpanic.eva.providers.openai.OpenAiModelCatalog
 import com.colonelpanic.eva.providers.openai.OpenAiRealtimeProvider
 import com.colonelpanic.eva.providers.openai.OpenAiResponsesProvider
 import com.colonelpanic.eva.providers.openai.SubscriptionAccess
+import com.colonelpanic.eva.providers.spotify.SpotifyApi
+import com.colonelpanic.eva.providers.spotify.SpotifyConnect
+import com.colonelpanic.eva.providers.spotify.SpotifyLogin
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 class EvaApplication :
     Application(),
-    VoiceSessionHost {
+    VoiceSessionHost,
+    TurnWorkHost {
     val intentHost = AndroidIntentHost()
     val shizukuShellHost by lazy { if (Build.VERSION.SDK_INT >= 37) ShizukuShellHost(this) else null }
 
@@ -88,6 +105,7 @@ class EvaApplication :
     private val messagingStore by lazy { MessagingStore(this) }
     private val mediaSessions by lazy { AndroidMediaSessions(this) }
     private val mediaLauncher by lazy { AndroidMediaLauncher(this) }
+    private val mediaLibraryQueue by lazy { AndroidMediaLibraryQueueClient(this) }
     private val messageTargets by lazy { MessageTargets(intentHost, messagingStore) }
     private val chosenNumbers by lazy { ChosenNumbers(this) }
 
@@ -98,8 +116,13 @@ class EvaApplication :
     val settings by lazy { OpenAiSettings(this) }
     val appearance by lazy { AppearanceSettings(this) }
     val capabilities by lazy { CapabilitySettings(this) }
+    val prompts by lazy { PromptStore(this) }
     val chatGpt by lazy { ChatGptAccountStore(this) }
     val signIn by lazy { ChatGptSignIn(save = chatGpt::save) }
+    private val spotifyLogin by lazy { SpotifyLogin() }
+    val spotify by lazy { SpotifyAccountStore(this, spotifyLogin) }
+    val spotifyConnect by lazy { SpotifyConnect(spotifyLogin, spotify::save) }
+    private val spotifyApi by lazy { SpotifyApi(spotify::accessToken) }
     private var signInJob: Job? = null
     private val catalog = OpenAiModelCatalog()
     private val mutableModels = MutableStateFlow<Map<ModelKind, List<String>>>(emptyMap())
@@ -114,6 +137,8 @@ class EvaApplication :
     override fun toggleVoiceMicrophone() = controller.toggleMicrophone()
 
     override fun endVoiceSession() = controller.disconnect()
+
+    override fun interruptWork(reason: String) = controller.interruptAll(reason)
 
     private val packageInfo by lazy { runCatching { packageManager.getPackageInfo(packageName, 0) }.getOrNull() }
 
@@ -130,6 +155,11 @@ class EvaApplication :
             settings.apiKey() != null -> ApiKeyAccess(settings.requireApiKey())
             else -> null
         }
+
+    /** Prompt edits outlive the screen that made them, so they run here rather than in an activity scope. */
+    fun editPrompt(action: suspend PromptStore.() -> Unit) {
+        scope.launch { prompts.action() }
+    }
 
     /** Best effort: the picker still accepts a typed model name when this fails. */
     fun refreshModels() {
@@ -160,7 +190,17 @@ class EvaApplication :
         refreshModels()
     }
 
+    fun completeSpotifyRedirect(uri: Uri) {
+        scope.launch { spotifyConnect.complete(uri) }
+    }
+
     val registry by lazy {
+        val queueProviders =
+            listOf(
+                SpotifyQueueProvider(spotifyApi) {
+                    spotify.account.value != null && spotify.clientId.value != null
+                },
+            ) + mediaLibraryQueue.apps().map { MediaLibraryQueueProvider(it, mediaLibraryQueue) }
         CapabilityRegistry(
             buildMap {
                 putAll(
@@ -218,6 +258,8 @@ class EvaApplication :
                                     NativeIntents.playMedia(this@EvaApplication, it)
                                 },
                             ),
+                        CapabilityRegistry.MEDIA_QUEUE to
+                            MediaQueueBackend(queueProviders),
                     ),
                 )
                 shizukuShellHost?.let { host ->
@@ -370,10 +412,13 @@ class EvaApplication :
 
     private val contactKeywords by lazy { ContactNameKeywords(this, ::contactHistory) }
     val controller by lazy {
-        val repository = SqliteInvocationRepository(this)
-        ProviderSessionController(
+        val journal = JournalDatabase(this, SqliteInvocationRepository.DATABASE_NAME)
+        val repository = SqliteInvocationRepository(journal)
+        ThreadController(
             registry = registry,
             dispatcher = CapabilityDispatcher(registry, repository),
+            store = SqliteConversationStore(journal),
+            onBackgroundAnswer = { WorkNotifications.answered(this, it) },
             // A blank link means the phone talks to OpenAI itself; a link means the paired host bridge.
             providerFactory = { link ->
                 if (link.isBlank()) {
@@ -398,6 +443,7 @@ class EvaApplication :
             voiceLookupRetries = { settings.voiceLookupRetries },
             voiceKeywords = { contactKeywords.names() },
             hiddenCapabilities = { if (capabilities.screenControlEnabled) emptySet() else CapabilityRegistry.SCREEN_CONTROL },
+            prompt = { prompts.load() },
         ).also { controller ->
             scope.launch {
                 controller.state.collect { mutableVoiceSession.value = VoiceSessionStatus(it.mediaState, it.mediaControls) }
@@ -408,6 +454,15 @@ class EvaApplication :
                     .distinctUntilChanged()
                     .collect { active ->
                         if (active) VoiceSessionService.start(this@EvaApplication) else VoiceSessionService.stop(this@EvaApplication)
+                    }
+            }
+            scope.launch {
+                // A turn that outlives its call needs the process kept alive; the voice service already does that.
+                combine(controller.working, controller.state) { working, state ->
+                    working.isNotEmpty() && !(state.voiceMode && state.providerStatus != ProviderStatus.DISCONNECTED)
+                }.distinctUntilChanged()
+                    .collect { active ->
+                        if (active) TurnWorkService.start(this@EvaApplication) else TurnWorkService.stop(this@EvaApplication)
                     }
             }
         }

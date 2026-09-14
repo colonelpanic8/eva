@@ -20,8 +20,10 @@ import com.colonelpanic.eva.capability.CapabilityDispatcher
 import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.conversation.EntryStatus
-import com.colonelpanic.eva.conversation.ProviderSessionController
 import com.colonelpanic.eva.conversation.ProviderStatus
+import com.colonelpanic.eva.conversation.ThreadController
+import com.colonelpanic.eva.data.JournalDatabase
+import com.colonelpanic.eva.data.SqliteConversationStore
 import com.colonelpanic.eva.data.SqliteInvocationRepository
 import com.colonelpanic.eva.providers.openai.ApiKeyAccess
 import com.colonelpanic.eva.providers.openai.OpenAiRealtimeProvider
@@ -103,13 +105,15 @@ class OpenAiVoiceActionLiveTest {
                         }.createAudioDeviceModule()
                 val factory = PeerConnectionFactory.builder().setAudioDeviceModule(module).createPeerConnectionFactory()
                 module.release()
-                val repository = SqliteInvocationRepository(context)
+                val journal = JournalDatabase(context, SqliteInvocationRepository.DATABASE_NAME)
+                val repository = SqliteInvocationRepository(journal)
                 val audioManager = context.getSystemService(AudioManager::class.java)
                 val controller =
-                    ProviderSessionController(
+                    ThreadController(
                         registry = app.registry,
                         dispatcher = CapabilityDispatcher(app.registry, repository),
                         repository = repository,
+                        store = SqliteConversationStore(journal),
                         scope = this,
                         providerFactory = { error("Typed path is not exercised here") },
                         mediaFactory = {

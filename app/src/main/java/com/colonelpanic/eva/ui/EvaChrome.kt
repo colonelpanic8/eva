@@ -11,13 +11,18 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -31,8 +36,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.colonelpanic.eva.R
+import com.colonelpanic.eva.conversation.ThreadSummary
 
 /**
  * The app bar wears [androidx.compose.material3.ColorScheme.primaryContainer] rather than
@@ -62,6 +69,10 @@ internal fun EvaDrawerSheet(
     providerLabel: String,
     current: EvaDestination,
     onSelect: (EvaDestination) -> Unit,
+    threads: List<ThreadSummary> = emptyList(),
+    shownThreadId: String? = null,
+    onNewThread: () -> Unit = {},
+    onShowThread: (String) -> Unit = {},
 ) {
     // The sheet's own insets are dropped so the header's blue runs behind the status bar
     // instead of leaving a bare surface strip above it.
@@ -88,8 +99,28 @@ internal fun EvaDrawerSheet(
         Spacer(Modifier.height(12.dp))
         DrawerDestination("Conversation", Icons.Filled.Home, EvaDestination.CONVERSATION, current, onSelect)
         DrawerDestination("Extensions", Icons.Filled.List, EvaDestination.EXTENSIONS, current, onSelect)
+        DrawerDestination("Prompt", Icons.Filled.Edit, EvaDestination.PROMPT, current, onSelect)
         DrawerDestination("Settings", Icons.Filled.Settings, EvaDestination.SETTINGS, current, onSelect)
         DrawerDestination("About", Icons.Filled.Info, EvaDestination.ABOUT, current, onSelect)
+        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+        NavigationDrawerItem(
+            label = { Text("New conversation") },
+            icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+            selected = false,
+            onClick = onNewThread,
+            modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
+        )
+        LazyColumn {
+            items(threads, key = { it.id }) { thread ->
+                NavigationDrawerItem(
+                    label = { Text(thread.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    badge = { if (thread.working) Text("Working…", style = MaterialTheme.typography.labelSmall) },
+                    selected = thread.id == shownThreadId && current == EvaDestination.CONVERSATION,
+                    onClick = { onShowThread(thread.id) },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
+                )
+            }
+        }
     }
 }
 

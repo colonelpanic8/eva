@@ -322,6 +322,32 @@ object BundledCapabilities {
                 }
             },
             CapabilityDefinition(
+                CapabilityRegistry.MEDIA_QUEUE,
+                "Queue something next",
+                "Add a song to the queue in a music app so it plays after what is playing now, without " +
+                    "interrupting it. Use this when the user says queue, play next, or add to the queue; use the " +
+                    "play action when they want it to start now. Android offers no universal way into another app's " +
+                    "queue, so this reaches Spotify when connected or an installed player that exposes searchable " +
+                    "Media3 library queueing. An unsupported app is answered by naming the ones EVA can reach. EVA " +
+                    "searches the app for the words and queues the top match, then reports the track it queued.",
+                schema(
+                    """
+                {"type":"object","properties":{
+                "query":{"type":"string","minLength":1,"maxLength":300,
+                "description":"The song, as the user would say it, with the artist when known"},
+                "app":{"type":"string","minLength":1,"maxLength":100,
+                "description":"Which app should queue it; omit when only one available app can queue"}},
+                "required":["query"],"additionalProperties":false}
+            """,
+                ),
+            ) { args ->
+                if (args.getValue("query").isBlank() || args.getValue("query").any(Char::isISOControl)) {
+                    "Say what to queue on one line."
+                } else {
+                    null
+                }
+            },
+            CapabilityDefinition(
                 CapabilityRegistry.MEDIA_VOLUME,
                 "Change the media volume",
                 "Set or step this phone's media volume. It moves music and video only, not the ringer, alarms, " +

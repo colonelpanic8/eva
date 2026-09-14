@@ -4,7 +4,6 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
-import android.database.sqlite.SQLiteOpenHelper
 import com.colonelpanic.eva.capability.CapabilityDispatcher
 import com.colonelpanic.eva.capability.ClaimResult
 import com.colonelpanic.eva.capability.InvocationRecord
@@ -20,11 +19,13 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 class SqliteInvocationRepository(
-    context: Context,
-    databaseName: String = DATABASE_NAME,
+    private val helper: JournalDatabase,
 ) : InvocationRepository,
     AutoCloseable {
-    private val helper = JournalDatabase(context.applicationContext, databaseName)
+    constructor(
+        context: Context,
+        databaseName: String = DATABASE_NAME,
+    ) : this(JournalDatabase(context, databaseName))
 
     override suspend fun recoverInterrupted() =
         withContext(Dispatchers.IO) {
@@ -73,6 +74,8 @@ class SqliteInvocationRepository(
                                 },
                             )
                             put("provenance_json", record.provenance?.toJson()?.toString())
+                            put("thread_id", record.threadId)
+                            put("turn_id", record.turnId)
                         }
                     db.insertOrThrow("invocations", null, values)
                     ClaimResult(record, true)
@@ -101,6 +104,23 @@ class SqliteInvocationRepository(
         withContext(Dispatchers.IO) {
             helper.readableDatabase.query("invocations", null, null, null, null, null, "rowid DESC", "100").use { cursor ->
                 buildList { while (cursor.moveToNext()) add(cursor.record()) }.reversed()
+            }
+        }
+
+    override suspend fun byCallIds(ids: Collection<String>): Map<String, InvocationRecord> =
+        withContext(Dispatchers.IO) {
+            buildMap {
+                ids.distinct().chunked(MAX_QUERY_ARGUMENTS).forEach { chunk ->
+                    val placeholders = chunk.joinToString(",") { "?" }
+                    helper.readableDatabase
+                        .query("invocations", null, "call_id IN ($placeholders)", chunk.toTypedArray(), null, null, null)
+                        .use { cursor ->
+                            while (cursor.moveToNext()) {
+                                val record = cursor.record()
+                                put(record.callId, record)
+                            }
+                        }
+                }
             }
         }
 
@@ -148,47 +168,15 @@ class SqliteInvocationRepository(
             title = getColumnIndexOrThrow("title").let { if (isNull(it)) null else getString(it) },
             arguments = nullableJson("arguments_json")?.mapValues { it.value.jsonPrimitive.content },
             provenance = nullableJson("provenance_json")?.let(ReceiptProvenance::fromJson),
+            threadId = getColumnIndexOrThrow("thread_id").let { if (isNull(it)) null else getString(it) },
+            turnId = getColumnIndexOrThrow("turn_id").let { if (isNull(it)) null else getString(it) },
         )
 
     private fun Cursor.nullableJson(column: String): JsonObject? =
         getColumnIndexOrThrow(column).let { if (isNull(it)) null else Json.parseToJsonElement(getString(it)).jsonObject }
 
-    private class JournalDatabase(
-        context: Context,
-        name: String,
-    ) : SQLiteOpenHelper(context, name, null, 4) {
-        override fun onCreate(db: SQLiteDatabase) {
-            db.execSQL(
-                "CREATE TABLE invocations (call_id TEXT PRIMARY KEY NOT NULL, fingerprint TEXT NOT NULL, " +
-                    "request TEXT NOT NULL, destination TEXT, status TEXT NOT NULL, message TEXT NOT NULL, created_at INTEGER NOT NULL, " +
-                    "capability_id TEXT NOT NULL, catalog_revision TEXT NOT NULL, title TEXT, arguments_json TEXT, provenance_json TEXT)",
-            )
-        }
-
-        override fun onUpgrade(
-            db: SQLiteDatabase,
-            oldVersion: Int,
-            newVersion: Int,
-        ) {
-            check(oldVersion in 1..3 && newVersion == 4)
-            if (oldVersion < 3) {
-                if (oldVersion == 1) db.execSQL("ALTER TABLE invocations ADD COLUMN title TEXT")
-                db.execSQL("ALTER TABLE invocations RENAME TO invocations_legacy")
-                onCreate(db)
-                db.execSQL(
-                    "INSERT INTO invocations (call_id, fingerprint, request, destination, status, message, created_at, " +
-                        "capability_id, catalog_revision, title) SELECT call_id, fingerprint, request, destination, status, message, " +
-                        "created_at, capability_id, CAST(catalog_revision AS TEXT), title FROM invocations_legacy ORDER BY rowid",
-                )
-                db.execSQL("DROP TABLE invocations_legacy")
-            } else {
-                db.execSQL("ALTER TABLE invocations ADD COLUMN arguments_json TEXT")
-                db.execSQL("ALTER TABLE invocations ADD COLUMN provenance_json TEXT")
-            }
-        }
-    }
-
     companion object {
         const val DATABASE_NAME = "eva-actions.db"
+        private const val MAX_QUERY_ARGUMENTS = 900
     }
 }

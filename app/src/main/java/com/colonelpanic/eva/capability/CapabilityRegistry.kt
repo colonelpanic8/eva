@@ -11,7 +11,7 @@ import java.util.Collections
 class CapabilityRegistry(
     backends: Map<String, ExecutionBackend>,
     definitions: List<CapabilityDefinition> = BundledCapabilities.definitions,
-    bindingRevisions: Map<String, String> = backends.keys.associateWith { "native:9" },
+    bindingRevisions: Map<String, String> = backends.keys.associateWith { "native:10" },
 ) {
     private val admission = Mutex()
 
@@ -23,7 +23,7 @@ class CapabilityRegistry(
     suspend fun replace(
         backends: Map<String, ExecutionBackend>,
         definitions: List<CapabilityDefinition> = BundledCapabilities.definitions,
-        bindingRevisions: Map<String, String> = backends.keys.associateWith { "native:9" },
+        bindingRevisions: Map<String, String> = backends.keys.associateWith { "native:10" },
     ) {
         val candidate = Snapshot.create(backends, definitions, bindingRevisions)
         admission.withLock { current = candidate }
@@ -143,6 +143,7 @@ class CapabilityRegistry(
         const val MEDIA_CONTROL = "eva.android.media.control"
         const val MEDIA_NOW_PLAYING = "eva.android.media.nowplaying"
         const val MEDIA_PLAY = "eva.android.media.play"
+        const val MEDIA_QUEUE = "eva.android.media.queue"
         const val MEDIA_VOLUME = "eva.android.media.volume"
         const val UI_OBSERVE = "eva.device.observe"
         const val UI_TAP = "eva.device.tap"

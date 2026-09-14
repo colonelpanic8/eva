@@ -42,6 +42,10 @@
         <intent>
             <action android:name="android.media.browse.MediaBrowserService" />
         </intent>
+        <!-- Media3 library apps that expose searchable items and accept queue additions. -->
+        <intent>
+            <action android:name="androidx.media3.session.MediaLibraryService" />
+        </intent>
     </queries>
 
     <application
@@ -109,6 +113,24 @@
                 android:resource="@mipmap/ic_launcher" />
         </activity>
 
+        <!-- Receives Spotify's browser redirect and returns the existing EVA task to settings. -->
+        <activity
+            android:name=".SpotifyRedirectActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data
+                    android:host="spotify"
+                    android:scheme="eva" />
+            </intent-filter>
+        </activity>
+
         <!-- Carries EVA's notification access, which is the only grant an unprivileged app can hold
              that lets MediaSessionManager reveal other apps' media sessions. It overrides nothing:
              notifications arrive while the grant is on and are ignored. Without the grant, media
@@ -128,6 +150,14 @@
             android:exported="false"
             android:foregroundServiceType="microphone|mediaPlayback"
             tools:targetApi="30" />
+
+        <!-- Finishes a turn after its call ended. Short by design: a turn that cannot finish in
+             the allowance is interrupted and said so, not left half-done in the dark. -->
+        <service
+            android:name=".conversation.TurnWorkService"
+            android:exported="false"
+            android:foregroundServiceType="shortService"
+            tools:targetApi="34" />
 
         <!-- Holding the assistant role, rather than only answering ACTION_ASSIST, is what puts
              EVA behind the assist gesture and lets it answer over another app. Only the system

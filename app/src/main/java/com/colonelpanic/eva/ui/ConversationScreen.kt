@@ -65,6 +65,7 @@ internal fun ConversationScreen(
     state: ConversationState,
     hasCredential: Boolean,
     onSubmit: (String) -> Unit,
+    onStopTask: () -> Unit = {},
     onConnect: () -> Unit,
     onVoice: () -> Unit,
     onDisconnect: () -> Unit,
@@ -124,6 +125,7 @@ internal fun ConversationScreen(
                     )
                 }
                 state.providerMessage?.let { ProviderMessage(it) }
+                if (state.working) WorkingRow(onStop = onStopTask)
                 if (!inSession) {
                     ConnectBar(
                         state = state,

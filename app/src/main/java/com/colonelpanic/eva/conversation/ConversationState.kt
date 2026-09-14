@@ -4,7 +4,11 @@ import com.colonelpanic.eva.audio.MediaControls
 import com.colonelpanic.eva.audio.RealtimeMediaState
 
 data class ConversationState(
+    /** The thread on screen; null until one exists. */
+    val threadId: String? = null,
     val entries: List<ConversationEntry> = emptyList(),
+    /** A turn task is running on the shown thread, attached or not. */
+    val working: Boolean = false,
     val isLoading: Boolean = true,
     val isSubmitting: Boolean = false,
     val errorMessage: String? = null,
@@ -60,3 +64,11 @@ enum class EntryStatus {
     ANSWER,
     SESSION,
 }
+
+/** One row of the thread list. */
+data class ThreadSummary(
+    val id: String,
+    val title: String,
+    val updatedAtMillis: Long,
+    val working: Boolean,
+)

@@ -16,6 +16,59 @@ import java.util.UUID
 @Config(sdk = [28], application = Application::class, manifest = Config.NONE)
 class JournalMigrationTest {
     @Test
+    fun `thread and extension journal branches migrate without losing their distinct columns`() =
+        runBlocking {
+            val context = RuntimeEnvironment.getApplication()
+            for (version in listOf(3, 4)) {
+                val name = "branch-migration-${UUID.randomUUID()}.db"
+                try {
+                    context.openOrCreateDatabase(name, 0, null).use { db ->
+                        val extras = if (version == 3) "thread_id TEXT, turn_id TEXT" else "arguments_json TEXT, provenance_json TEXT"
+                        db.execSQL(
+                            "CREATE TABLE invocations (call_id TEXT PRIMARY KEY NOT NULL, fingerprint TEXT NOT NULL, request TEXT NOT NULL, destination TEXT, status TEXT NOT NULL, message TEXT NOT NULL, created_at INTEGER NOT NULL, capability_id TEXT NOT NULL, catalog_revision ${if (version == 3) "INTEGER" else "TEXT"} NOT NULL, title TEXT, $extras)",
+                        )
+                        val values = if (version == 3) "'thread','turn'" else "'{\"title\":\"kept\"}',null"
+                        db.execSQL(
+                            "INSERT INTO invocations VALUES ('call','fingerprint','request',null,'COMPLETED','done',1,'action',10,'Title',$values)",
+                        )
+                        if (version == 3) {
+                            db.execSQL(
+                                "CREATE TABLE threads (id TEXT PRIMARY KEY NOT NULL, title TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
+                            )
+                            db.execSQL("INSERT INTO threads VALUES ('thread','Kept thread',1,1)")
+                        }
+                        db.version = version
+                    }
+                    SqliteInvocationRepository(context, name).use { journal ->
+                        val record = journal.history().single()
+                        assertEquals("10", record.catalogRevision)
+                        assertEquals("fingerprint", record.fingerprint)
+                        if (version == 3) {
+                            assertEquals("thread", record.threadId)
+                            assertEquals("turn", record.turnId)
+                        } else {
+                            assertEquals(mapOf("title" to "kept"), record.arguments)
+                        }
+                    }
+                    val database = JournalDatabase(context, name)
+                    try {
+                        assertEquals(5, database.readableDatabase.version)
+                        if (version == 3) {
+                            database.readableDatabase.rawQuery("SELECT title FROM threads", null).use {
+                                check(it.moveToFirst())
+                                assertEquals("Kept thread", it.getString(0))
+                            }
+                        }
+                    } finally {
+                        database.close()
+                    }
+                } finally {
+                    context.deleteDatabase(name)
+                }
+            }
+        }
+
+    @Test
     fun `integer revisions migrate preserving fingerprints titles order and recovery`() =
         runBlocking {
             val context = RuntimeEnvironment.getApplication()

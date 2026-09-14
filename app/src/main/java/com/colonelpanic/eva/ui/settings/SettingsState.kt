@@ -3,6 +3,7 @@ package com.colonelpanic.eva.ui.settings
 import com.colonelpanic.eva.capability.extensions.ExtensionSettings
 import com.colonelpanic.eva.providers.openai.OpenAiModels
 import com.colonelpanic.eva.providers.openai.SignInState
+import com.colonelpanic.eva.providers.spotify.SpotifyConnectState
 
 /** Everything the settings screen renders, collected once by the activity. */
 data class SettingsUiState(
@@ -27,6 +28,10 @@ data class SettingsUiState(
     val canSeeMediaSessions: Boolean = false,
     val canControlScreen: Boolean = false,
     val screenControlEnabled: Boolean = true,
+    val spotifyClientId: String? = null,
+    val spotifyAccount: String? = null,
+    val spotifyPremium: Boolean? = null,
+    val spotifyConnect: SpotifyConnectState = SpotifyConnectState.Idle,
     val dynamicColor: Boolean = false,
 ) {
     /** Whether any of the three ways to reach a provider is configured. */
@@ -65,5 +70,9 @@ data class SettingsActions(
     val onOpenAssistantSettings: () -> Unit = {},
     val onOpenMediaControlSettings: () -> Unit = {},
     val onScreenControlChange: (Boolean) -> Unit = {},
+    val onSaveSpotifyClientId: (String) -> String? = { null },
+    val onConnectSpotify: () -> String? = { null },
+    val onCancelSpotifyConnect: () -> Unit = {},
+    val onDisconnectSpotify: () -> Unit = {},
     val onDynamicColorChange: (Boolean) -> Unit = {},
 )
