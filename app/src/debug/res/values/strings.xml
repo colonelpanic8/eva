@@ -1,0 +1,4 @@
+<resources>
+    <!-- The debug build installs beside the release one, so the launcher has to say which is which. -->
+    <string name="app_name">EVA Debug</string>
+</resources>

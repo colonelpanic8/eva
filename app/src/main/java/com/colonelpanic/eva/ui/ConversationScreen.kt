@@ -42,11 +42,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import com.colonelpanic.eva.R
 import com.colonelpanic.eva.conversation.ConversationState
 import com.colonelpanic.eva.conversation.ProviderStatus
 
@@ -96,7 +98,7 @@ internal fun ConversationScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("EVA", style = MaterialTheme.typography.titleLarge)
+                        Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleLarge)
                         Text(text = state.providerLabel, style = MaterialTheme.typography.labelMedium)
                     }
                 },
