@@ -92,6 +92,14 @@ sealed interface ProviderEvent {
         val text: String,
     ) : ProviderEvent
 
+    /**
+     * Whether assistant audio is still being delivered to the phone. Only a provider that
+     * observes its own audio output reports this; the rest never send it.
+     */
+    data class AssistantSpeaking(
+        val speaking: Boolean,
+    ) : ProviderEvent
+
     data class Failure(
         val message: String,
     ) : ProviderEvent

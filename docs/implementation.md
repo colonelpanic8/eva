@@ -259,8 +259,19 @@ one-action budget. An empty catalog still yields a chat-only session.
 
 Phone actions open other apps. A foreground service with the microphone type
 holds the voice session across that handoff so the spoken confirmation can play
-and the user can keep talking; the session ends when the user stops voice or the
-broker lifetime expires. Android does not allow a background app to start an
+and the user can keep talking; the session ends when the user stops voice, the
+model ends the conversation, or the broker lifetime expires.
+
+A spoken session also advertises one tool that is not a phone action: ending the
+conversation. The model is told to say a brief goodbye and then call it when the
+user says goodbye, says they are done, or asks it to hang up. The controller
+handles it without the dispatcher or journal and returns no result, because a
+result would prompt the model to speak again. It hangs up once the provider
+reports that the goodbye has finished reaching the phone, plus a short playout
+tail, and at most ten seconds after the call if that report never comes. The
+direct realtime provider reports this from the WebRTC `output_audio_buffer`
+events; the broker reports no playback, so there the call hangs up at once.
+Typed sessions do not offer the tool. Android does not allow a background app to start an
 activity, so a second action requested while another app is in front reports
 `NOT_EXECUTED` with a prompt to return to EVA whenever EVA's own screen is the
 only surface available. A shown assistant panel provides another launch surface;
