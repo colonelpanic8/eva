@@ -688,10 +688,23 @@ with uncertainty reserved for interrupted or unknown outcomes.
 The conversation is rendered as grouped turns rather than a flat stream. Each session
 is bracketed by dividers naming its mode and model ("Text session ·
 gpt-5.6-sol", "Session ended"), and each turn shows its request, the actions the
-model ran for it on a branch beneath, then the answer. Actions carry the ID of
-the turn that ran them in memory only; restored history still renders one card
-per receipt. There is one provider session at a time; the model cannot open a
-second one.
+model ran for it on a branch beneath, then the answer.
+
+Conversations are durable threads, and a voice call or text connection is an
+attachment to one. `ThreadController` gives each accepted request a turn task
+in a thread-owned scope, so ending the attachment no longer cancels it: an
+unfinished turn re-homes onto a background Responses leg seeded with the
+thread's history and finishes there, reported by notification when nothing is
+attached. Turn identity belongs to the store, because a realtime session
+numbers its own turns from scratch and two sessions on one thread would
+otherwise collide. A turn reserves at most one side-effecting action in the
+store, so a fresh leg cannot claim a second, and may make up to eight
+read-only lookups. Hands-free and assist launches start a new thread; the
+drawer lists threads and reopens them, which seeds the session with what was
+said. One attachment is live at a time; background legs may coexist with it.
+`TurnWorkService` (`shortService`) covers work with no voice session live and
+interrupts it rather than leaving it half-done if Android runs out of
+patience. Design and remaining slices: [threads](threads.md).
 
 ## Voice recheck
 

@@ -26,7 +26,7 @@ fun projectEntries(
         when (item) {
             is ThreadItem.UserMessage -> {
                 if (turnId != null) {
-                    requests.putIfAbsent(turnId, item.text)
+                    if (turnId !in requests) requests[turnId] = item.text
                 } else {
                     place(item.id)
                     built[item.id] = ConversationEntry(item.id, item.text, "", EntryStatus.ANSWER)
