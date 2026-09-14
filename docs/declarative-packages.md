@@ -116,7 +116,7 @@ Duplicate JSON keys, unknown fields, invalid Unicode, and unsupported versions
 are rejected. Object ordering does not affect the canonical contract digest.
 The package ID is a lowercase dotted name; capability names are ASCII identifiers.
 
-Each capability contains `tool`, `title`, `execution`, `binding`, and optionally
+Each capability contains `tool`, `title`, `execution`, `binding`, and optionally `validators`, `receipts`, and
 `effects` (`read`, `write`, `external_handoff`, or `unknown`; omission means
 unknown). `tool` is exactly an MCP tool object: `name`, `description`, `inputSchema`.
 Inputs are a closed object with scalar string/integer/number/boolean properties,
@@ -137,8 +137,8 @@ schema; literal types must match their values. Argument slots never change
 binding authority. Optional query slots omit a missing argument. Required path
 and selection slots must have a value before anything is submitted.
 
-Intent fields: `kind`, `action`, `uri: {base, query?}`, optional `extras` and
-`package`. `query` and `extras` are maps of fixed names to typed slots. The base
+Intent fields: `kind`, `action`, optional `uri: {base, query?}`, `extras`,
+`package`, `mimeType`, and `packageByName`. `query` and `extras` are maps of fixed names to typed slots. The base
 has no existing query, fragment, or user info. Parsed intent, file, content,
 JavaScript, and data URI schemes are rejected by this binding; use the content
 binding for provider reads.
@@ -175,3 +175,38 @@ The [org-agenda example](examples/org-agenda.json) contains agenda, default-temp
 capture with `values.Title`, and a mova capture handoff. Replace the example HTTPS
 origin and configure the named basic-auth credential in EVA. It contains no
 credentials. Search is omitted because v1 has no client-side text filter.
+
+## Named validation, receipt copy, and bundled migration
+
+Optional `validators` maps string argument names to a closed set of validator
+names. V1 names are `phoneNumber` (EVA's existing single-phone syntax), `httpUrl`
+(absolute HTTP(S) URL with a host and no user info), and `emailAddress` (one
+bounded address, without whitespace or recipient-list separators). Unknown names
+are rejected at import; validators cannot supply code, regular expressions, or
+weaken schema checks. An omitted optional argument is not validated. Named
+checks run again before constructing any request.
+
+Optional `receipts` contains `success` and/or `handlerMissing`, each at most 1,000
+characters. These are attributed display data, not model instructions, executable
+templates, or proof of completion. Handoff copy cannot upgrade `HANDED_OFF` to
+`COMPLETED`. Receipt fields and validators participate in the contract digest.
+
+`mimeType` is a fixed MIME type. `packageByName` names a string tool argument
+containing the target app's visible name, and is mutually exclusive with fixed
+`package`. The Android host must resolve a unique eligible installed app by its
+visible label and explicitly set that package; missing or ambiguous matches are
+refused. It must not interpret the argument as a component or package identifier.
+If declared, an absent or blank app name is refused, never changed to a chooser.
+This supports an untyped `ACTION_SEND` / `text/plain` handoff after host integration.
+A URI may be omitted for intents that carry only extras.
+
+After declarative and generalized AppFunctions adapters land, migrate bundled
+pure intent capabilities into bundled files using this codec, preserving native
+operations in Kotlin. The migration includes map search, navigation, SMS compose,
+alarm, timer, dial, web search, URL opening, email compose, calendar event, and
+settings, plus the generic share-to-app handoff. Report those commits separately
+with the before/after Kotlin line count. Preserve existing behavior: conversation
+recipient resolution, calendar end-time calculation, and fixed settings-action
+selection must not silently disappear during the template migration. Any remaining
+native resolution belongs behind a declared native operation, not arbitrary
+scripts or model-controlled intent fields. No bundled capability has migrated yet.

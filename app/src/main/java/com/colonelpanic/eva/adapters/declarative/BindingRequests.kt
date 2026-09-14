@@ -11,6 +11,9 @@ data class IntentRequest(
     val uri: String,
     val extras: Map<String, JsonPrimitive>,
     val targetPackage: String?,
+    val mimeType: String? = null,
+    val appName: String? = null,
+    val receipts: ReceiptText = ReceiptText(),
 )
 
 data class ContentRequest(
@@ -32,7 +35,7 @@ data class HttpRequest(
 )
 
 class BindingArguments(
-    capability: PackageCapability,
+    private val capability: PackageCapability,
     arguments: Map<String, String>,
 ) {
     private val values =
@@ -40,6 +43,16 @@ class BindingArguments(
             capability.inputSchema,
             ExtensionProtocol.encodeArguments(capability.inputSchema, arguments),
         )
+
+    init {
+        capability.validators.forEach { (argument, validator) ->
+            values[argument]?.let {
+                require(
+                    NamedValidators.accepts(validator, (it as JsonPrimitive).content),
+                ) { "Named validation failed" }
+            }
+        }
+    }
 
     private fun value(slot: ScalarSlot): JsonPrimitive? =
         when (slot) {
@@ -52,7 +65,13 @@ class BindingArguments(
         val uri = binding.uriBase + if (query.isEmpty()) "" else query.joinToString("&", "?")
         val extras = binding.extras.mapNotNull { (name, slot) -> value(slot)?.let { name to it } }.toMap()
         require(uri.toByteArray(Charsets.UTF_8).size <= ExtensionProtocol.ARGUMENT_BYTES)
-        return IntentRequest(binding.action, uri, extras, binding.targetPackage)
+        val appName =
+            binding.packageByName?.let { name ->
+                requireNotNull(values[name] as? JsonPrimitive) { "Name the target app" }.content.also {
+                    require(it.isNotBlank() && it.length <= 100 && it.none(Char::isISOControl))
+                }
+            }
+        return IntentRequest(binding.action, uri, extras, binding.targetPackage, binding.mimeType, appName, capability.receipts)
     }
 
     fun content(binding: DeclarativeBinding.Content): ContentRequest {

@@ -24,6 +24,13 @@ data class PackageCapability(
     val effect: PackageEffect,
     val execution: ExecutionSemantics,
     val binding: DeclarativeBinding,
+    val validators: Map<String, String> = emptyMap(),
+    val receipts: ReceiptText = ReceiptText(),
+)
+
+data class ReceiptText(
+    val success: String? = null,
+    val handlerMissing: String? = null,
 )
 
 sealed interface ScalarSlot {
@@ -57,6 +64,8 @@ sealed interface DeclarativeBinding {
         val query: Map<String, ScalarSlot>,
         val extras: Map<String, ScalarSlot>,
         val targetPackage: String?,
+        val mimeType: String? = null,
+        val packageByName: String? = null,
     ) : DeclarativeBinding
 
     data class Content(

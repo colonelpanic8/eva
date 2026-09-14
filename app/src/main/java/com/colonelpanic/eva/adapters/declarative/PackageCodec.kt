@@ -40,12 +40,27 @@ object PackageCodec {
     }
 
     private fun capability(root: JsonObject): PackageCapability {
-        root.fields(setOf("tool", "title", "binding", "execution"), setOf("effects"))
+        root.fields(setOf("tool", "title", "binding", "execution"), setOf("effects", "validators", "receipts"))
         val tool = root.getValue("tool").obj()
         tool.fields(setOf("name", "description", "inputSchema"))
         val name = tool.text("name", 64).also { require(identifier.matches(it)) }
         val schema = tool.getValue("inputSchema").obj().also(ExtensionProtocol::checkSchema)
         val properties = schema.getValue("properties").obj()
+        val validators =
+            root["validators"]
+                ?.obj()
+                ?.mapValues { (argument, validator) ->
+                    require(properties[argument]?.obj()?.get("type") == JsonPrimitive("string"))
+                    validator.string().also { require(it in NamedValidators.names) { "Unsupported named validator" } }
+                }.orEmpty()
+        val receipts =
+            root["receipts"]?.obj()?.let {
+                it.fields(emptySet(), setOf("success", "handlerMissing"))
+                ReceiptText(
+                    it["success"]?.string()?.also { text -> require(text.length in 1..1000) },
+                    it["handlerMissing"]?.string()?.also { text -> require(text.length in 1..1000) },
+                )
+            } ?: ReceiptText()
         val binding = binding(root.getValue("binding").obj(), properties)
         val claimed =
             when (root["effects"]?.string()) {
@@ -65,7 +80,17 @@ object PackageCodec {
         val execution = execution(root.getValue("execution").obj())
         require((execution.mode == ExecutionMode.HANDOFF) == (binding is DeclarativeBinding.Intent))
         require(binding !is DeclarativeBinding.Intent || execution.requiresForeground)
-        return PackageCapability(name, root.text("title", 120), tool.text("description", 2000), schema, effect, execution, binding)
+        return PackageCapability(
+            name,
+            root.text("title", 120),
+            tool.text("description", 2000),
+            schema,
+            effect,
+            execution,
+            binding,
+            validators,
+            receipts,
+        )
     }
 
     private fun execution(root: JsonObject): ExecutionSemantics {
@@ -103,18 +128,29 @@ object PackageCodec {
         root: JsonObject,
         properties: JsonObject,
     ): DeclarativeBinding.Intent {
-        root.fields(setOf("kind", "action", "uri"), setOf("extras", "package"))
+        root.fields(setOf("kind", "action"), setOf("uri", "extras", "package", "mimeType", "packageByName"))
         val action = root.text("action", 200).also { require(Regex("[A-Za-z][A-Za-z0-9_.]+").matches(it)) }
-        val uri = root.getValue("uri").obj()
-        uri.fields(setOf("base"), setOf("query"))
-        val base = uri.text("base", 2000)
-        val parsed = URI(base)
-        require(parsed.isAbsolute && parsed.scheme.lowercase() !in setOf("intent", "file", "content", "javascript", "data"))
-        require(parsed.rawFragment == null && parsed.rawUserInfo == null && '?' !in base)
-        val query = slots(uri["query"], properties)
+        val uri = root["uri"]?.obj()
+        val base =
+            uri
+                ?.let {
+                    it.fields(setOf("base"), setOf("query"))
+                    it.text("base", 2000).also { base ->
+                        val parsed = URI(base)
+                        require(parsed.isAbsolute && parsed.scheme.lowercase() !in setOf("intent", "file", "content", "javascript", "data"))
+                        require(parsed.rawFragment == null && parsed.rawUserInfo == null && '?' !in base)
+                    }
+                }.orEmpty()
+        val query = slots(uri?.get("query"), properties)
         val extras = slots(root["extras"], properties)
         val target = root["package"]?.string()?.also { require(packageId.matches(it)) }
-        return DeclarativeBinding.Intent(action, base, query, extras, target)
+        val mimeType = root["mimeType"]?.string()?.also { require(Regex("[a-z0-9.+-]+/[a-z0-9.+-]+").matches(it)) }
+        val byName =
+            root["packageByName"]?.string()?.also {
+                require(properties[it]?.obj()?.get("type") == JsonPrimitive("string"))
+                require(target == null) { "Choose either a fixed package or a visible app name" }
+            }
+        return DeclarativeBinding.Intent(action, base, query, extras, target, mimeType, byName)
     }
 
     private fun content(

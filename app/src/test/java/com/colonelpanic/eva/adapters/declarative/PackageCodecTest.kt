@@ -42,6 +42,44 @@ internal val httpBinding = """{"kind":"http","origin":"https://agenda.example.or
 
 class PackageCodecTest {
     @Test
+    fun `named validators restrict arguments and receipt data is bounded contract content`() {
+        val json =
+            packageJson(intentBinding).replace(
+                "\"tool\":",
+                "\"validators\":{\"title\":\"phoneNumber\"}," +
+                    "\"receipts\":{\"success\":\"Opened dialer\",\"handlerMissing\":\"No dialer\"},\"tool\":",
+            )
+        val capability = PackageCodec.decode(json).capabilities.single()
+        assertEquals("Opened dialer", capability.receipts.success)
+        assertThrows(Exception::class.java) { BindingArguments(capability, mapOf("title" to "not a number")) }
+        BindingArguments(capability, mapOf("title" to "+1 (415) 555-1234"))
+        assertThrows(Exception::class.java) { PackageCodec.decode(json.replace("phoneNumber", "runScript")) }
+        assertThrows(Exception::class.java) { PackageCodec.decode(json.replace("Opened dialer", "x".repeat(1001))) }
+        assertNotEquals(PackageCodec.decode(json).digest, PackageCodec.decode(json.replace("No dialer", "Handler missing")).digest)
+        assertTrue(NamedValidators.accepts("httpUrl", "https://example.org/path?q=x"))
+        assertThrows(Exception::class.java) {
+            BindingArguments(capability.copy(validators = mapOf("title" to "httpUrl")), mapOf("title" to "javascript:alert(1)"))
+        }
+        assertTrue(NamedValidators.accepts("emailAddress", "user@example.org"))
+        assertEquals(false, NamedValidators.accepts("emailAddress", "user@example.org;other@example.org"))
+    }
+
+    @Test
+    fun `share request carries a visible app name without accepting a model supplied package`() {
+        val binding = """{"kind":"android.intent","action":"android.intent.action.SEND","mimeType":"text/plain",
+            "packageByName":"title","extras":{"android.intent.extra.TEXT":{"type":"string","value":"Untyped text"}}}"""
+        val capability = PackageCodec.decode(packageJson(binding)).capabilities.single()
+        val request = BindingArguments(capability, mapOf("title" to "Signal")).intent(capability.binding as DeclarativeBinding.Intent)
+        assertEquals("Signal", request.appName)
+        assertEquals(null, request.targetPackage)
+        assertEquals("", request.uri)
+        assertEquals("text/plain", request.mimeType)
+        assertThrows(Exception::class.java) {
+            PackageCodec.decode(packageJson(binding.replace("\"packageByName\":", "\"package\":\"example.app\",\"packageByName\":")))
+        }
+    }
+
+    @Test
     fun `intent and HTTP effect floors cannot be reduced by a read claim`() {
         val intent = PackageCodec.decode(packageJson(intentBinding)).capabilities.single()
         assertEquals(PackageEffect.HANDOFF, intent.effect)
