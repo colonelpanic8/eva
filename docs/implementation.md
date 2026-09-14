@@ -1,6 +1,6 @@
 # Implementation status and next slice
 
-Updated: 2026-09-13. Architecture: [architecture.md](architecture.md).
+Updated: 2026-09-14. Architecture: [architecture.md](architecture.md).
 
 ## Android provider and action runtime
 
@@ -11,14 +11,14 @@ actual dispatcher outcomes. The development `/device` WebSocket uses an ephemera
 broker code and localhost forwarding. Subscription credentials stay on the host;
 there is no native OpenAI login or API-key fallback.
 
-Nineteen bundled capabilities are described by `CapabilityDefinition` records with
+Twenty-three bundled capabilities are described by `CapabilityDefinition` records with
 closed JSON Schemas: map search, driving navigation, message drafting, sending a
 text message, conversation search, conversation reading, alarms, timers, dialing,
 web search, opening a URL, email drafting, calendar events, launching an installed
-app, opening a settings screen, contacts search, and three typed device-state
-operations. The intent operations other than
+app, opening a settings screen, contacts search, three typed device-state
+operations, and four media operations. The intent operations other than
 map search, navigation, and message drafting share one generic `IntentBackend`;
-contacts, messaging, and device state have query-specific backends.
+contacts, messaging, media, and device state have query-specific backends.
 Contacts search reads phone numbers matching a
 name through `ContactsContract`, requests `READ_CONTACTS` on first use through
 the resumed Activity, and completes with the matches in its outcome message so
@@ -41,6 +41,93 @@ Backends still receive flat string arguments, so `ToolSchema.coerce` restores
 each property's declared scalar type before the dispatcher revalidates. Integer
 and boolean parameters therefore work end to end; structured object arguments at
 the execution boundary and a package importer remain follow-up work.
+
+## Controlling media without per-app support
+
+`eva.android.media.control`, `eva.android.media.nowplaying`, and
+`eva.android.media.volume` go through `MediaControlBackend` over one
+`MediaSessionAccess` port; `eva.android.media.play` is an `IntentBackend`. No
+capability knows anything about Spotify or any other particular app.
+
+Android's general mechanism is the media session. Every app that puts transport
+controls on the lock screen publishes one, and `MediaSessionManager` exposes them
+to an app holding either the privileged `MEDIA_CONTENT_CONTROL` permission or an
+enabled notification listener of its own. EVA declares
+`adapters.android.EvaNotificationListener` for the second path. The component
+overrides nothing: notifications are delivered while the grant is on and ignored,
+and the grant exists only so `getActiveSessions` will answer. Settings shows
+whether the grant is on, says what it also gives away, and opens EVA's own row
+where Android 11 or later has one.
+
+Without the grant EVA is not helpless. `AudioManager.dispatchMediaKeyEvent`
+needs no permission and reaches whatever holds the phone's media button, so
+pausing and skipping still work. It returns nothing, names no app, and cannot be
+targeted, so `MediaRouting.plan` chooses between the two paths and that outcome
+reports `HANDED_OFF` with an explicit statement that EVA cannot see what received
+the button. Naming an app is refused in that mode rather than guessed at.
+
+A transport command is a request to another process, answered whenever that
+process gets to it. `MediaControlBackend` therefore waits 600 ms and reads the
+session back before reporting: `COMPLETED` carries the state the session actually
+showed, and a session that ignored the command, or still shows the same track
+after a skip, returns `UNKNOWN`. A session that disappeared is treated as evidence
+of stopping only for stop and pause. A toggle is resolved into play or pause
+against the session's own state, because a session has no toggle. An app that
+declares a non-empty action set omitting the requested command is refused before
+anything is sent; an app that declares no actions at all is attempted anyway,
+because many report nothing rather than reporting a refusal.
+
+None of this needs EVA on screen, unlike every intent capability: media sessions
+answer from the background, so `unavailableReason` is unconditionally null and a
+spoken "pause" works from a locked phone. Media volume uses `STREAM_MUSIC`
+through `AudioManager` and needs no permission; a change Do Not Disturb refuses
+returns `NOT_EXECUTED` rather than a claimed change. EVA's own voice runs on
+`STREAM_VOICE_CALL`, so it is not what the volume capability moves.
+
+### Starting something by name
+
+Starting content that is not already loaded is a different problem, and the media
+session API cannot do it: a session exists only once an app is running, so
+"play Black Hole Sun on Spotify" from cold has nothing to talk to.
+`eva.android.media.play` uses `MediaPlayBackend`, which tries two general
+mechanisms in order.
+
+`MediaBrowserService` is preferred. It is the platform interface Android Auto and
+Wear OS use to play content in arbitrary media apps: connecting starts the app's
+media service, and the session it hands back accepts
+`MediaController.TransportControls.playFromSearch`. It targets one app exactly,
+needs no screen, and leaves a session EVA can read back, so the outcome can say
+what actually started rather than that a request was sent. The framework
+`android.media.browse.MediaBrowser` is used directly; no media-compat dependency
+was added. Connection is bounded at four seconds and the browser is held briefly
+before disconnecting, because an app may stop a media service that has no clients
+and nothing playing yet. Disconnecting does not stop playback: the session
+outlives the browser connection that revealed it.
+
+The app decides in `onGetRoot` whether to accept the caller, and many allow-list
+Android Auto, Wear OS, and Google's assistant by package and signature. A refusal
+is therefore an expected answer and not a failure. `MediaPlayBackend` falls back
+to `MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH`, the documented intent any
+app can register, which needs EVA on screen to launch. When the browser refused
+and no screen is available, the outcome states both facts rather than one.
+
+With no app named, an app already holding a session that declares
+`ACTION_PLAY_FROM_SEARCH` is preferred, because that is the app the user is
+already using and it works from a locked phone. Anything less certain is left to
+the intent, where the phone's own chooser applies.
+
+This is the part of Google's assistant that is not reproducible in full. Its
+"play X on Y" also rests on App Actions built-in intents (`actions.intent.PLAY_MEDIA`),
+which are Assistant-only and cannot be invoked by a third-party app, on being
+allow-listed by media apps that reject unknown `MediaBrowserService` callers, and
+on `MEDIA_CONTENT_CONTROL`, which is privileged. What is left to a third-party
+assistant is the browser path plus the intent, which is what EVA does.
+
+JVM tests cover routing, toggle resolution, the confirmation rules, the ungranted
+fallback, the refused volume change, the media-service refusal falling back to the
+intent, and target selection with and without a named app. None of the media
+behaviour has been exercised against a real media app on a device yet, so which
+apps accept EVA as a `MediaBrowserService` client is unmeasured.
 
 ## Sending a text message
 

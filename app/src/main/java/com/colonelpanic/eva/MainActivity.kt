@@ -20,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import com.colonelpanic.eva.adapters.android.MediaControlAccess
 import com.colonelpanic.eva.assist.AssistantRole
 import com.colonelpanic.eva.audio.MicrophonePermission
 import com.colonelpanic.eva.conversation.ProviderStatus
@@ -39,6 +40,7 @@ class MainActivity : ComponentActivity() {
     private val voice: VoiceAccessModel by viewModels()
     private var surface by mutableStateOf(Launch.MANUAL)
     private var deviceAssistant by mutableStateOf(false)
+    private var mediaControlAccess by mutableStateOf(false)
     private val runtimePermissions =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
             voice.requestInFlight = false
@@ -92,8 +94,13 @@ class MainActivity : ComponentActivity() {
     }
 
     /** Whichever of the assistant screens this device actually has. */
-    private fun openAssistantSettings() {
-        for (intent in AssistantRole.settingsIntents()) {
+    private fun openAssistantSettings() = openFirstAvailable(AssistantRole.settingsIntents())
+
+    private fun openMediaControlSettings() = openFirstAvailable(MediaControlAccess.settingsIntents(this))
+
+    /** System settings screens vary by device, so each list runs most specific first. */
+    private fun openFirstAvailable(intents: List<Intent>) {
+        for (intent in intents) {
             try {
                 startActivity(intent)
                 return
@@ -161,6 +168,7 @@ class MainActivity : ComponentActivity() {
             reasoningEffort = reasoningEffort,
             voiceLookupRetries = voiceLookupRetries,
             isDeviceAssistant = deviceAssistant,
+            canSeeMediaSessions = mediaControlAccess,
             dynamicColor = dynamicColor,
         )
     }
@@ -192,6 +200,7 @@ class MainActivity : ComponentActivity() {
                 onSelectReasoningEffort = { effort -> save { settings.saveReasoningEffort(effort) } },
                 onVoiceLookupRetriesChange = settings::saveVoiceLookupRetries,
                 onOpenAssistantSettings = ::openAssistantSettings,
+                onOpenMediaControlSettings = ::openMediaControlSettings,
                 onDynamicColorChange = eva.appearance::saveDynamicColor,
             )
         }
@@ -250,8 +259,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Granting the role happens in system settings, so the answer only changes while EVA is away.
+        // Both grants are made in system settings, so the answers only change while EVA is away.
         deviceAssistant = AssistantRole.isEva(this)
+        mediaControlAccess = MediaControlAccess.isGranted(this)
         if (surface.locked && !isLocked()) surface = Launch.HANDS_FREE
         eva.intentHost.attach(this) { permission -> capabilityPermission.launch(permission) }
         if (Build.VERSION.SDK_INT >= 37) eva.shizukuShellHost?.attach(this)

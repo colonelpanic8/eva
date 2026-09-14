@@ -3,9 +3,12 @@ package com.colonelpanic.eva.adapters.android
 import android.app.SearchManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.pm.ResolveInfo
 import android.net.Uri
 import android.provider.AlarmClock
 import android.provider.CalendarContract
+import android.provider.MediaStore
 import android.provider.Settings
 import androidx.core.net.toUri
 import com.colonelpanic.eva.capability.ExecutionBackend
@@ -92,30 +95,59 @@ object NativeIntents {
 
     fun settings(arguments: Map<String, String>): Intent? = settingsScreens[arguments.getValue("screen")]?.let(::Intent)
 
+    /**
+     * Android's documented "play this" request. It carries words, not a chosen track: the music
+     * app decides what they match, so what starts is that app's interpretation. Naming an app
+     * pins the request to it instead of letting Android offer the choice.
+     */
+    fun playMedia(
+        context: Context,
+        arguments: Map<String, String>,
+    ): Intent? {
+        val intent =
+            Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH)
+                .putExtra(SearchManager.QUERY, arguments.getValue("query"))
+                .putExtra(MediaStore.EXTRA_MEDIA_FOCUS, UNSTRUCTURED_MEDIA_SEARCH)
+        val requested = arguments["app"]?.trim()?.takeIf(String::isNotBlank) ?: return intent
+        val manager = context.packageManager
+        val match = bestMatch(manager, manager.queryIntentActivities(intent, 0), requested) ?: return null
+        return intent.setPackage(match.activityInfo.packageName)
+    }
+
     /** Resolves a launcher activity whose visible label best matches the requested app name. */
     fun launchApp(
         context: Context,
         arguments: Map<String, String>,
     ): Intent? {
-        val requested = arguments.getValue("app").trim().lowercase()
         val manager = context.packageManager
         val launchable = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        val candidates = manager.queryIntentActivities(launchable, 0)
-        val match =
-            candidates.firstOrNull { it.loadLabel(manager).toString().equals(requested, ignoreCase = true) }
-                ?: candidates.firstOrNull {
-                    it
-                        .loadLabel(manager)
-                        .toString()
-                        .lowercase()
-                        .contains(requested)
-                }
-                ?: candidates.firstOrNull {
-                    it.activityInfo.packageName
-                        .lowercase()
-                        .contains(requested)
-                }
-                ?: return null
+        val match = bestMatch(manager, manager.queryIntentActivities(launchable, 0), arguments.getValue("app")) ?: return null
         return manager.getLaunchIntentForPackage(match.activityInfo.packageName)
     }
+
+    /** The visible label first, because a spoken app name is a label and not an application ID. */
+    private fun bestMatch(
+        manager: PackageManager,
+        candidates: List<ResolveInfo>,
+        app: String,
+    ): ResolveInfo? {
+        val requested = app.trim().lowercase()
+        if (requested.isEmpty()) return null
+        return candidates.firstOrNull { it.loadLabel(manager).toString().equals(requested, ignoreCase = true) }
+            ?: candidates.firstOrNull {
+                it
+                    .loadLabel(manager)
+                    .toString()
+                    .lowercase()
+                    .contains(requested)
+            }
+            ?: candidates.firstOrNull {
+                it.activityInfo.packageName
+                    .lowercase()
+                    .contains(requested)
+            }
+    }
+
+    /** What the platform calls a search the app has to interpret, rather than a named artist or album. */
+    private const val UNSTRUCTURED_MEDIA_SEARCH = "vnd.android.cursor.item/*"
 }

@@ -83,6 +83,8 @@ fun SettingsScreen(
             SettingsDivider()
             AssistantSection(state, actions)
             SettingsDivider()
+            MediaSection(state, actions)
+            SettingsDivider()
             AppearanceSection(state, actions)
             Spacer(Modifier.height(24.dp))
         }
@@ -194,6 +196,39 @@ private fun AssistantSection(
                 },
         ) {
             TextButton(onClick = actions.onOpenAssistantSettings) { Text("Change") }
+        }
+    }
+}
+
+/**
+ * Notification access is the only grant an unprivileged app can hold that reveals other apps'
+ * media sessions, and it is a broad one, so the row says plainly what turning it on gives away
+ * and what still works without it.
+ */
+@Composable
+private fun MediaSection(
+    state: SettingsUiState,
+    actions: SettingsActions,
+) {
+    SettingsSection("Media controls") {
+        SettingsRow(
+            title =
+                if (state.canSeeMediaSessions) {
+                    "EVA can see and control what is playing"
+                } else {
+                    "EVA can press play and skip, but cannot see what is playing"
+                },
+            supporting =
+                if (state.canSeeMediaSessions) {
+                    "Pausing, skipping, and now-playing work for any app with lock-screen controls, and EVA " +
+                        "reports what actually happened instead of only that a button was sent."
+                } else {
+                    "Turning on notification access lets EVA read what is playing, choose between apps, and confirm " +
+                        "a pause worked. Android offers nothing narrower, so it also delivers your notifications to " +
+                        "EVA, which ignores them."
+                },
+        ) {
+            TextButton(onClick = actions.onOpenMediaControlSettings) { Text("Change") }
         }
     }
 }

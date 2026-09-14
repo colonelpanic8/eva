@@ -4,12 +4,16 @@ import android.app.Application
 import android.os.Build
 import androidx.core.content.pm.PackageInfoCompat
 import com.colonelpanic.eva.adapters.android.AndroidIntentHost
+import com.colonelpanic.eva.adapters.android.AndroidMediaLauncher
+import com.colonelpanic.eva.adapters.android.AndroidMediaSessions
 import com.colonelpanic.eva.adapters.android.AppFunctionsBackend
 import com.colonelpanic.eva.adapters.android.ContactHistory
 import com.colonelpanic.eva.adapters.android.ContactNameKeywords
 import com.colonelpanic.eva.adapters.android.ContactsQueryBackend
 import com.colonelpanic.eva.adapters.android.IntentBackend
 import com.colonelpanic.eva.adapters.android.MapIntentBackend
+import com.colonelpanic.eva.adapters.android.MediaControlBackend
+import com.colonelpanic.eva.adapters.android.MediaPlayBackend
 import com.colonelpanic.eva.adapters.android.MessageIntentBackend
 import com.colonelpanic.eva.adapters.android.MessageTargets
 import com.colonelpanic.eva.adapters.android.MessagingReadBackend
@@ -65,6 +69,8 @@ class EvaApplication :
     ) = IntentBackend(intentHost, success, missing, build)
 
     private val messagingStore by lazy { MessagingStore(this) }
+    private val mediaSessions by lazy { AndroidMediaSessions(this) }
+    private val mediaLauncher by lazy { AndroidMediaLauncher(this) }
     private val messageTargets by lazy { MessageTargets(intentHost, messagingStore) }
     private val chosenNumbers by lazy { ChosenNumbers(this) }
 
@@ -180,6 +186,20 @@ class EvaApplication :
                             },
                         CapabilityRegistry.OPEN_SETTINGS to
                             intent("Settings opened.", "That settings screen is unavailable on this device.", NativeIntents::settings),
+                        CapabilityRegistry.MEDIA_CONTROL to
+                            MediaControlBackend(mediaSessions, MediaControlBackend.Operation.CONTROL),
+                        CapabilityRegistry.MEDIA_NOW_PLAYING to
+                            MediaControlBackend(mediaSessions, MediaControlBackend.Operation.STATUS),
+                        CapabilityRegistry.MEDIA_VOLUME to
+                            MediaControlBackend(mediaSessions, MediaControlBackend.Operation.VOLUME),
+                        CapabilityRegistry.MEDIA_PLAY to
+                            MediaPlayBackend(
+                                mediaLauncher,
+                                mediaSessions,
+                                intent("Asked a music app to play that.", "No app on this phone offers to play a request by name.") {
+                                    NativeIntents.playMedia(this@EvaApplication, it)
+                                },
+                            ),
                     ),
                 )
                 shizukuShellHost?.let { host ->

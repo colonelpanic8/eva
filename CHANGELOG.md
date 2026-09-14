@@ -2,6 +2,15 @@
 
 All notable changes to EVA will be documented here.
 
+## [Unreleased]
+
+### Added
+
+- Music and podcast control that is not tied to any particular app. Pause, resume, skip, stop, and "what's playing" go through Android's media session, the same one the lock screen and headset buttons use, so Spotify, YouTube Music, a podcast player, and a browser tab all work without EVA supporting any of them individually.
+- "Play Black Hole Sun on Spotify" starts the app if it is not already running, through the same interface Android Auto uses to play things in arbitrary media apps, and tells you what actually started rather than only that it asked. The app decides what the words match, and an app that turns EVA away falls back to the standard play-by-name intent.
+- Media volume as a spoken control, separate from the ringer, alarms, and EVA's own voice.
+- A media controls setting. Turning on notification access lets EVA read what is playing, pick between apps when two are playing at once, and confirm that a pause actually took effect instead of only reporting that a button was sent. Android offers nothing narrower for this, so the setting says plainly that notifications also reach EVA, which ignores them. Without the grant EVA still sends the play, pause, and skip buttons, and says it cannot see what received them.
+
 ## [0.14.1] - 2026-09-14
 
 ### Fixed
