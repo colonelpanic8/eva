@@ -78,7 +78,7 @@ class EvaRecognitionService : RecognitionService() {
                         preinstalled = service.applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM != 0,
                     )
                 }
-        val chosen = preferredRecognizer(installed, packageName) ?: return null
+        val chosen = preferredRecognizer(installed, packageName, EvaRecognitionService::class.java.name) ?: return null
         return SpeechRecognizer.createSpeechRecognizer(this, ComponentName(chosen.packageName, chosen.className))
     }
 
