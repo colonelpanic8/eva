@@ -632,12 +632,32 @@ execution, client/helper process cleanup, and Shizuku restart recovery also pass
 The fixture's `FLAG_SECURE` content was blank in capture but remained accessible
 through its hierarchy. These are distinct disclosure surfaces.
 
-This does not add device control to EVA's app or general capability runtime.
-The [extension design](device-control-extension.md) describes that integration;
-the experimental activity and Binder interface are not the public extension API.
-Android 17, fold transitions, multiple displays, long-running background control,
-freshness/cancellation policy, and model-driven execution remain unverified.
-Reproduction commands and recorded evidence live with the standalone experiment.
+The first integrated slice now registers `eva.device.observe`,
+`eva.device.tap`, and `eva.device.set_text` through the same capability registry,
+provider catalog, dispatcher, journal, and outcome types as other bundled actions.
+Shizuku and the AIDL helper remain private implementation details. Observation
+results are bounded text; screenshots are not sent to providers. Mutations accept
+an observation-local node number, consume that observation reference once, and
+revalidate the foreground package, class, label, bounds, and visibility before
+delivering input. The existing one-call-per-input limit remains in force, so the
+initial model flow is human-stepped across turns.
+
+On 2026-09-14, the integrated debug APK passed a focused Android instrumentation
+test on the same Android 16/API 36 emulator. The production host and helper read
+the fixture, replaced its field with `EVA integration ✓`, tapped its increment
+button, and returned a post-action observation containing `Count: 1`. After the
+Shizuku server was killed and restarted, the complete test passed again in 2.031
+seconds. The visible Shizuku authorization prompt was also exercised. UIAutomator
+cannot remain connected during this test because Android permits only one
+UiAutomation owner; the behavioral test therefore runs after the setup grant.
+
+This slice does not yet implement the general package/native-operation loader,
+screenshots or artifact references, per-app disclosure grants, cancellation,
+swipes, keys, global navigation, multi-step control within one input, or secondary
+displays. Android 17, fold transitions, long-running background control, and a
+live model-driven workflow remain unverified. The [extension design](device-control-extension.md)
+describes those remaining contracts; reproduction commands and broader platform
+evidence live with the standalone experiment.
 
 ## What the merged voice POC establishes
 

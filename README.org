@@ -56,9 +56,16 @@ panel taps from dismissing it, and dismissed from the surrounding scrim. The
 keyguard path, assistant activity handoff, and delegated system recognition
 remain unverified; JVM tests cover selection, lifecycle, and dispatch logic.
 
-Paseo, AppFunctions, capability-package import, and privileged extensions are not
-integrated. A separate [[file:experiments/device-control/README.md][device-control experiment]] verified Shizuku-backed
-screenshots, UI inspection, text replacement and touch on an Android 16 emulator.
+Paseo and capability-package import are not integrated. AppFunctions settings
+control and an experimental device-control backend use Shizuku when it is
+installed and explicitly authorized. On Android 11 and later, the device backend
+can read a bounded text projection of the active accessibility hierarchy, replace
+one editable field, or tap one numbered element. Every mutation consumes a recent
+observation and rechecks the foreground package, element identity, bounds, and
+visibility before input. The integrated path passed observation, Unicode text
+replacement, touch, post-action observation, and Shizuku restart checks on an
+Android 16/API 36 emulator. Screenshots, swipes, keys, navigation actions,
+same-request action chains, and non-default displays are not exposed.
 The [[file:experiments/voice-poc/README.md][browser voice POC]] remains the regression harness for subscription-backed
 speech and counter tools through the host-side Codex process.
 
@@ -86,7 +93,7 @@ POC are recorded in [[file:docs/implementation.md][docs/implementation.md]].
 - Stock Android APIs and documented intents are the intended useful baseline
 - Paseo is the first planned substantial remote adapter
 - OkHttp carries broker control; WebRTC carries native audio directly to the provider
-- Privileged-extension libraries remain absent
+- Shizuku is an optional dependency for AppFunctions and experimental device control
 
 * Development
 

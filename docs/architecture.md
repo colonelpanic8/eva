@@ -12,8 +12,9 @@ the first typed Android action slice. The contracts below describe the target
 design, not a claim that every interface or extension form is implemented.
 
 The [device-control extension design](device-control-extension.md) applies these
-contracts to the separately verified Shizuku/UiAutomation mechanism. Its emulator
-proof does not establish an integrated extension or Android 17 compatibility.
+contracts to the Shizuku/UiAutomation mechanism. Its first bundled slice is
+integrated and emulator-verified; the general extension package and Android 17
+compatibility remain unimplemented or unverified as described there.
 
 ## 1. Architectural decisions
 

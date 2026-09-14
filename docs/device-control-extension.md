@@ -1,12 +1,14 @@
 # Device control through the extension API
 
-Status: proposed integration; the [standalone experiment](../experiments/device-control/README.md)
-is executable, but this package and the general extension runtime are not yet
-implemented in EVA. This specification builds on the
+Status: the first bundled runtime slice is implemented; the general package
+loader, reusable artifact results, app-scoped disclosure grants, additional
+operations, and public extension admission described below remain proposed. The
+[standalone experiment](../experiments/device-control/README.md) remains the
+broader platform probe. This specification builds on the
 [capability and backend contracts](architecture.md#4-capabilities-planning-and-execution)
 and [extension package contract](architecture.md#6-custom-extensions).
-Reviewed with Fable 5.1 following the emulator proof; this is the agreed
-integration direction, with runtime and platform prerequisites called out below.
+Reviewed with Fable 5.1 following the emulator proof; this remains the agreed
+direction beyond the implemented slice, with prerequisites called out below.
 
 ## Decision and boundary
 

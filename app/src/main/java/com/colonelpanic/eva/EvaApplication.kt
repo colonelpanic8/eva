@@ -2,6 +2,7 @@ package com.colonelpanic.eva
 
 import android.app.Application
 import android.os.Build
+import android.os.SystemClock
 import androidx.core.content.pm.PackageInfoCompat
 import com.colonelpanic.eva.adapters.android.AndroidIntentHost
 import com.colonelpanic.eva.adapters.android.AndroidMediaLauncher
@@ -10,6 +11,7 @@ import com.colonelpanic.eva.adapters.android.AppFunctionsBackend
 import com.colonelpanic.eva.adapters.android.ContactHistory
 import com.colonelpanic.eva.adapters.android.ContactNameKeywords
 import com.colonelpanic.eva.adapters.android.ContactsQueryBackend
+import com.colonelpanic.eva.adapters.android.DeviceControlHost
 import com.colonelpanic.eva.adapters.android.IntentBackend
 import com.colonelpanic.eva.adapters.android.MapIntentBackend
 import com.colonelpanic.eva.adapters.android.MediaControlBackend
@@ -20,8 +22,10 @@ import com.colonelpanic.eva.adapters.android.MessagingReadBackend
 import com.colonelpanic.eva.adapters.android.MessagingStore
 import com.colonelpanic.eva.adapters.android.NativeIntents
 import com.colonelpanic.eva.adapters.android.NavigationIntentBackend
+import com.colonelpanic.eva.adapters.android.ObservationStore
 import com.colonelpanic.eva.adapters.android.ShizukuShellHost
 import com.colonelpanic.eva.adapters.android.SmsSendBackend
+import com.colonelpanic.eva.adapters.android.UiControlBackend
 import com.colonelpanic.eva.audio.RealtimeMediaConfig
 import com.colonelpanic.eva.audio.VoiceSessionHost
 import com.colonelpanic.eva.audio.VoiceSessionService
@@ -61,6 +65,10 @@ class EvaApplication :
     VoiceSessionHost {
     val intentHost = AndroidIntentHost()
     val shizukuShellHost by lazy { if (Build.VERSION.SDK_INT >= 37) ShizukuShellHost(this) else null }
+
+    /** Screen control needs Shizuku too, but not Android 17: its helper only needs UiAutomation. */
+    val deviceControlHost by lazy { if (Build.VERSION.SDK_INT >= 30) DeviceControlHost(this) else null }
+    private val observations by lazy { ObservationStore(elapsedMillis = SystemClock::elapsedRealtime) }
 
     private fun intent(
         success: String,
@@ -215,6 +223,11 @@ class EvaApplication :
                         CapabilityRegistry.DEVICE_STATE_METADATA,
                         AppFunctionsBackend(host, AppFunctionsBackend.Operation.METADATA),
                     )
+                }
+                deviceControlHost?.let { host ->
+                    put(CapabilityRegistry.UI_OBSERVE, UiControlBackend(host, observations, UiControlBackend.Operation.OBSERVE))
+                    put(CapabilityRegistry.UI_TAP, UiControlBackend(host, observations, UiControlBackend.Operation.TAP))
+                    put(CapabilityRegistry.UI_SET_TEXT, UiControlBackend(host, observations, UiControlBackend.Operation.SET_TEXT))
                 }
             },
         )

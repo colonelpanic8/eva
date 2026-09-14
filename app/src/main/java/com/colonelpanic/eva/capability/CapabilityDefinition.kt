@@ -47,14 +47,14 @@ object BundledCapabilities {
                 "Search maps",
                 "Open a map search for a destination. Returns handoff to a map app, not arrival.",
                 destinationSchema,
-                ::validateDestination,
+                validateOperation = ::validateDestination,
             ),
             CapabilityDefinition(
                 CapabilityRegistry.NAVIGATE,
                 "Driving navigation",
                 "Request driving navigation to a destination. Returns handoff to a navigation app, not arrival.",
                 destinationSchema,
-                ::validateDestination,
+                validateOperation = ::validateDestination,
             ),
             CapabilityDefinition(
                 CapabilityRegistry.SMS_COMPOSE,
@@ -63,7 +63,7 @@ object BundledCapabilities {
                     "The user sends it in their messaging app, so use this only when they ask to review the text first " +
                     "or when sending directly is unavailable. Does not send an SMS.",
                 messageSchema,
-                ::validateMessage,
+                validateOperation = ::validateMessage,
             ),
             CapabilityDefinition(
                 CapabilityRegistry.SMS_SEND,
@@ -76,7 +76,7 @@ object BundledCapabilities {
                     "conversationId, which keeps the message in that one conversation instead of starting separate threads. " +
                     "Sending cannot be undone, so confirm the wording first when the user has not dictated it.",
                 messageSchema,
-                ::validateMessage,
+                validateOperation = ::validateMessage,
             ),
             CapabilityDefinition(
                 CapabilityRegistry.SET_ALARM,
@@ -388,6 +388,58 @@ object BundledCapabilities {
             ) { args ->
                 val search = args.getValue("search")
                 if (search.isBlank() || search.any(Char::isISOControl)) "Enter a setting name or key to search for." else null
+            },
+            CapabilityDefinition(
+                CapabilityRegistry.UI_OBSERVE,
+                "Look at the screen",
+                "Read what is currently on the phone screen, including the app in front and its numbered elements. " +
+                    "Use this only when no dedicated action fits the request, because the dedicated actions are more " +
+                    "reliable and state exactly what they did. Every screen action needs a fresh look first: this " +
+                    "returns an observation reference and element numbers that the tap and text actions require.",
+                schema(
+                    """
+                {"type":"object","properties":{},"required":[],"additionalProperties":false}
+            """,
+                ),
+            ),
+            CapabilityDefinition(
+                CapabilityRegistry.UI_TAP,
+                "Tap an element on screen",
+                "Tap one numbered element from a screen observation, giving the observation reference and element " +
+                    "number exactly as they were returned. Tapping can send, buy, or delete things, so confirm with " +
+                    "the user before tapping anything consequential. Success means the touch was delivered and " +
+                    "returns the screen that followed; read that screen to judge whether the task actually advanced.",
+                schema(
+                    """
+                {"type":"object","properties":{
+                "observationRef":{"type":"string","minLength":1,"maxLength":64},
+                "node":{"type":"integer","minimum":0,"maximum":199}},
+                "required":["observationRef","node"],"additionalProperties":false}
+            """,
+                ),
+            ),
+            CapabilityDefinition(
+                CapabilityRegistry.UI_SET_TEXT,
+                "Replace text in a field on screen",
+                "Replace the entire contents of one numbered editable field from a screen observation. " +
+                    "This overwrites whatever the field held; it does not insert at the cursor. " +
+                    "Give the observation reference and element number exactly as they were returned.",
+                schema(
+                    """
+                {"type":"object","properties":{
+                "observationRef":{"type":"string","minLength":1,"maxLength":64},
+                "node":{"type":"integer","minimum":0,"maximum":199},
+                "text":{"type":"string","maxLength":2000}},
+                "required":["observationRef","node","text"],"additionalProperties":false}
+            """,
+                ),
+            ) { args ->
+                val text = args.getValue("text")
+                if (text.any { it.isISOControl() && it != '\n' && it != '\t' }) {
+                    "Enter text without unsupported control characters."
+                } else {
+                    null
+                }
             },
         )
 
