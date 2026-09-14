@@ -19,6 +19,7 @@ import com.colonelpanic.eva.conversation.ConversationEntry
 import com.colonelpanic.eva.conversation.ConversationState
 import com.colonelpanic.eva.conversation.EntryStatus
 import com.colonelpanic.eva.conversation.ProviderStatus
+import com.colonelpanic.eva.conversation.ThreadSummary
 import com.colonelpanic.eva.providers.openai.OpenAiModels
 import com.colonelpanic.eva.ui.about.AboutInfo
 import com.colonelpanic.eva.ui.about.AboutScreen
@@ -40,6 +41,10 @@ fun EvaApp(
     settings: SettingsUiState,
     settingsActions: SettingsActions,
     about: AboutInfo = AboutInfo(),
+    threads: List<ThreadSummary> = emptyList(),
+    onNewThread: () -> Unit = {},
+    onShowThread: (String) -> Unit = {},
+    onStopTask: () -> Unit = {},
     onSubmit: (String) -> Unit,
     onConnect: () -> Unit = {},
     onVoice: () -> Unit = {},
@@ -68,8 +73,20 @@ fun EvaApp(
             EvaDrawerSheet(
                 providerLabel = state.providerLabel,
                 current = destination,
+                threads = threads,
+                shownThreadId = state.threadId,
                 onSelect = { selected ->
                     destination = selected
+                    scope.launch { drawer.close() }
+                },
+                onNewThread = {
+                    onNewThread()
+                    destination = EvaDestination.CONVERSATION
+                    scope.launch { drawer.close() }
+                },
+                onShowThread = { id ->
+                    onShowThread(id)
+                    destination = EvaDestination.CONVERSATION
                     scope.launch { drawer.close() }
                 },
             )
@@ -81,6 +98,7 @@ fun EvaApp(
                     state = state,
                     hasCredential = settings.hasCredential,
                     onSubmit = onSubmit,
+                    onStopTask = onStopTask,
                     onConnect = onConnect,
                     onVoice = onVoice,
                     onDisconnect = onDisconnect,
@@ -119,7 +137,7 @@ internal fun composerHint(state: ConversationState): String {
     return when {
         state.errorMessage != null -> "Sending is paused until you restart EVA."
         state.isLoading -> "Loading your action history…"
-        state.isSubmitting -> "Working on your last request…"
+        state.isSubmitting || state.working -> "Working on your last request…"
         voiceConnected -> "Speak to EVA, or disconnect to use text."
         state.voiceMode -> "Setting up voice…"
         state.providerStatus != ProviderStatus.CONNECTED -> "Connect to start a conversation."

@@ -24,6 +24,7 @@ import com.colonelpanic.eva.adapters.android.MediaControlAccess
 import com.colonelpanic.eva.assist.AssistantRole
 import com.colonelpanic.eva.audio.MicrophonePermission
 import com.colonelpanic.eva.conversation.ProviderStatus
+import com.colonelpanic.eva.conversation.WorkNotifications
 import com.colonelpanic.eva.providers.openai.ModelKind
 import com.colonelpanic.eva.ui.EvaApp
 import com.colonelpanic.eva.ui.HandsFreeSurface
@@ -82,7 +83,7 @@ class MainActivity : ComponentActivity() {
 
     private fun perform(start: VoiceStart) {
         when (start) {
-            is VoiceStart.Connect -> eva.controller.connectVoice(start.link)
+            is VoiceStart.Connect -> eva.controller.connectVoice(start.link, newThread = surface.startsVoice)
             is VoiceStart.RequestMicrophone -> requestMissingPermissions()
         }
     }
@@ -210,8 +211,10 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         eva.refreshModels()
         val controller = eva.controller
+        intent?.getStringExtra(WorkNotifications.EXTRA_THREAD_ID)?.let(controller::showThread)
         setContent {
             val state by controller.state.collectAsStateWithLifecycle()
+            val threads by controller.threads.collectAsStateWithLifecycle()
             val dynamicColor by eva.appearance.dynamicColorFlow.collectAsStateWithLifecycle()
             EvaTheme(dynamicColor = dynamicColor) {
                 if (surface.locked) {
@@ -228,6 +231,10 @@ class MainActivity : ComponentActivity() {
                     settings = settingsUiState(dynamicColor),
                     settingsActions = settingsActions(),
                     about = aboutInfo(),
+                    threads = threads,
+                    onNewThread = controller::newThread,
+                    onShowThread = controller::showThread,
+                    onStopTask = controller::stopTask,
                     onSubmit = controller::submit,
                     onConnect = { controller.connect(eva.settings.hostLink()) },
                     onVoice = ::startVoice,
@@ -252,6 +259,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        intent.getStringExtra(WorkNotifications.EXTRA_THREAD_ID)?.let(eva.controller::showThread)
         setIntent(intent)
         voice.launchHandled = true
         openHandsFree()

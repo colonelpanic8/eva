@@ -126,6 +126,14 @@
             android:foregroundServiceType="microphone|mediaPlayback"
             tools:targetApi="30" />
 
+        <!-- Finishes a turn after its call ended. Short by design: a turn that cannot finish in
+             the allowance is interrupted and said so, not left half-done in the dark. -->
+        <service
+            android:name=".conversation.TurnWorkService"
+            android:exported="false"
+            android:foregroundServiceType="shortService"
+            tools:targetApi="34" />
+
         <!-- Holding the assistant role, rather than only answering ACTION_ASSIST, is what puts
              EVA behind the assist gesture and lets it answer over another app. Only the system
              holds BIND_VOICE_INTERACTION, so only the system can bind either service. -->

@@ -33,12 +33,17 @@ import com.colonelpanic.eva.audio.VoiceSessionStatus
 import com.colonelpanic.eva.audio.webrtc.WebRtcMediaSessionFactory
 import com.colonelpanic.eva.capability.CapabilityDispatcher
 import com.colonelpanic.eva.capability.CapabilityRegistry
-import com.colonelpanic.eva.conversation.ProviderSessionController
 import com.colonelpanic.eva.conversation.ProviderStatus
+import com.colonelpanic.eva.conversation.ThreadController
+import com.colonelpanic.eva.conversation.TurnWorkHost
+import com.colonelpanic.eva.conversation.TurnWorkService
+import com.colonelpanic.eva.conversation.WorkNotifications
 import com.colonelpanic.eva.data.AppearanceSettings
 import com.colonelpanic.eva.data.ChatGptAccountStore
 import com.colonelpanic.eva.data.ChosenNumbers
+import com.colonelpanic.eva.data.JournalDatabase
 import com.colonelpanic.eva.data.OpenAiSettings
+import com.colonelpanic.eva.data.SqliteConversationStore
 import com.colonelpanic.eva.data.SqliteInvocationRepository
 import com.colonelpanic.eva.providers.BrokerConversationProvider
 import com.colonelpanic.eva.providers.BrokerEndpoint
@@ -56,13 +61,15 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 class EvaApplication :
     Application(),
-    VoiceSessionHost {
+    VoiceSessionHost,
+    TurnWorkHost {
     val intentHost = AndroidIntentHost()
     val shizukuShellHost by lazy { if (Build.VERSION.SDK_INT >= 37) ShizukuShellHost(this) else null }
 
@@ -104,6 +111,8 @@ class EvaApplication :
     override fun toggleVoiceMicrophone() = controller.toggleMicrophone()
 
     override fun endVoiceSession() = controller.disconnect()
+
+    override fun interruptWork(reason: String) = controller.interruptAll(reason)
 
     private val packageInfo by lazy { runCatching { packageManager.getPackageInfo(packageName, 0) }.getOrNull() }
 
@@ -234,10 +243,13 @@ class EvaApplication :
     }
     private val contactKeywords by lazy { ContactNameKeywords(this, ::contactHistory) }
     val controller by lazy {
-        val repository = SqliteInvocationRepository(this)
-        ProviderSessionController(
+        val journal = JournalDatabase(this)
+        val repository = SqliteInvocationRepository(journal)
+        ThreadController(
             registry = registry,
             dispatcher = CapabilityDispatcher(registry, repository),
+            store = SqliteConversationStore(journal),
+            onBackgroundAnswer = { WorkNotifications.answered(this, it) },
             // A blank link means the phone talks to OpenAI itself; a link means the paired host bridge.
             providerFactory = { link ->
                 if (link.isBlank()) {
@@ -271,6 +283,15 @@ class EvaApplication :
                     .distinctUntilChanged()
                     .collect { active ->
                         if (active) VoiceSessionService.start(this@EvaApplication) else VoiceSessionService.stop(this@EvaApplication)
+                    }
+            }
+            scope.launch {
+                // A turn that outlives its call needs the process kept alive; the voice service already does that.
+                combine(controller.working, controller.state) { working, state ->
+                    working.isNotEmpty() && !(state.voiceMode && state.providerStatus != ProviderStatus.DISCONNECTED)
+                }.distinctUntilChanged()
+                    .collect { active ->
+                        if (active) TurnWorkService.start(this@EvaApplication) else TurnWorkService.stop(this@EvaApplication)
                     }
             }
         }
