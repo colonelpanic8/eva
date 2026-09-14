@@ -7,13 +7,18 @@ All notable changes to EVA will be documented here.
 ### Added
 
 - Conversations are threads that outlive a call. Hanging up no longer cancels what EVA was doing: an unfinished request carries on in the background, moving from the voice model to the text model once the call ends, and the answer arrives as a notification. Ask for something and hang up, and EVA still finishes it.
-- A conversation list in the drawer. Voice and assist launches start a new conversation, and an earlier one can be reopened and continued by text or voice, with EVA given what was already said.
+- A conversation list in the drawer. Voice and assist launches start a new conversation, and an earlier one can be reopened and continued by text or voice. A resumed session is given what was already said, including which actions ran and what they reported; a voice session waits for all of it to be acknowledged before the microphone comes back.
 - A Stop control for a request in progress, which is now a different thing from hanging up.
 - A request may make several read-only lookups, such as searching contacts for a misheard name, while still performing at most one action that changes something.
+- A Screen control switch removes screen observation, tapping, and text replacement from newly opened provider sessions and rejects calls from stale sessions after it is switched off. It defaults to on so existing installations keep their current behavior.
+- The system prompt is now a file you own. `eva-prompt.yaml` lists the components EVA's instructions are built from, each with its text, whether it applies to voice, text, or both, and an on/off switch; a component can also reword or withhold tools. EVA writes its stock prompt there on first run, reads the file at the start of every session, and reports a parse problem with its line instead of quietly using something else. Pick any file with the system picker to keep the prompt in a synced folder or a git checkout; EVA's own copy stays the fallback, reachable with `adb`.
+- A Prompt screen in the drawer that switches components on and off, edits their text and scope, adds and removes them, chooses or creates the file, and resets to the stock prompt.
+- Two ways a call can end, shipped as alternatives in the stock prompt. "One request" is how a phone assistant behaves: EVA answers what you asked, says a short closing line, and hangs up without asking whether there is anything else. "Open conversation" keeps the call going until you end it or ask EVA to hang up, which is what EVA did before. New installs start on "One request".
 
 ### Changed
 
 - The conversation reads as grouped turns. Each session opens with a divider naming its mode and model ("Text session · gpt-5.6-sol") and closes with "Session ended"; within a turn, the actions the model ran hang off a branch under the request, ahead of the answer, instead of appearing as unrelated cards.
+- When EVA ends a voice conversation itself, the assistant panel closes with it, so a request that opened an app leaves you in that app instead of behind EVA's panel. Stopping the conversation yourself leaves the panel up, and EVA's own screen is never closed by a hang-up.
 
 ### Fixed
 

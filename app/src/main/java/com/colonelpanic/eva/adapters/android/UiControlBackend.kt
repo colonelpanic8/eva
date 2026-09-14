@@ -19,6 +19,8 @@ class UiControlBackend(
     private val host: DeviceControlHost,
     private val observations: ObservationStore,
     private val operation: Operation,
+    /** Checked again here so a call from a stale catalog cannot outlive the user switching it off. */
+    private val enabled: () -> Boolean = { true },
 ) : ExecutionBackend {
     enum class Operation {
         OBSERVE,
@@ -26,7 +28,7 @@ class UiControlBackend(
         SET_TEXT,
     }
 
-    override suspend fun unavailableReason(): String? = host.unavailableReason()
+    override suspend fun unavailableReason(): String? = if (enabled()) host.unavailableReason() else DISABLED
 
     override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome =
         try {
@@ -101,6 +103,7 @@ class UiControlBackend(
     private companion object {
         const val TIMEOUT_MILLIS = 15_000L
         const val NO_ELEMENT = "That element number is not in the screen EVA recorded. Look at the screen again."
+        const val DISABLED = "Screen control is switched off in EVA's settings."
         const val HELPER_LOST =
             "The device control helper stopped before reporting a result. Look at the screen to see whether the action happened."
         const val DELIVERY_NOTE = "Input was delivered; the screen below is what followed, not proof the task is done."

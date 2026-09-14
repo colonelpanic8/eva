@@ -23,16 +23,19 @@ import com.colonelpanic.eva.conversation.ThreadSummary
 import com.colonelpanic.eva.providers.openai.OpenAiModels
 import com.colonelpanic.eva.ui.about.AboutInfo
 import com.colonelpanic.eva.ui.about.AboutScreen
+import com.colonelpanic.eva.ui.prompt.PromptActions
+import com.colonelpanic.eva.ui.prompt.PromptScreen
+import com.colonelpanic.eva.ui.prompt.PromptUiState
 import com.colonelpanic.eva.ui.settings.SettingsActions
 import com.colonelpanic.eva.ui.settings.SettingsScreen
 import com.colonelpanic.eva.ui.settings.SettingsUiState
 import com.colonelpanic.eva.ui.theme.EvaTheme
 import kotlinx.coroutines.launch
 
-internal enum class EvaDestination { CONVERSATION, SETTINGS, ABOUT }
+internal enum class EvaDestination { CONVERSATION, PROMPT, SETTINGS, ABOUT }
 
 /**
- * Three top-level destinations behind a navigation drawer. A navigation library would only
+ * Four top-level destinations behind a navigation drawer. A navigation library would only
  * add a dependency to express what one saved enum and a back press already do.
  */
 @Composable
@@ -40,6 +43,8 @@ fun EvaApp(
     state: ConversationState,
     settings: SettingsUiState,
     settingsActions: SettingsActions,
+    prompt: PromptUiState = PromptUiState(),
+    promptActions: PromptActions = PromptActions(),
     about: AboutInfo = AboutInfo(),
     threads: List<ThreadSummary> = emptyList(),
     onNewThread: () -> Unit = {},
@@ -108,6 +113,14 @@ fun EvaApp(
                     denial = denial,
                     onRetryMicrophone = onRetryMicrophone,
                     onDismissDenial = onDismissDenial,
+                )
+            }
+
+            EvaDestination.PROMPT -> {
+                PromptScreen(
+                    state = prompt,
+                    actions = promptActions,
+                    onOpenDrawer = { openDrawer() },
                 )
             }
 

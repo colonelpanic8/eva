@@ -11,6 +11,10 @@ import com.colonelpanic.eva.capability.ExecutionBackend
 import com.colonelpanic.eva.capability.ExecutionOutcome
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.MemoryInvocationRepository
+import com.colonelpanic.eva.conversation.prompt.PromptComponent
+import com.colonelpanic.eva.conversation.prompt.PromptConfig
+import com.colonelpanic.eva.conversation.prompt.PromptConfigException
+import com.colonelpanic.eva.conversation.prompt.PromptDefaults
 import com.colonelpanic.eva.providers.CallIdentity
 import com.colonelpanic.eva.providers.ConversationInput
 import com.colonelpanic.eva.providers.ConversationProvider
@@ -30,6 +34,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -43,6 +48,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -101,6 +107,8 @@ class ThreadControllerTest {
         media: (() -> RealtimeMediaSession)? = null,
         voiceProvider: FakeProvider = provider,
         voiceKeywords: suspend () -> List<String> = { emptyList() },
+        hiddenCapabilities: () -> Set<String> = { emptySet() },
+        prompt: suspend () -> PromptConfig = { PromptDefaults.config },
     ) = ThreadController(
         registry = registry,
         dispatcher = CapabilityDispatcher(registry, repository),
@@ -112,6 +120,8 @@ class ThreadControllerTest {
         voiceProviderFactory = { _, _ -> voiceProvider },
         backgroundProviderFactory = { background },
         voiceKeywords = voiceKeywords,
+        hiddenCapabilities = hiddenCapabilities,
+        prompt = prompt,
         onBackgroundAnswer = { answers += it },
     )
 
@@ -487,7 +497,7 @@ class ThreadControllerTest {
                     .map { it.capabilityId }
                     .filter { it.startsWith("eva.") },
             )
-            assertTrue(provider.request.instructions.contains("brief goodbye"))
+            assertTrue(provider.request.instructions.contains("short closing line"))
             controller.submit("Open a map")
             advanceUntilIdle()
             assertEquals(0, provider.submissions)
@@ -640,6 +650,124 @@ class ThreadControllerTest {
             assertFalse(stuckMedia.closed)
             advanceTimeBy(11_000)
             assertTrue(stuckMedia.closed)
+        }
+
+    // ---- catalog and prompt, per connection ----
+
+    @Test
+    fun `a switched off capability is never offered to the model`() =
+        runTest {
+            val provider = FakeProvider()
+            val controller = controller(provider, hiddenCapabilities = { setOf(lookup.id) })
+            advanceUntilIdle()
+            controller.connect("unused")
+            advanceUntilIdle()
+            assertEquals(
+                listOf(action.id),
+                provider.request.catalog.tools
+                    .map { it.capabilityId },
+            )
+        }
+
+    @Test
+    fun `switching a capability back on offers it again under a different catalog revision`() =
+        runTest {
+            val provider = FakeProvider()
+            var hidden = setOf(lookup.id)
+            val controller = controller(provider, hiddenCapabilities = { hidden })
+            advanceUntilIdle()
+            controller.connect("unused")
+            advanceUntilIdle()
+            val without = provider.request.catalog
+            controller.disconnect()
+            advanceUntilIdle()
+
+            hidden = emptySet()
+            controller.connect("unused")
+            advanceUntilIdle()
+            val with = provider.request.catalog
+            assertEquals(listOf(action.id, lookup.id), with.tools.map { it.capabilityId })
+            assertNotEquals(without.revision, with.revision)
+        }
+
+    @Test
+    fun `the prompt file decides the instructions and the tool wording`() =
+        runTest {
+            val provider = FakeProvider()
+            val controller = controller(provider, media = { VoiceMedia() })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            assertTrue(provider.request.instructions.startsWith("You are EVA"))
+            assertTrue(provider.request.instructions.contains("The user's current local time is"))
+            controller.disconnect()
+            advanceUntilIdle()
+
+            val muted = FakeProvider()
+            val mutedController =
+                controller(muted, media = { VoiceMedia() }, prompt = {
+                    PromptConfig(
+                        listOf(
+                            PromptComponent(
+                                id = "no-hangup",
+                                instruction = "Never hang up.",
+                                hide = listOf(PromptDefaults.END_CONVERSATION_ID),
+                            ),
+                        ),
+                    )
+                })
+            advanceUntilIdle()
+            mutedController.connectVoice("test")
+            advanceUntilIdle()
+            assertEquals("Never hang up.", muted.request.instructions)
+            assertFalse(
+                muted.request.catalog.tools
+                    .any { it.capabilityId == PromptDefaults.END_CONVERSATION_ID },
+            )
+        }
+
+    @Test
+    fun `a broken prompt file fails the connection with its own message`() =
+        runTest {
+            val provider = FakeProvider()
+            val controller = controller(provider, prompt = { throw PromptConfigException("Line 4, column 3: no such field") })
+            advanceUntilIdle()
+            controller.connect("unused")
+            advanceUntilIdle()
+            assertEquals(ProviderStatus.DISCONNECTED, controller.state.value.providerStatus)
+            assertEquals("Line 4, column 3: no such field", controller.state.value.providerMessage)
+        }
+
+    @Test
+    fun `the model hanging up is signalled to call surfaces, and a user disconnect is not`() =
+        runTest {
+            val stopped = FakeProvider()
+            val byUser = controller(stopped, media = { VoiceMedia() })
+            advanceUntilIdle()
+            var userHangUps = 0
+            val userWatcher = launch { byUser.hangUps.collect { userHangUps++ } }
+            runCurrent()
+            byUser.connectVoice("test")
+            advanceUntilIdle()
+            byUser.disconnect()
+            advanceUntilIdle()
+            assertEquals(0, userHangUps)
+            userWatcher.cancel()
+
+            val provider = FakeProvider()
+            val byModel = controller(provider, media = { VoiceMedia() })
+            advanceUntilIdle()
+            var modelHangUps = 0
+            val modelWatcher = launch { byModel.hangUps.collect { modelHangUps++ } }
+            runCurrent()
+            byModel.connectVoice("test")
+            advanceUntilIdle()
+            provider.input = ConversationInput("voice:turn-1", "")
+            provider.channel.send(ProviderEvent.ResponseStarted("voice:turn-1", "voice:turn-1"))
+            provider.channel.send(provider.endCall("turn-1"))
+            advanceUntilIdle()
+            assertEquals(1, modelHangUps)
+            modelWatcher.cancel()
         }
 
     private class FakeProvider(

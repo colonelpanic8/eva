@@ -36,6 +36,7 @@ class EvaVoiceInteractionSession(
     private val eva = context.applicationContext as EvaApplication
     private val owners = SessionViewOwners()
     private var startJob: Job? = null
+    private var hangUpJob: Job? = null
     private var locked by mutableStateOf(false)
     private var needsMicrophone by mutableStateOf(false)
 
@@ -86,6 +87,7 @@ class EvaVoiceInteractionSession(
         locked = context.getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
         owners.show()
         eva.intentHost.attachAssistant(assistantLauncher)
+        watchHangUp()
         start()
     }
 
@@ -97,14 +99,26 @@ class EvaVoiceInteractionSession(
     override fun onHide() {
         eva.intentHost.detachAssistant(assistantLauncher)
         startJob?.cancel()
+        hangUpJob?.cancel()
         owners.hide()
         super.onHide()
     }
 
     override fun onDestroy() {
         eva.intentHost.detachAssistant(assistantLauncher)
+        hangUpJob?.cancel()
         owners.destroy()
         super.onDestroy()
+    }
+
+    /**
+     * The panel exists only to host the call, so the model hanging up takes it down and returns
+     * the user to whatever it was covering, including an app an action just launched. Only this
+     * panel closes: EVA's own activity is a separate window and is left where the user put it.
+     */
+    private fun watchHangUp() {
+        hangUpJob?.cancel()
+        hangUpJob = owners.lifecycleScope.launch { eva.controller.hangUps.collect { hide() } }
     }
 
     /**

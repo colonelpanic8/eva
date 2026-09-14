@@ -39,10 +39,12 @@ import com.colonelpanic.eva.conversation.TurnWorkHost
 import com.colonelpanic.eva.conversation.TurnWorkService
 import com.colonelpanic.eva.conversation.WorkNotifications
 import com.colonelpanic.eva.data.AppearanceSettings
+import com.colonelpanic.eva.data.CapabilitySettings
 import com.colonelpanic.eva.data.ChatGptAccountStore
 import com.colonelpanic.eva.data.ChosenNumbers
 import com.colonelpanic.eva.data.JournalDatabase
 import com.colonelpanic.eva.data.OpenAiSettings
+import com.colonelpanic.eva.data.PromptStore
 import com.colonelpanic.eva.data.SqliteConversationStore
 import com.colonelpanic.eva.data.SqliteInvocationRepository
 import com.colonelpanic.eva.providers.BrokerConversationProvider
@@ -95,6 +97,8 @@ class EvaApplication :
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val settings by lazy { OpenAiSettings(this) }
     val appearance by lazy { AppearanceSettings(this) }
+    val capabilities by lazy { CapabilitySettings(this) }
+    val prompts by lazy { PromptStore(this) }
     val chatGpt by lazy { ChatGptAccountStore(this) }
     val signIn by lazy { ChatGptSignIn(save = chatGpt::save) }
     private var signInJob: Job? = null
@@ -129,6 +133,11 @@ class EvaApplication :
             settings.apiKey() != null -> ApiKeyAccess(settings.requireApiKey())
             else -> null
         }
+
+    /** Prompt edits outlive the screen that made them, so they run here rather than in an activity scope. */
+    fun editPrompt(action: suspend PromptStore.() -> Unit) {
+        scope.launch { prompts.action() }
+    }
 
     /** Best effort: the picker still accepts a typed model name when this fails. */
     fun refreshModels() {
@@ -234,9 +243,10 @@ class EvaApplication :
                     )
                 }
                 deviceControlHost?.let { host ->
-                    put(CapabilityRegistry.UI_OBSERVE, UiControlBackend(host, observations, UiControlBackend.Operation.OBSERVE))
-                    put(CapabilityRegistry.UI_TAP, UiControlBackend(host, observations, UiControlBackend.Operation.TAP))
-                    put(CapabilityRegistry.UI_SET_TEXT, UiControlBackend(host, observations, UiControlBackend.Operation.SET_TEXT))
+                    val exposed = { capabilities.screenControlEnabled }
+                    put(CapabilityRegistry.UI_OBSERVE, UiControlBackend(host, observations, UiControlBackend.Operation.OBSERVE, exposed))
+                    put(CapabilityRegistry.UI_TAP, UiControlBackend(host, observations, UiControlBackend.Operation.TAP, exposed))
+                    put(CapabilityRegistry.UI_SET_TEXT, UiControlBackend(host, observations, UiControlBackend.Operation.SET_TEXT, exposed))
                 }
             },
         )
@@ -273,6 +283,8 @@ class EvaApplication :
             scope = scope,
             voiceLookupRetries = { settings.voiceLookupRetries },
             voiceKeywords = { contactKeywords.names() },
+            hiddenCapabilities = { if (capabilities.screenControlEnabled) emptySet() else CapabilityRegistry.SCREEN_CONTROL },
+            prompt = { prompts.load() },
         ).also { controller ->
             scope.launch {
                 controller.state.collect { mutableVoiceSession.value = VoiceSessionStatus(it.mediaState, it.mediaControls) }
