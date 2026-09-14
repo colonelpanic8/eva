@@ -29,14 +29,20 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import com.colonelpanic.eva.conversation.ConversationEntry
 import com.colonelpanic.eva.conversation.EntryStatus
 
+internal fun Constraints.withMaxWidthFraction(fraction: Float): Constraints {
+    if (!hasBoundedWidth) return this
+    val maxWidth = (maxWidth * fraction).toInt()
+    return copy(minWidth = minOf(minWidth, maxWidth), maxWidth = maxWidth)
+}
+
 private fun Modifier.maxWidthFraction(fraction: Float): Modifier =
     layout { measurable, constraints ->
-        val maxWidth = (constraints.maxWidth * fraction).toInt()
-        val placeable = measurable.measure(constraints.copy(minWidth = minOf(constraints.minWidth, maxWidth), maxWidth = maxWidth))
+        val placeable = measurable.measure(constraints.withMaxWidthFraction(fraction))
         layout(placeable.width, placeable.height) { placeable.place(0, 0) }
     }
 
