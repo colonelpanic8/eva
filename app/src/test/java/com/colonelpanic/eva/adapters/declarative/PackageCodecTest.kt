@@ -25,10 +25,9 @@ internal fun packageJson(
     {
 "formatVersion":1,"id":"community.example","version":"0.1.0","title":"Example",
 "capabilities":[{
-"tool":{"name":"capture","description":"Capture a title","inputSchema":{
+"tool":{"name":"capture","title":"Capture","description":"Capture a title","inputSchema":{
 "type":"object","properties":{"title":{"type":"string","maxLength":100}},"required":["title"],"additionalProperties":false}},
-"title":"Capture","effects":"$effect","execution":{"mode":"$mode","requiresForeground":$foreground,
-"maxWaitMillis":30000,"cancellation":"none","idempotency":"none","reconciliation":"none"},
+"effects":"$effect","execution":{"mode":"$mode","requiresForeground":$foreground,"maxWaitMillis":30000},
 "binding":$binding}]}
     """.trimIndent()
 
@@ -79,19 +78,17 @@ class PackageCodecTest {
             )
         val json =
             packageJson(body, "synchronous", false)
-                .replace("\"title\":\"Capture\",", "")
                 .replace(
-                    "\"tool\":{\"name\":\"capture\",",
+                    "\"tool\":{\"name\":\"capture\",\"title\":\"Capture\",",
                     "\"tool\":{\"name\":\"capture\",\"title\":\"Capture todo\",\"outputSchema\":$output," +
                         "\"annotations\":{\"readOnlyHint\":false,\"destructiveHint\":false},",
                 ).replace(
                     "\"title\":{\"type\":\"string\",\"maxLength\":100}",
                     "\"title\":{\"type\":\"string\",\"maxLength\":100},\"tags\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"maxItems\":3}",
-                ).replace(",\"cancellation\":\"none\",\"idempotency\":\"none\",\"reconciliation\":\"none\"", "")
+                )
         val capability = PackageCodec.decode(json).capabilities.single()
         assertEquals("Capture todo", capability.title)
         assertEquals(JsonPrimitive(false), capability.annotations!!["readOnlyHint"])
-        assertEquals("none", capability.execution.idempotency)
         assertTrue(capability.outputSchema!!.containsKey("properties"))
         val explicit = BindingArguments(capability, mapOf("title" to "Taxes", "tags" to """["work","home"]"""))
         val parsed = Json.parseToJsonElement(explicit.http(capability.binding as DeclarativeBinding.Http).body!!).jsonObject
@@ -104,14 +101,7 @@ class PackageCodecTest {
             PackageCodec.decode(json.replace("\"destructiveHint\":false", "\"destructiveHint\":true")).digest,
         )
         assertThrows(Exception::class.java) { PackageCodec.decode(json.replace("\"readOnlyHint\":false", "\"readOnlyHint\":true")) }
-        assertThrows(Exception::class.java) {
-            PackageCodec
-                .decode(json.replace("\"title\":\"Capture todo\",", "").replace("\"tool\":{", "\"title\":\"Legacy\",\"tool\":{"))
-                .capabilities
-                .single()
-                .title
-                .let { require(it == "Capture todo") }
-        }
+        assertThrows(Exception::class.java) { PackageCodec.decode(json.replace("\"tool\":{", "\"title\":\"Legacy\",\"tool\":{")) }
         assertThrows(Exception::class.java) { PackageCodec.decode(json.replace("\"title\":\"Capture todo\",", "")) }
         val queryList =
             json.replace(
@@ -181,7 +171,7 @@ class PackageCodecTest {
             packageJson(intentBinding.replace("\"kind\":", "\"flags\":1,\"kind\":")),
             packageJson(intentBinding.replace("mova://create", "intent://capture")),
             packageJson(intentBinding.replace("\"argument\":\"title\",\"type\":\"string\"", "\"argument\":\"title\",\"type\":\"integer\"")),
-            packageJson(intentBinding).replace("\"reconciliation\":\"none\"", "\"reconciliation\":\"poll\""),
+            packageJson(intentBinding).replace("\"maxWaitMillis\":30000", "\"maxWaitMillis\":30000,\"reconciliation\":\"none\""),
             packageJson(intentBinding).replace("\"mode\":\"handoff\"", "\"mode\":\"synchronous\""),
             packageJson(httpBinding.replace("https://agenda.example.org", "https://secret@agenda.example.org"), "synchronous", false),
             packageJson(httpBinding.replace("org-agenda", "openai.apiKey"), "synchronous", false),
@@ -230,7 +220,6 @@ class PackageCodecTest {
         assertTrue(override.receipt().contains("clamped"))
         assertEquals(50_000L, voice.copy(modeDefaultMillis = 50_000).effectiveMillis)
         assertThrows(Exception::class.java) { voice.copy(instanceOverrideMillis = 0) }
-        assertThrows(Exception::class.java) { ExecutionSemantics(ExecutionMode.SYNCHRONOUS, false, cancellation = "signal") }
         val longDefault = PackageCodec.decode(packageJson(intentBinding).replace("30000", "90000"))
         assertEquals(
             90_000L,

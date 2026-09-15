@@ -37,8 +37,8 @@ decode.
 A capability object contains:
 
 - `tool`: an [MCP](https://modelcontextprotocol.io) tool object: `name`,
-  `description`, `inputSchema`, and optional `title`, `outputSchema`,
-  `annotations`, and `_meta`. EVA bounds it: names match
+  `title`, `description`, `inputSchema`, and optional `outputSchema`,
+  `annotations`, and `_meta`. EVA requires `title`, which MCP leaves optional. EVA bounds it: names match
   `[A-Za-z_][A-Za-z0-9_]{0,63}`, titles are at most 120 code points, descriptions
   at most 2,000. `annotations` may carry MCP's `title`, `readOnlyHint`,
   `destructiveHint`, `idempotentHint`, and `openWorldHint`; a hint that
@@ -46,15 +46,12 @@ A capability object contains:
   would export unchanged.
 - `effects`: `read`, `write`, `external_handoff`, or `unknown`. This is EVA's
   authority for grants; the annotations are hints for models and other clients.
-- `execution`: `mode` (`synchronous` or `handoff`), `requiresForeground`,
-  optional `maxWaitMillis` (1–60,000, null or omitted means the mode default), and
-  optional `cancellation`, `idempotency`, and `reconciliation`, which default to
-  `none` and accept only `none`. Omit them; they exist so a later version can add
-  values without renaming fields.
+- `execution`: `mode` (`synchronous` or `handoff`), `requiresForeground`, and
+  optional `maxWaitMillis` (1–60,000; null or omitted means the mode default).
+  Cancellation, idempotency, and reconciliation promises do not exist in v1; a
+  later version adds fields for them rather than reserving names now.
 - A format-specific execution part: `binding` for declarative packages, `result`
   for installed-app services.
-- Optional `title` beside `tool` is accepted as a legacy alias for `tool.title`;
-  one of the two is required.
 - Optional `_meta`: an object EVA digests into the contract but does not
   interpret. Any other unknown field is rejected. `_meta` is the only place for
   vendor or future-version data.
@@ -184,9 +181,8 @@ server-only extension), and its value must match the downloaded package.
 ### Execution and waiting
 
 `ExecutionSemantics` declares `mode` (bounded synchronous or handoff),
-`requiresForeground`, optional `maxWaitMillis`, and the optional `cancellation`,
-`idempotency`, and `reconciliation` seams described under [shared shapes](#capability).
-No accepted jobs or polling are inferred from a 202 response or result prose.
+`requiresForeground`, and optional `maxWaitMillis`, as described under
+[shared shapes](#capability). No accepted jobs or polling are inferred from a 202 response or result prose.
 
 The effective wait is the user override for the extension instance, otherwise
 the capability's package/adapter default, otherwise the EVA interaction-mode
@@ -209,18 +205,16 @@ Duplicate JSON keys, unknown fields, invalid Unicode, and unsupported versions
 are rejected. Object ordering does not affect the canonical contract digest.
 The package ID is a lowercase dotted name; capability names are ASCII identifiers.
 
-Each capability contains `tool`, `execution`, `binding`, and optionally `title`
-(legacy alias), `validators`, `receipts`, `_meta`, and `effects` (`read`, `write`,
+Each capability contains `tool`, `execution`, `binding`, and optionally
+`validators`, `receipts`, `_meta`, and `effects` (`read`, `write`,
 `external_handoff`, or `unknown`; omission means unknown). `tool` is the
-[shared MCP tool object](#capability): `name`, `description`, `inputSchema`, and
-optional `title`, `outputSchema`, `annotations`, `_meta`. Inputs follow the
+[shared MCP tool object](#capability): `name`, `title`, `description`,
+`inputSchema`, and optional `outputSchema`, `annotations`, `_meta`. Inputs follow the
 [shared input schema rules](#input-and-output-schemas): scalars and scalar
 arrays in a closed object.
 
 Execution has required `mode` (`synchronous` or `handoff`) and `requiresForeground`
-(boolean); `maxWaitMillis` is an optional positive integer or null, and the
-`cancellation`, `idempotency`, and `reconciliation` seams are optional and accept
-only `none`. Intent bindings require handoff plus foreground; HTTP and content
+(boolean); `maxWaitMillis` is an optional positive integer or null. Intent bindings require handoff plus foreground; HTTP and content
 bindings require synchronous mode. The common wait policy, rather than the file
 codec, applies the 60-second clamp.
 
@@ -599,8 +593,7 @@ Effects are provider claims, not execution grants.
 `execution.mode` must be `synchronous` and `requiresForeground` must be `false`
 in v1: EVA neither launches provider UI nor grants background-activity
 privileges. `maxWaitMillis` is an optional integer 1–60,000 (default 30,000).
-The `cancellation`, `idempotency`, and `reconciliation` seams may be omitted or
-`none`. `result.maxBytes` is an integer 1–16,384 bounding the entire execute
+`result.maxBytes` is an integer 1–16,384 bounding the entire execute
 callback envelope. V1 has no binary payloads, URI grants, or non-text content
 blocks; `outputSchema` and `structuredContent` carry machine-readable data.
 

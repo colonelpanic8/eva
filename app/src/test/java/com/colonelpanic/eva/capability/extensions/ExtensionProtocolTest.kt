@@ -93,7 +93,7 @@ class ExtensionProtocolTest {
     }
 
     @Test
-    fun `execution seams default to none and unsupported promises or contradictions are rejected`() {
+    fun `execution accepts only mode foreground and wait while contradictions are rejected`() {
         val minimal = capability.replace(",\"maxWaitMillis\":30000", "")
         assertEquals(
             ExtensionProtocol.DEFAULT_WAIT_MILLIS,
@@ -104,21 +104,9 @@ class ExtensionProtocolTest {
                 .single()
                 .maxWaitMillis,
         )
-        val explicit =
-            capability.replace(
-                "\"maxWaitMillis\":30000",
-                "\"maxWaitMillis\":30000,\"cancellation\":\"none\",\"idempotency\":\"none\"",
-            )
-        assertEquals(
-            30_000L,
-            ExtensionProtocol
-                .describe(describe(explicit))
-                .descriptor!!
-                .capabilities
-                .single()
-                .maxWaitMillis,
-        )
         listOf(
+            describe(capability.replace("\"maxWaitMillis\":30000", "\"maxWaitMillis\":30000,\"cancellation\":\"none\"")),
+            describe(capability.replace("\"effects\"", "\"title\":\"Legacy\",\"effects\"")),
             describe().replace("\"protocolVersion\":1", "\"protocolVersion\":2"),
             describe(capability.replace("\"effects\":\"read\",", "")),
             describe(capability.replace("\"read\"", "\"harmless\"")),
@@ -126,7 +114,6 @@ class ExtensionProtocolTest {
             describe(capability.replace("\"mode\":\"synchronous\"", "\"mode\":\"handoff\"")),
             describe(capability.replace("30000", "60001")),
             describe(capability.replace("16384", "16385")),
-            describe(capability.replace("\"maxWaitMillis\":30000", "\"maxWaitMillis\":30000,\"idempotency\":\"guaranteed\"")),
             describe(capability.replace("\"readOnlyHint\":true", "\"readOnlyHint\":false")),
             describe(capability.replace("\"effects\":\"read\"", "\"effects\":\"write\"")),
             describe(capability.replace("\"title\":\"Search agenda\",", "")),
@@ -141,16 +128,6 @@ class ExtensionProtocolTest {
                 .capabilities
                 .single()
                 .effect,
-        )
-        val legacyTitle = capability.replace("\"title\":\"Search agenda\",", "").replace("\"effects\"", "\"title\":\"Legacy\",\"effects\"")
-        assertEquals(
-            "Legacy",
-            ExtensionProtocol
-                .describe(describe(legacyTitle))
-                .descriptor!!
-                .capabilities
-                .single()
-                .title,
         )
     }
 

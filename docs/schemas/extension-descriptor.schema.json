@@ -36,7 +36,6 @@
       "additionalProperties": false,
       "properties": {
         "tool": { "$ref": "tool.schema.json" },
-        "title": { "type": "string", "minLength": 1, "maxLength": 120, "description": "Legacy alias; prefer tool.title. One of the two is required." },
         "effects": { "enum": ["read", "write", "external_handoff", "unknown"] },
         "execution": {
           "type": "object",
@@ -45,10 +44,7 @@
           "properties": {
             "mode": { "const": "synchronous" },
             "requiresForeground": { "const": false },
-            "maxWaitMillis": { "type": ["integer", "null"], "minimum": 1, "maximum": 60000 },
-            "cancellation": { "const": "none" },
-            "idempotency": { "const": "none" },
-            "reconciliation": { "const": "none" }
+            "maxWaitMillis": { "type": ["integer", "null"], "minimum": 1, "maximum": 60000 }
           }
         },
         "result": {

@@ -7,6 +7,7 @@
     {
       "tool": {
         "name": "agenda",
+        "title": "Read agenda",
         "description": "Read an agenda span. Results carry references for a later complete_todo request.",
         "inputSchema": {
           "type": "object",
@@ -31,15 +32,11 @@
           "additionalProperties": false
         }
       },
-      "title": "Read agenda",
       "effects": "read",
       "execution": {
         "mode": "synchronous",
         "requiresForeground": false,
-        "maxWaitMillis": 30000,
-        "cancellation": "none",
-        "idempotency": "none",
-        "reconciliation": "none"
+        "maxWaitMillis": 30000
       },
       "binding": {
         "kind": "http",
@@ -139,6 +136,7 @@
     {
       "tool": {
         "name": "search_todos",
+        "title": "Search todos",
         "description": "Find todos by text. Preserve returned identifiers when completing an item in a separate user request.",
         "inputSchema": {
           "type": "object",
@@ -160,15 +158,11 @@
           "additionalProperties": false
         }
       },
-      "title": "Search todos",
       "effects": "read",
       "execution": {
         "mode": "synchronous",
         "requiresForeground": false,
-        "maxWaitMillis": 30000,
-        "cancellation": "none",
-        "idempotency": "none",
-        "reconciliation": "none"
+        "maxWaitMillis": 30000
       },
       "binding": {
         "kind": "http",
@@ -261,6 +255,7 @@
     {
       "tool": {
         "name": "capture",
+        "title": "Capture todo",
         "description": "Create a todo. Template defaults to default; title supplies the Title capture value.",
         "inputSchema": {
           "type": "object",
@@ -282,15 +277,11 @@
           "additionalProperties": false
         }
       },
-      "title": "Capture todo",
       "effects": "write",
       "execution": {
         "mode": "synchronous",
         "requiresForeground": false,
-        "maxWaitMillis": 30000,
-        "cancellation": "none",
-        "idempotency": "none",
-        "reconciliation": "none"
+        "maxWaitMillis": 30000
       },
       "binding": {
         "kind": "http",
@@ -331,6 +322,7 @@
     {
       "tool": {
         "name": "complete_todo",
+        "title": "Complete todo",
         "description": "Complete exactly the entry identified by id, or by file, pos, and exact title from a prior read. Stale references are refused. Search and completion require separate user requests.",
         "inputSchema": {
           "type": "object",
@@ -360,15 +352,11 @@
           "additionalProperties": false
         }
       },
-      "title": "Complete todo",
       "effects": "write",
       "execution": {
         "mode": "synchronous",
         "requiresForeground": false,
-        "maxWaitMillis": 30000,
-        "cancellation": "none",
-        "idempotency": "none",
-        "reconciliation": "none"
+        "maxWaitMillis": 30000
       },
       "binding": {
         "kind": "select",
@@ -454,6 +442,7 @@
     {
       "tool": {
         "name": "custom_view",
+        "title": "Custom agenda view",
         "description": "Omit key to list available views; supply a returned key to run that view.",
         "inputSchema": {
           "type": "object",
@@ -468,15 +457,11 @@
           "additionalProperties": false
         }
       },
-      "title": "Custom agenda view",
       "effects": "read",
       "execution": {
         "mode": "synchronous",
         "requiresForeground": false,
-        "maxWaitMillis": 30000,
-        "cancellation": "none",
-        "idempotency": "none",
-        "reconciliation": "none"
+        "maxWaitMillis": 30000
       },
       "binding": {
         "kind": "select",
@@ -595,6 +580,7 @@
     {
       "tool": {
         "name": "open_create",
+        "title": "Create through mova",
         "description": "Ask mova to create a todo with the default template. Requires mova to be signed in. This is a handoff, not verified creation.",
         "inputSchema": {
           "type": "object",
@@ -611,15 +597,11 @@
           "additionalProperties": false
         }
       },
-      "title": "Create through mova",
       "effects": "external_handoff",
       "execution": {
         "mode": "handoff",
         "requiresForeground": true,
-        "maxWaitMillis": 30000,
-        "cancellation": "none",
-        "idempotency": "none",
-        "reconciliation": "none"
+        "maxWaitMillis": 30000
       },
       "binding": {
         "kind": "android.intent",

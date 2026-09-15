@@ -7,27 +7,38 @@
     {
       "tool": {
         "name": "compose",
+        "title": "Prepare a message draft",
         "description": "Use the Messages package to open an SMS draft in the phone's messaging app for one explicit phone number and message text. The user reviews the draft and taps Send. This does not send a message or verify delivery. No changes to the messaging app are needed.",
         "inputSchema": {
           "type": "object",
           "properties": {
-            "recipient": {"type": "string", "minLength": 3, "maxLength": 40, "description": "One explicit phone number, including country code when needed. No contact names or multiple recipients."},
-            "message": {"type": "string", "minLength": 1, "maxLength": 800}
+            "recipient": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 40,
+              "description": "One explicit phone number, including country code when needed. No contact names or multiple recipients."
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 800
+            }
           },
-          "required": ["recipient", "message"],
+          "required": [
+            "recipient",
+            "message"
+          ],
           "additionalProperties": false
         }
       },
-      "title": "Prepare a message draft",
       "effects": "external_handoff",
       "execution": {
         "mode": "handoff",
-        "requiresForeground": true,
-        "cancellation": "none",
-        "idempotency": "none",
-        "reconciliation": "none"
+        "requiresForeground": true
       },
-      "validators": {"recipient": "phoneNumber"},
+      "validators": {
+        "recipient": "phoneNumber"
+      },
       "receipts": {
         "success": "Message draft opened. Review it and tap Send in your messaging app. Sending and delivery are not verified.",
         "handlerMissing": "No installed messaging app can open this draft."
@@ -37,10 +48,18 @@
         "action": "android.intent.action.SENDTO",
         "uri": {
           "base": "smsto:",
-          "opaque": {"argument": "recipient", "type": "string", "required": true}
+          "opaque": {
+            "argument": "recipient",
+            "type": "string",
+            "required": true
+          }
         },
         "extras": {
-          "sms_body": {"argument": "message", "type": "string", "required": true}
+          "sms_body": {
+            "argument": "message",
+            "type": "string",
+            "required": true
+          }
         }
       }
     }

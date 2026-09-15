@@ -429,6 +429,7 @@ class ConfigurationCompositionTest {
               "capabilities": [{
                 "tool": {
                   "name": "create",
+                  "title": "Create item",
                   "description": "Create an item",
                   "inputSchema": {
                     "type": "object",
@@ -437,15 +438,11 @@ class ConfigurationCompositionTest {
                     "additionalProperties": false
                   }
                 },
-                "title": "Create item",
                 "effects": "write",
                 "execution": {
                   "mode": "synchronous",
                   "requiresForeground": false,
-                  "maxWaitMillis": 45000,
-                  "cancellation": "none",
-                  "idempotency": "none",
-                  "reconciliation": "none"
+                  "maxWaitMillis": 45000
                 },
                 "binding": {
                   "kind": "http",

@@ -21,7 +21,6 @@
       "additionalProperties": false,
       "properties": {
         "tool": { "$ref": "tool.schema.json" },
-        "title": { "type": "string", "minLength": 1, "maxLength": 120, "description": "Legacy alias; prefer tool.title. One of the two is required." },
         "effects": { "enum": ["read", "write", "external_handoff", "unknown"], "description": "Omitted means unknown. Intent bindings floor at external_handoff; non-GET/HEAD HTTP floors at write." },
         "execution": { "$ref": "#/$defs/execution" },
         "binding": { "$ref": "#/$defs/binding" },
@@ -48,10 +47,7 @@
       "properties": {
         "mode": { "enum": ["synchronous", "handoff"], "description": "Intent bindings require handoff plus requiresForeground true; HTTP and content bindings require synchronous." },
         "requiresForeground": { "type": "boolean" },
-        "maxWaitMillis": { "type": ["integer", "null"], "minimum": 1, "description": "Capability default wait; the common policy clamps the effective wait to 60,000 ms." },
-        "cancellation": { "const": "none" },
-        "idempotency": { "const": "none" },
-        "reconciliation": { "const": "none" }
+        "maxWaitMillis": { "type": ["integer", "null"], "minimum": 1, "description": "Capability default wait; the common policy clamps the effective wait to 60,000 ms." }
       }
     },
     "scalarType": { "enum": ["string", "integer", "number", "boolean"] },

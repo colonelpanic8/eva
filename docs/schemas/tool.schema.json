@@ -4,7 +4,7 @@
   "title": "EVA capability tool object",
   "description": "An MCP Tool object as EVA bounds it. Shared by declarative packages and the installed-app AIDL descriptor.",
   "type": "object",
-  "required": ["name", "description", "inputSchema"],
+  "required": ["name", "title", "description", "inputSchema"],
   "additionalProperties": false,
   "properties": {
     "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$" },

@@ -9,8 +9,10 @@ import com.colonelpanic.eva.capability.InteractionMode
 import com.colonelpanic.eva.capability.extensions.ExtensionGrant
 import com.colonelpanic.eva.capability.extensions.PackageIdentity
 import com.colonelpanic.eva.conversation.prompt.PromptComponent
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -164,10 +166,13 @@ class EvaConfigurationManagerTest {
                     .json,
             )
             val liveExtension =
-                withTimeout(5_000) {
-                    app.extensions.settings.first { settings ->
-                        settings.entries.any {
-                            it.installed.identity?.instanceId == identity.instanceId && it.enabled && mutation in it.mutations
+                // The runtime feeds this flow from real IO threads; wait in real time, not the test scheduler's.
+                withContext(Dispatchers.Default.limitedParallelism(1)) {
+                    withTimeout(5_000) {
+                        app.extensions.settings.first { settings ->
+                            settings.entries.any {
+                                it.installed.identity?.instanceId == identity.instanceId && it.enabled && mutation in it.mutations
+                            }
                         }
                     }
                 }.entries.singleOrNull { it.installed.identity?.instanceId == identity.instanceId }

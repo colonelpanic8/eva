@@ -7,6 +7,7 @@
     {
       "tool": {
         "name": "enable",
+        "title": "Enable keep-awake",
         "description": "Ask Caffeine to keep the screen awake. Uses the installed Caffeine app. State cannot be read back; a successful launch is handoff evidence only.",
         "inputSchema": {
           "type": "object",
@@ -15,14 +16,10 @@
           "additionalProperties": false
         }
       },
-      "title": "Enable keep-awake",
       "effects": "write",
       "execution": {
         "mode": "handoff",
-        "requiresForeground": true,
-        "cancellation": "none",
-        "idempotency": "none",
-        "reconciliation": "none"
+        "requiresForeground": true
       },
       "receipts": {
         "success": "Enable keep-awake request handed to Caffeine. Its resulting state is not verified."
@@ -43,6 +40,7 @@
     {
       "tool": {
         "name": "disable",
+        "title": "Disable keep-awake",
         "description": "Ask Caffeine to stop keeping the screen awake. Uses the installed Caffeine app. State cannot be read back; a successful launch is handoff evidence only.",
         "inputSchema": {
           "type": "object",
@@ -51,14 +49,10 @@
           "additionalProperties": false
         }
       },
-      "title": "Disable keep-awake",
       "effects": "write",
       "execution": {
         "mode": "handoff",
-        "requiresForeground": true,
-        "cancellation": "none",
-        "idempotency": "none",
-        "reconciliation": "none"
+        "requiresForeground": true
       },
       "receipts": {
         "success": "Disable keep-awake request handed to Caffeine. Its resulting state is not verified."

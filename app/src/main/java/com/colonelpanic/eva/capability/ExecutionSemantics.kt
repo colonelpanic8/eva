@@ -8,13 +8,9 @@ data class ExecutionSemantics(
     val mode: ExecutionMode,
     val requiresForeground: Boolean,
     val maxWaitMillis: Long? = null,
-    val cancellation: String = "none",
-    val idempotency: String = "none",
-    val reconciliation: String = "none",
 ) {
     init {
         require(maxWaitMillis == null || maxWaitMillis > 0)
-        require(cancellation == "none" && idempotency == "none" && reconciliation == "none")
     }
 }
 

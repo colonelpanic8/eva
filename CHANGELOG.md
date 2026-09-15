@@ -31,7 +31,7 @@ All notable changes to EVA will be documented here.
 
 ### Changed
 
-- The installed-app extension protocol (unreleased, no external providers) changed shape before its first provider: capabilities nest their MCP tool under `tool`, `maxDurationMillis` became `maxWaitMillis`, the `cancellation`/`idempotency`/`reconciliation` fields became optional, `schemaVersion` and `result.mediaType` were removed, and replies carry `content` instead of `message`. Declarative packages keep reading unchanged; their three `none` execution fields are now optional and their action `title` may live inside `tool`.
+- Both extension formats changed shape without a compatibility path. Capabilities nest their MCP tool under `tool`, the action title lives in `tool.title`, the `cancellation`/`idempotency`/`reconciliation` fields are gone, and installed-app descriptors use `maxWaitMillis`, drop `schemaVersion` and `result.mediaType`, and reply with `content` instead of `message`. The bundled Caffeine and Messages packages were rewritten to the new shape, so their grants need renewing.
 - The conversation reads as grouped turns. Each session opens with a divider naming its mode and model ("Text session · gpt-5.6-sol") and closes with "Session ended"; within a turn, the actions the model ran hang off a branch under the request, ahead of the answer, instead of appearing as unrelated cards.
 - When EVA ends a voice conversation itself, the assistant panel closes with it, so a request that opened an app leaves you in that app instead of behind EVA's panel. Stopping the conversation yourself leaves the panel up, and EVA's own screen is never closed by a hang-up.
 

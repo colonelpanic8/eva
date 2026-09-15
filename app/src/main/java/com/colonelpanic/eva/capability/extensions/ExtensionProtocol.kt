@@ -204,19 +204,15 @@ object ExtensionProtocol {
     }
 
     private fun capability(root: JsonObject): Capability {
-        root.fields(setOf("tool", "effects", "execution", "result"), setOf("title", "_meta"))
+        root.fields(setOf("tool", "effects", "execution", "result"), setOf("_meta"))
         root.meta()
         val tool = tool(root.getValue("tool").obj())
-        val title = capabilityTitle(root, tool)
         val effect = effect(root.getValue("effects").text(20))
         tool.annotations?.let { checkAnnotations(it, effect) }
         val execution = root.getValue("execution").obj()
-        execution.fields(setOf("mode", "requiresForeground"), setOf("maxWaitMillis", "cancellation", "idempotency", "reconciliation"))
+        execution.fields(setOf("mode", "requiresForeground"), setOf("maxWaitMillis"))
         require(execution["mode"] == JsonPrimitive("synchronous")) { "Installed extensions execute synchronously" }
         require(execution["requiresForeground"] == JsonPrimitive(false)) { "Foreground execution is unsupported" }
-        listOf("cancellation", "idempotency", "reconciliation").forEach { seam ->
-            execution[seam]?.let { require(it == JsonPrimitive("none")) { "Unsupported $seam promise" } }
-        }
         val wait =
             execution["maxWaitMillis"]?.takeUnless { it == JsonNull }?.integer()?.also { require(it in 1..60_000) }
                 ?: DEFAULT_WAIT_MILLIS
@@ -230,7 +226,7 @@ object ExtensionProtocol {
                 .toInt()
         return Capability(
             tool.name,
-            title,
+            tool.title,
             tool.description,
             tool.inputSchema,
             effect,
@@ -243,10 +239,10 @@ object ExtensionProtocol {
 
     /** Shared with the declarative codec: one MCP tool object, EVA's bounds applied. */
     fun tool(root: JsonObject): McpTool {
-        root.fields(setOf("name", "description", "inputSchema"), setOf("title", "outputSchema", "annotations", "_meta"))
+        root.fields(setOf("name", "title", "description", "inputSchema"), setOf("outputSchema", "annotations", "_meta"))
         root.meta()
         val name = root.getValue("name").text(64).also { require(NAME.matches(it)) }
-        val title = root["title"]?.text(120)
+        val title = root.getValue("title").text(120)
         val description = root.getValue("description").text(2000)
         val schema = root.getValue("inputSchema").obj().also(::checkSchema)
         val output = root["outputSchema"]?.obj()?.also(::checkOutputSchema)
@@ -258,11 +254,6 @@ object ExtensionProtocol {
             }
         return McpTool(name, title, description, schema, output, annotations)
     }
-
-    fun capabilityTitle(
-        root: JsonObject,
-        tool: McpTool,
-    ): String = tool.title ?: root["title"]?.text(120) ?: error("A capability needs a title")
 
     fun effect(name: String): Effect =
         when (name) {
@@ -359,7 +350,7 @@ enum class Effect { READ, WRITE, HANDOFF, UNKNOWN }
 /** The MCP tool object embedded in a capability, after EVA's bounds are applied. */
 data class McpTool(
     val name: String,
-    val title: String?,
+    val title: String,
     val description: String,
     val inputSchema: JsonObject,
     val outputSchema: JsonObject?,

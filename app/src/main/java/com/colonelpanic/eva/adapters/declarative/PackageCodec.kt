@@ -45,7 +45,7 @@ object PackageCodec {
     }
 
     private fun capability(root: JsonObject): PackageCapability {
-        root.fields(setOf("tool", "binding", "execution"), setOf("title", "effects", "validators", "receipts", "_meta"))
+        root.fields(setOf("tool", "binding", "execution"), setOf("effects", "validators", "receipts", "_meta"))
         root["_meta"]?.obj()
         val tool = ExtensionProtocol.tool(root.getValue("tool").obj())
         val name = tool.name
@@ -106,7 +106,7 @@ object PackageCodec {
         require(alternatives.none { it is DeclarativeBinding.Intent } || execution.requiresForeground)
         return PackageCapability(
             name,
-            ExtensionProtocol.capabilityTitle(root, tool),
+            tool.title,
             tool.description,
             schema,
             effect,
@@ -120,7 +120,7 @@ object PackageCodec {
     }
 
     private fun execution(root: JsonObject): ExecutionSemantics {
-        root.fields(setOf("mode", "requiresForeground"), setOf("maxWaitMillis", "cancellation", "idempotency", "reconciliation"))
+        root.fields(setOf("mode", "requiresForeground"), setOf("maxWaitMillis"))
         val mode =
             when (root.text("mode", 30)) {
                 "synchronous" -> ExecutionMode.SYNCHRONOUS
@@ -133,9 +133,6 @@ object PackageCodec {
             mode,
             foreground,
             root["maxWaitMillis"]?.takeUnless { it == JsonNull }?.long(),
-            root["cancellation"]?.string() ?: "none",
-            root["idempotency"]?.string() ?: "none",
-            root["reconciliation"]?.string() ?: "none",
         )
     }
 
