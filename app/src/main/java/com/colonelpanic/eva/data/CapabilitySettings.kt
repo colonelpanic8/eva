@@ -1,7 +1,7 @@
 package com.colonelpanic.eva.data
 
+import android.annotation.SuppressLint
 import android.content.Context
-import androidx.core.content.edit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.asStateFlow
  */
 class CapabilitySettings(
     context: Context,
+    private val onChanged: () -> Unit = {},
 ) {
     private val prefs = context.applicationContext.getSharedPreferences("eva.settings", Context.MODE_PRIVATE)
     private val mutableScreenControl = MutableStateFlow(prefs.getBoolean(SCREEN_CONTROL, true))
@@ -21,8 +22,14 @@ class CapabilitySettings(
     val screenControlEnabled: Boolean get() = mutableScreenControl.value
 
     fun saveScreenControl(value: Boolean) {
-        prefs.edit { putBoolean(SCREEN_CONTROL, value) }
+        commit { putBoolean(SCREEN_CONTROL, value) }
         mutableScreenControl.value = value
+        onChanged()
+    }
+
+    @SuppressLint("UseKtx")
+    private fun commit(change: android.content.SharedPreferences.Editor.() -> Unit) {
+        check(prefs.edit().apply(change).commit()) { "Could not save capability settings." }
     }
 
     private companion object {

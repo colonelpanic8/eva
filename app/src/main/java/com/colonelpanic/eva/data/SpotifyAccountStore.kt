@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.data
 
+import android.annotation.SuppressLint
 import android.content.Context
 import androidx.core.content.edit
 import com.colonelpanic.eva.providers.spotify.SpotifyLogin
@@ -56,7 +57,7 @@ private class AndroidSpotifyAccountStorage(
     override fun clientId(): String? = prefs.getString(CLIENT_ID, null)
 
     override fun saveClientId(value: String?) {
-        prefs.edit { if (value == null) remove(CLIENT_ID) else putString(CLIENT_ID, value) }
+        commit { if (value == null) remove(CLIENT_ID) else putString(CLIENT_ID, value) }
     }
 
     override fun account(): String? = secrets.read(TOKENS)
@@ -64,6 +65,11 @@ private class AndroidSpotifyAccountStorage(
     override fun saveAccount(value: String) = secrets.write(TOKENS, value)
 
     override fun clearAccount() = secrets.clear(TOKENS)
+
+    @SuppressLint("UseKtx")
+    private fun commit(change: android.content.SharedPreferences.Editor.() -> Unit) {
+        check(prefs.edit().apply(change).commit()) { "Could not save Spotify settings." }
+    }
 
     private companion object {
         const val CLIENT_ID = "spotify.client_id"
@@ -75,12 +81,16 @@ class SpotifyAccountStore internal constructor(
     private val storage: SpotifyAccountStorage,
     private val refresher: SpotifyTokenRefresher,
     private val now: () -> Long = System::currentTimeMillis,
+    private val onChanged: () -> Unit = {},
+    private val onCredentialChanged: (String) -> Unit = {},
 ) {
     constructor(
         context: Context,
         login: SpotifyLogin = SpotifyLogin(),
         now: () -> Long = System::currentTimeMillis,
-    ) : this(AndroidSpotifyAccountStorage(context), login, now)
+        onChanged: () -> Unit = {},
+        onCredentialChanged: (String) -> Unit = {},
+    ) : this(AndroidSpotifyAccountStorage(context), login, now, onChanged, onCredentialChanged)
 
     private val mutex = Mutex()
     private val mutableClientId = MutableStateFlow(storage.clientId())
@@ -93,6 +103,7 @@ class SpotifyAccountStore internal constructor(
         val trimmed = value.trim()
         storage.saveClientId(trimmed.ifBlank { null })
         mutableClientId.value = trimmed.ifBlank { null }
+        onChanged()
     }
 
     fun save(
@@ -101,11 +112,15 @@ class SpotifyAccountStore internal constructor(
     ) {
         storage.saveAccount(StoredSpotify(tokens, profile).toJson().toString())
         mutableAccount.value = profile.account()
+        onCredentialChanged("provider/spotify-account")
+        onChanged()
     }
 
     fun clear() {
         storage.clearAccount()
         mutableAccount.value = null
+        onCredentialChanged("provider/spotify-account")
+        onChanged()
     }
 
     suspend fun accessToken(): String =

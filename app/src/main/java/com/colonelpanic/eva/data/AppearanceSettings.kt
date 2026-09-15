@@ -1,7 +1,7 @@
 package com.colonelpanic.eva.data
 
+import android.annotation.SuppressLint
 import android.content.Context
-import androidx.core.content.edit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
@@ -12,15 +12,23 @@ import kotlinx.coroutines.flow.asStateFlow
  */
 class AppearanceSettings(
     context: Context,
+    private val onChanged: () -> Unit = {},
 ) {
     private val prefs = context.applicationContext.getSharedPreferences("eva.settings", Context.MODE_PRIVATE)
     private val mutableDynamicColor = MutableStateFlow(prefs.getBoolean(DYNAMIC_COLOR, false))
 
     val dynamicColorFlow = mutableDynamicColor.asStateFlow()
+    val dynamicColor: Boolean get() = mutableDynamicColor.value
 
     fun saveDynamicColor(value: Boolean) {
-        prefs.edit { putBoolean(DYNAMIC_COLOR, value) }
+        commit { putBoolean(DYNAMIC_COLOR, value) }
         mutableDynamicColor.value = value
+        onChanged()
+    }
+
+    @SuppressLint("UseKtx")
+    private fun commit(change: android.content.SharedPreferences.Editor.() -> Unit) {
+        check(prefs.edit().apply(change).commit()) { "Could not save appearance settings." }
     }
 
     private companion object {

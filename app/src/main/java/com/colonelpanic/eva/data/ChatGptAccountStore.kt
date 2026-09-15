@@ -39,6 +39,8 @@ class ChatGptAccountStore(
     context: Context,
     private val login: ChatGptLogin = ChatGptLogin(),
     private val now: () -> Long = System::currentTimeMillis,
+    private val onChanged: () -> Unit = {},
+    private val onCredentialChanged: (String) -> Unit = {},
 ) : ChatGptTokenSource {
     private val secrets = SecretStore(context)
     private val mutex = Mutex()
@@ -51,11 +53,15 @@ class ChatGptAccountStore(
     fun save(tokens: ChatGptTokens) {
         secrets.write(TOKENS, tokens.toJson().toString())
         mutableAccount.value = tokens.account()
+        onCredentialChanged("provider/chatgpt")
+        onChanged()
     }
 
     fun clear() {
         secrets.clear(TOKENS)
         mutableAccount.value = null
+        onCredentialChanged("provider/chatgpt")
+        onChanged()
     }
 
     override suspend fun current(): ChatGptTokens =

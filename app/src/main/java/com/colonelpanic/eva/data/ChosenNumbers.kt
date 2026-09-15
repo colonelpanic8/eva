@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.data
 
+import android.annotation.SuppressLint
 import android.content.Context
 import androidx.core.content.edit
 import com.colonelpanic.eva.adapters.android.ContactHistory
@@ -15,6 +16,7 @@ import kotlinx.coroutines.withContext
 class ChosenNumbers(
     context: Context,
     private val clock: () -> Long = System::currentTimeMillis,
+    private val onChanged: () -> Unit = {},
 ) {
     private val prefs = context.applicationContext.getSharedPreferences("eva.chosenNumbers", Context.MODE_PRIVATE)
 
@@ -44,6 +46,21 @@ class ChosenNumbers(
                 keys.forEach { putLong(it, now) }
                 stale.forEach(::remove)
             }
+            onChanged()
+        }
+
+    @SuppressLint("UseKtx")
+    suspend fun replace(values: Map<String, Long>) =
+        withContext(Dispatchers.IO) {
+            require(values.size <= MAX_NUMBERS)
+            check(
+                prefs
+                    .edit()
+                    .apply {
+                        clear()
+                        for ((key, value) in values) putLong(key, value)
+                    }.commit(),
+            ) { "Could not restore remembered choices." }
         }
 
     private companion object {

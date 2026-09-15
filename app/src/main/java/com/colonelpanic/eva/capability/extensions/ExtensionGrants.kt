@@ -57,6 +57,8 @@ class ExtensionGrants(
         descriptor: Descriptor,
     ): ExtensionGrant? = grants[identity.instanceId]?.takeIf { it.identityKey == identity.key && it.digest == descriptor.digest }
 
+    fun all(): Map<String, ExtensionGrant> = grants.toMap()
+
     fun allowed(
         identity: AdapterIdentity,
         descriptor: Descriptor,
@@ -107,6 +109,22 @@ class ExtensionGrants(
                     (entry.descriptor == null || entry.descriptor.digest == grant.digest)
             },
         )
+    }
+
+    suspend fun restore(
+        restored: Map<String, ExtensionGrant>,
+        installed: List<InstalledExtension>,
+    ): Set<String> {
+        val available = installed.associateBy { it.identity?.instanceId }
+        val accepted =
+            restored.filter { (instance, grant) ->
+                val entry = available[instance]
+                val descriptor = entry?.descriptor
+                entry?.identity?.key == grant.identityKey && descriptor?.digest == grant.digest && !entry.contractRejected &&
+                    grant.mutations.all { name -> descriptor.capabilities.any { it.name == name && it.effect != Effect.READ } }
+            }
+        save(accepted)
+        return restored.keys - accepted.keys
     }
 
     private suspend fun save(next: Map<String, ExtensionGrant>) {

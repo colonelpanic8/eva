@@ -61,6 +61,7 @@ import com.colonelpanic.eva.data.PromptStore
 import com.colonelpanic.eva.data.SpotifyAccountStore
 import com.colonelpanic.eva.data.SqliteConversationStore
 import com.colonelpanic.eva.data.SqliteInvocationRepository
+import com.colonelpanic.eva.data.configuration.EvaConfigurationManager
 import com.colonelpanic.eva.providers.BrokerConversationProvider
 import com.colonelpanic.eva.providers.BrokerEndpoint
 import com.colonelpanic.eva.providers.openai.ApiKeyAccess
@@ -107,20 +108,30 @@ class EvaApplication :
     private val mediaLauncher by lazy { AndroidMediaLauncher(this) }
     private val mediaLibraryQueue by lazy { AndroidMediaLibraryQueueClient(this) }
     private val messageTargets by lazy { MessageTargets(intentHost, messagingStore) }
-    private val chosenNumbers by lazy { ChosenNumbers(this) }
+    val configuration by lazy { EvaConfigurationManager(this) }
+    val chosenNumbers by lazy { ChosenNumbers(this, onChanged = configuration::onLocalChange) }
 
     private suspend fun contactHistory() = ContactHistory(messagingStore.lastMessaged(), chosenNumbers.all())
 
     private val mediaFactory by lazy { WebRtcMediaSessionFactory(this) }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    val settings by lazy { OpenAiSettings(this) }
-    val appearance by lazy { AppearanceSettings(this) }
-    val capabilities by lazy { CapabilitySettings(this) }
-    val prompts by lazy { PromptStore(this) }
-    val chatGpt by lazy { ChatGptAccountStore(this) }
+    val settings by lazy { OpenAiSettings(this, configuration::onLocalChange, configuration::onCredentialChange) }
+    val appearance by lazy { AppearanceSettings(this, configuration::onLocalChange) }
+    val capabilities by lazy { CapabilitySettings(this, configuration::onLocalChange) }
+    val prompts by lazy { PromptStore(this, onChanged = configuration::onLocalChange) }
+    val chatGpt by lazy {
+        ChatGptAccountStore(this, onChanged = configuration::onLocalChange, onCredentialChanged = configuration::onCredentialChange)
+    }
     val signIn by lazy { ChatGptSignIn(save = chatGpt::save) }
     private val spotifyLogin by lazy { SpotifyLogin() }
-    val spotify by lazy { SpotifyAccountStore(this, spotifyLogin) }
+    val spotify by lazy {
+        SpotifyAccountStore(
+            this,
+            spotifyLogin,
+            onChanged = configuration::onLocalChange,
+            onCredentialChanged = configuration::onCredentialChange,
+        )
+    }
     val spotifyConnect by lazy { SpotifyConnect(spotifyLogin, spotify::save) }
     private val spotifyApi by lazy { SpotifyApi(spotify::accessToken) }
     private var signInJob: Job? = null
@@ -291,7 +302,11 @@ class EvaApplication :
         )
     val packageSettings by lazy {
         com.colonelpanic.eva.data
-            .PackageSettings(this)
+            .PackageSettings(
+                this,
+                onChanged = configuration::onLocalChange,
+                onCredentialChanged = configuration::onCredentialChange,
+            )
     }
     private val boundedExecution by lazy {
         com.colonelpanic.eva.capability
@@ -391,6 +406,8 @@ class EvaApplication :
             ),
             ExtensionGrants(ExtensionGrantFile(this)),
             extensionScope,
+            configuration::onLocalChange,
+            configuration::onGrantChange,
         )
     }
 
@@ -403,6 +420,7 @@ class EvaApplication :
         try {
             observeExtensionPackages(this, extensions::packageChanged)
             extensions.refresh()
+            configuration.start()
         } catch (failure: Throwable) {
             com.colonelpanic.eva.capability.extensions
                 .rethrowFatalExtensionFailure(failure)

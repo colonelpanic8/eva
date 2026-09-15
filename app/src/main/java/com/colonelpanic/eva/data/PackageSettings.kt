@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
 import com.colonelpanic.eva.adapters.declarative.BasicCredential
+import com.colonelpanic.eva.adapters.declarative.InstalledPlugin
 import com.colonelpanic.eva.adapters.declarative.LoadedPackage
 import com.colonelpanic.eva.adapters.declarative.PackageCodec
 import com.colonelpanic.eva.adapters.declarative.PackageDefinition
@@ -15,6 +16,8 @@ import com.colonelpanic.eva.capability.WaitBudget
 import com.colonelpanic.eva.capability.extensions.InstalledExtension
 import com.colonelpanic.eva.capability.extensions.PackageIdentity
 import com.colonelpanic.eva.capability.extensions.rethrowFatalExtensionFailure
+import com.colonelpanic.eva.data.configuration.HttpServiceBinding
+import com.colonelpanic.eva.data.configuration.PortablePackage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.UUID
@@ -25,6 +28,15 @@ data class PackageConfigurationEntry(
     val origin: String?,
     val credentialName: String?,
     val waitMillis: Long?,
+    val credentialAvailable: Boolean = true,
+)
+
+data class PortablePackageSettings(
+    val repository: String,
+    val bundledInstances: Map<String, String>,
+    val installed: List<PortablePackage>,
+    val waitMillis: Map<String, Long>,
+    val services: List<HttpServiceBinding>,
 )
 
 class PackageSettings(
@@ -36,6 +48,8 @@ class PackageSettings(
             .toList()
     },
     readPackage: (String) -> String = { name -> context.assets.open(name).use { it.readBytes().toString(Charsets.UTF_8) } },
+    private val onChanged: () -> Unit = {},
+    private val onCredentialChanged: (String) -> Unit = {},
 ) {
     private val secrets = SecretStore(context)
     private val prefs = context.getSharedPreferences("eva.packages", Context.MODE_PRIVATE)
@@ -57,7 +71,7 @@ class PackageSettings(
             null
         }
 
-    private val bundledSources: Map<PackageIdentity, PackageDefinition> =
+    private val bundledDefinitions: Map<String, PackageDefinition> =
         loadOrReject("Bundled packages", listPackages)
             .orEmpty()
             .filter { it.endsWith(".json") }
@@ -69,7 +83,7 @@ class PackageSettings(
                         prefs.getString(identityKey, null) ?: UUID.randomUUID().toString().also {
                             savePreferences { putString(identityKey, it) }
                         }
-                    PackageIdentity(id) to source
+                    name to source
                 }
             }.toMap()
     private val imports =
@@ -79,6 +93,8 @@ class PackageSettings(
                 { encoded -> savePreferences { putString("imports", encoded) } },
             )
         }
+    private val bundledSources: Map<PackageIdentity, PackageDefinition>
+        get() = bundledDefinitions.mapKeys { (name, _) -> PackageIdentity(requireNotNull(prefs.getString("instance:$name", null))) }
     private val sources: Map<PackageIdentity, PackageDefinition>
         get() = bundledSources + imported().associate { it.identity to it.definition }
 
@@ -88,17 +104,26 @@ class PackageSettings(
         prefs.getString("repository", null)
             ?: com.colonelpanic.eva.adapters.declarative.DEFAULT_PLUGIN_INDEX
 
-    fun saveRepository(source: String) = savePreferences { putString("repository", source) }
+    fun saveRepository(source: String) {
+        savePreferences { putString("repository", source) }
+        onChanged()
+    }
 
     fun installPlugin(preview: com.colonelpanic.eva.adapters.declarative.PluginPreview) {
         checkNotNull(imports) { "Plugin storage could not be loaded" }.install(preview)
         mutable.value = entries()
+        onChanged()
     }
 
     fun removePlugin(instance: String) {
         checkNotNull(imports).remove(instance)
         secrets.clear("package:$instance:basic")
+        savePreferences {
+            remove("origin:$instance")
+            remove("wait:$instance")
+        }
         mutable.value = entries()
+        onChanged()
     }
 
     private val mutable = MutableStateFlow(entries())
@@ -106,8 +131,14 @@ class PackageSettings(
     private val defaults = MutableStateFlow(modeDefaults())
     val waits = defaults.asStateFlow()
 
-    private fun credential(identity: PackageIdentity): BasicCredential? =
+    private fun storedCredential(identity: PackageIdentity): BasicCredential? =
         secrets.read("package:${identity.id}:basic")?.let { runCatching { BasicCredential.decode(it) }.getOrNull() }
+
+    private fun desiredOrigin(identity: PackageIdentity): String? =
+        prefs.getString("origin:${identity.id}", null) ?: storedCredential(identity)?.origin
+
+    private fun credential(identity: PackageIdentity): BasicCredential? =
+        storedCredential(identity)?.takeIf { it.origin == desiredOrigin(identity) }
 
     fun credential(
         identity: PackageIdentity,
@@ -147,13 +178,25 @@ class PackageSettings(
             val saved = BasicCredential.create(url, username, password)
             configurePackage(source, saved.origin)
             secrets.write("package:$id:basic", saved.encode())
+            savePreferences { putString("origin:$id", saved.origin) }
             mutable.value = entries()
+            onCredentialChanged(
+                com.colonelpanic.eva.data.configuration.EvaConfigurationCodec
+                    .packageSecretId(id),
+            )
+            onChanged()
         }.exceptionOrNull()?.let { it.message ?: "Could not save credentials." }
 
     fun clear(id: String) {
         require(sources.keys.any { it.id == id })
         secrets.clear("package:$id:basic")
+        savePreferences { remove("origin:$id") }
         mutable.value = entries()
+        onCredentialChanged(
+            com.colonelpanic.eva.data.configuration.EvaConfigurationCodec
+                .packageSecretId(id),
+        )
+        onChanged()
     }
 
     fun saveWait(
@@ -169,6 +212,7 @@ class PackageSettings(
             }
             defaults.value = modeDefaults()
             mutable.value = entries()
+            onChanged()
         }.exceptionOrNull()?.let { "Enter 1–60 seconds, or leave blank for the default." }
 
     fun budget(
@@ -189,15 +233,81 @@ class PackageSettings(
             PackageConfigurationEntry(
                 identity.id,
                 source.title,
-                credential(identity)?.origin,
+                desiredOrigin(identity),
                 source
                     .httpBindings()
                     .mapNotNull { it.credential }
                     .distinct()
                     .singleOrNull(),
                 override(identity.id),
+                credential(identity) != null,
             )
         }
+
+    fun portable(): PortablePackageSettings =
+        PortablePackageSettings(
+            repositorySource,
+            bundledDefinitions.keys.associateWith { name -> requireNotNull(prefs.getString("instance:$name", null)) },
+            imported().map { PortablePackage(it.identity.id, it.source, it.url, it.json) },
+            prefs.all
+                .mapNotNull { (key, value) ->
+                    if (key.startsWith("wait:") && value is Long) key.removePrefix("wait:") to value else null
+                }.toMap(),
+            sources.keys.mapNotNull { identity ->
+                desiredOrigin(identity)?.let { origin ->
+                    HttpServiceBinding(
+                        identity.id,
+                        origin,
+                        com.colonelpanic.eva.data.configuration.EvaConfigurationCodec
+                            .packageSecretId(identity.id),
+                    )
+                }
+            },
+        )
+
+    fun missingCredentials(services: List<HttpServiceBinding>): List<String> =
+        services.mapNotNull { service ->
+            val identity = PackageIdentity(service.packageInstance)
+            if (storedCredential(identity)?.origin == service.origin) null else service.credential
+        }
+
+    fun validateRestore(restored: PortablePackageSettings): List<InstalledPlugin> =
+        restored.installed
+            .map { item ->
+                val definition = PackageCodec.decode(item.document)
+                InstalledPlugin(PackageIdentity(item.instance), item.source, item.url, definition, item.document)
+            }.also(com.colonelpanic.eva.adapters.declarative.PluginInstallations::validate)
+
+    fun restore(restored: PortablePackageSettings): List<String> {
+        val installed =
+            validateRestore(restored)
+        checkNotNull(imports) { "Plugin storage could not be loaded" }.restore(installed)
+        savePreferences {
+            putString("repository", restored.repository)
+            bundledDefinitions.keys.intersect(restored.bundledInstances.keys).forEach { name ->
+                putString("instance:$name", restored.bundledInstances.getValue(name))
+            }
+            prefs.all.keys
+                .filter { it.startsWith("wait:") || it.startsWith("origin:") }
+                .forEach(::remove)
+            restored.waitMillis.forEach { (id, value) -> putLong("wait:$id", value) }
+            restored.services.forEach { service -> putString("origin:${service.packageInstance}", service.origin) }
+        }
+        defaults.value = modeDefaults()
+        mutable.value = entries()
+        return buildList {
+            (restored.bundledInstances.keys - bundledDefinitions.keys).sorted().forEach {
+                add(
+                    "Bundled package $it is not in this EVA build.",
+                )
+            }
+            (bundledDefinitions.keys - restored.bundledInstances.keys).sorted().forEach {
+                add(
+                    "Bundled package $it is new on this EVA build.",
+                )
+            }
+        }
+    }
 
     // KTX edit discards the commit result; installation identity must fail closed on write failure.
     @SuppressLint("UseKtx")

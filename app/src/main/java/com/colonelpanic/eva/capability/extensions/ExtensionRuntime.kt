@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class ExtensionSettingsEntry(
     val installed: InstalledExtension,
@@ -29,6 +30,8 @@ class ExtensionRuntime(
     private val adapter: CapabilityAdapter,
     private val grants: ExtensionGrants,
     private val scope: CoroutineScope,
+    private val onChanged: () -> Unit = {},
+    private val onGrantChanged: (String) -> Unit = {},
 ) {
     private val bundled = registry.snapshot
     private val updates = Mutex()
@@ -72,12 +75,32 @@ class ExtensionRuntime(
         grants.mutation(identity, descriptor, name, enabled)
     }
 
+    fun portableGrants(): Map<String, ExtensionGrant> = grants.all()
+
+    suspend fun restoreGrants(
+        restored: Map<String, ExtensionGrant>,
+        expectedPackageInstances: Set<String>,
+    ): Set<String> {
+        adapter.refresh()
+        withTimeoutOrNull(5_000) {
+            adapter.ready.first { it }
+            adapter.installed.first { installed ->
+                val live = installed.mapNotNull { it.identity?.instanceId }.toSet()
+                expectedPackageInstances.all { "package:$it" in live }
+            }
+        }
+        var missing = emptySet<String>()
+        update { missing = grants.restore(restored, adapter.installed.value) }
+        return missing
+    }
+
     private fun change(
         key: String,
         requireAvailable: Boolean,
         change: suspend (AdapterIdentity, Descriptor) -> Unit,
     ) {
         scope.launch {
+            var changedInstance: String? = null
             update {
                 val entry =
                     adapter.installed.value.find { "${it.identity?.key}:${it.descriptor?.digest}" == key }
@@ -86,7 +109,9 @@ class ExtensionRuntime(
                 val descriptor = checkNotNull(entry.descriptor)
                 if (requireAvailable) require(adapter.available(identity, descriptor.digest))
                 change(identity, descriptor)
+                changedInstance = identity.instanceId
             }
+            changedInstance?.let(onGrantChanged)
         }
     }
 
@@ -141,5 +166,6 @@ class ExtensionRuntime(
                     },
                     error,
                 )
+            onChanged()
         }
 }

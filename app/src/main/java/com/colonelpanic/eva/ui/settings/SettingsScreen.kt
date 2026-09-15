@@ -76,6 +76,8 @@ fun SettingsScreen(
                     .padding(innerPadding)
                     .verticalScroll(rememberScrollState()),
         ) {
+            ConfigurationSection(state, actions)
+            SettingsDivider()
             AccountSection(state, actions)
             SettingsDivider()
             ModelsSection(state, actions)
@@ -91,6 +93,43 @@ fun SettingsScreen(
             SettingsDivider()
             AppearanceSection(state, actions)
             Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun ConfigurationSection(
+    state: SettingsUiState,
+    actions: SettingsActions,
+) {
+    SettingsSection("User configuration") {
+        SettingsBlock {
+            Text(
+                state.configuration.linkedFolder?.let {
+                    "Linked to $it/${com.colonelpanic.eva.data.configuration.EvaConfigurationCodec.FILE_NAME}"
+                }
+                    ?: "Choose a synced folder or git checkout. EVA will create eva.yaml or restore the existing configuration.",
+            )
+            state.configuration.message?.let {
+                Text(
+                    it,
+                    color =
+                        if (state.configuration.isError) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                )
+            }
+            state.configuration.setupRequired.forEach { Text("Setup required: $it", color = MaterialTheme.colorScheme.error) }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = actions.onSelectConfigurationFolder) {
+                    Text(if (state.configuration.linkedFolder == null) "Choose folder" else "Change folder")
+                }
+                if (state.configuration.linkedFolder != null) {
+                    TextButton(onClick = actions.onReloadConfiguration) { Text("Reload") }
+                }
+            }
         }
     }
 }

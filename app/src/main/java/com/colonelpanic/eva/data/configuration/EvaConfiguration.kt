@@ -1,0 +1,622 @@
+package com.colonelpanic.eva.data.configuration
+
+import com.charleskorn.kaml.MultiLineStringStyle
+import com.charleskorn.kaml.SingleLineStringStyle
+import com.charleskorn.kaml.Yaml
+import com.charleskorn.kaml.YamlConfiguration
+import com.charleskorn.kaml.YamlException
+import com.colonelpanic.eva.adapters.declarative.PackageCodec
+import com.colonelpanic.eva.conversation.prompt.PromptComponent
+import com.colonelpanic.eva.conversation.prompt.PromptConfig
+import com.colonelpanic.eva.conversation.prompt.PromptDefaults
+import com.colonelpanic.eva.providers.openai.OpenAiModels
+import kotlinx.serialization.Required
+import kotlinx.serialization.Serializable
+import java.net.URI
+import java.security.MessageDigest
+import java.util.UUID
+
+@Serializable
+data class EvaConfigurationDocument(
+    @Required val format: String = FORMAT,
+    @Required val version: Int = VERSION,
+    val include: List<String> = emptyList(),
+    val models: ModelsPatch? = null,
+    val voice: VoicePatch? = null,
+    val appearance: AppearancePatch? = null,
+    val capabilities: CapabilitiesPatch? = null,
+    val prompt: PromptPatch? = null,
+    val packages: PackagesPatch? = null,
+    val extensions: ExtensionsPatch? = null,
+    val spotify: SpotifyPatch? = null,
+    val credentials: CredentialsPatch? = null,
+    val remembered: RememberedPatch? = null,
+    val device: DevicePatch? = null,
+) {
+    companion object {
+        const val FORMAT = "eva"
+        const val VERSION = 1
+    }
+}
+
+@Serializable data class ModelsPatch(
+    val text: String? = null,
+    val realtime: String? = null,
+    val reasoningEffort: String? = null,
+)
+
+@Serializable data class VoicePatch(
+    val lookupRetries: Int? = null,
+)
+
+@Serializable data class AppearancePatch(
+    val dynamicColor: Boolean? = null,
+)
+
+@Serializable data class CapabilitiesPatch(
+    val screenControl: Boolean? = null,
+)
+
+@Serializable data class PromptPatch(
+    val source: String? = null,
+    val components: List<PromptComponent>? = null,
+)
+
+@Serializable
+data class PackagesPatch(
+    val repository: String? = null,
+    val bundledInstances: Map<String, String>? = null,
+    val installed: List<PortablePackage>? = null,
+    val waitMillis: Map<String, Long>? = null,
+    val services: List<HttpServiceBinding>? = null,
+)
+
+@Serializable
+data class PortablePackage(
+    val instance: String,
+    val source: String,
+    val url: String,
+    val document: String,
+)
+
+@Serializable
+data class HttpServiceBinding(
+    val packageInstance: String,
+    val origin: String,
+    val credential: String,
+)
+
+@Serializable data class ExtensionsPatch(
+    val grants: List<PortableGrant>? = null,
+)
+
+@Serializable
+data class PortableGrant(
+    val instance: String,
+    val identity: String,
+    val digest: String,
+    val mutations: List<String> = emptyList(),
+)
+
+@Serializable data class SpotifyPatch(
+    val clientId: String? = null,
+    val clearClientId: Boolean = false,
+)
+
+@Serializable data class CredentialsPatch(
+    val required: List<SecretReference>? = null,
+)
+
+@Serializable
+data class SecretReference(
+    val id: String,
+    val kind: String,
+    val endpoint: String? = null,
+)
+
+@Serializable data class RememberedPatch(
+    val chosenNumbers: Map<String, Long>? = null,
+)
+
+@Serializable data class DevicePatch(
+    val authorizations: List<String>? = null,
+)
+
+data class EvaConfiguration(
+    val models: Models,
+    val voice: Voice,
+    val appearance: Appearance,
+    val capabilities: Capabilities,
+    val prompt: Prompt,
+    val packages: Packages,
+    val extensions: Extensions,
+    val spotify: Spotify,
+    val credentials: Credentials,
+    val remembered: Remembered,
+    val device: Device,
+) {
+    data class Models(
+        val text: String,
+        val realtime: String,
+        val reasoningEffort: String,
+    )
+
+    data class Voice(
+        val lookupRetries: Int,
+    )
+
+    data class Appearance(
+        val dynamicColor: Boolean,
+    )
+
+    data class Capabilities(
+        val screenControl: Boolean,
+    )
+
+    data class Prompt(
+        val source: String,
+        val components: List<PromptComponent>,
+    )
+
+    data class Packages(
+        val repository: String,
+        val bundledInstances: Map<String, String>,
+        val installed: List<PortablePackage>,
+        val waitMillis: Map<String, Long>,
+        val services: List<HttpServiceBinding>,
+    )
+
+    data class Extensions(
+        val grants: List<PortableGrant>,
+    )
+
+    data class Spotify(
+        val clientId: String?,
+    )
+
+    data class Credentials(
+        val required: List<SecretReference>,
+    )
+
+    data class Remembered(
+        val chosenNumbers: Map<String, Long>,
+    )
+
+    data class Device(
+        val authorizations: List<String>,
+    )
+}
+
+data class ResolvedConfiguration(
+    val configuration: EvaConfiguration,
+    val root: EvaConfigurationDocument,
+    val included: EvaConfigurationDocument,
+    val fingerprint: String,
+    val rootFingerprint: String,
+)
+
+fun interface ConfigurationReader {
+    fun read(path: String): String?
+}
+
+object EvaConfigurationCodec {
+    const val FILE_NAME = "eva.yaml"
+    const val MAX_FILE_BYTES = 4_194_304
+    const val MAX_GRAPH_BYTES = 8_388_608
+    private const val MAX_FILES = 32
+    private const val MAX_DEPTH = 8
+
+    private val yaml =
+        Yaml(
+            configuration =
+                YamlConfiguration(
+                    encodeDefaults = false,
+                    multiLineStringStyle = MultiLineStringStyle.Literal,
+                    singleLineStringStyle = SingleLineStringStyle.PlainExceptAmbiguous,
+                    breakScalarsAt = 100,
+                ),
+        )
+
+    fun encode(document: EvaConfigurationDocument): String =
+        yaml.encodeToString(EvaConfigurationDocument.serializer(), canonical(document)).trimEnd() + "\n"
+
+    fun decode(text: String): EvaConfigurationDocument {
+        require(text.toByteArray(Charsets.UTF_8).size <= MAX_FILE_BYTES) { "Configuration file is too large." }
+        val document =
+            try {
+                yaml.decodeFromString(EvaConfigurationDocument.serializer(), text)
+            } catch (error: YamlException) {
+                throw IllegalArgumentException("Line ${error.line}, column ${error.column}: ${error.message}", error)
+            }
+        require(document.format == EvaConfigurationDocument.FORMAT) { "This is not an EVA configuration file." }
+        require(document.version == EvaConfigurationDocument.VERSION) { "Unsupported EVA configuration version ${document.version}." }
+        document.include.forEach(::validateInclude)
+        require(document.include.distinct().size == document.include.size) { "An include is listed more than once." }
+        return document
+    }
+
+    fun resolve(
+        rootPath: String = FILE_NAME,
+        reader: ConfigurationReader,
+    ): ResolvedConfiguration {
+        val visited = linkedSetOf<String>()
+        val digest = MessageDigest.getInstance("SHA-256")
+        var files = 0
+        var totalBytes = 0
+
+        fun load(
+            path: String,
+            depth: Int,
+        ): EvaConfigurationDocument {
+            require(depth <= MAX_DEPTH) { "Configuration includes are nested too deeply." }
+            require(visited.add(path)) { "Configuration include cycle at $path." }
+            require(++files <= MAX_FILES) { "Configuration includes too many files." }
+            val text = requireNotNull(reader.read(path)) { "Configuration include $path was not found." }
+            totalBytes += text.toByteArray(Charsets.UTF_8).size
+            require(totalBytes <= MAX_GRAPH_BYTES) { "Configuration include graph is too large." }
+            digest.update(path.toByteArray(Charsets.UTF_8))
+            digest.update(byteArrayOf(0))
+            digest.update(text.toByteArray(Charsets.UTF_8))
+            val document = decode(text)
+            var merged = EvaConfigurationDocument()
+            document.include.forEach { child -> merged = merge(merged, load(resolvePath(path, child), depth + 1)) }
+            visited.remove(path)
+            return merge(merged, document.copy(include = emptyList()))
+        }
+
+        val rootText = requireNotNull(reader.read(rootPath)) { "Configuration file $rootPath was not found." }
+        totalBytes += rootText.toByteArray(Charsets.UTF_8).size
+        require(totalBytes <= MAX_GRAPH_BYTES) { "Configuration include graph is too large." }
+        val root = decode(rootText)
+        val included =
+            root.include.fold(EvaConfigurationDocument()) { result, child ->
+                merge(result, load(resolvePath(rootPath, child), 1))
+            }
+        digest.update(rootPath.toByteArray(Charsets.UTF_8))
+        digest.update(byteArrayOf(0))
+        digest.update(rootText.toByteArray(Charsets.UTF_8))
+        val resolved = merge(included, root.copy(include = emptyList())).materialize().validated()
+        return ResolvedConfiguration(resolved, root, included, digest.digest().hex(), fingerprint(rootText))
+    }
+
+    fun resolve(reader: ConfigurationReader): ResolvedConfiguration = resolve(FILE_NAME, reader)
+
+    fun complete(configuration: EvaConfiguration): EvaConfigurationDocument = diff(configuration, null)
+
+    fun overrides(
+        configuration: EvaConfiguration,
+        included: EvaConfigurationDocument,
+        include: List<String>,
+    ): EvaConfigurationDocument = diff(configuration, included).copy(include = include)
+
+    private fun diff(
+        current: EvaConfiguration,
+        base: EvaConfigurationDocument?,
+    ) = EvaConfigurationDocument(
+        models =
+            ModelsPatch(
+                current.models.text.takeIf { it != base?.models?.text },
+                current.models.realtime.takeIf { it != base?.models?.realtime },
+                current.models.reasoningEffort.takeIf { it != base?.models?.reasoningEffort },
+            ).nonEmpty(),
+        voice = VoicePatch(current.voice.lookupRetries.takeIf { it != base?.voice?.lookupRetries }).nonEmpty(),
+        appearance = AppearancePatch(current.appearance.dynamicColor.takeIf { it != base?.appearance?.dynamicColor }).nonEmpty(),
+        capabilities = CapabilitiesPatch(current.capabilities.screenControl.takeIf { it != base?.capabilities?.screenControl }).nonEmpty(),
+        prompt =
+            PromptPatch(
+                current.prompt.source.takeIf { it != base?.prompt?.source },
+                current.prompt.components.takeIf { it != base?.prompt?.components },
+            ).nonEmpty(),
+        packages =
+            PackagesPatch(
+                current.packages.repository.takeIf { it != base?.packages?.repository },
+                current.packages.bundledInstances.takeIf { it != base?.packages?.bundledInstances },
+                current.packages.installed.takeIf { it != base?.packages?.installed },
+                current.packages.waitMillis.takeIf { it != base?.packages?.waitMillis },
+                current.packages.services.takeIf { it != base?.packages?.services },
+            ).nonEmpty(),
+        extensions = ExtensionsPatch(current.extensions.grants.takeIf { it != base?.extensions?.grants }).nonEmpty(),
+        spotify =
+            when {
+                current.spotify.clientId == base?.spotify?.clientId && base?.spotify?.clearClientId != true -> null
+                current.spotify.clientId == null -> SpotifyPatch(clearClientId = true)
+                else -> SpotifyPatch(clientId = current.spotify.clientId)
+            },
+        credentials = CredentialsPatch(current.credentials.required.takeIf { it != base?.credentials?.required }).nonEmpty(),
+        remembered = RememberedPatch(current.remembered.chosenNumbers.takeIf { it != base?.remembered?.chosenNumbers }).nonEmpty(),
+        device = DevicePatch(current.device.authorizations.takeIf { it != base?.device?.authorizations }).nonEmpty(),
+    )
+
+    private fun EvaConfigurationDocument.materialize(): EvaConfiguration =
+        EvaConfiguration(
+            models =
+                EvaConfiguration.Models(
+                    requireNotNull(models?.text) { "models.text is missing." },
+                    requireNotNull(models?.realtime) { "models.realtime is missing." },
+                    requireNotNull(models?.reasoningEffort) { "models.reasoningEffort is missing." },
+                ),
+            voice = EvaConfiguration.Voice(requireNotNull(voice?.lookupRetries) { "voice.lookupRetries is missing." }),
+            appearance = EvaConfiguration.Appearance(requireNotNull(appearance?.dynamicColor) { "appearance.dynamicColor is missing." }),
+            capabilities =
+                EvaConfiguration.Capabilities(requireNotNull(capabilities?.screenControl) { "capabilities.screenControl is missing." }),
+            prompt =
+                EvaConfiguration.Prompt(
+                    requireNotNull(prompt?.source) { "prompt.source is missing." },
+                    requireNotNull(prompt?.components) { "prompt.components is missing." },
+                ),
+            packages =
+                EvaConfiguration.Packages(
+                    requireNotNull(packages?.repository) { "packages.repository is missing." },
+                    requireNotNull(packages?.bundledInstances) { "packages.bundledInstances is missing." },
+                    requireNotNull(packages?.installed) { "packages.installed is missing." },
+                    requireNotNull(packages?.waitMillis) { "packages.waitMillis is missing." },
+                    requireNotNull(packages?.services) { "packages.services is missing." },
+                ),
+            extensions =
+                EvaConfiguration.Extensions(requireNotNull(extensions?.grants) { "extensions.grants is missing." }),
+            spotify = EvaConfiguration.Spotify(if (spotify?.clearClientId == true) null else spotify?.clientId),
+            credentials =
+                EvaConfiguration.Credentials(requireNotNull(credentials?.required) { "credentials.required is missing." }),
+            remembered =
+                EvaConfiguration.Remembered(requireNotNull(remembered?.chosenNumbers) { "remembered.chosenNumbers is missing." }),
+            device =
+                EvaConfiguration.Device(requireNotNull(device?.authorizations) { "device.authorizations is missing." }),
+        )
+
+    private fun EvaConfiguration.validated(): EvaConfiguration {
+        models.text.modelName()
+        models.realtime.modelName()
+        require(models.reasoningEffort in OpenAiModels.REASONING_EFFORTS) { "Unknown reasoning effort." }
+        require(voice.lookupRetries in 0..10) { "voice.lookupRetries must be between 0 and 10." }
+        prompt.source.https("prompt.source")
+        PromptConfig(prompt.components).validated(PromptDefaults.VARIABLES)
+        packages.repository.https("packages.repository")
+        packages.bundledInstances.forEach { (name, id) ->
+            require(name.matches(Regex("[A-Za-z0-9._-]{1,200}"))) { "Invalid bundled package name." }
+            id.uuid("bundled package")
+        }
+        require(
+            packages.bundledInstances.values
+                .distinct()
+                .size == packages.bundledInstances.size,
+        ) { "Duplicate bundled package instance." }
+        require(packages.installed.size <= 64) { "At most 64 packages may be installed." }
+        packages.installed.forEach { item ->
+            item.instance.uuid("package")
+            require(item.source.length in 1..2048 && item.url.length in 1..2048)
+            PackageCodec.decode(item.document)
+        }
+        require(
+            packages.installed
+                .map { it.instance }
+                .distinct()
+                .size == packages.installed.size,
+        ) { "Duplicate package instance." }
+        val packageIds = packages.bundledInstances.values.toSet() + packages.installed.map { it.instance }
+        packages.waitMillis.forEach { (id, millis) ->
+            require(id in setOf("voice", "typed") || id in packageIds) { "Wait budget names an unknown package." }
+            require(millis in 1_000..60_000) { "Wait budgets must be 1–60 seconds." }
+        }
+        packages.services.forEach { service ->
+            require(service.packageInstance in packageIds) { "HTTP service names an unknown package." }
+            service.origin.httpsOrigin()
+            require(
+                service.credential == packageSecretId(service.packageInstance),
+            ) { "Package credential reference is not scoped to its instance." }
+        }
+        require(
+            packages.services
+                .map { it.packageInstance }
+                .distinct()
+                .size == packages.services.size,
+        ) { "Duplicate HTTP service binding." }
+        extensions.grants.forEach { grant ->
+            require(grant.instance.length in 1..500 && grant.identity.length in 1..256 && grant.digest.length == 64)
+            require(grant.mutations.distinct().size == grant.mutations.size)
+        }
+        require(
+            extensions.grants
+                .map { it.instance }
+                .distinct()
+                .size == extensions.grants.size,
+        ) { "Duplicate extension grant." }
+        spotify.clientId?.let {
+            require(
+                it.isNotBlank() && it.length <= 256 && it.none(Char::isWhitespace),
+            ) { "Invalid Spotify client ID." }
+        }
+        credentials.required.forEach { reference ->
+            val expectedKind = PROVIDER_SECRETS[reference.id] ?: "http-basic".takeIf { PACKAGE_SECRET.matches(reference.id) }
+            require(expectedKind != null) { "Unknown or unscoped secret reference." }
+            require(reference.kind == expectedKind) { "Secret reference kind does not match its scope." }
+            reference.endpoint?.let { if (reference.id == BROKER_SECRET) it.websocketEndpoint() else it.httpsOrigin() }
+        }
+        require(
+            credentials.required
+                .map { it.id }
+                .distinct()
+                .size == credentials.required.size,
+        ) { "Duplicate secret reference." }
+        packages.services.forEach { service ->
+            require(credentials.required.any { it.id == service.credential && it.endpoint == service.origin }) {
+                "HTTP service credential requirement is missing or has a different origin."
+            }
+        }
+        require(remembered.chosenNumbers.size <= 500)
+        remembered.chosenNumbers.forEach { (number, time) ->
+            require(number.matches(Regex("[0-9]{7,15}")) && time >= 0) { "Invalid remembered number choice." }
+        }
+        require(device.authorizations.all { it in DEVICE_AUTHORIZATIONS }) { "Unknown device authorization." }
+        require(device.authorizations.distinct().size == device.authorizations.size) { "Duplicate device authorization." }
+        return copy(
+            packages =
+                packages.copy(
+                    bundledInstances = packages.bundledInstances.toSortedMap(),
+                    installed = packages.installed.sortedBy { it.instance },
+                    waitMillis = packages.waitMillis.toSortedMap(),
+                    services = packages.services.sortedBy { it.packageInstance },
+                ),
+            extensions =
+                extensions.copy(
+                    grants = extensions.grants.sortedBy { it.instance }.map { it.copy(mutations = it.mutations.sorted()) },
+                ),
+            credentials = credentials.copy(required = credentials.required.sortedBy { it.id }),
+            remembered = remembered.copy(chosenNumbers = remembered.chosenNumbers.toSortedMap()),
+            device = device.copy(authorizations = device.authorizations.sorted()),
+        )
+    }
+
+    private fun canonical(document: EvaConfigurationDocument) =
+        document.copy(
+            packages =
+                document.packages?.copy(
+                    bundledInstances = document.packages.bundledInstances?.toSortedMap(),
+                    installed = document.packages.installed?.sortedBy { it.instance },
+                    waitMillis = document.packages.waitMillis?.toSortedMap(),
+                    services = document.packages.services?.sortedBy { it.packageInstance },
+                ),
+            extensions =
+                document.extensions?.copy(
+                    grants =
+                        document.extensions.grants
+                            ?.sortedBy { it.instance }
+                            ?.map { it.copy(mutations = it.mutations.sorted()) },
+                ),
+            credentials = document.credentials?.copy(required = document.credentials.required?.sortedBy { it.id }),
+            remembered = document.remembered?.copy(chosenNumbers = document.remembered.chosenNumbers?.toSortedMap()),
+            device = document.device?.copy(authorizations = document.device.authorizations?.sorted()),
+        )
+
+    private fun merge(
+        base: EvaConfigurationDocument,
+        override: EvaConfigurationDocument,
+    ) = EvaConfigurationDocument(
+        models =
+            ModelsPatch(
+                override.models?.text ?: base.models?.text,
+                override.models?.realtime ?: base.models?.realtime,
+                override.models?.reasoningEffort ?: base.models?.reasoningEffort,
+            ).nonEmpty(),
+        voice = VoicePatch(override.voice?.lookupRetries ?: base.voice?.lookupRetries).nonEmpty(),
+        appearance = AppearancePatch(override.appearance?.dynamicColor ?: base.appearance?.dynamicColor).nonEmpty(),
+        capabilities = CapabilitiesPatch(override.capabilities?.screenControl ?: base.capabilities?.screenControl).nonEmpty(),
+        prompt =
+            PromptPatch(
+                override.prompt?.source ?: base.prompt?.source,
+                override.prompt?.components ?: base.prompt?.components,
+            ).nonEmpty(),
+        packages =
+            PackagesPatch(
+                override.packages?.repository ?: base.packages?.repository,
+                override.packages?.bundledInstances ?: base.packages?.bundledInstances,
+                override.packages?.installed ?: base.packages?.installed,
+                override.packages?.waitMillis ?: base.packages?.waitMillis,
+                override.packages?.services ?: base.packages?.services,
+            ).nonEmpty(),
+        extensions = ExtensionsPatch(override.extensions?.grants ?: base.extensions?.grants).nonEmpty(),
+        spotify =
+            when {
+                override.spotify?.clearClientId == true -> SpotifyPatch(clearClientId = true)
+                override.spotify?.clientId != null -> override.spotify
+                else -> base.spotify
+            },
+        credentials = CredentialsPatch(override.credentials?.required ?: base.credentials?.required).nonEmpty(),
+        remembered = RememberedPatch(override.remembered?.chosenNumbers ?: base.remembered?.chosenNumbers).nonEmpty(),
+        device = DevicePatch(override.device?.authorizations ?: base.device?.authorizations).nonEmpty(),
+    )
+
+    private fun validateInclude(path: String) {
+        require(path.length in 1..240 && !path.startsWith('/') && '\\' !in path) { "Includes must be relative paths." }
+        val segments = path.split('/')
+        require(segments.none { it.isBlank() || it == "." || it == ".." } && segments.all { SEGMENT.matches(it) }) {
+            "Include path escapes the selected folder."
+        }
+    }
+
+    private fun resolvePath(
+        parent: String,
+        child: String,
+    ): String {
+        validateInclude(child)
+        val prefix = parent.substringBeforeLast('/', "")
+        return if (prefix.isEmpty()) child else "$prefix/$child"
+    }
+
+    private fun ModelsPatch.nonEmpty() = takeIf { text != null || realtime != null || reasoningEffort != null }
+
+    private fun VoicePatch.nonEmpty() = takeIf { lookupRetries != null }
+
+    private fun AppearancePatch.nonEmpty() = takeIf { dynamicColor != null }
+
+    private fun CapabilitiesPatch.nonEmpty() = takeIf { screenControl != null }
+
+    private fun PromptPatch.nonEmpty() = takeIf { source != null || components != null }
+
+    private fun PackagesPatch.nonEmpty() =
+        takeIf { repository != null || bundledInstances != null || installed != null || waitMillis != null || services != null }
+
+    private fun ExtensionsPatch.nonEmpty() = takeIf { grants != null }
+
+    private fun CredentialsPatch.nonEmpty() = takeIf { required != null }
+
+    private fun RememberedPatch.nonEmpty() = takeIf { chosenNumbers != null }
+
+    private fun DevicePatch.nonEmpty() = takeIf { authorizations != null }
+
+    private fun String.modelName() = require(length in 1..100 && none(Char::isWhitespace)) { "Invalid model name." }
+
+    private fun String.uuid(label: String) = require(UUID.fromString(this).toString() == this) { "Invalid $label instance." }
+
+    private fun String.https(label: String) {
+        val uri = URI(this)
+        require(uri.scheme == "https" && uri.host != null && uri.userInfo == null && uri.fragment == null) { "$label must be HTTPS." }
+    }
+
+    private fun String.httpsOrigin() {
+        val uri = URI(this)
+        require(uri.scheme == "https" && uri.host != null && uri.userInfo == null && uri.path in listOf("", "/")) {
+            "Service endpoint must be an HTTPS origin."
+        }
+        require(uri.query == null && uri.fragment == null)
+    }
+
+    private fun String.websocketEndpoint() {
+        val uri = URI(this)
+        val secure = uri.scheme == "wss"
+        require(
+            (secure || (uri.scheme == "ws" && uri.host in setOf("localhost", "127.0.0.1"))) &&
+                uri.host != null && uri.port in 1024..65535 && uri.userInfo == null && uri.path == "/device",
+        ) {
+            "Broker endpoint must use secure WebSocket, except for localhost forwarding."
+        }
+        require(uri.query == null && uri.fragment == null)
+    }
+
+    private fun ByteArray.hex() = joinToString("") { "%02x".format(it) }
+
+    fun fingerprint(text: String): String = MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8)).hex()
+
+    private val SEGMENT = Regex("[A-Za-z0-9][A-Za-z0-9._-]*")
+    private val PACKAGE_SECRET = Regex("package/[0-9a-f-]{36}/basic")
+    private val PROVIDER_SECRETS =
+        mapOf(
+            "provider/openai-api" to "openai-api-key",
+            "provider/chatgpt" to "chatgpt-account",
+            "provider/broker" to "broker-link",
+            "provider/spotify-account" to "spotify-account",
+        )
+    private const val BROKER_SECRET = "provider/broker"
+    val DEVICE_AUTHORIZATIONS =
+        setOf(
+            "android.permission.RECORD_AUDIO",
+            "android.permission.READ_CONTACTS",
+            "android.permission.READ_SMS",
+            "android.permission.SEND_SMS",
+            "android.permission.POST_NOTIFICATIONS",
+            "android.role.ASSISTANT",
+            "android.notification-listener",
+            "shizuku",
+        )
+
+    fun packageSecretId(instance: String) = "package/$instance/basic"
+}

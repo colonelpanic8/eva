@@ -104,6 +104,43 @@ class ExtensionGrantsTest {
         }
 
     @Test
+    fun `portable restore accepts only the exact live identity digest and mutation names`() =
+        runTest {
+            val disk = MemoryGrantPersistence()
+            val grants = ExtensionGrants(disk)
+            val requested =
+                mapOf(
+                    extensionIdentity.instanceId to ExtensionGrant(extensionIdentity.key, all.digest, setOf("write")),
+                    "missing" to ExtensionGrant("missing-key", "c".repeat(64)),
+                )
+
+            val missing = grants.restore(requested, listOf(InstalledExtension("example.app", extensionIdentity, all)))
+
+            assertEquals(setOf("missing"), missing)
+            assertTrue(grants.allowed(extensionIdentity, all, extensionCapability))
+            assertTrue(grants.allowed(extensionIdentity, all, write))
+
+            val changed = all.copy(digest = "d".repeat(64))
+            assertEquals(
+                setOf(extensionIdentity.instanceId),
+                grants.restore(
+                    mapOf(extensionIdentity.instanceId to ExtensionGrant(extensionIdentity.key, all.digest, setOf("write"))),
+                    listOf(InstalledExtension("example.app", extensionIdentity, changed)),
+                ),
+            )
+            assertFalse(grants.allowed(extensionIdentity, all, extensionCapability))
+
+            assertEquals(
+                setOf(extensionIdentity.instanceId),
+                grants.restore(
+                    mapOf(extensionIdentity.instanceId to ExtensionGrant(extensionIdentity.key, all.digest, setOf("not_a_capability"))),
+                    listOf(InstalledExtension("example.app", extensionIdentity, all)),
+                ),
+            )
+            assertFalse(grants.allowed(extensionIdentity, all, extensionCapability))
+        }
+
+    @Test
     fun `removal prunes persisted grants while outages preserve them and storage failure fails closed`() =
         runTest {
             val disk = MemoryGrantPersistence()

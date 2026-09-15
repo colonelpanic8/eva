@@ -1,7 +1,7 @@
 package com.colonelpanic.eva.data
 
+import android.annotation.SuppressLint
 import android.content.Context
-import androidx.core.content.edit
 import com.colonelpanic.eva.providers.BrokerEndpoint
 import com.colonelpanic.eva.providers.openai.OpenAiModels
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.asStateFlow
 /** The phone's own provider credentials. Nothing here touches a workstation. */
 class OpenAiSettings(
     context: Context,
+    private val onChanged: () -> Unit = {},
+    private val onCredentialChanged: (String) -> Unit = {},
 ) {
     private val secrets = SecretStore(context)
     private val prefs = context.applicationContext.getSharedPreferences("eva.settings", Context.MODE_PRIVATE)
@@ -46,14 +48,16 @@ class OpenAiSettings(
     fun saveReasoningEffort(value: String) {
         val trimmed = value.trim()
         require(trimmed in OpenAiModels.REASONING_EFFORTS) { "Unknown reasoning effort." }
-        prefs.edit { putString(REASONING_EFFORT, trimmed) }
+        commit { putString(REASONING_EFFORT, trimmed) }
         mutableReasoningEffort.value = trimmed
+        onChanged()
     }
 
     fun saveVoiceLookupRetries(value: Int) {
         require(value in MIN_VOICE_LOOKUP_RETRIES..MAX_VOICE_LOOKUP_RETRIES) { "Voice lookup retries must be between 0 and 10." }
-        prefs.edit { putInt(VOICE_LOOKUP_RETRIES, value) }
+        commit { putInt(VOICE_LOOKUP_RETRIES, value) }
         mutableVoiceLookupRetries.value = value
+        onChanged()
     }
 
     /** A blank value restores the built-in default rather than storing an unusable name. */
@@ -66,8 +70,9 @@ class OpenAiSettings(
         val trimmed = value.trim()
         require(trimmed.isEmpty() || (trimmed.length <= 100 && trimmed.none { it.isWhitespace() })) { "That is not a model name." }
         val resolved = trimmed.ifEmpty { fallback }
-        prefs.edit { if (trimmed.isEmpty()) remove(key) else putString(key, trimmed) }
+        commit { if (trimmed.isEmpty()) remove(key) else putString(key, trimmed) }
         target.value = resolved
+        onChanged()
     }
 
     fun apiKey(): String? = secrets.read(API_KEY)
@@ -79,11 +84,15 @@ class OpenAiSettings(
         require(trimmed.length in 20..512 && trimmed.none { it.isWhitespace() }) { "That does not look like an API key." }
         secrets.write(API_KEY, trimmed)
         mutableHasKey.value = true
+        onCredentialChanged("provider/openai-api")
+        onChanged()
     }
 
     fun clearApiKey() {
         secrets.clear(API_KEY)
         mutableHasKey.value = false
+        onCredentialChanged("provider/openai-api")
+        onChanged()
     }
 
     /** The paired host link, or empty when none is stored; connecting accepts either. */
@@ -99,11 +108,20 @@ class OpenAiSettings(
         BrokerEndpoint.parse(trimmed)
         secrets.write(HOST_LINK, trimmed)
         mutableHasHostLink.value = true
+        onCredentialChanged("provider/broker")
+        onChanged()
     }
 
     fun clearHostLink() {
         secrets.clear(HOST_LINK)
         mutableHasHostLink.value = false
+        onCredentialChanged("provider/broker")
+        onChanged()
+    }
+
+    @SuppressLint("UseKtx")
+    private fun commit(change: android.content.SharedPreferences.Editor.() -> Unit) {
+        check(prefs.edit().apply(change).commit()) { "Could not save provider settings." }
     }
 
     private companion object {

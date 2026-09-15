@@ -43,7 +43,11 @@ internal fun PackageConfigurationSection(
                 ) {
                     "Uses installed Android apps; no server credentials needed"
                 } else {
-                    entry.origin ?: "Server not configured"
+                    when {
+                        entry.origin == null -> "Server not configured"
+                        entry.credentialAvailable -> entry.origin
+                        else -> "${entry.origin} · credentials required on this device"
+                    }
                 },
             )
             if (entry.credentialName != null) {
@@ -70,8 +74,10 @@ internal fun PackageConfigurationSection(
                             password = ""
                         }
                     }) { Text("Save server and credentials") }
-                    if (entry.origin != null) {
+                    if (entry.credentialAvailable) {
                         Text("Credentials saved. Values are never read back into these fields.")
+                    }
+                    if (entry.origin != null) {
                         TextButton(onClick = { actions.onClearPackageServer(entry.id) }) { Text("Remove server credentials") }
                     }
                 }

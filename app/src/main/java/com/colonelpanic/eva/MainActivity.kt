@@ -67,6 +67,11 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+    private val configurationFolder =
+        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+            uri?.let(eva.configuration::select)
+        }
+
     private val capabilityPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> eva.intentHost.onPermissionResult(granted) }
 
@@ -194,7 +199,9 @@ class MainActivity : ComponentActivity() {
         val spotifyClientId by eva.spotify.clientId.collectAsStateWithLifecycle()
         val spotifyAccount by eva.spotify.account.collectAsStateWithLifecycle()
         val spotifyConnect by eva.spotifyConnect.state.collectAsStateWithLifecycle()
+        val configuration by eva.configuration.status.collectAsStateWithLifecycle()
         return SettingsUiState(
+            configuration = configuration,
             plugins = plugins,
             extensions = extensions,
             packages = packages,
@@ -274,6 +281,8 @@ class MainActivity : ComponentActivity() {
         remember {
             val settings = eva.settings
             SettingsActions(
+                onSelectConfigurationFolder = { configurationFolder.launch(null) },
+                onReloadConfiguration = eva.configuration::reload,
                 onRepositoryRefresh = eva.pluginBrowser::refresh,
                 onPluginFileImport = { pluginFile.launch(arrayOf("application/json", "text/*", "application/octet-stream")) },
                 onPluginPreview = eva.pluginBrowser::preview,
@@ -383,6 +392,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        eva.configuration.reloadOnResume()
         eva.extensions.refresh()
         // Both grants are made in system settings, so the answers only change while EVA is away.
         deviceAssistant = AssistantRole.isEva(this)

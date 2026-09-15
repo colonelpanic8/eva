@@ -71,24 +71,45 @@ class PluginInstallations(
 
     @Synchronized fun remove(instance: String) = commit(entries.filterNot { it.identity.id == instance })
 
+    @Synchronized fun restore(restored: List<InstalledPlugin>) {
+        validate(restored)
+        commit(restored)
+    }
+
     private fun commit(next: List<InstalledPlugin>) {
-        require(next.size <= 64) { "At most 64 repository plugins may be installed" }
-        val encoded =
-            JsonArray(
-                next.map { item ->
-                    JsonObject(
-                        mapOf(
-                            "instance" to JsonPrimitive(item.identity.id),
-                            "source" to JsonPrimitive(item.source),
-                            "url" to JsonPrimitive(item.url),
-                            "json" to JsonPrimitive(item.json),
-                        ),
-                    )
-                },
-            ).toString()
-        require(encoded.toByteArray(Charsets.UTF_8).size <= MAX_BYTES) { "Installed plugins exceed the storage limit" }
+        val encoded = encode(next)
         write(encoded)
         entries = next
+    }
+
+    companion object {
+        const val MAX_BYTES = 4_194_304
+
+        fun validate(entries: List<InstalledPlugin>) {
+            entries.forEach { item -> require(PackageCodec.decode(item.json).digest == item.definition.digest) }
+            require(entries.map { it.identity }.distinct().size == entries.size)
+            require(entries.map { it.source to it.definition.id }.distinct().size == entries.size)
+            encode(entries)
+        }
+
+        private fun encode(next: List<InstalledPlugin>): String {
+            require(next.size <= 64) { "At most 64 repository plugins may be installed" }
+            val encoded =
+                JsonArray(
+                    next.map { item ->
+                        JsonObject(
+                            mapOf(
+                                "instance" to JsonPrimitive(item.identity.id),
+                                "source" to JsonPrimitive(item.source),
+                                "url" to JsonPrimitive(item.url),
+                                "json" to JsonPrimitive(item.json),
+                            ),
+                        )
+                    },
+                ).toString()
+            require(encoded.toByteArray(Charsets.UTF_8).size <= MAX_BYTES) { "Installed plugins exceed the storage limit" }
+            return encoded
+        }
     }
 
     private fun newer(
@@ -98,9 +119,5 @@ class PluginInstallations(
         val a = next.split('.').map(String::toLong)
         val b = old.split('.').map(String::toLong)
         return a.zip(b).firstOrNull { it.first != it.second }?.let { it.first > it.second } ?: false
-    }
-
-    companion object {
-        const val MAX_BYTES = 4_194_304
     }
 }

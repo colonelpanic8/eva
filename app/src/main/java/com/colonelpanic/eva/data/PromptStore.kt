@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.data
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -35,6 +36,13 @@ data class PromptLocation(
     val chosen: Boolean,
 )
 
+data class PromptPersistenceSnapshot(
+    val source: String,
+    val config: PromptConfig,
+    val document: String?,
+    val documentName: String?,
+)
+
 /**
  * The prompt file on disk. EVA's own copy sits in the app's external files directory, which
  * `adb` and a USB connection can reach without any permission. A file the user picks through
@@ -47,6 +55,7 @@ class PromptStore(
     context: Context,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val repository: PromptRepository = PromptRepository(),
+    private val onChanged: () -> Unit = {},
 ) {
     private val context = context.applicationContext
     private val prefs = this.context.getSharedPreferences("eva.prompt", Context.MODE_PRIVATE)
@@ -116,6 +125,7 @@ class PromptStore(
             save(mergePromptUpdate(current, remote.config))
             prefs.edit { putString(SOURCE, remote.source) }
             mutableSource.value = remote.source
+            onChanged()
             mutableNotice.value = "Instructions updated. Changes apply to the next session."
             mutableNoticeIsError.value = false
         } catch (error: CancellationException) {
@@ -183,6 +193,57 @@ class PromptStore(
         config.validated(PromptDefaults.VARIABLES)
         withContext(ioDispatcher) { write(PromptYaml.encode(config)) }
         mutableState.value = PromptState.Loaded(config)
+        onChanged()
+    }
+
+    suspend fun portableSnapshot(): PromptPersistenceSnapshot =
+        PromptPersistenceSnapshot(mutableSource.value, load(), prefs.getString(DOCUMENT, null), prefs.getString(DOCUMENT_NAME, null))
+
+    suspend fun restorePortable(
+        source: String,
+        config: PromptConfig,
+    ) {
+        config.validated(PromptDefaults.VARIABLES)
+        withContext(ioDispatcher) {
+            ownFile.parentFile?.mkdirs()
+            ownFile.writeText(PromptYaml.encode(config))
+        }
+        commitPreferences {
+            putString(SOURCE, source)
+            remove(DOCUMENT)
+            remove(DOCUMENT_NAME)
+        }
+        mutableSource.value = source
+        mutableLocation.value = currentLocation()
+        mutableState.value = PromptState.Loaded(config)
+    }
+
+    suspend fun rollback(snapshot: PromptPersistenceSnapshot) {
+        snapshot.config.validated(PromptDefaults.VARIABLES)
+        if (snapshot.document == null) {
+            withContext(ioDispatcher) {
+                ownFile.parentFile?.mkdirs()
+                ownFile.writeText(PromptYaml.encode(snapshot.config))
+            }
+        }
+        commitPreferences {
+            putString(SOURCE, snapshot.source)
+            if (snapshot.document == null) {
+                remove(DOCUMENT)
+                remove(DOCUMENT_NAME)
+            } else {
+                putString(DOCUMENT, snapshot.document)
+                snapshot.documentName?.let { putString(DOCUMENT_NAME, it) } ?: remove(DOCUMENT_NAME)
+            }
+        }
+        mutableSource.value = snapshot.source
+        mutableLocation.value = currentLocation()
+        mutableState.value = PromptState.Loaded(snapshot.config)
+    }
+
+    @SuppressLint("UseKtx")
+    private fun commitPreferences(change: android.content.SharedPreferences.Editor.() -> Unit) {
+        check(prefs.edit().apply(change).commit()) { "Could not save prompt settings." }
     }
 
     private suspend fun currentOrDefaults(): PromptConfig =

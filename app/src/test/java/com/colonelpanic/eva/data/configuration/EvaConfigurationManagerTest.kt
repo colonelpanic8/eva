@@ -1,0 +1,183 @@
+package com.colonelpanic.eva.data.configuration
+
+import com.colonelpanic.eva.EvaApplication
+import com.colonelpanic.eva.adapters.declarative.PackageCodec
+import com.colonelpanic.eva.adapters.declarative.PackageEffect
+import com.colonelpanic.eva.capability.extensions.PackageIdentity
+import com.colonelpanic.eva.conversation.prompt.PromptComponent
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
+import java.io.File
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [28], application = EvaApplication::class)
+class EvaConfigurationManagerTest {
+    private val app: EvaApplication get() = RuntimeEnvironment.getApplication() as EvaApplication
+    private val packageJson by lazy {
+        generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }
+            .map { File(it, "docs/examples/org-agenda.json") }
+            .first { it.isFile }
+            .readText()
+    }
+
+    @Test
+    fun `manager restores every effective non-secret setting and reports device provisioning`() =
+        runTest {
+            val baseline = app.configuration.snapshotForTest()
+            val instance = "00000000-0000-0000-0000-000000000021"
+            val definition = PackageCodec.decode(packageJson)
+            val identity = PackageIdentity(instance)
+            val mutation = definition.capabilities.first { it.effect != PackageEffect.READ }.name
+            val credential = EvaConfigurationCodec.packageSecretId(instance)
+            val target =
+                baseline.copy(
+                    models = EvaConfiguration.Models("gpt-portable-text", "gpt-portable-realtime", "high"),
+                    voice = EvaConfiguration.Voice(8),
+                    appearance = EvaConfiguration.Appearance(dynamicColor = true),
+                    capabilities = EvaConfiguration.Capabilities(screenControl = false),
+                    prompt =
+                        EvaConfiguration.Prompt(
+                            "https://instructions.example.test/eva.yaml",
+                            listOf(PromptComponent("portable", enabled = false, instruction = "Portable prompt.")),
+                        ),
+                    packages =
+                        baseline.packages.copy(
+                            repository = "https://plugins.example.test/index.json",
+                            installed =
+                                listOf(
+                                    PortablePackage(
+                                        instance,
+                                        "https://plugins.example.test/index.json",
+                                        "https://plugins.example.test/org-agenda.json",
+                                        packageJson,
+                                    ),
+                                ),
+                            waitMillis = mapOf("voice" to 12_000, "typed" to 23_000, instance to 44_000),
+                            services = listOf(HttpServiceBinding(instance, "https://agenda.example.test", credential)),
+                        ),
+                    extensions =
+                        EvaConfiguration.Extensions(
+                            listOf(PortableGrant(identity.instanceId, identity.key, definition.digest, listOf(mutation))),
+                        ),
+                    spotify = EvaConfiguration.Spotify("spotify-portable-client"),
+                    credentials =
+                        EvaConfiguration.Credentials(
+                            listOf(
+                                SecretReference("provider/openai-api", "openai-api-key"),
+                                SecretReference(credential, "http-basic", "https://agenda.example.test"),
+                            ),
+                        ),
+                    remembered = EvaConfiguration.Remembered(mapOf("4155551212" to 1_700_000_000_000)),
+                    device = EvaConfiguration.Device(listOf("android.role.ASSISTANT", "android.notification-listener")),
+                )
+            val directory = MemoryDirectory(EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(target)))
+
+            val result = app.configuration.attachForTest(directory) as LinkedConfigurationResult.Loaded
+
+            assertEquals("gpt-portable-text", app.settings.textModel)
+            assertEquals("gpt-portable-realtime", app.settings.realtimeModel)
+            assertEquals("high", app.settings.reasoningEffort)
+            assertEquals(8, app.settings.voiceLookupRetries)
+            assertTrue(app.appearance.dynamicColor)
+            assertFalse(app.capabilities.screenControlEnabled)
+            assertEquals("spotify-portable-client", app.spotify.clientId.value)
+            assertEquals(
+                target.prompt.components,
+                app.prompts
+                    .portableSnapshot()
+                    .config.components,
+            )
+            assertEquals(target.packages, app.packageSettings.portable().configuration())
+            assertEquals(target.remembered.chosenNumbers, app.chosenNumbers.all())
+            assertEquals(
+                definition.digest,
+                app.packageSettings
+                    .imported()
+                    .single()
+                    .definition.digest,
+            )
+            assertEquals(
+                identity.id,
+                app.packageSettings
+                    .imported()
+                    .single()
+                    .identity.id,
+            )
+            assertEquals(
+                packageJson,
+                app.packageSettings
+                    .imported()
+                    .single()
+                    .json,
+            )
+            assertEquals(
+                target.extensions.grants,
+                app.configuration
+                    .snapshotForTest()
+                    .extensions.grants,
+            )
+            assertTrue(result.setupRequired.any { it.contains("provider/openai-api") })
+            assertTrue(result.setupRequired.any { it.contains(credential) })
+            assertTrue(result.setupRequired.any { it.contains("android.role.ASSISTANT") })
+            assertTrue(result.setupRequired.any { it.contains("android.notification-listener") })
+            assertFalse(directory.text.contains("password"))
+        }
+
+    @Test
+    fun `failure after settings mutation rolls every earlier store back`() =
+        runTest {
+            val baseline = app.configuration.snapshotForTest()
+            val target =
+                baseline.copy(
+                    models = baseline.models.copy(text = "must-roll-back"),
+                    appearance = baseline.appearance.copy(dynamicColor = !baseline.appearance.dynamicColor),
+                    prompt =
+                        baseline.prompt.copy(
+                            source = "https://instructions.example.test/rollback.yaml",
+                            components = listOf(PromptComponent("rollback", instruction = "Must not remain.")),
+                        ),
+                    packages = baseline.packages.copy(repository = "https://plugins.example.test/rollback.json"),
+                    remembered = EvaConfiguration.Remembered(mapOf("4155559999" to 99)),
+                )
+            val manager = EvaConfigurationManager(app) { error("injected grant persistence failure") }
+
+            assertTrue(
+                runCatching {
+                    manager.attachForTest(MemoryDirectory(EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(target))))
+                }.isFailure,
+            )
+
+            val after = app.configuration.snapshotForTest()
+            assertEquals(baseline.models, after.models)
+            assertEquals(baseline.appearance, after.appearance)
+            assertEquals(baseline.prompt, after.prompt)
+            assertEquals(baseline.packages, after.packages)
+            assertEquals(baseline.remembered, after.remembered)
+        }
+
+    private fun com.colonelpanic.eva.data.PortablePackageSettings.configuration() =
+        EvaConfiguration.Packages(repository, bundledInstances, installed, waitMillis, services)
+
+    private class MemoryDirectory(
+        var text: String,
+    ) : ConfigurationDirectory {
+        override val label = "memory"
+
+        override fun read(path: String): String? = text.takeIf { path == EvaConfigurationCodec.FILE_NAME }
+
+        override fun replaceRoot(
+            text: String,
+            expectedRootFingerprint: String?,
+        ) {
+            require(EvaConfigurationCodec.fingerprint(this.text) == expectedRootFingerprint)
+            this.text = text
+        }
+    }
+}
