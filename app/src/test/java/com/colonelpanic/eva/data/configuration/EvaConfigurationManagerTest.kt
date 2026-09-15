@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.data.configuration
 
+import android.Manifest
 import com.colonelpanic.eva.EvaApplication
 import com.colonelpanic.eva.adapters.declarative.PackageCodec
 import com.colonelpanic.eva.adapters.declarative.PackageEffect
@@ -13,6 +14,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.io.File
 
@@ -160,6 +162,34 @@ class EvaConfigurationManagerTest {
             assertEquals(baseline.prompt, after.prompt)
             assertEquals(baseline.packages, after.packages)
             assertEquals(baseline.remembered, after.remembered)
+        }
+
+    @Test
+    fun `resume reassesses unchanged requirements while explicit reload reapplies settings`() =
+        runTest {
+            val permission = Manifest.permission.READ_CONTACTS
+            shadowOf(app).denyPermissions(permission)
+            val baseline = app.configuration.snapshotForTest()
+            val target =
+                baseline.copy(
+                    models = baseline.models.copy(text = "portable-reload-model"),
+                    device = EvaConfiguration.Device(listOf(permission)),
+                )
+            val manager = EvaConfigurationManager(app)
+            val directory = MemoryDirectory(EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(target)))
+
+            val initial = manager.attachForTest(directory) as LinkedConfigurationResult.Loaded
+            assertTrue(initial.setupRequired.any { it.contains(permission) })
+
+            app.settings.saveTextModel("resume-drift")
+            shadowOf(app).grantPermissions(permission)
+            val resumed = manager.reloadForTest(force = false) as LinkedConfigurationResult.Loaded
+            assertTrue(resumed.setupRequired.none { it.contains(permission) })
+            assertEquals("resume-drift", app.settings.textModel)
+
+            app.settings.saveTextModel("force-drift")
+            manager.reloadForTest(force = true)
+            assertEquals("portable-reload-model", app.settings.textModel)
         }
 
     private fun com.colonelpanic.eva.data.PortablePackageSettings.configuration() =
