@@ -488,7 +488,7 @@ class EvaApplication :
             voiceProviderFactory = { link, audio ->
                 if (link.isBlank()) {
                     val access = access() ?: error("Sign in with ChatGPT, add an API key, or paste a paired host link.")
-                    OpenAiRealtimeProvider(access, audio, settings.realtimeModel)
+                    OpenAiRealtimeProvider(access, audio, settings.realtimeModel, settings.voiceReasoningEffort)
                 } else {
                     val endpoint = BrokerEndpoint.parse(link)
                     BrokerConversationProvider(endpoint, offerSdp = audio.createOffer(), onAnswer = audio::acceptAnswer)

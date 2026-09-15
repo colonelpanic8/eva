@@ -199,6 +199,7 @@ class MainActivity : ComponentActivity() {
         val textModel by settings.textModelFlow.collectAsStateWithLifecycle()
         val realtimeModel by settings.realtimeModelFlow.collectAsStateWithLifecycle()
         val reasoningEffort by settings.reasoningEffortFlow.collectAsStateWithLifecycle()
+        val voiceReasoningEffort by settings.voiceReasoningEffortFlow.collectAsStateWithLifecycle()
         val voiceLookupRetries by settings.voiceLookupRetriesFlow.collectAsStateWithLifecycle()
         val models by eva.availableModels.collectAsStateWithLifecycle()
         val account by eva.chatGpt.account.collectAsStateWithLifecycle()
@@ -240,6 +241,7 @@ class MainActivity : ComponentActivity() {
             availableTextModels = models[ModelKind.TEXT].orEmpty(),
             availableRealtimeModels = models[ModelKind.REALTIME].orEmpty(),
             reasoningEffort = reasoningEffort,
+            voiceReasoningEffort = voiceReasoningEffort,
             voiceLookupRetries = voiceLookupRetries,
             isDeviceAssistant = deviceAssistant,
             canSeeMediaSessions = mediaControlAccess,
@@ -327,6 +329,7 @@ class MainActivity : ComponentActivity() {
                 onSelectTextModel = { model -> save { settings.saveTextModel(model) } },
                 onSelectRealtimeModel = { model -> save { settings.saveRealtimeModel(model) } },
                 onSelectReasoningEffort = { effort -> save { settings.saveReasoningEffort(effort) } },
+                onSelectVoiceReasoningEffort = { effort -> save { settings.saveVoiceReasoningEffort(effort) } },
                 onVoiceLookupRetriesChange = settings::saveVoiceLookupRetries,
                 onOpenAssistantSettings = ::openAssistantSettings,
                 onMessagingEnable = { enabled ->

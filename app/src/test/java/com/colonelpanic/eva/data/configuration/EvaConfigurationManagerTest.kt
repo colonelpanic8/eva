@@ -58,7 +58,7 @@ class EvaConfigurationManagerTest {
             val credential = EvaConfigurationCodec.serviceSecretId(serviceName)
             val target =
                 baseline.copy(
-                    models = EvaConfiguration.Models("gpt-portable-text", "gpt-portable-realtime", "high"),
+                    models = EvaConfiguration.Models("gpt-portable-text", "gpt-portable-realtime", "high", "medium"),
                     voice = EvaConfiguration.Voice(8),
                     appearance = EvaConfiguration.Appearance(dynamicColor = true),
                     capabilities = EvaConfiguration.Capabilities(screenControl = false),
@@ -124,6 +124,7 @@ class EvaConfigurationManagerTest {
             assertEquals("gpt-portable-text", app.settings.textModel)
             assertEquals("gpt-portable-realtime", app.settings.realtimeModel)
             assertEquals("high", app.settings.reasoningEffort)
+            assertEquals("medium", app.settings.voiceReasoningEffort)
             assertEquals(8, app.settings.voiceLookupRetries)
             assertTrue(app.appearance.dynamicColor)
             assertFalse(app.capabilities.screenControlEnabled)
@@ -217,7 +218,7 @@ class EvaConfigurationManagerTest {
             val baseline = app.configuration.snapshotForTest()
             val target =
                 baseline.copy(
-                    models = baseline.models.copy(text = "must-roll-back"),
+                    models = baseline.models.copy(text = "must-roll-back", voiceReasoningEffort = "xhigh"),
                     appearance = baseline.appearance.copy(dynamicColor = !baseline.appearance.dynamicColor),
                     messaging = EvaConfiguration.Messaging(enabled = true, replies = listOf(LIVE_REPLY)),
                     prompt =

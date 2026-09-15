@@ -75,7 +75,7 @@ class OpenAiRealtimeProviderTest {
                     ApiKeyAccess("sk-test", "https://example.test"),
                     media,
                     "gpt-realtime-2.1",
-                    client,
+                    client = client,
                     ioDispatcher = StandardTestDispatcher(testScheduler),
                 )
             val session = provider.open(SessionOpenRequest("You are EVA.", catalog, listOf("Ana Beltrán", "", "Ana Beltrán")))
@@ -141,6 +141,32 @@ class OpenAiRealtimeProviderTest {
             advanceUntilIdle()
             assertEquals(ProviderEvent.Closed, events.last())
             collector.cancel()
+        }
+
+    @Test
+    fun `the chosen reasoning effort is sent with the voice session`() =
+        runTest {
+            OpenAiRealtimeProvider(
+                ApiKeyAccess("sk-test", "https://example.test"),
+                FakeMedia(),
+                "gpt-realtime-2.1",
+                "high",
+                client = client,
+                ioDispatcher = StandardTestDispatcher(testScheduler),
+            ).open(SessionOpenRequest("You are EVA.", catalog))
+            assertTrue(requests.single().contains("\"reasoning\":{\"effort\":\"high\"}"))
+        }
+
+    @Test
+    fun `a voice session defaults to low reasoning effort`() =
+        runTest {
+            OpenAiRealtimeProvider(
+                ApiKeyAccess("sk-test", "https://example.test"),
+                FakeMedia(),
+                client = client,
+                ioDispatcher = StandardTestDispatcher(testScheduler),
+            ).open(SessionOpenRequest("You are EVA.", catalog))
+            assertTrue(requests.single().contains("\"reasoning\":{\"effort\":\"low\"}"))
         }
 
     @Test

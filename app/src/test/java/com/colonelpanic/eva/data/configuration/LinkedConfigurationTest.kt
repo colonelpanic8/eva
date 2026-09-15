@@ -358,7 +358,7 @@ class LinkedConfigurationTest {
         messagingReplies: List<String> = emptyList(),
         authorizations: List<String> = emptyList(),
     ) = EvaConfiguration(
-        models = EvaConfiguration.Models(textModel, "custom-realtime", "high"),
+        models = EvaConfiguration.Models(textModel, "custom-realtime", "high", "medium"),
         voice = EvaConfiguration.Voice(3),
         appearance = EvaConfiguration.Appearance(dynamicColor = false),
         capabilities = EvaConfiguration.Capabilities(screenControl = true),

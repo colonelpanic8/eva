@@ -221,7 +221,13 @@ class EvaConfigurationManager(
                     .filter { it !in replyChanges } + messaging.replies
             ).distinct()
         return EvaConfiguration(
-            models = EvaConfiguration.Models(app.settings.textModel, app.settings.realtimeModel, app.settings.reasoningEffort),
+            models =
+                EvaConfiguration.Models(
+                    app.settings.textModel,
+                    app.settings.realtimeModel,
+                    app.settings.reasoningEffort,
+                    app.settings.voiceReasoningEffort,
+                ),
             voice = EvaConfiguration.Voice(app.settings.voiceLookupRetries),
             appearance = EvaConfiguration.Appearance(app.appearance.dynamicColor),
             capabilities = EvaConfiguration.Capabilities(app.capabilities.screenControlEnabled),
@@ -344,6 +350,7 @@ class EvaConfigurationManager(
         app.settings.saveTextModel(configuration.models.text)
         app.settings.saveRealtimeModel(configuration.models.realtime)
         app.settings.saveReasoningEffort(configuration.models.reasoningEffort)
+        app.settings.saveVoiceReasoningEffort(configuration.models.voiceReasoningEffort)
         app.settings.saveVoiceLookupRetries(configuration.voice.lookupRetries)
         app.appearance.saveDynamicColor(configuration.appearance.dynamicColor)
         app.capabilities.saveScreenControl(configuration.capabilities.screenControl)
@@ -462,7 +469,8 @@ class EvaConfigurationManager(
 
         attempt("text model") { app.settings.saveTextModel(before.models.text) }
         attempt("realtime model") { app.settings.saveRealtimeModel(before.models.realtime) }
-        attempt("reasoning effort") { app.settings.saveReasoningEffort(before.models.reasoningEffort) }
+        attempt("text reasoning effort") { app.settings.saveReasoningEffort(before.models.reasoningEffort) }
+        attempt("voice reasoning effort") { app.settings.saveVoiceReasoningEffort(before.models.voiceReasoningEffort) }
         attempt("voice lookup retries") { app.settings.saveVoiceLookupRetries(before.voice.lookupRetries) }
         attempt("appearance") { app.appearance.saveDynamicColor(before.appearance.dynamicColor) }
         attempt("capabilities") { app.capabilities.saveScreenControl(before.capabilities.screenControl) }

@@ -137,12 +137,14 @@ internal fun ModelPicker(
 }
 
 /**
- * A closed choice for the Responses `reasoning.effort` level. Unlike [ModelPicker] this
- * offers no free text: only a value the provider accepts can be stored.
+ * A closed choice for a leg's `reasoning.effort` level. Unlike [ModelPicker] this offers no
+ * free text: only a value the provider accepts can be stored. The text and speech legs accept
+ * different sets, so each supplies its own [label] and [available] values.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ReasoningEffortPicker(
+    label: String,
     selected: String,
     available: List<String>,
     onSelect: (String) -> Unit,
@@ -163,14 +165,14 @@ internal fun ReasoningEffortPicker(
             value = selected,
             onValueChange = {},
             readOnly = true,
-            label = { Text("Reasoning effort") },
+            label = { Text(label) },
             singleLine = true,
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             modifier =
                 Modifier
                     .fillMaxWidth()
                     .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                    .semantics { contentDescription = "Reasoning effort" },
+                    .semantics { contentDescription = label },
         )
         ExposedDropdownMenu(
             expanded = expanded,

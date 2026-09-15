@@ -266,7 +266,7 @@ The schema separates these groups:
 
 | Group | Settings |
 | --- | --- |
-| `models`, `voice` | Text/realtime models, reasoning effort, lookup retry count |
+| `models`, `voice` | Text/realtime models, per-leg reasoning effort, lookup retry count |
 | `appearance`, `capabilities` | Dynamic color and optional capability switches |
 | `messaging` | Notification-read opt-in and exact app-installation reply identities |
 | `prompt` | Source URL and complete ordered component list |

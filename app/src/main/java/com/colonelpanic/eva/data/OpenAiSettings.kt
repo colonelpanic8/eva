@@ -21,7 +21,13 @@ class OpenAiSettings(
     private val mutableRealtimeModel = MutableStateFlow(prefs.getString(REALTIME_MODEL, null) ?: OpenAiModels.REALTIME)
     private val mutableReasoningEffort =
         MutableStateFlow(
-            prefs.getString(REASONING_EFFORT, null)?.takeIf { it in OpenAiModels.REASONING_EFFORTS } ?: OpenAiModels.REASONING_EFFORT,
+            prefs.getString(REASONING_EFFORT, null)?.takeIf { it in OpenAiModels.TEXT_REASONING_EFFORTS }
+                ?: OpenAiModels.TEXT_REASONING_EFFORT,
+        )
+    private val mutableVoiceReasoningEffort =
+        MutableStateFlow(
+            prefs.getString(VOICE_REASONING_EFFORT, null)?.takeIf { it in OpenAiModels.VOICE_REASONING_EFFORTS }
+                ?: OpenAiModels.VOICE_REASONING_EFFORT,
         )
     private val mutableVoiceLookupRetries = MutableStateFlow(prefs.getInt(VOICE_LOOKUP_RETRIES, DEFAULT_VOICE_LOOKUP_RETRIES))
     private val mutableHasHostLink = MutableStateFlow(secrets.read(HOST_LINK) != null)
@@ -30,6 +36,7 @@ class OpenAiSettings(
     val textModelFlow = mutableTextModel.asStateFlow()
     val realtimeModelFlow = mutableRealtimeModel.asStateFlow()
     val reasoningEffortFlow = mutableReasoningEffort.asStateFlow()
+    val voiceReasoningEffortFlow = mutableVoiceReasoningEffort.asStateFlow()
     val voiceLookupRetriesFlow = mutableVoiceLookupRetries.asStateFlow()
 
     /** Whether a paired host link is stored. The link itself is never surfaced again. */
@@ -38,18 +45,27 @@ class OpenAiSettings(
     val realtimeModel: String get() = mutableRealtimeModel.value
     val textModel: String get() = mutableTextModel.value
     val reasoningEffort: String get() = mutableReasoningEffort.value
+    val voiceReasoningEffort: String get() = mutableVoiceReasoningEffort.value
     val voiceLookupRetries: Int get() = mutableVoiceLookupRetries.value
 
     fun saveTextModel(value: String) = saveModel(TEXT_MODEL, value, OpenAiModels.TEXT, mutableTextModel)
 
     fun saveRealtimeModel(value: String) = saveModel(REALTIME_MODEL, value, OpenAiModels.REALTIME, mutableRealtimeModel)
 
-    /** Reasoning effort is a closed set, so only a known value is stored. */
+    /** Each leg's reasoning effort is a closed set, so only a known value is stored. */
     fun saveReasoningEffort(value: String) {
         val trimmed = value.trim()
-        require(trimmed in OpenAiModels.REASONING_EFFORTS) { "Unknown reasoning effort." }
+        require(trimmed in OpenAiModels.TEXT_REASONING_EFFORTS) { "Unknown text reasoning effort." }
         commit { putString(REASONING_EFFORT, trimmed) }
         mutableReasoningEffort.value = trimmed
+        onChanged()
+    }
+
+    fun saveVoiceReasoningEffort(value: String) {
+        val trimmed = value.trim()
+        require(trimmed in OpenAiModels.VOICE_REASONING_EFFORTS) { "Unknown voice reasoning effort." }
+        commit { putString(VOICE_REASONING_EFFORT, trimmed) }
+        mutableVoiceReasoningEffort.value = trimmed
         onChanged()
     }
 
@@ -130,6 +146,7 @@ class OpenAiSettings(
         const val REALTIME_MODEL = "openai.realtimeModel"
         const val TEXT_MODEL = "openai.textModel"
         const val REASONING_EFFORT = "openai.reasoningEffort"
+        const val VOICE_REASONING_EFFORT = "openai.voiceReasoningEffort"
         const val VOICE_LOOKUP_RETRIES = "voice.lookupRetries"
         const val DEFAULT_VOICE_LOOKUP_RETRIES = 5
         const val MIN_VOICE_LOOKUP_RETRIES = 0

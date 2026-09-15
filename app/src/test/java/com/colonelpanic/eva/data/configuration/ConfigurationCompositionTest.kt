@@ -1,6 +1,7 @@
 package com.colonelpanic.eva.data.configuration
 
 import com.colonelpanic.eva.conversation.prompt.PromptComponent
+import com.colonelpanic.eva.providers.openai.OpenAiModels
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
@@ -24,6 +25,18 @@ class ConfigurationCompositionTest {
             }
         assertTrue(missingFormat.message.orEmpty().contains("format"))
         assertTrue(missingVersion.message.orEmpty().contains("version"))
+    }
+
+    @Test
+    fun `a document written before the speech leg had its own effort still resolves`() {
+        val expected = fullConfiguration()
+        val encoded = EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(expected))
+        val older = encoded.lines().filterNot { it.trim().startsWith("voiceReasoningEffort:") }.joinToString("\n")
+
+        assertTrue(encoded.contains("voiceReasoningEffort:"))
+        val resolved = EvaConfigurationCodec.resolve(reader(mapOf(EvaConfigurationCodec.FILE_NAME to older))).configuration
+        assertEquals(OpenAiModels.VOICE_REASONING_EFFORT, resolved.models.voiceReasoningEffort)
+        assertEquals(expected.models.reasoningEffort, resolved.models.reasoningEffort)
     }
 
     @Test
@@ -309,7 +322,7 @@ class ConfigurationCompositionTest {
 
     private fun fullConfiguration() =
         EvaConfiguration(
-            models = EvaConfiguration.Models("custom-text", "custom-realtime", "high"),
+            models = EvaConfiguration.Models("custom-text", "custom-realtime", "high", "medium"),
             voice = EvaConfiguration.Voice(2),
             appearance = EvaConfiguration.Appearance(dynamicColor = true),
             capabilities = EvaConfiguration.Capabilities(screenControl = false),

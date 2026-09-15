@@ -41,7 +41,7 @@ class OpenAiResponsesProvider(
     private val client: OkHttpClient = OkHttpClient(),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val catalog: OpenAiModelCatalog = OpenAiModelCatalog(client, ioDispatcher),
-    private val reasoningEffort: String = OpenAiModels.REASONING_EFFORT,
+    private val reasoningEffort: String = OpenAiModels.TEXT_REASONING_EFFORT,
 ) : ConversationProvider {
     /**
      * Unlike a realtime session, a typed session has nothing to negotiate, so "connected"

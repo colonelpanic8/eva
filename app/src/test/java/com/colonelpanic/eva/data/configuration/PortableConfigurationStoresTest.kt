@@ -133,7 +133,7 @@ class PortableConfigurationStoresTest {
 
         val configuration =
             EvaConfiguration(
-                models = EvaConfiguration.Models("gpt-portable", "gpt-portable-realtime", "medium"),
+                models = EvaConfiguration.Models("gpt-portable", "gpt-portable-realtime", "medium", "high"),
                 voice = EvaConfiguration.Voice(2),
                 appearance = EvaConfiguration.Appearance(false),
                 capabilities = EvaConfiguration.Capabilities(false),

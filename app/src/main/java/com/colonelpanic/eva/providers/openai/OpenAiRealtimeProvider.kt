@@ -48,6 +48,7 @@ class OpenAiRealtimeProvider(
     private val access: OpenAiAccess,
     private val media: RealtimeMediaSession,
     private val model: String = OpenAiModels.REALTIME,
+    private val reasoningEffort: String = OpenAiModels.VOICE_REASONING_EFFORT,
     private val client: OkHttpClient = realtimeCallClient(),
     private val voice: String = "marin",
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -62,7 +63,7 @@ class OpenAiRealtimeProvider(
         )
         request.catalog.tools.forEach { ToolSchema.check(it.inputSchema) }
         val named = toolNames(request.catalog.tools)
-        val session = publicApiSession(model, request, named, voice)
+        val session = publicApiSession(model, request, named, voice, reasoningEffort)
         val microphoneWasMuted = media.controls.value.microphoneMuted
         if (request.history.isNotEmpty()) media.setMicrophoneMuted(true)
         try {
@@ -398,12 +399,14 @@ private fun publicApiSession(
     request: SessionOpenRequest,
     named: Map<String, ProviderToolDefinition>,
     voice: String,
+    reasoningEffort: String,
 ): JsonObject =
     buildJsonObject {
         put("type", "realtime")
         put("model", model)
         put("instructions", request.instructions)
         put("output_modalities", JsonArray(listOf(JsonPrimitive("audio"))))
+        put("reasoning", buildJsonObject { put("effort", reasoningEffort) })
         put(
             "audio",
             buildJsonObject {

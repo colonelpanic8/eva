@@ -19,13 +19,23 @@ object OpenAiModels {
     const val TEXT = "gpt-5.6-sol"
 
     /** Default reasoning effort for typed turns; small routing tasks favor speed. */
-    const val REASONING_EFFORT = "low"
+    const val TEXT_REASONING_EFFORT = "low"
+
+    /** The speech leg answers while the person waits, so it stays low by default. */
+    const val VOICE_REASONING_EFFORT = "low"
 
     /**
-     * Efforts the account's models confirm they accept, verified against the live model
-     * list. Offer nothing else: an unsupported effort is a rejected turn.
+     * Efforts each leg accepts, verified against the live API. The two sets are not the same
+     * -- `max` is text only and `minimal` is speech only -- so one shared choice cannot be
+     * correct for both. Offer nothing else: an unsupported effort is a rejected turn.
      */
-    val REASONING_EFFORTS = listOf("low", "medium", "high", "xhigh", "max", "ultra")
+    val TEXT_REASONING_EFFORTS = listOf("none", "low", "medium", "high", "xhigh", "max")
+
+    /**
+     * `none` is left out on purpose: the session endpoint accepts it, but the realtime model
+     * does not name it among its own supported values, so it may still be refused on connect.
+     */
+    val VOICE_REASONING_EFFORTS = listOf("minimal", "low", "medium", "high", "xhigh")
 
     const val TRANSCRIPTION = "gpt-transcribe"
 

@@ -181,7 +181,18 @@ private fun ModelsSection(
                 OpenAiModels.REALTIME,
                 actions.onSelectRealtimeModel,
             )
-            ReasoningEffortPicker(state.reasoningEffort, OpenAiModels.REASONING_EFFORTS, actions.onSelectReasoningEffort)
+            ReasoningEffortPicker(
+                "Text reasoning effort",
+                state.reasoningEffort,
+                OpenAiModels.TEXT_REASONING_EFFORTS,
+                actions.onSelectReasoningEffort,
+            )
+            ReasoningEffortPicker(
+                "Voice reasoning effort",
+                state.voiceReasoningEffort,
+                OpenAiModels.VOICE_REASONING_EFFORTS,
+                actions.onSelectVoiceReasoningEffort,
+            )
             Text(
                 text = "A change applies to the next connection.",
                 style = MaterialTheme.typography.bodySmall,

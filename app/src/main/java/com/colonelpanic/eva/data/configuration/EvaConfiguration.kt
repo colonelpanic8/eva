@@ -47,6 +47,7 @@ data class EvaConfigurationDocument(
     val text: String? = null,
     val realtime: String? = null,
     val reasoningEffort: String? = null,
+    val voiceReasoningEffort: String? = null,
 )
 
 @Serializable data class VoicePatch(
@@ -169,6 +170,7 @@ data class EvaConfiguration(
         val text: String,
         val realtime: String,
         val reasoningEffort: String,
+        val voiceReasoningEffort: String,
     )
 
     data class Voice(
@@ -355,6 +357,7 @@ object EvaConfigurationCodec {
                 current.models.text.takeIf { it != base?.models?.text },
                 current.models.realtime.takeIf { it != base?.models?.realtime },
                 current.models.reasoningEffort.takeIf { it != base?.models?.reasoningEffort },
+                current.models.voiceReasoningEffort.takeIf { it != base?.models?.voiceReasoningEffort },
             ).nonEmpty(),
         voice = VoicePatch(current.voice.lookupRetries.takeIf { it != base?.voice?.lookupRetries }).nonEmpty(),
         appearance = AppearancePatch(current.appearance.dynamicColor.takeIf { it != base?.appearance?.dynamicColor }).nonEmpty(),
@@ -398,6 +401,8 @@ object EvaConfigurationCodec {
                     requireNotNull(models?.text) { "models.text is missing." },
                     requireNotNull(models?.realtime) { "models.realtime is missing." },
                     requireNotNull(models?.reasoningEffort) { "models.reasoningEffort is missing." },
+                    // Documents written before the speech leg had its own effort still load.
+                    models?.voiceReasoningEffort ?: OpenAiModels.VOICE_REASONING_EFFORT,
                 ),
             voice = EvaConfiguration.Voice(requireNotNull(voice?.lookupRetries) { "voice.lookupRetries is missing." }),
             appearance = EvaConfiguration.Appearance(requireNotNull(appearance?.dynamicColor) { "appearance.dynamicColor is missing." }),
@@ -437,7 +442,8 @@ object EvaConfigurationCodec {
     private fun EvaConfiguration.validated(): EvaConfiguration {
         models.text.modelName()
         models.realtime.modelName()
-        require(models.reasoningEffort in OpenAiModels.REASONING_EFFORTS) { "Unknown reasoning effort." }
+        require(models.reasoningEffort in OpenAiModels.TEXT_REASONING_EFFORTS) { "Unknown text reasoning effort." }
+        require(models.voiceReasoningEffort in OpenAiModels.VOICE_REASONING_EFFORTS) { "Unknown voice reasoning effort." }
         require(voice.lookupRetries in 0..10) { "voice.lookupRetries must be between 0 and 10." }
         require(messaging.replies.size <= 100) { "At most 100 messaging reply identities may be configured." }
         require(messaging.replies.distinct().size == messaging.replies.size) { "Duplicate messaging reply identity." }
@@ -643,6 +649,7 @@ object EvaConfigurationCodec {
                 override.models?.text ?: base.models?.text,
                 override.models?.realtime ?: base.models?.realtime,
                 override.models?.reasoningEffort ?: base.models?.reasoningEffort,
+                override.models?.voiceReasoningEffort ?: base.models?.voiceReasoningEffort,
             ).nonEmpty(),
         voice = VoicePatch(override.voice?.lookupRetries ?: base.voice?.lookupRetries).nonEmpty(),
         appearance = AppearancePatch(override.appearance?.dynamicColor ?: base.appearance?.dynamicColor).nonEmpty(),
@@ -696,7 +703,8 @@ object EvaConfigurationCodec {
         return if (prefix.isEmpty()) child else "$prefix/$child"
     }
 
-    private fun ModelsPatch.nonEmpty() = takeIf { text != null || realtime != null || reasoningEffort != null }
+    private fun ModelsPatch.nonEmpty() =
+        takeIf { text != null || realtime != null || reasoningEffort != null || voiceReasoningEffort != null }
 
     private fun VoicePatch.nonEmpty() = takeIf { lookupRetries != null }
 
