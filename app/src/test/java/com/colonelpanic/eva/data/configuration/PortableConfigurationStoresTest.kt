@@ -99,25 +99,67 @@ class PortableConfigurationStoresTest {
         val current = PackageSettings(context, listPackages = { listOf("kept.json", "new.json") }, readPackage = { packageJson })
         val newId = current.portable().bundledInstances.getValue("new.json")
         val keptId = "00000000-0000-0000-0000-000000000010"
+        val removedId = "00000000-0000-0000-0000-000000000011"
+        val removedCredential = EvaConfigurationCodec.packageSecretId(removedId)
         val restored =
             PortablePackageSettings(
                 repository = current.repositorySource,
                 bundledInstances =
                     mapOf(
                         "kept.json" to keptId,
-                        "removed.json" to "00000000-0000-0000-0000-000000000011",
+                        "removed.json" to removedId,
                     ),
                 installed = emptyList(),
-                waitMillis = emptyMap(),
-                services = emptyList(),
+                waitMillis = mapOf(removedId to 31_000),
+                services = listOf(HttpServiceBinding(removedId, "https://removed.example.test", removedCredential)),
             )
 
         val notices = current.restore(restored)
+        current.saveRepository("https://plugins.example.test/changed-after-upgrade.json")
+        val portable = current.portable()
 
-        assertEquals(keptId, current.portable().bundledInstances.getValue("kept.json"))
-        assertEquals(newId, current.portable().bundledInstances.getValue("new.json"))
+        assertEquals(keptId, portable.bundledInstances.getValue("kept.json"))
+        assertEquals(newId, portable.bundledInstances.getValue("new.json"))
+        assertEquals(removedId, portable.bundledInstances.getValue("removed.json"))
+        assertEquals(31_000, portable.waitMillis.getValue(removedId))
+        assertEquals(restored.services, portable.services)
         assertTrue(notices.any { it.contains("removed.json") && it.contains("not in this EVA build") })
         assertTrue(notices.any { it.contains("new.json") && it.contains("new on this EVA build") })
+
+        val configuration =
+            EvaConfiguration(
+                models = EvaConfiguration.Models("gpt-portable", "gpt-portable-realtime", "medium"),
+                voice = EvaConfiguration.Voice(2),
+                appearance = EvaConfiguration.Appearance(false),
+                capabilities = EvaConfiguration.Capabilities(false),
+                prompt =
+                    EvaConfiguration.Prompt(
+                        "https://instructions.example.test/eva.yaml",
+                        listOf(PromptComponent("portable", instruction = "Portable prompt.")),
+                    ),
+                packages =
+                    EvaConfiguration.Packages(
+                        portable.repository,
+                        portable.bundledInstances,
+                        portable.installed,
+                        portable.waitMillis,
+                        portable.services,
+                    ),
+                extensions = EvaConfiguration.Extensions(emptyList()),
+                spotify = EvaConfiguration.Spotify(null),
+                credentials =
+                    EvaConfiguration.Credentials(
+                        listOf(SecretReference(removedCredential, "http-basic", "https://removed.example.test")),
+                    ),
+                remembered = EvaConfiguration.Remembered(emptyMap()),
+                device = EvaConfiguration.Device(emptyList()),
+            )
+        val encoded = EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(configuration))
+        val resolved =
+            EvaConfigurationCodec.resolve(
+                ConfigurationReader { path -> encoded.takeIf { path == EvaConfigurationCodec.FILE_NAME } },
+            )
+        assertEquals(configuration.packages, resolved.configuration.packages)
     }
 
     @Test

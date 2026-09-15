@@ -247,22 +247,29 @@ class PackageSettings(
     fun portable(): PortablePackageSettings =
         PortablePackageSettings(
             repositorySource,
-            bundledDefinitions.keys.associateWith { name -> requireNotNull(prefs.getString("instance:$name", null)) },
+            prefs.all
+                .mapNotNull { (key, value) ->
+                    if (key.startsWith("instance:") && value is String) key.removePrefix("instance:") to value else null
+                }.toMap(),
             imported().map { PortablePackage(it.identity.id, it.source, it.url, it.json) },
             prefs.all
                 .mapNotNull { (key, value) ->
                     if (key.startsWith("wait:") && value is Long) key.removePrefix("wait:") to value else null
                 }.toMap(),
-            sources.keys.mapNotNull { identity ->
-                desiredOrigin(identity)?.let { origin ->
-                    HttpServiceBinding(
-                        identity.id,
-                        origin,
-                        com.colonelpanic.eva.data.configuration.EvaConfigurationCodec
-                            .packageSecretId(identity.id),
-                    )
-                }
-            },
+            prefs.all
+                .mapNotNull { (key, value) ->
+                    if (key.startsWith("origin:") && value is String) {
+                        val instance = key.removePrefix("origin:")
+                        HttpServiceBinding(
+                            instance,
+                            value,
+                            com.colonelpanic.eva.data.configuration.EvaConfigurationCodec
+                                .packageSecretId(instance),
+                        )
+                    } else {
+                        null
+                    }
+                },
         )
 
     fun missingCredentials(services: List<HttpServiceBinding>): List<String> =
@@ -284,8 +291,14 @@ class PackageSettings(
         checkNotNull(imports) { "Plugin storage could not be loaded" }.restore(installed)
         savePreferences {
             putString("repository", restored.repository)
-            bundledDefinitions.keys.intersect(restored.bundledInstances.keys).forEach { name ->
-                putString("instance:$name", restored.bundledInstances.getValue(name))
+            prefs.all.keys
+                .filter { key ->
+                    key.startsWith("instance:") &&
+                        key.removePrefix("instance:") !in bundledDefinitions &&
+                        key.removePrefix("instance:") !in restored.bundledInstances
+                }.forEach(::remove)
+            restored.bundledInstances.forEach { (name, instance) ->
+                putString("instance:$name", instance)
             }
             prefs.all.keys
                 .filter { it.startsWith("wait:") || it.startsWith("origin:") }
