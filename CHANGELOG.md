@@ -4,9 +4,16 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-09-14
+
+### Changed
+
+- Declarative extension packages now come from the configured package catalog instead of being bundled into the app. Portable configuration format 3 removes bundled-package instance identities; older configurations preserve their choices and identify packages that need to be reinstalled from the catalog.
+
 ### Fixed
 
 - The installable Mova fixture pins each `mova://` action to its intended exported activity, avoiding Android's same-app activity chooser.
+- Voice instructions now require EVA to call `eva.session.end` in the same response as its closing line, because saying goodbye by itself does not close the call. Untouched stock prompt files are upgraded automatically while custom wording is preserved. Connected calls continue to play the falling end-of-call cue exactly once on normal hang-up and connection-failure teardown paths.
 
 ## [0.16.0] - 2026-09-14
 

@@ -1,0 +1,3 @@
+* Changed: Declarative extension packages now come from the configured package catalog instead of being bundled into the app. Portable configuration format 3 removes bundled-package instance identities; older configurations preserve their choices and identify packages that need to be reinstalled from the catalog.
+* Fixed: The installable Mova fixture pins each `mova://` action to its intended exported activity, avoiding Android's same-app activity chooser.
+* ...see CHANGELOG.md for the rest.
