@@ -12,11 +12,9 @@ import com.colonelpanic.eva.capability.InteractionMode
 import com.colonelpanic.eva.capability.extensions.ExtensionGrant
 import com.colonelpanic.eva.capability.extensions.PackageIdentity
 import com.colonelpanic.eva.conversation.prompt.PromptComponent
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.eclipse.jgit.api.Git
 import org.junit.Assert.assertEquals
@@ -204,7 +202,7 @@ class EvaConfigurationManagerTest {
 
     @Test
     fun `manager restores every effective non-secret setting and reports device provisioning`() =
-        runTest {
+        runBlocking {
             val baseline = app.configuration.snapshotForTest()
             val instance = "00000000-0000-0000-0000-000000000021"
             val grantedInstance = "00000000-0000-0000-0000-000000000022"
@@ -331,13 +329,10 @@ class EvaConfigurationManagerTest {
                     .json,
             )
             val liveExtension =
-                // The runtime feeds this flow from real IO threads; wait in real time, not the test scheduler's.
-                withContext(Dispatchers.Default.limitedParallelism(1)) {
-                    withTimeout(5_000) {
-                        app.extensions.settings.first { settings ->
-                            settings.entries.any {
-                                it.installed.identity?.instanceId == identity.instanceId && it.enabled && mutation in it.mutations
-                            }
+                withTimeout(5_000) {
+                    app.extensions.settings.first { settings ->
+                        settings.entries.any {
+                            it.installed.identity?.instanceId == identity.instanceId && it.enabled && mutation in it.mutations
                         }
                     }
                 }.entries.singleOrNull { it.installed.identity?.instanceId == identity.instanceId }
