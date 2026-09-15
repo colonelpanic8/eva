@@ -1,0 +1,269 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/colonelpanic8/eva/docs/schemas/package.schema.json",
+  "title": "EVA declarative extension package (formatVersion 1)",
+  "description": "One self-contained JSON document, at most 256 KiB, without scripts or credentials. The Kotlin codec in app/src/main/java/com/colonelpanic/eva/adapters/declarative/PackageCodec.kt remains the executable oracle; this schema documents its accepted shape.",
+  "type": "object",
+  "required": ["formatVersion", "id", "version", "title", "capabilities"],
+  "additionalProperties": false,
+  "properties": {
+    "formatVersion": { "const": 1 },
+    "id": { "type": "string", "maxLength": 128, "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+$" },
+    "version": { "type": "string", "pattern": "^(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})$" },
+    "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "androidPackages": { "type": "array", "maxItems": 16, "uniqueItems": true, "items": { "type": "string", "maxLength": 200 } },
+    "capabilities": { "type": "array", "minItems": 1, "maxItems": 64, "items": { "$ref": "#/$defs/capability" } }
+  },
+  "$defs": {
+    "capability": {
+      "type": "object",
+      "required": ["tool", "binding", "execution"],
+      "additionalProperties": false,
+      "properties": {
+        "tool": { "$ref": "tool.schema.json" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120, "description": "Legacy alias; prefer tool.title. One of the two is required." },
+        "effects": { "enum": ["read", "write", "external_handoff", "unknown"], "description": "Omitted means unknown. Intent bindings floor at external_handoff; non-GET/HEAD HTTP floors at write." },
+        "execution": { "$ref": "#/$defs/execution" },
+        "binding": { "$ref": "#/$defs/binding" },
+        "validators": {
+          "type": "object",
+          "description": "String argument name to named validator",
+          "additionalProperties": { "enum": ["phoneNumber", "httpUrl", "emailAddress"] }
+        },
+        "receipts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "success": { "type": "string", "minLength": 1, "maxLength": 1000 },
+            "handlerMissing": { "type": "string", "minLength": 1, "maxLength": 1000 }
+          }
+        },
+        "_meta": { "type": "object" }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "required": ["mode", "requiresForeground"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "enum": ["synchronous", "handoff"], "description": "Intent bindings require handoff plus requiresForeground true; HTTP and content bindings require synchronous." },
+        "requiresForeground": { "type": "boolean" },
+        "maxWaitMillis": { "type": ["integer", "null"], "minimum": 1, "description": "Capability default wait; the common policy clamps the effective wait to 60,000 ms." },
+        "cancellation": { "const": "none" },
+        "idempotency": { "const": "none" },
+        "reconciliation": { "const": "none" }
+      }
+    },
+    "scalarType": { "enum": ["string", "integer", "number", "boolean"] },
+    "argumentSlot": {
+      "type": "object",
+      "required": ["argument", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "argument": { "type": "string", "maxLength": 64 },
+        "type": { "$ref": "#/$defs/scalarType" },
+        "default": { "type": ["string", "integer", "number", "boolean"] },
+        "required": { "type": "boolean" }
+      }
+    },
+    "literalSlot": {
+      "type": "object",
+      "required": ["value", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "value": { "type": ["string", "integer", "number", "boolean"] },
+        "type": { "$ref": "#/$defs/scalarType" }
+      }
+    },
+    "slot": { "oneOf": [{ "$ref": "#/$defs/argumentSlot" }, { "$ref": "#/$defs/literalSlot" }] },
+    "bodySlot": {
+      "description": "Request-body slots may also carry a whole scalar-list argument as a JSON array.",
+      "oneOf": [
+        { "$ref": "#/$defs/slot" },
+        {
+          "type": "object",
+          "required": ["argument", "type"],
+          "additionalProperties": false,
+          "properties": {
+            "argument": { "type": "string", "maxLength": 64 },
+            "type": { "const": "array" },
+            "default": { "type": "array", "items": { "type": ["string", "integer", "number", "boolean"] } },
+            "required": { "type": "boolean" }
+          }
+        }
+      ]
+    },
+    "bodyFields": {
+      "type": "object",
+      "required": ["fields"],
+      "additionalProperties": false,
+      "properties": {
+        "fields": {
+          "type": "object",
+          "maxProperties": 64,
+          "propertyNames": { "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$" },
+          "additionalProperties": { "oneOf": [{ "$ref": "#/$defs/bodyFields" }, { "$ref": "#/$defs/bodySlot" }] }
+        }
+      }
+    },
+    "pointer": { "type": "string", "maxLength": 1000, "pattern": "^(|/.*)$" },
+    "binding": {
+      "oneOf": [
+        { "$ref": "#/$defs/select" },
+        { "$ref": "#/$defs/intent" },
+        { "$ref": "#/$defs/content" },
+        { "$ref": "#/$defs/http" }
+      ]
+    },
+    "select": {
+      "type": "object",
+      "required": ["kind", "argument", "present", "absent"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "select" },
+        "argument": { "type": "string", "maxLength": 64 },
+        "present": { "oneOf": [{ "$ref": "#/$defs/intent" }, { "$ref": "#/$defs/content" }, { "$ref": "#/$defs/http" }] },
+        "absent": { "oneOf": [{ "$ref": "#/$defs/intent" }, { "$ref": "#/$defs/content" }, { "$ref": "#/$defs/http" }] }
+      }
+    },
+    "intent": {
+      "type": "object",
+      "required": ["kind", "action"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "android.intent" },
+        "action": { "type": "string", "maxLength": 200, "pattern": "^[A-Za-z][A-Za-z0-9_.]+$" },
+        "uri": {
+          "type": "object",
+          "required": ["base"],
+          "additionalProperties": false,
+          "properties": {
+            "base": { "type": "string", "maxLength": 2000 },
+            "query": { "type": "object", "maxProperties": 64, "additionalProperties": { "$ref": "#/$defs/slot" } },
+            "opaque": { "$ref": "#/$defs/slot" }
+          }
+        },
+        "extras": { "type": "object", "maxProperties": 64, "additionalProperties": { "$ref": "#/$defs/slot" } },
+        "package": { "type": "string" },
+        "class": { "type": "string", "maxLength": 300 },
+        "mimeType": { "type": "string", "pattern": "^[a-z0-9.+-]+/[a-z0-9.+-]+$" },
+        "packageByName": { "type": "string" }
+      }
+    },
+    "content": {
+      "type": "object",
+      "required": ["kind", "authority", "uri", "projection", "maxRows", "maxBytes"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "android.content" },
+        "authority": { "type": "string", "maxLength": 200 },
+        "uri": { "type": "string", "maxLength": 2000 },
+        "projection": { "type": "object", "minProperties": 1, "maxProperties": 32, "additionalProperties": { "$ref": "#/$defs/scalarType" } },
+        "selection": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "required": ["column", "operator", "value"],
+            "additionalProperties": false,
+            "properties": {
+              "column": { "type": "string", "maxLength": 64 },
+              "operator": { "enum": ["=", "!=", "<", "<=", ">", ">=", "LIKE"] },
+              "value": { "$ref": "#/$defs/slot" }
+            }
+          }
+        },
+        "maxRows": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "maxBytes": { "type": "integer", "minimum": 1, "maximum": 16384 }
+      }
+    },
+    "http": {
+      "type": "object",
+      "required": ["kind", "origin", "method", "path", "parameters", "maxResponseBytes", "result"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "http" },
+        "origin": { "type": "string", "maxLength": 2000, "pattern": "^https://[^/?#@]+$" },
+        "method": { "enum": ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"] },
+        "path": { "type": "string", "maxLength": 2000, "pattern": "^/" },
+        "parameters": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "required": ["in", "name", "value"],
+            "additionalProperties": false,
+            "properties": {
+              "in": { "enum": ["path", "query"] },
+              "name": { "type": "string", "maxLength": 64 },
+              "value": { "$ref": "#/$defs/slot" }
+            }
+          }
+        },
+        "requestBody": { "$ref": "#/$defs/bodyFields" },
+        "credential": { "type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$" },
+        "maxResponseBytes": { "type": "integer", "minimum": 1, "maximum": 1048576 },
+        "result": { "$ref": "#/$defs/result" }
+      }
+    },
+    "result": {
+      "type": "object",
+      "required": ["maxBytes"],
+      "additionalProperties": false,
+      "description": "Exactly one of pointer or items.",
+      "properties": {
+        "maxBytes": { "type": "integer", "minimum": 1, "maximum": 16384 },
+        "pointer": { "$ref": "#/$defs/pointer" },
+        "items": { "$ref": "#/$defs/items" },
+        "evidence": {
+          "type": "object",
+          "required": ["pointer", "equals"],
+          "additionalProperties": false,
+          "properties": {
+            "pointer": { "$ref": "#/$defs/pointer" },
+            "equals": { "type": ["string", "integer", "number", "boolean"] }
+          }
+        },
+        "notExecutedStatuses": { "type": "array", "items": { "type": "integer", "minimum": 400, "maximum": 499 } }
+      },
+      "oneOf": [{ "required": ["pointer"] }, { "required": ["items"] }]
+    },
+    "items": {
+      "type": "object",
+      "required": ["arrayPaths", "line", "fields", "maxItems", "truncationNote"],
+      "additionalProperties": false,
+      "properties": {
+        "arrayPaths": { "type": "array", "minItems": 1, "maxItems": 4, "items": { "$ref": "#/$defs/pointer" } },
+        "line": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "fields": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 32,
+          "propertyNames": { "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$" },
+          "additionalProperties": {
+            "type": "object",
+            "required": ["pointer", "type"],
+            "additionalProperties": false,
+            "properties": {
+              "pointer": { "$ref": "#/$defs/pointer" },
+              "type": { "enum": ["string", "integer", "number", "boolean", "stringArray"] },
+              "required": { "type": "boolean" }
+            }
+          }
+        },
+        "maxItems": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "truncationNote": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "totalPointer": { "$ref": "#/$defs/pointer" },
+        "filter": {
+          "type": "object",
+          "required": ["fields", "argument"],
+          "additionalProperties": false,
+          "properties": {
+            "fields": { "type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true, "items": { "$ref": "#/$defs/pointer" } },
+            "argument": { "type": "string", "maxLength": 64 }
+          }
+        }
+      }
+    }
+  }
+}

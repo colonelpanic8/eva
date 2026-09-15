@@ -36,13 +36,53 @@ class ToolSchemaTest {
     }
 
     @Test
-    fun `unsupported arrays nullable and open objects fail at catalog creation`() {
+    fun `nullable types open objects and object arrays fail for inputs`() {
         for (schema in listOf(
-            """{"type":"array","items":{"type":"string"}}""",
             """{"type":["string","null"]}""",
             """{"type":"object","properties":{},"required":[],"additionalProperties":true}""",
+            """{"type":"array","items":{"type":"object","properties":{},"required":[],"additionalProperties":false}}""",
+            """{"type":"array","items":{"type":"string"},"maxItems":65}""",
+            """{"type":"array"}""",
         )) {
-            assertThrows(Exception::class.java) { ToolSchema.check(Json.parseToJsonElement(schema).jsonObject) }
+            assertThrows(schema, Exception::class.java) { ToolSchema.check(Json.parseToJsonElement(schema).jsonObject) }
+        }
+    }
+
+    @Test
+    fun `scalar arrays validate items and bounds for inputs`() {
+        val schema =
+            Json
+                .parseToJsonElement(
+                    """{"type":"object","additionalProperties":false,"required":[],"properties":{
+                "tags":{"type":"array","items":{"type":"string","enum":["a","b"]},"minItems":1,"maxItems":2}}}""",
+                ).jsonObject
+        ToolSchema.check(schema)
+        assertNull(ToolSchema.error(schema, Json.parseToJsonElement("""{"tags":["a","b"]}""")))
+        assertNull(ToolSchema.error(schema, ToolSchema.coerce(schema, mapOf("tags" to """["b"]"""))))
+        for (args in listOf("""{"tags":[]}""", """{"tags":["c"]}""", """{"tags":["a","b","a"]}""", """{"tags":"a"}""")) {
+            assertNotNull(ToolSchema.error(schema, Json.parseToJsonElement(args)))
+        }
+        assertNotNull(ToolSchema.error(schema, ToolSchema.coerce(schema, mapOf("tags" to "not json"))))
+    }
+
+    @Test
+    fun `output schemas may nest open objects inside arrays and still bound them`() {
+        val schema =
+            Json
+                .parseToJsonElement(
+                    """{"type":"object","additionalProperties":false,"required":["items"],"properties":{
+                "items":{"type":"array","maxItems":2,"items":{"type":"object","additionalProperties":true,"required":["id"],"properties":{
+                    "id":{"type":"string"}}}}}}""",
+                ).jsonObject
+        assertThrows(Exception::class.java) { ToolSchema.check(schema) }
+        ToolSchema.check(schema, output = true)
+        assertNull(ToolSchema.error(schema, Json.parseToJsonElement("""{"items":[{"id":"a","extra":{"deep":true}}]}""")))
+        for (value in listOf(
+            """{"items":[{"extra":1}]}""",
+            """{"items":[{"id":"a"},{"id":"b"},{"id":"c"}]}""",
+            """{"items":[{"id":1}]}""",
+        )) {
+            assertNotNull(ToolSchema.error(schema, Json.parseToJsonElement(value)))
         }
     }
 }

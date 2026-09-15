@@ -55,10 +55,10 @@ class BindingArguments(
         }
     }
 
-    private fun value(slot: ScalarSlot): JsonPrimitive? =
+    private fun value(slot: ScalarSlot): JsonElement? =
         when (slot) {
             is ScalarSlot.Argument -> {
-                ((values[slot.name] as? JsonPrimitive) ?: slot.default).also {
+                (values[slot.name] ?: slot.default).also {
                     require(it != null || !slot.required) { "A required binding argument is missing" }
                 }
             }
@@ -68,15 +68,18 @@ class BindingArguments(
             }
         }
 
+    /** Every slot outside a JSON body is scalar by construction; the codec rejects array slots there. */
+    private fun scalar(slot: ScalarSlot): JsonPrimitive? = value(slot)?.let { it as? JsonPrimitive ?: error("Expected a scalar slot") }
+
     fun intent(binding: DeclarativeBinding.Intent): IntentRequest {
-        val query = binding.query.mapNotNull { (name, slot) -> value(slot)?.let { encode(name) + "=" + encode(it.content) } }
+        val query = binding.query.mapNotNull { (name, slot) -> scalar(slot)?.let { encode(name) + "=" + encode(it.content) } }
         val uri =
             binding.uriBase +
                 (
-                    binding.opaque?.let { encode(requireNotNull(value(it)) { "An opaque URI argument is missing" }.content) }
+                    binding.opaque?.let { encode(requireNotNull(scalar(it)) { "An opaque URI argument is missing" }.content) }
                         ?: if (query.isEmpty()) "" else query.joinToString("&", "?")
                 )
-        val extras = binding.extras.mapNotNull { (name, slot) -> value(slot)?.let { name to it } }.toMap()
+        val extras = binding.extras.mapNotNull { (name, slot) -> scalar(slot)?.let { name to it } }.toMap()
         require(uri.toByteArray(Charsets.UTF_8).size <= ExtensionProtocol.ARGUMENT_BYTES)
         val appName =
             binding.packageByName?.let { name ->
@@ -104,7 +107,7 @@ class BindingArguments(
         }
 
     fun content(binding: DeclarativeBinding.Content): ContentRequest {
-        val arguments = binding.selection.map { requireNotNull(value(it.slot)) { "A selection argument is missing" }.content }
+        val arguments = binding.selection.map { requireNotNull(scalar(it.slot)) { "A selection argument is missing" }.content }
         return ContentRequest(
             binding.uri,
             binding.projection,
@@ -118,13 +121,13 @@ class BindingArguments(
     fun http(binding: DeclarativeBinding.Http): HttpRequest {
         var path = binding.path
         binding.parameters.filter { it.location == "path" }.forEach { parameter ->
-            val text = requireNotNull(value(parameter.slot)) { "A path argument is missing" }.content
+            val text = requireNotNull(scalar(parameter.slot)) { "A path argument is missing" }.content
             require(text !in setOf(".", "..") && text.isNotEmpty())
             path = path.replace("{${parameter.name}}", encode(text))
         }
         val query =
             binding.parameters.filter { it.location == "query" }.mapNotNull { parameter ->
-                value(parameter.slot)?.let { encode(parameter.name) + "=" + encode(it.content) }
+                scalar(parameter.slot)?.let { encode(parameter.name) + "=" + encode(it.content) }
             }
         val url = binding.origin + path + if (query.isEmpty()) "" else query.joinToString("&", "?")
         val body = binding.requestBody?.let { body(it).toString() }

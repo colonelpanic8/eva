@@ -68,9 +68,10 @@ class MessagingBackendTest {
                         expected: InvocationStatus,
                         status: InvocationStatus,
                         message: String,
+                        data: JsonObject?,
                     ): InvocationRecord {
                         assertTrue(status != InvocationStatus.DISPATCHING)
-                        return memory.transition(callId, expected, status, message)
+                        return memory.transition(callId, expected, status, message, data)
                     }
                 }
             val result =

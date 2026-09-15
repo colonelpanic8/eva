@@ -5,6 +5,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.fail
 import org.junit.Test
@@ -236,8 +237,9 @@ class CapabilityDispatcherTest {
                             expected: InvocationStatus,
                             status: InvocationStatus,
                             message: String,
+                            data: JsonObject?,
                         ): InvocationRecord {
-                            val result = memory.transition(callId, expected, status, message)
+                            val result = memory.transition(callId, expected, status, message, data)
                             if (status == InvocationStatus.DISPATCHING) {
                                 written.complete(Unit)
                                 release.await()

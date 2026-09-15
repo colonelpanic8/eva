@@ -1,0 +1,16 @@
+{
+  "protocolVersion": 1,
+  "status": "completed",
+  "reasonCode": null,
+  "truncated": false,
+  "content": [
+    { "type": "text", "text": "2 entries for 2026-09-15:\n- Taxes (id 4f2c) scheduled 2026-09-15\n- Dentist (id 9a01) scheduled 2026-09-15 14:00" }
+  ],
+  "structuredContent": {
+    "entries": [
+      { "id": "4f2c", "title": "Taxes", "scheduled": "2026-09-15" },
+      { "id": "9a01", "title": "Dentist", "scheduled": "2026-09-15T14:00" }
+    ],
+    "truncated": false
+  }
+}

@@ -5,6 +5,7 @@ import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.ToolProposal
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -75,6 +76,33 @@ class ExtensionBackendTest {
             fake.reply = null
             assertEquals(InvocationStatus.UNKNOWN, backend.execute(proposal).status)
             assertEquals(8, fake.submits)
+        }
+
+    @Test
+    fun `structured content reaches the outcome and schema violations stay unknown`() =
+        runTest {
+            val output = """{"type":"object","properties":{"count":{"type":"integer"}},"required":["count"],"additionalProperties":false}"""
+            val typed =
+                ExtensionProtocol
+                    .describe(extensionDescription.replace("\"inputSchema\"", "\"outputSchema\":$output,\"inputSchema\""))
+                    .descriptor!!
+            val fake = FakeExtensionConnector()
+            val backend =
+                ExtensionBackend(
+                    extensionIdentity,
+                    typed,
+                    typed.capabilities.single(),
+                    ExtensionConnectionManager(fake) { testScheduler.currentTime },
+                    StandardTestDispatcher(testScheduler),
+                )
+            val envelope = """"protocolVersion":1,"status":"completed","reasonCode":null,"truncated":false"""
+            fake.reply = """{$envelope,"content":[{"type":"text","text":"Three items"}],"structuredContent":{"count":3}}"""
+            val outcome = backend.execute(proposal)
+            assertEquals(InvocationStatus.COMPLETED, outcome.status)
+            assertEquals("Three items", outcome.message)
+            assertEquals(JsonPrimitive(3), outcome.data!!["count"])
+            fake.reply = """{$envelope,"content":[],"structuredContent":{"count":"three"}}"""
+            assertEquals(InvocationStatus.UNKNOWN, backend.execute(proposal).status)
         }
 
     @Test

@@ -23,12 +23,12 @@ internal val extensionCapability = Capability("read", "Read", "Read data", exten
 internal val extensionDescription =
     """
     {
-    "protocolVersion":1,"status":"completed","reasonCode":null,"message":"","truncated":false,
+    "protocolVersion":1,"status":"completed","reasonCode":null,"truncated":false,"content":[],
     "descriptor":{"protocolVersion":1,"descriptorRevision":"v1","authorizationScopeRevision":"account1",
-    "title":"Example","schemaVersion":"flat-scalar-v1","capabilities":[{
-    "name":"read","title":"Read","description":"Read data","inputSchema":$extensionSchema,"effects":"read",
-    "execution":{"requiresForeground":false,"maxDurationMillis":1000,"cancellation":"none","idempotency":"none"},
-    "result":{"mediaType":"text/plain","maxBytes":16384}}]}}
+    "title":"Example","capabilities":[{
+    "tool":{"name":"read","title":"Read","description":"Read data","inputSchema":$extensionSchema},"effects":"read",
+    "execution":{"mode":"synchronous","requiresForeground":false,"maxWaitMillis":1000},
+    "result":{"maxBytes":16384}}]}}
     """.trimIndent()
 
 internal class FakeExtensionConnector :
@@ -57,12 +57,16 @@ internal class FakeExtensionConnector :
         return this
     }
 
+    var request: String? = null
+
     override fun describe(
         id: String,
+        request: String,
         deadline: Long,
         callback: (Int, String, String) -> Unit,
     ) {
         submits++
+        this.request = request
         this.id = id
         this.deadline = deadline
         this.callback = callback
@@ -78,7 +82,7 @@ internal class FakeExtensionConnector :
         callback: (Int, String, String) -> Unit,
     ) {
         this.revision = revision
-        describe(id, deadline, callback)
+        describe(id, "", deadline, callback)
     }
 
     override fun close() {
@@ -151,6 +155,7 @@ class ExtensionConnectionTest {
             pending.join()
             fake.reply = "ok"
             assertEquals(ExtensionExchange.Reply("ok"), manager.describe(extensionIdentity))
+            assertEquals(ExtensionProtocol.describeRequest(), fake.request)
         }
 
     @Test

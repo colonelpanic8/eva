@@ -1,6 +1,7 @@
 package com.colonelpanic.eva.adapters.declarative
 
 import com.colonelpanic.eva.capability.ExecutionSemantics
+import com.colonelpanic.eva.capability.extensions.Effect
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -16,6 +17,14 @@ data class PackageDefinition(
 )
 
 enum class PackageEffect { READ, WRITE, HANDOFF, UNKNOWN }
+
+fun PackageEffect.toEffect(): Effect =
+    when (this) {
+        PackageEffect.READ -> Effect.READ
+        PackageEffect.WRITE -> Effect.WRITE
+        PackageEffect.HANDOFF -> Effect.HANDOFF
+        PackageEffect.UNKNOWN -> Effect.UNKNOWN
+    }
 
 fun PackageDefinition.appTargets(): List<String> {
     fun targets(binding: DeclarativeBinding): List<String> =
@@ -37,6 +46,8 @@ data class PackageCapability(
     val binding: DeclarativeBinding,
     val validators: Map<String, String> = emptyMap(),
     val receipts: ReceiptText = ReceiptText(),
+    val outputSchema: JsonObject? = null,
+    val annotations: JsonObject? = null,
 )
 
 data class ReceiptText(
@@ -44,13 +55,14 @@ data class ReceiptText(
     val handlerMissing: String? = null,
 )
 
+/** A slot's type is a scalar, or `array` for a scalar list that only a JSON request body can carry. */
 sealed interface ScalarSlot {
     val type: String
 
     data class Argument(
         val name: String,
         override val type: String,
-        val default: JsonPrimitive? = null,
+        val default: JsonElement? = null,
         val required: Boolean = false,
     ) : ScalarSlot
 

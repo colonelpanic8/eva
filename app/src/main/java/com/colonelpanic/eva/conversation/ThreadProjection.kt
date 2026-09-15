@@ -135,6 +135,7 @@ fun projectHistory(
                         receipt?.status?.name ?: InvocationStatus.UNKNOWN.name,
                         receipt?.message ?: "No outcome was recorded.",
                         provenance = receipt?.provenance,
+                        data = receipt?.data,
                     )
                 }
 

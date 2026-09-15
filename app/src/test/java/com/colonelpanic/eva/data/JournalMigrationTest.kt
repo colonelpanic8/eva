@@ -5,6 +5,7 @@ import com.colonelpanic.eva.capability.InvocationStatus
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -52,7 +53,11 @@ class JournalMigrationTest {
                     }
                     val database = JournalDatabase(context, name)
                     try {
-                        assertEquals(5, database.readableDatabase.version)
+                        assertEquals(6, database.readableDatabase.version)
+                        database.readableDatabase.rawQuery("SELECT data_json FROM invocations", null).use {
+                            check(it.moveToFirst())
+                            assertTrue(it.isNull(0))
+                        }
                         if (version == 3) {
                             database.readableDatabase.rawQuery("SELECT title FROM threads", null).use {
                                 check(it.moveToFirst())

@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.capability
 
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -10,11 +11,19 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 
+/**
+ * EVA's JSON Schema subset. Input schemas are closed objects whose properties are scalars or
+ * arrays of scalars; output schemas may additionally nest objects and arrays and stay open.
+ */
 object ToolSchema {
+    const val MAX_INPUT_ITEMS = 64
+    const val MAX_OUTPUT_ITEMS = 4096
+    val scalarTypes = setOf("string", "integer", "number", "boolean")
+
     /**
      * Rebuilds a JSON object from a backend's flat string arguments, restoring the
-     * scalar type each property declares. A value that does not parse stays a string
-     * so schema validation rejects it.
+     * type each property declares. Arrays travel as JSON text. A value that does not
+     * parse stays a string so schema validation rejects it.
      */
     fun coerce(
         schema: JsonObject,
@@ -28,6 +37,7 @@ object ToolSchema {
                     "integer" -> value.toLongOrNull()?.let { JsonPrimitive(it) }
                     "number" -> value.toDoubleOrNull()?.let { JsonPrimitive(it) }
                     "boolean" -> value.toBooleanStrictOrNull()?.let { JsonPrimitive(it) }
+                    "array" -> runCatching { Json.parseToJsonElement(value) as? JsonArray }.getOrNull()
                     else -> null
                 } ?: JsonPrimitive(value)
             },
@@ -37,13 +47,15 @@ object ToolSchema {
     fun check(
         schema: JsonObject,
         depth: Int = 0,
+        output: Boolean = false,
     ) {
         require(depth <= 8) { "Schema nesting exceeds eight levels" }
-        val type = (schema["type"] as? JsonPrimitive)?.content
+        val type = (schema["type"] as? JsonPrimitive)?.takeIf { it.isString }?.content
         val allowed =
             setOf("type", "description", "enum") +
                 when (type) {
                     "object" -> setOf("properties", "required", "additionalProperties")
+                    "array" -> setOf("items", "minItems", "maxItems")
                     "string" -> setOf("minLength", "maxLength")
                     "integer", "number" -> setOf("minimum", "maximum")
                     "boolean" -> emptySet()
@@ -52,18 +64,32 @@ object ToolSchema {
         require(schema.keys.all { it in allowed }) { "Unsupported schema keyword" }
         schema["description"]?.let { require(it is JsonPrimitive && it.isString) }
         schema["enum"]?.let { values ->
-            require(values is JsonArray && values.size in 1..64 && type != "object")
+            require(values is JsonArray && values.size in 1..64 && type != "object" && type != "array")
             val withoutEnum = JsonObject(schema - "enum")
             require(values.all { error(withoutEnum, it, depth) == null }) { "Invalid enum value" }
         }
         if (type == "object") {
-            require(schema["additionalProperties"] == JsonPrimitive(false)) { "Objects must be closed" }
+            val open = (schema["additionalProperties"] as? JsonPrimitive)?.takeUnless { it.isString }?.booleanOrNull
+            require(open == false || (output && open == true)) { "Objects must be closed" }
             val properties = schema["properties"] as? JsonObject ?: error("Missing properties")
             require(properties.size <= 64)
             val required = schema["required"] as? JsonArray ?: error("Missing required fields")
             require(required.all { it is JsonPrimitive && it.isString && it.content in properties })
             require(required.distinct().size == required.size)
-            properties.values.forEach { check(it as? JsonObject ?: error("Invalid property schema"), depth + 1) }
+            properties.values.forEach { check(it as? JsonObject ?: error("Invalid property schema"), depth + 1, output) }
+        }
+        if (type == "array") {
+            val items = schema["items"] as? JsonObject ?: error("Arrays declare an items schema")
+            val itemType = (items["type"] as? JsonPrimitive)?.contentOrNull
+            require(output || itemType in scalarTypes) { "Input arrays hold scalars" }
+            check(items, depth + 1, output)
+            val ceiling = if (output) MAX_OUTPUT_ITEMS else MAX_INPUT_ITEMS
+            for (name in listOf("minItems", "maxItems")) {
+                schema[name]?.let {
+                    require(it is JsonPrimitive && !it.isString && it.intOrNull != null && it.intOrNull!! in 0..ceiling)
+                }
+            }
+            require(bound(schema, "minItems", 0.0) <= bound(schema, "maxItems", ceiling.toDouble()))
         }
         if (type == "string") {
             for (name in listOf("minLength", "maxLength")) {
@@ -95,9 +121,20 @@ object ToolSchema {
                 "object" -> {
                     val properties = schema["properties"] as? JsonObject ?: return "Invalid schema."
                     val required = schema["required"] as? JsonArray ?: return "Invalid schema."
-                    value is JsonObject && value.keys.all { it in properties } &&
+                    val open = schema["additionalProperties"] == JsonPrimitive(true)
+                    value is JsonObject && (open || value.keys.all { it in properties }) &&
                         required.all { (it as JsonPrimitive).content in value } &&
-                        value.all { (key, child) -> error(properties.getValue(key) as JsonObject, child, depth + 1) == null }
+                        value.all { (key, child) ->
+                            val property = properties[key] as? JsonObject
+                            property == null || error(property, child, depth + 1) == null
+                        }
+                }
+
+                "array" -> {
+                    val items = schema["items"] as? JsonObject ?: return "Invalid schema."
+                    value is JsonArray &&
+                        value.size.toDouble() in bound(schema, "minItems", 0.0)..bound(schema, "maxItems", MAX_OUTPUT_ITEMS.toDouble()) &&
+                        value.all { error(items, it, depth + 1) == null }
                 }
 
                 "string" -> {

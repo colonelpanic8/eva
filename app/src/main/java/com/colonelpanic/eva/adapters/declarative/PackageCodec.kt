@@ -45,11 +45,11 @@ object PackageCodec {
     }
 
     private fun capability(root: JsonObject): PackageCapability {
-        root.fields(setOf("tool", "title", "binding", "execution"), setOf("effects", "validators", "receipts"))
-        val tool = root.getValue("tool").obj()
-        tool.fields(setOf("name", "description", "inputSchema"))
-        val name = tool.text("name", 64).also { require(identifier.matches(it)) }
-        val schema = tool.getValue("inputSchema").obj().also(ExtensionProtocol::checkSchema)
+        root.fields(setOf("tool", "binding", "execution"), setOf("title", "effects", "validators", "receipts", "_meta"))
+        root["_meta"]?.obj()
+        val tool = ExtensionProtocol.tool(root.getValue("tool").obj())
+        val name = tool.name
+        val schema = tool.inputSchema
         val properties = schema.getValue("properties").obj()
         val validators =
             root["validators"]
@@ -100,24 +100,27 @@ object PackageCodec {
                     claimed
                 }
             }
+        tool.annotations?.let { ExtensionProtocol.checkAnnotations(it, effect.toEffect()) }
         val execution = execution(root.getValue("execution").obj())
         require(alternatives.all { (execution.mode == ExecutionMode.HANDOFF) == (it is DeclarativeBinding.Intent) })
         require(alternatives.none { it is DeclarativeBinding.Intent } || execution.requiresForeground)
         return PackageCapability(
             name,
-            root.text("title", 120),
-            tool.text("description", 2000),
+            ExtensionProtocol.capabilityTitle(root, tool),
+            tool.description,
             schema,
             effect,
             execution,
             binding,
             validators,
             receipts,
+            tool.outputSchema,
+            tool.annotations,
         )
     }
 
     private fun execution(root: JsonObject): ExecutionSemantics {
-        root.fields(setOf("mode", "requiresForeground", "cancellation", "idempotency", "reconciliation"), setOf("maxWaitMillis"))
+        root.fields(setOf("mode", "requiresForeground"), setOf("maxWaitMillis", "cancellation", "idempotency", "reconciliation"))
         val mode =
             when (root.text("mode", 30)) {
                 "synchronous" -> ExecutionMode.SYNCHRONOUS
@@ -130,9 +133,9 @@ object PackageCodec {
             mode,
             foreground,
             root["maxWaitMillis"]?.takeUnless { it == JsonNull }?.long(),
-            root.text("cancellation", 20),
-            root.text("idempotency", 20),
-            root.text("reconciliation", 20),
+            root["cancellation"]?.string() ?: "none",
+            root["idempotency"]?.string() ?: "none",
+            root["reconciliation"]?.string() ?: "none",
         )
     }
 
@@ -382,7 +385,7 @@ object PackageCodec {
                 },
             )
         } else {
-            BodyValue.Scalar(slot(root, properties))
+            BodyValue.Scalar(slot(root, properties, allowArray = true))
         }
 
     private fun slots(
@@ -400,19 +403,24 @@ object PackageCodec {
     private fun slot(
         root: JsonObject,
         properties: JsonObject,
+        allowArray: Boolean = false,
     ): ScalarSlot {
-        val type = root.text("type", 10).also { require(it in scalarTypes) }
+        val type = root.text("type", 10).also { require(it in scalarTypes || (allowArray && it == "array")) }
         return if ("argument" in root) {
             root.fields(setOf("argument", "type"), setOf("default", "required"))
             val name = root.text("argument", 64)
             require(properties[name]?.obj()?.get("type") == JsonPrimitive(type)) { "Slot type does not match tool schema" }
             val default =
                 root["default"]?.let {
-                    require(it is JsonPrimitive && it != JsonNull && ToolSchema.error(properties.getValue(name).obj(), it) == null)
+                    require(it != JsonNull && (it is JsonPrimitive || it is JsonArray))
+                    require(
+                        ToolSchema.error(properties.getValue(name).obj(), it) == null,
+                    ) { "Default does not satisfy the argument schema" }
                     it
                 }
             ScalarSlot.Argument(name, type, default, root["required"]?.bool() ?: false)
         } else {
+            require(type != "array") { "Literal slots are scalars" }
             root.fields(setOf("value", "type"))
             val value = root.getValue("value") as? JsonPrimitive ?: error("Expected scalar literal")
             val schema = JsonObject(mapOf("type" to JsonPrimitive(type)))

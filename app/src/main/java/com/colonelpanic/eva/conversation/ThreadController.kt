@@ -47,6 +47,8 @@ import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import java.security.MessageDigest
@@ -604,8 +606,15 @@ class ThreadController(
             val context = tools
             val definition = context.snapshot.definitions[event.capabilityId]
             val id = "provider:${event.call.providerSessionId}:${event.call.callId}"
-            val arguments = event.arguments.mapValues { (_, value) -> (value as? JsonPrimitive)?.content }
-            val argumentError = if (arguments.values.any { it == null }) "This action binding requires scalar arguments." else null
+            val arguments =
+                event.arguments.mapValues { (_, value) ->
+                    when (value) {
+                        is JsonPrimitive -> value.content
+                        is JsonArray -> value.toString()
+                        else -> null
+                    }
+                }
+            val argumentError = if (arguments.values.any { it == null }) "This action binding requires scalar or list arguments." else null
             val proposal =
                 ToolProposal(
                     id,
@@ -660,7 +669,7 @@ class ThreadController(
                     )
                     try {
                         val result = dispatcher.execute(proposal, rejection ?: argumentError)
-                        deliver(event.call, result.status.name, result.message, result.provenance)
+                        deliver(event.call, result.status.name, result.message, result.provenance, result.data)
                     } catch (error: ProposalRejectedException) {
                         deliver(event.call, "NOT_EXECUTED", error.message.orEmpty())
                     } catch (error: InvocationPersistenceException) {
@@ -684,6 +693,7 @@ class ThreadController(
             status: String,
             message: String,
             provenance: com.colonelpanic.eva.capability.ReceiptProvenance? = null,
+            data: JsonObject? = null,
         ) {
             val current = leg
             if (current == null || call.connectionEpoch != current.connectionEpoch) {
@@ -692,7 +702,7 @@ class ThreadController(
                 return
             }
             try {
-                current.submitToolResult(CorrelatedToolResult(call, status, message, provenance = provenance))
+                current.submitToolResult(CorrelatedToolResult(call, status, message, data, provenance))
                 awaitingFollowUp = true
             } catch (error: CancellationException) {
                 throw error

@@ -1,0 +1,75 @@
+{
+  "protocolVersion": 1,
+  "status": "completed",
+  "reasonCode": null,
+  "truncated": false,
+  "content": [],
+  "descriptor": {
+    "protocolVersion": 1,
+    "descriptorRevision": "catalog-3.account-1",
+    "authorizationScopeRevision": "account-1",
+    "title": "Example agenda",
+    "capabilities": [
+      {
+        "tool": {
+          "name": "agenda",
+          "title": "Read agenda",
+          "description": "Read a bounded agenda for the requested day. Returns whole entries with stable identifiers.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "date": { "type": "string", "minLength": 10, "maxLength": 10, "description": "YYYY-MM-DD" },
+              "tags": { "type": "array", "items": { "type": "string", "maxLength": 40 }, "maxItems": 8 }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "outputSchema": {
+            "type": "object",
+            "properties": {
+              "entries": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "title": { "type": "string" },
+                    "scheduled": { "type": "string" }
+                  },
+                  "required": ["id", "title"],
+                  "additionalProperties": true
+                }
+              },
+              "truncated": { "type": "boolean" }
+            },
+            "required": ["entries", "truncated"],
+            "additionalProperties": false
+          },
+          "annotations": { "readOnlyHint": true, "openWorldHint": true }
+        },
+        "effects": "read",
+        "execution": { "mode": "synchronous", "requiresForeground": false, "maxWaitMillis": 30000 },
+        "result": { "maxBytes": 16384 }
+      },
+      {
+        "tool": {
+          "name": "complete",
+          "title": "Complete entry",
+          "description": "Mark exactly the entry with the given identifier as done.",
+          "inputSchema": {
+            "type": "object",
+            "properties": { "id": { "type": "string", "minLength": 1, "maxLength": 300 } },
+            "required": ["id"],
+            "additionalProperties": false
+          },
+          "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": true }
+        },
+        "effects": "write",
+        "execution": { "mode": "synchronous", "requiresForeground": false },
+        "result": { "maxBytes": 4096 },
+        "_meta": { "example.vendor": { "since": "2026-09" } }
+      }
+    ]
+  }
+}

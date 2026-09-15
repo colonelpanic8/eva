@@ -1,5 +1,7 @@
 package com.colonelpanic.eva.capability
 
+import kotlinx.serialization.json.JsonObject
+
 class MemoryInvocationRepository : InvocationRepository {
     val records = linkedMapOf<String, InvocationRecord>()
     var failClaim = false
@@ -38,12 +40,13 @@ class MemoryInvocationRepository : InvocationRepository {
         expected: InvocationStatus,
         status: InvocationStatus,
         message: String,
+        data: JsonObject?,
     ): InvocationRecord {
         check(!failDispatch || status != InvocationStatus.DISPATCHING)
         check(!failOutcome || status == InvocationStatus.DISPATCHING)
         val record = checkNotNull(records[callId])
         check(record.status == expected)
-        return record.copy(status = status, message = message).also { records[callId] = it }
+        return record.copy(status = status, message = message, data = data).also { records[callId] = it }
     }
 
     override suspend fun history() = records.values.toList()

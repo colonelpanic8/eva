@@ -120,11 +120,12 @@ class AndroidExtensionConnector(
 
                                     override fun describe(
                                         id: String,
+                                        request: String,
                                         deadline: Long,
                                         callback: (Int, String, String) -> Unit,
                                     ) {
                                         require(identity(component) == identity)
-                                        api.describe(id, deadline, callback(callback))
+                                        api.describe(id, request, deadline, callback(callback))
                                     }
 
                                     override fun execute(

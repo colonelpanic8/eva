@@ -59,6 +59,7 @@ fun selectExtensions(candidates: List<ExtensionCandidate>): List<ExtensionListin
 interface ExtensionConnection : AutoCloseable {
     fun describe(
         id: String,
+        request: String,
         deadline: Long,
         callback: (Int, String, String) -> Unit,
     )
@@ -101,7 +102,7 @@ class ExtensionConnectionManager(
 
     suspend fun describe(identity: ExtensionIdentity): ExtensionExchange =
         exchange(identity, UUID.randomUUID().toString(), 5_000, ExtensionProtocol.CATALOG_BYTES) { connection, id, deadline, callback ->
-            connection.describe(id, deadline, callback)
+            connection.describe(id, ExtensionProtocol.describeRequest(), deadline, callback)
         }
 
     suspend fun execute(
@@ -116,7 +117,7 @@ class ExtensionConnectionManager(
         return exchange(
             identity,
             invocationId,
-            capability.maxDurationMillis,
+            capability.maxWaitMillis,
             capability.maxResultBytes,
         ) { connection, id, deadline, callback ->
             connection.execute(id, revision, capability.name, arguments, deadline, callback)

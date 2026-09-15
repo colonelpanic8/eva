@@ -78,8 +78,11 @@ internal fun ExtensionsSection(
                         } else {
                             SettingsRow(
                                 capability.title,
-                                "${if (capability.effect == Effect.WRITE) "Changes data" else "Unknown effects; treated as a write"}. " +
-                                    capability.description,
+                                when (capability.effect) {
+                                    Effect.WRITE -> "Changes data. "
+                                    Effect.HANDOFF -> "Hands off to another app. "
+                                    else -> "Unknown effects; treated as a write. "
+                                } + capability.description,
                             ) {
                                 Switch(
                                     checked = capability.name in entry.mutations,

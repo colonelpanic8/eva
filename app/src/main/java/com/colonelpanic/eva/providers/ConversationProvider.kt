@@ -49,6 +49,7 @@ sealed interface HistoryItem {
         val status: String,
         val message: String,
         val provenance: ReceiptProvenance? = null,
+        val data: JsonObject? = null,
     ) : HistoryItem
 
     data class Note(

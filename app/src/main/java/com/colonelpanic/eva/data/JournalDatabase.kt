@@ -41,6 +41,7 @@ class JournalDatabase(
                 "turn_id",
                 "arguments_json",
                 "provenance_json",
+                "data_json",
             )
         val values =
             names.map { name ->
@@ -62,7 +63,7 @@ class JournalDatabase(
             "CREATE TABLE invocations (call_id TEXT PRIMARY KEY NOT NULL, fingerprint TEXT NOT NULL, " +
                 "request TEXT NOT NULL, destination TEXT, status TEXT NOT NULL, message TEXT NOT NULL, " +
                 "created_at INTEGER NOT NULL, capability_id TEXT NOT NULL, catalog_revision TEXT NOT NULL, " +
-                "title TEXT, thread_id TEXT, turn_id TEXT, arguments_json TEXT, provenance_json TEXT)",
+                "title TEXT, thread_id TEXT, turn_id TEXT, arguments_json TEXT, provenance_json TEXT, data_json TEXT)",
         )
     }
 
@@ -85,6 +86,6 @@ class JournalDatabase(
     }
 
     companion object {
-        const val VERSION = 5
+        const val VERSION = 6
     }
 }

@@ -54,7 +54,7 @@ class SqliteInvocationRepository(
                     ClaimResult(previous, false)
                 } else {
                     val values =
-                        outcome(record.status, record.message).apply {
+                        outcome(record.status, record.message, record.data).apply {
                             put("call_id", record.callId)
                             put("fingerprint", record.fingerprint)
                             put("request", record.request)
@@ -88,11 +88,17 @@ class SqliteInvocationRepository(
         expected: InvocationStatus,
         status: InvocationStatus,
         message: String,
+        data: JsonObject?,
     ): InvocationRecord =
         withContext(Dispatchers.IO) {
             transaction { db ->
                 check(
-                    db.update("invocations", outcome(status, message), "call_id = ? AND status = ?", arrayOf(callId, expected.name)) == 1,
+                    db.update(
+                        "invocations",
+                        outcome(status, message, data),
+                        "call_id = ? AND status = ?",
+                        arrayOf(callId, expected.name),
+                    ) == 1,
                 ) {
                     "The invocation changed before its state could be recorded."
                 }
@@ -149,9 +155,11 @@ class SqliteInvocationRepository(
     private fun outcome(
         status: InvocationStatus,
         message: String,
+        data: JsonObject? = null,
     ) = ContentValues().apply {
         put("status", status.name)
         put("message", message)
+        put("data_json", data?.toString())
     }
 
     private fun Cursor.record() =
@@ -170,6 +178,7 @@ class SqliteInvocationRepository(
             provenance = nullableJson("provenance_json")?.let(ReceiptProvenance::fromJson),
             threadId = getColumnIndexOrThrow("thread_id").let { if (isNull(it)) null else getString(it) },
             turnId = getColumnIndexOrThrow("turn_id").let { if (isNull(it)) null else getString(it) },
+            data = nullableJson("data_json"),
         )
 
     private fun Cursor.nullableJson(column: String): JsonObject? =

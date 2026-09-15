@@ -4,7 +4,11 @@ import com.colonelpanic.eva.capability.ExecutionMode
 import com.colonelpanic.eva.capability.ExecutionSemantics
 import com.colonelpanic.eva.capability.InteractionMode
 import com.colonelpanic.eva.capability.WaitBudget
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertThrows
@@ -62,6 +66,59 @@ class PackageCodecTest {
         }
         assertTrue(NamedValidators.accepts("emailAddress", "user@example.org"))
         assertEquals(false, NamedValidators.accepts("emailAddress", "user@example.org;other@example.org"))
+    }
+
+    @Test
+    fun `MCP tool fields carry titles output schemas annotations and list arguments into JSON bodies`() {
+        val output = """{"type":"object","properties":{"id":{"type":"string"}},"required":["id"],"additionalProperties":true}"""
+        val body =
+            httpBinding.replace(
+                "\"values\":{\"fields\":{\"Title\":{\"type\":\"string\",\"argument\":\"title\"}}}",
+                "\"values\":{\"fields\":{\"Title\":{\"type\":\"string\",\"argument\":\"title\"}}}," +
+                    "\"tags\":{\"type\":\"array\",\"argument\":\"tags\",\"default\":[\"inbox\"]}",
+            )
+        val json =
+            packageJson(body, "synchronous", false)
+                .replace("\"title\":\"Capture\",", "")
+                .replace(
+                    "\"tool\":{\"name\":\"capture\",",
+                    "\"tool\":{\"name\":\"capture\",\"title\":\"Capture todo\",\"outputSchema\":$output," +
+                        "\"annotations\":{\"readOnlyHint\":false,\"destructiveHint\":false},",
+                ).replace(
+                    "\"title\":{\"type\":\"string\",\"maxLength\":100}",
+                    "\"title\":{\"type\":\"string\",\"maxLength\":100},\"tags\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"maxItems\":3}",
+                ).replace(",\"cancellation\":\"none\",\"idempotency\":\"none\",\"reconciliation\":\"none\"", "")
+        val capability = PackageCodec.decode(json).capabilities.single()
+        assertEquals("Capture todo", capability.title)
+        assertEquals(JsonPrimitive(false), capability.annotations!!["readOnlyHint"])
+        assertEquals("none", capability.execution.idempotency)
+        assertTrue(capability.outputSchema!!.containsKey("properties"))
+        val explicit = BindingArguments(capability, mapOf("title" to "Taxes", "tags" to """["work","home"]"""))
+        val parsed = Json.parseToJsonElement(explicit.http(capability.binding as DeclarativeBinding.Http).body!!).jsonObject
+        assertEquals(JsonArray(listOf(JsonPrimitive("work"), JsonPrimitive("home"))), parsed["tags"])
+        val defaulted = BindingArguments(capability, mapOf("title" to "Taxes")).http(capability.binding as DeclarativeBinding.Http)
+        assertEquals(JsonArray(listOf(JsonPrimitive("inbox"))), Json.parseToJsonElement(defaulted.body!!).jsonObject["tags"])
+        assertThrows(Exception::class.java) { BindingArguments(capability, mapOf("title" to "Taxes", "tags" to """["a","b","c","d"]""")) }
+        assertNotEquals(
+            PackageCodec.decode(json).digest,
+            PackageCodec.decode(json.replace("\"destructiveHint\":false", "\"destructiveHint\":true")).digest,
+        )
+        assertThrows(Exception::class.java) { PackageCodec.decode(json.replace("\"readOnlyHint\":false", "\"readOnlyHint\":true")) }
+        assertThrows(Exception::class.java) {
+            PackageCodec
+                .decode(json.replace("\"title\":\"Capture todo\",", "").replace("\"tool\":{", "\"title\":\"Legacy\",\"tool\":{"))
+                .capabilities
+                .single()
+                .title
+                .let { require(it == "Capture todo") }
+        }
+        assertThrows(Exception::class.java) { PackageCodec.decode(json.replace("\"title\":\"Capture todo\",", "")) }
+        val queryList =
+            json.replace(
+                "\"parameters\":[]",
+                "\"parameters\":[{\"in\":\"query\",\"name\":\"tags\",\"value\":{\"type\":\"array\",\"argument\":\"tags\"}}]",
+            )
+        assertThrows(Exception::class.java) { PackageCodec.decode(queryList) }
     }
 
     @Test

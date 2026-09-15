@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/colonelpanic8/eva/docs/schemas/extension-result.schema.json",
+  "title": "EVA extension execute reply (AIDL protocol v1)",
+  "description": "EVA's outcome envelope around MCP tool-result content. The whole document is bounded to the capability's declared result.maxBytes (at most 16,384 UTF-8 bytes).",
+  "type": "object",
+  "required": ["protocolVersion", "status", "reasonCode", "truncated", "content"],
+  "additionalProperties": false,
+  "properties": {
+    "protocolVersion": { "const": 1 },
+    "status": { "enum": ["completed", "not_executed", "failed", "handed_off", "unknown"] },
+    "reasonCode": {
+      "oneOf": [
+        { "type": "null" },
+        { "enum": ["stale_descriptor", "not_configured", "busy", "invalid_arguments", "unauthorized_caller", "deadline_exceeded"] }
+      ]
+    },
+    "truncated": { "type": "boolean" },
+    "content": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "required": ["type", "text"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "const": "text" },
+          "text": { "type": "string" },
+          "_meta": { "type": "object" }
+        }
+      }
+    },
+    "structuredContent": { "type": ["object", "null"] },
+    "_meta": { "type": "object" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "enum": ["completed", "handed_off"] } } },
+      "then": { "properties": { "reasonCode": { "type": "null" } } }
+    },
+    {
+      "if": { "properties": { "reasonCode": { "enum": ["stale_descriptor", "not_configured", "busy", "invalid_arguments", "unauthorized_caller"] } } },
+      "then": { "properties": { "status": { "const": "not_executed" } } }
+    },
+    {
+      "if": { "properties": { "reasonCode": { "const": "deadline_exceeded" } } },
+      "then": { "properties": { "status": { "enum": ["not_executed", "unknown"] } } }
+    }
+  ]
+}

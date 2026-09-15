@@ -80,6 +80,7 @@ internal fun HistoryItem.toOpenAiMessages(): List<OpenAiHistoryMessage> =
                         "arguments" to JsonObject(arguments.toSortedMap().mapValues { JsonPrimitive(it.value) }),
                         "reportedStatus" to JsonPrimitive(status),
                         "message" to JsonPrimitive(message),
+                        "data" to (data ?: JsonNull),
                         "provenance" to (provenance?.toJson() ?: JsonNull),
                     ),
                 )

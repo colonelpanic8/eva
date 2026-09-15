@@ -59,7 +59,9 @@ class ExtensionBackend(
 
                 is ExtensionExchange.Reply -> {
                     val result =
-                        runCatching { ExtensionProtocol.executeResult(exchange.json, capability.maxResultBytes) }.getOrNull()
+                        runCatching {
+                            ExtensionProtocol.executeResult(exchange.json, capability.maxResultBytes, capability.outputSchema)
+                        }.getOrNull()
                             ?: return@withContext unknown()
                     result.outcome.copy(
                         message =

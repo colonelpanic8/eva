@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/colonelpanic8/eva/docs/schemas/extension-descriptor.schema.json",
+  "title": "EVA extension describe reply (AIDL protocol v1)",
+  "description": "The execute reply envelope plus a descriptor. The whole document is bounded to 65,536 UTF-8 bytes. A completed reply carries a descriptor with truncated false; not_executed or failed carries descriptor null.",
+  "allOf": [
+    { "$ref": "extension-result.schema.json" },
+    {
+      "type": "object",
+      "required": ["descriptor"],
+      "properties": {
+        "descriptor": {
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/descriptor" }]
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "revision": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{1,128}$" },
+    "descriptor": {
+      "type": "object",
+      "required": ["protocolVersion", "descriptorRevision", "authorizationScopeRevision", "title", "capabilities"],
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": { "const": 1 },
+        "descriptorRevision": { "$ref": "#/$defs/revision" },
+        "authorizationScopeRevision": { "$ref": "#/$defs/revision" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "capabilities": { "type": "array", "minItems": 1, "maxItems": 64, "items": { "$ref": "#/$defs/capability" } },
+        "_meta": { "type": "object" }
+      }
+    },
+    "capability": {
+      "type": "object",
+      "required": ["tool", "effects", "execution", "result"],
+      "additionalProperties": false,
+      "properties": {
+        "tool": { "$ref": "tool.schema.json" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120, "description": "Legacy alias; prefer tool.title. One of the two is required." },
+        "effects": { "enum": ["read", "write", "external_handoff", "unknown"] },
+        "execution": {
+          "type": "object",
+          "required": ["mode", "requiresForeground"],
+          "additionalProperties": false,
+          "properties": {
+            "mode": { "const": "synchronous" },
+            "requiresForeground": { "const": false },
+            "maxWaitMillis": { "type": ["integer", "null"], "minimum": 1, "maximum": 60000 },
+            "cancellation": { "const": "none" },
+            "idempotency": { "const": "none" },
+            "reconciliation": { "const": "none" }
+          }
+        },
+        "result": {
+          "type": "object",
+          "required": ["maxBytes"],
+          "additionalProperties": false,
+          "properties": { "maxBytes": { "type": "integer", "minimum": 1, "maximum": 16384 } }
+        },
+        "_meta": { "type": "object" }
+      }
+    }
+  }
+}

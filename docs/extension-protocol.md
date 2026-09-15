@@ -16,6 +16,77 @@ cannot download arbitrary code or expand Android permissions. A new execution
 mechanism requires an EVA implementation. General MCP connectivity is planned,
 not supplied by accepting MCP-shaped tool definitions.
 
+## Shared shapes
+
+Both formats describe a capability the same way, and both return results the same
+way. The Kotlin codecs are the executable oracle; the JSON Schemas under
+[`docs/schemas/`](schemas/) document the accepted shapes for authors and
+validators, and [`docs/examples/`](examples/) holds fixtures that the JVM tests
+decode.
+
+| Schema | Describes |
+| --- | --- |
+| [`tool.schema.json`](schemas/tool.schema.json) | The MCP tool object embedded in every capability |
+| [`package.schema.json`](schemas/package.schema.json) | A declarative package file |
+| [`index.schema.json`](schemas/index.schema.json) | A repository index |
+| [`extension-descriptor.schema.json`](schemas/extension-descriptor.schema.json) | An installed-app `describe` reply |
+| [`extension-result.schema.json`](schemas/extension-result.schema.json) | An installed-app `execute` reply |
+
+### Capability
+
+A capability object contains:
+
+- `tool`: an [MCP](https://modelcontextprotocol.io) tool object: `name`,
+  `description`, `inputSchema`, and optional `title`, `outputSchema`,
+  `annotations`, and `_meta`. EVA bounds it: names match
+  `[A-Za-z_][A-Za-z0-9_]{0,63}`, titles are at most 120 code points, descriptions
+  at most 2,000. `annotations` may carry MCP's `title`, `readOnlyHint`,
+  `destructiveHint`, `idempotentHint`, and `openWorldHint`; a hint that
+  contradicts `effects` is rejected. The MCP tool is what a future MCP surface
+  would export unchanged.
+- `effects`: `read`, `write`, `external_handoff`, or `unknown`. This is EVA's
+  authority for grants; the annotations are hints for models and other clients.
+- `execution`: `mode` (`synchronous` or `handoff`), `requiresForeground`,
+  optional `maxWaitMillis` (1–60,000, null or omitted means the mode default), and
+  optional `cancellation`, `idempotency`, and `reconciliation`, which default to
+  `none` and accept only `none`. Omit them; they exist so a later version can add
+  values without renaming fields.
+- A format-specific execution part: `binding` for declarative packages, `result`
+  for installed-app services.
+- Optional `title` beside `tool` is accepted as a legacy alias for `tool.title`;
+  one of the two is required.
+- Optional `_meta`: an object EVA digests into the contract but does not
+  interpret. Any other unknown field is rejected. `_meta` is the only place for
+  vendor or future-version data.
+
+### Input and output schemas
+
+`inputSchema` is a closed object (`additionalProperties: false`, explicit
+`required`) of 0–64 properties named `[A-Za-z][A-Za-z0-9_]{0,63}`. Each property is
+a scalar (`string`, `integer`, `number`, `boolean`) or an `array` of one scalar
+`items` type with optional `minItems`/`maxItems` (0–64). Scalars accept
+`description` and `enum`; strings accept `minLength`/`maxLength` (code points,
+0–65,536); integers and numbers accept finite `minimum`/`maximum`; integers stay
+within ±9,007,199,254,740,991. No nested objects, nulls, unions, references,
+patterns, formats, or defaults. Optional means omitted, not null.
+
+`outputSchema` is optional and describes `structuredContent`. Its root is an
+object; properties may be scalars, arrays (up to 4,096 items), or nested objects
+to eight levels, and objects may set `additionalProperties: true`. A result whose
+structured content violates a declared output schema is malformed.
+
+### Results
+
+Every execution produces EVA's outcome envelope: `status` (`completed`,
+`not_executed`, `failed`, `handed_off`, `unknown`), an attributed text `message`,
+and optional structured `data`. Declarative bindings build both from the declared
+projection; installed-app services return MCP-style `content` text blocks and
+`structuredContent`. The model receives both the text and the data, quoted as
+untrusted external content, within a 16,384-character result budget that matches
+the extension result limit, so provider truncation notes survive. Structured data
+that would not fit is omitted whole rather than cut. Receipts persist the data
+beside the text, and a resumed conversation replays both.
+
 ## Declarative packages
 
 Packages are single JSON files. Starter packages and an index live separately in
@@ -37,11 +108,10 @@ not shipped and is not a claim of a configured server or verified device workflo
 
 A package is one self-contained JSON file, without scripts or embedded secrets.
 Its `formatVersion` identifies the codec, `id` is a publisher-chosen descriptive
-name, and `version` is a three-part `MAJOR.MINOR.PATCH` version (no prerelease/build suffix in v1). Each capability's `name`, `description`,
-and `inputSchema` form an MCP-compatible tool definition using EVA's supported
-JSON Schema subset. Binding metadata and effect declarations are separate from
-that tool definition. Unsupported schema features are rejected, not silently
-dropped.
+name, and `version` is a three-part `MAJOR.MINOR.PATCH` version (no prerelease/build suffix in v1). Each capability embeds the
+[shared MCP tool object](#capability); binding metadata and effect declarations
+are separate from that tool definition. Unsupported schema features are rejected,
+not silently dropped.
 
 On import EVA assigns an instance ID. The file's ID cannot replace an unrelated
 installation. Grants bind to that instance and the full canonical content digest;
@@ -114,9 +184,9 @@ server-only extension), and its value must match the downloaded package.
 ### Execution and waiting
 
 `ExecutionSemantics` declares `mode` (bounded synchronous or handoff),
-`requiresForeground`, optional `maxWaitMillis`, and `cancellation`, `idempotency`,
-and `reconciliation`, all three restricted to `none` in this pass. No accepted
-jobs or polling are inferred from a 202 response or result prose.
+`requiresForeground`, optional `maxWaitMillis`, and the optional `cancellation`,
+`idempotency`, and `reconciliation` seams described under [shared shapes](#capability).
+No accepted jobs or polling are inferred from a 202 response or result prose.
 
 The effective wait is the user override for the extension instance, otherwise
 the capability's package/adapter default, otherwise the EVA interaction-mode
@@ -139,26 +209,29 @@ Duplicate JSON keys, unknown fields, invalid Unicode, and unsupported versions
 are rejected. Object ordering does not affect the canonical contract digest.
 The package ID is a lowercase dotted name; capability names are ASCII identifiers.
 
-Each capability contains `tool`, `title`, `execution`, `binding`, and optionally `validators`, `receipts`, and
-`effects` (`read`, `write`, `external_handoff`, or `unknown`; omission means
-unknown). `tool` is exactly an MCP tool object: `name`, `description`, `inputSchema`.
-Inputs are a closed object with scalar string/integer/number/boolean properties,
-explicit `required`, and `additionalProperties: false`. The existing EVA subset
-supports descriptions, enums, string length and numeric bounds. Nested objects,
-arrays, null, schema defaults, and extra keywords are not accepted as inputs.
-Descriptions are bounded to 2,000 characters, titles to 120, and names to 64.
+Each capability contains `tool`, `execution`, `binding`, and optionally `title`
+(legacy alias), `validators`, `receipts`, `_meta`, and `effects` (`read`, `write`,
+`external_handoff`, or `unknown`; omission means unknown). `tool` is the
+[shared MCP tool object](#capability): `name`, `description`, `inputSchema`, and
+optional `title`, `outputSchema`, `annotations`, `_meta`. Inputs follow the
+[shared input schema rules](#input-and-output-schemas): scalars and scalar
+arrays in a closed object.
 
-Execution has required `mode` (`synchronous` or `handoff`), `requiresForeground`
-(boolean), `cancellation`, `idempotency`, and `reconciliation` (all `none`).
-Optional `maxWaitMillis` is a positive integer or null. Intent bindings require
-handoff plus foreground; HTTP and content bindings require synchronous mode.
-The common wait policy, rather than the file codec, applies the 60-second clamp.
+Execution has required `mode` (`synchronous` or `handoff`) and `requiresForeground`
+(boolean); `maxWaitMillis` is an optional positive integer or null, and the
+`cancellation`, `idempotency`, and `reconciliation` seams are optional and accept
+only `none`. Intent bindings require handoff plus foreground; HTTP and content
+bindings require synchronous mode. The common wait policy, rather than the file
+codec, applies the 60-second clamp.
 
 A typed slot is exactly `{"argument":"title","type":"string"}` or
 `{"value":"default","type":"string"}`. Argument types must match the tool
 schema; literal types must match their values. Argument slots never change
 binding authority. Optional query slots omit a missing argument. Required path
-and selection slots must have a value before anything is submitted.
+and selection slots must have a value before anything is submitted. An
+`array`-typed argument can only fill a `requestBody` slot
+(`{"argument":"tags","type":"array"}`, optional array `default`), where it becomes
+a JSON array; path, query, intent, and selection slots stay scalar.
 
 Intent fields: `kind`, `action`, optional `uri: {base, query?, opaque?}`, `extras`,
 `package`, `class`, `mimeType`, and `packageByName`. `query` and `extras` are maps of fixed names to typed slots. The base
@@ -181,8 +254,8 @@ with optional port and no path, credentials, query, or fragment. Methods are GET
 HEAD, POST, PUT, PATCH, DELETE. Paths start with `/`; typed `{name}` placeholders
 must have matching `parameters` entries. Each parameter has `in` (`path` or
 `query`), `name`, and a typed-slot `value`. No header parameter slots exist.
-`requestBody` is `{fields: {...}}`, recursively containing fields objects or
-scalar slots; GET/HEAD have no body. This mirrors OpenAPI operation structure
+`requestBody` is `{fields: {...}}`, recursively containing fields objects,
+scalar slots, or array argument slots; GET/HEAD have no body. This mirrors OpenAPI operation structure
 without claiming to accept an entire OpenAPI document.
 
 `credential` is a named basic-auth reference such as `org-agenda`, limited to
@@ -252,6 +325,14 @@ HTTP `result` chooses exactly one of `pointer` (existing text/JSON projection) o
 - Optional `totalPointer`: a pointer to a nonnegative integer count in the root
   response. A total greater than the returned array item count means the server
   truncated its response, independently of EVA's item/byte cap.
+- The same whole items also become structured `data`:
+  `{"items": [{slot: value, ...}], "truncated": bool, "sourceTruncated": bool,
+  "total": n?}`, with each item keyed by slot name and carrying the typed JSON
+  values (strings, numbers, booleans, string arrays, or null). Items that did not
+  fit the text budget are absent from the data as well, so text and data never
+  disagree. A `pointer` result whose selected value is an object is likewise
+  attached as data, and content queries attach `{"rows": [...], "truncated": bool}`.
+  Data larger than 16,384 bytes is omitted whole.
 
 Apart from the explicit local filter described below, the mapping cannot sort,
 join records, calculate values, run regexes,
@@ -342,6 +423,14 @@ it in EVA settings before execution. The provider owns credentials, network
 access, validation, and execution; EVA owns grants, dispatch, journaling, and
 attributed receipts.
 
+The wire shapes are the [shared shapes](#shared-shapes): a capability is an MCP
+tool object plus `effects`, `execution`, and `result`; a reply is EVA's outcome
+envelope around MCP `content` and `structuredContent`. See
+[`extension-descriptor.schema.json`](schemas/extension-descriptor.schema.json),
+[`extension-result.schema.json`](schemas/extension-result.schema.json), and the
+fixtures [`extension-describe.json`](examples/extension-describe.json) and
+[`extension-result.json`](examples/extension-result.json).
+
 ### 1. Discovery and copied AIDL
 
 Add inside the provider manifest's `application` element:
@@ -373,7 +462,8 @@ package com.colonelpanic.eva.extension;
 import com.colonelpanic.eva.extension.IEvaExtensionCallback;
 
 oneway interface IEvaExtension {
-    void describe(String requestId, long deadlineElapsedRealtimeMillis,
+    void describe(String requestId, String requestJson,
+                  long deadlineElapsedRealtimeMillis,
                   IEvaExtensionCallback callback);
     void execute(String invocationId, String expectedRevision,
                  String capability, String argumentsJson,
@@ -395,10 +485,21 @@ oneway interface IEvaExtensionCallback {
 All arguments are non-null. IDs are opaque EVA-generated ASCII strings, 1–256
 bytes, echoed exactly in the callback. An invocation ID is correlation, not a
 credential or a promise of persistent idempotency. `capability` is the descriptor's
-local name, not its EVA-qualified ID. Each request receives at most one terminal
-callback. There is no streaming, progress, accepted-job response, cancellation
-method, or callback-initiated execution. EVA ignores duplicate, unknown-ID,
-wrong-provider, and already-expired callbacks.
+local tool name, not its EVA-qualified ID. Each request receives at most one
+terminal callback. There is no streaming, progress, accepted-job response,
+cancellation method, or callback-initiated execution. EVA ignores duplicate,
+unknown-ID, wrong-provider, and already-expired callbacks.
+
+`requestJson` tells the provider what EVA speaks:
+
+```json
+{"protocolVersion": 1, "supportedProtocolVersions": [1]}
+```
+
+A provider answers with a descriptor whose `protocolVersion` is one EVA listed.
+Future EVA versions extend the list; a provider that only knows a version EVA no
+longer lists replies `not_executed` with a `not_configured` reason and a message,
+rather than guessing.
 
 Authenticate and capture identity in each Binder entry point before scheduling
 bounded background work. Binder methods, callbacks, service creation, and
@@ -411,26 +512,27 @@ on Binder/main threads. Bound queues and concurrency; reject excess work as
 Size accounting uses UTF-8 bytes, even though AIDL transports Java strings.
 Reject duplicate object keys, invalid Unicode, nonfinite numbers, unknown fields,
 wrong types, and omitted required fields. Object key order is insignificant;
-array order is significant. Every field in the envelope/descriptor examples is
-required, including explicit nulls. Schema keywords have their own rules below.
+array order is significant. Unknown fields are rejected everywhere except inside
+`_meta` objects, which are digested but not interpreted.
 
 | Payload/value | Maximum |
 | --- | --- |
 | Entire describe callback JSON, including envelope | 65,536 UTF-8 bytes |
 | Entire arguments JSON | 16,384 UTF-8 bytes |
-| Entire execute callback JSON, including envelope | 16,384 UTF-8 bytes |
+| Entire execute callback JSON, including envelope | 16,384 UTF-8 bytes, further bounded by `result.maxBytes` |
 | Capabilities in a descriptor | 64 |
-| Capability name | 64 ASCII bytes, `[a-z][a-z0-9_]{0,63}` |
+| Tool name | 64 ASCII bytes, `[A-Za-z_][A-Za-z0-9_]{0,63}` |
 | Revision | 128 ASCII bytes, `[A-Za-z0-9._:-]+` |
 | Title | 120 Unicode code points |
 | Description or schema description | 2,000 Unicode code points |
-| Callback message | 4,000 Unicode code points, also subject to byte limits |
+| Content blocks per reply | 64 |
 
-Titles/descriptions are nonempty; messages may be empty. Both sides enforce
+Titles/descriptions are nonempty; content text may be empty. Both sides enforce
 limits. Truncate human text at Unicode boundaries and set `truncated: true`.
-Never truncate JSON, IDs, item references, or schemas. Reject an oversized
-catalog rather than installing a partial descriptor. Limits are below Binder's
-shared transaction-buffer limit, but cannot guarantee delivery under pressure.
+Never truncate JSON, IDs, item references, or schemas: if structured content would
+not fit, omit whole items and say so. Reject an oversized catalog rather than
+installing a partial descriptor. Limits are below Binder's shared
+transaction-buffer limit, but cannot guarantee delivery under pressure.
 Diagnostics must not log credentials or raw arguments/results.
 
 ### 3. Describe callback
@@ -440,107 +542,107 @@ credential disclosure, or UI launch. Missing credentials do not prevent catalog
 description. Changing template/view choices belong in read operations rather
 than a network-dependent catalog.
 
-Successful response (one example capability; 1–64 unique names are allowed):
+Successful response (one capability shown; 1–64 unique tool names are allowed):
 
 ```json
 {
   "protocolVersion": 1,
   "status": "completed",
   "reasonCode": null,
-  "message": "",
   "truncated": false,
+  "content": [],
   "descriptor": {
     "protocolVersion": 1,
     "descriptorRevision": "catalog-1.account-1",
     "authorizationScopeRevision": "account-1",
     "title": "Example agenda",
-    "schemaVersion": "flat-scalar-v1",
     "capabilities": [{
-      "name": "agenda",
-      "title": "Read agenda",
-      "description": "Read a bounded agenda for the requested day.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "date": {"type": "string", "minLength": 10, "maxLength": 10}
+      "tool": {
+        "name": "agenda",
+        "title": "Read agenda",
+        "description": "Read a bounded agenda for the requested day.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "date": {"type": "string", "minLength": 10, "maxLength": 10}
+          },
+          "required": [],
+          "additionalProperties": false
         },
-        "required": [],
-        "additionalProperties": false
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "entries": {"type": "array", "items": {"type": "object",
+              "properties": {"id": {"type": "string"}, "title": {"type": "string"}},
+              "required": ["id", "title"], "additionalProperties": true}}
+          },
+          "required": ["entries"],
+          "additionalProperties": false
+        },
+        "annotations": {"readOnlyHint": true, "openWorldHint": true}
       },
       "effects": "read",
-      "execution": {
-        "requiresForeground": false,
-        "maxDurationMillis": 30000,
-        "cancellation": "none",
-        "idempotency": "none"
-      },
-      "result": {"mediaType": "text/plain", "maxBytes": 16384}
+      "execution": {"mode": "synchronous", "requiresForeground": false, "maxWaitMillis": 30000},
+      "result": {"maxBytes": 16384}
     }]
   }
 }
 ```
 
-`effects` is exactly `read`, `write`, or `unknown`. An unclassifiable operation
-uses `unknown`; omitted effects are malformed, never implicitly read-only.
-Effects cover external behavior: writing a remote agenda is a write even if it
-changes nothing on the phone. Effects are provider claims, not execution grants.
+`effects` is exactly `read`, `write`, `external_handoff`, or `unknown`. An
+unclassifiable operation uses `unknown`; omitted effects are malformed, never
+implicitly read-only. Effects cover external behavior: writing a remote agenda is
+a write even if it changes nothing on the phone. `external_handoff` means the
+service passes the request to another component and cannot observe completion.
+Effects are provider claims, not execution grants.
 
-`maxDurationMillis` is an integer 1–60,000. `requiresForeground` means the provider
-requires its own visible UI; EVA v1 admits only false and does not launch it or
-grant background-activity privileges. `cancellation` and `idempotency` must be
-`none`, reserving explicit seams without promising cancellation/exactly-once
-execution. `mediaType` is `text/plain`. `maxBytes` is an integer 1–16,384 bounding
-the entire execute callback envelope, not only the message. V1 has no binary
-payloads, URI grants, structured output data, or output schemas.
+`execution.mode` must be `synchronous` and `requiresForeground` must be `false`
+in v1: EVA neither launches provider UI nor grants background-activity
+privileges. `maxWaitMillis` is an optional integer 1–60,000 (default 30,000).
+The `cancellation`, `idempotency`, and `reconciliation` seams may be omitted or
+`none`. `result.maxBytes` is an integer 1–16,384 bounding the entire execute
+callback envelope. V1 has no binary payloads, URI grants, or non-text content
+blocks; `outputSchema` and `structuredContent` carry machine-readable data.
 
-Failure has the same six outer fields, `descriptor: null`, status `not_executed`
+Failure has the same outer fields, `descriptor: null`, status `not_executed`
 or `failed`, an applicable reason code (or null for an uncategorized internal
-failure), and a bounded explanation. `truncated` applies only to the explanation.
-Success requires a descriptor, null reason, and `truncated: false`.
+failure), and a bounded explanation in `content`. `truncated` applies only to
+that explanation. Success requires a descriptor, null reason, and `truncated: false`.
 
 No authoritative package ID comes from the descriptor. EVA derives user, package,
 component, and signer from Android and exposes `extension.<package>.<name>`.
 Debug packages have distinct identities.
 
-### 4. Flat scalar input schema
+### 4. Arguments
 
-The root is a closed object with required `type: "object"`, `properties`,
-`required`, and `additionalProperties: false`; `description` is optional.
-There are 0–64 properties with names `[A-Za-z][A-Za-z0-9_]{0,63}`. Required names
-are unique and present in properties. Every property has a scalar `type`:
-
-| Type | Additional optional keywords |
-| --- | --- |
-| `string` | `minLength`, `maxLength` |
-| `integer`, `number` | `minimum`, `maximum` |
-| `boolean` | none |
-
-Every scalar also permits `description` and `enum`. Enums have 1–64 distinct
-values of the declared type satisfying its constraints. String lengths count
-Unicode code points and are integers 0–65,536. Numeric bounds are finite and
-lower bounds do not exceed upper bounds. Integers and integer bounds lie within
--9,007,199,254,740,991 through 9,007,199,254,740,991; numbers are finite IEEE-754
-doubles. No arrays, nested objects, nulls, unions, references, patterns, formats,
-defaults, or other keywords. Optional means omitted, not null.
-
-Arguments are an object of actual JSON scalars: numbers/booleans are not quoted
-strings. EVA restores scalar types before IPC. Providers independently validate
+Arguments are an object of actual JSON values matching `inputSchema`:
+numbers/booleans are not quoted strings, and array properties arrive as JSON
+arrays of scalars. EVA restores types before IPC. Providers independently validate
 arguments and operation semantics (a ten-character date still needs calendar
-validation). There is no comma-separated-list convention.
+validation).
 
 ### 5. Execute callback, statuses, and reasons
 
-Execute responses have exactly five fields, with no descriptor:
+An execute reply is EVA's outcome envelope around MCP tool-result content:
 
 ```json
 {
   "protocolVersion": 1,
   "status": "completed",
   "reasonCode": null,
-  "message": "Created the requested entry.",
-  "truncated": false
+  "truncated": false,
+  "content": [{"type": "text", "text": "Created the requested entry."}],
+  "structuredContent": {"id": "4f2c", "title": "Taxes"}
 }
 ```
+
+`content` is a required array of `{"type": "text", "text": ...}` blocks (optional
+`_meta` per block); EVA joins the texts with newlines as the attributed message.
+Other MCP block types (`image`, `audio`, `resource_link`, `resource`) are reserved
+and rejected in v1. `structuredContent` is an optional object (or null). When the
+tool declares `outputSchema`, structured content must satisfy it; a violation makes
+the whole reply malformed. Without an output schema any object is accepted. EVA
+does not add MCP's `isError`; `status` carries that and more.
 
 | Status | Meaning |
 | --- | --- |
@@ -557,7 +659,7 @@ additional v1 codes.
 | Reason code | Meaning/status |
 | --- | --- |
 | `stale_descriptor` | Expected revision differs; `not_executed`. |
-| `not_configured` | Required account/configuration absent; `not_executed`. |
+| `not_configured` | Required account/configuration absent, or no shared protocol version; `not_executed`. |
 | `busy` | Cannot admit request to bounded queue; `not_executed`. |
 | `invalid_arguments` | Invalid request, unknown capability, or failed argument/operation validation; `not_executed`. |
 | `unauthorized_caller` | UID/package/certificate authentication failed; `not_executed`, without sensitive details. |
@@ -592,10 +694,11 @@ contract digest so claimed revision equality cannot hide descriptor changes.
 
 Deadlines are absolute Android `SystemClock.elapsedRealtime()` milliseconds on
 this device/boot, including sleep, not Unix/wall time. Never persist them across
-reboot. EVA allows at most five seconds for describe and the advertised duration
-(never over 60 seconds) for execute, starting at submission. Reject expired
-requests before work; cap excessively distant deadlines to the provider's own
-ceiling. Queueing and every network hop share the same remaining budget.
+reboot. EVA allows at most five seconds for describe and the capability's
+`maxWaitMillis` (never over 60 seconds) for execute, starting at submission.
+Reject expired requests before work; cap excessively distant deadlines to the
+provider's own ceiling. Queueing and every network hop share the same remaining
+budget.
 
 Expiration is not cancellation evidence. EVA may stop waiting/unbind without
 undoing work. Binder death, oversized/malformed replies, or timeout after execute
@@ -623,23 +726,24 @@ field; private keys never enter this protocol. Providers may explicitly support
 other trusted clients under their own documented authority policy.
 
 EVA automatically lists extensions disabled. Enabling grants explicitly claimed
-reads; each write/unknown capability has its own persistent grant switch, off by
-default. Grants key on Android user, package, component, signer, and approved
-contract digest including authorization scope. Changed contracts require renewed
-enablement. Removal discards grants; reinstall must not inherit removed grants.
-Temporary outages/missing configuration do not silently change grants.
+reads; each write, handoff, or unknown capability has its own persistent grant
+switch, off by default. Grants key on Android user, package, component, signer,
+and approved contract digest including authorization scope and `_meta`. Changed
+contracts require renewed enablement. Removal discards grants; reinstall must not
+inherit removed grants. Temporary outages/missing configuration do not silently
+change grants.
 
 This trusts the user's provider choice for claimed reads; it cannot prove an app
 harmless. Reads may disclose private data to EVA's configured model; settings
 must explain this. Unknown effects never get read grants. EVA rechecks grants
 and registry revision immediately before durably committing dispatch.
 
-All provider titles, descriptions, schema descriptions, references, and results
-are untrusted data. They cannot change instructions, grants, outcomes, model
-settings, or execution destinations. EVA separates its receipt envelope from
-quoted external content in live results and restored history. No model-controlled
-shell, arbitrary IPC component, callback execution, or credential forwarding is
-part of the contract.
+All provider titles, descriptions, schema descriptions, annotations, references,
+content, and structured content are untrusted data. They cannot change
+instructions, grants, outcomes, model settings, or execution destinations. EVA
+separates its receipt envelope from quoted external content in live results and
+restored history. No model-controlled shell, arbitrary IPC component, callback
+execution, or credential forwarding is part of the contract.
 
 ### 8. EVA v1 lifecycle and conversation guarantees
 
@@ -661,6 +765,7 @@ Search then complete therefore requires separate user requests in v1. Enabling
 an extension does not authorize autonomous follow-up mutations. No in-turn/spoken
 confirmation or pending approval tokens are implemented.
 
-Dispatched operations are journaled independently of result delivery. Removal or
-conversation close does not undo external work. Historical receipts retain
-original attribution/outcomes. Recovery/reconnect never repeats uncertain work.
+Dispatched operations are journaled independently of result delivery, text and
+structured data alike. Removal or conversation close does not undo external work.
+Historical receipts retain original attribution/outcomes. Recovery/reconnect never
+repeats uncertain work.

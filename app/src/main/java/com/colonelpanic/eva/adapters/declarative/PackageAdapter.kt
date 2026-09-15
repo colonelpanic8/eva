@@ -11,7 +11,7 @@ import com.colonelpanic.eva.capability.extensions.Capability
 import com.colonelpanic.eva.capability.extensions.CapabilityAdapter
 import com.colonelpanic.eva.capability.extensions.CapabilityBinding
 import com.colonelpanic.eva.capability.extensions.Descriptor
-import com.colonelpanic.eva.capability.extensions.Effect
+import com.colonelpanic.eva.capability.extensions.ExtensionProtocol
 import com.colonelpanic.eva.capability.extensions.InstalledExtension
 import com.colonelpanic.eva.capability.extensions.PackageIdentity
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -54,13 +54,11 @@ class PackageAdapter(
                                 capability.title,
                                 capability.description,
                                 capability.inputSchema,
-                                when (capability.effect) {
-                                    PackageEffect.READ -> Effect.READ
-                                    PackageEffect.WRITE -> Effect.WRITE
-                                    else -> Effect.UNKNOWN
-                                },
-                                capability.execution.maxWaitMillis ?: 30_000,
-                                16_384,
+                                capability.effect.toEffect(),
+                                capability.execution.maxWaitMillis ?: ExtensionProtocol.DEFAULT_WAIT_MILLIS,
+                                ExtensionProtocol.RESULT_BYTES,
+                                capability.outputSchema,
+                                capability.annotations,
                             )
                         },
                         definition.digest,

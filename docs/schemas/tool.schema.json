@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/colonelpanic8/eva/docs/schemas/tool.schema.json",
+  "title": "EVA capability tool object",
+  "description": "An MCP Tool object as EVA bounds it. Shared by declarative packages and the installed-app AIDL descriptor.",
+  "type": "object",
+  "required": ["name", "description", "inputSchema"],
+  "additionalProperties": false,
+  "properties": {
+    "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$" },
+    "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "description": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "inputSchema": { "$ref": "#/$defs/inputSchema" },
+    "outputSchema": { "$ref": "#/$defs/outputObject" },
+    "annotations": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "readOnlyHint": { "type": "boolean" },
+        "destructiveHint": { "type": "boolean" },
+        "idempotentHint": { "type": "boolean" },
+        "openWorldHint": { "type": "boolean" }
+      }
+    },
+    "_meta": { "type": "object" }
+  },
+  "$defs": {
+    "description": { "type": "string", "maxLength": 2000 },
+    "scalar": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "enum": ["string", "integer", "number", "boolean"] },
+        "description": { "$ref": "#/$defs/description" },
+        "enum": { "type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true },
+        "minLength": { "type": "integer", "minimum": 0, "maximum": 65536 },
+        "maxLength": { "type": "integer", "minimum": 0, "maximum": 65536 },
+        "minimum": { "type": "number" },
+        "maximum": { "type": "number" }
+      }
+    },
+    "inputProperty": {
+      "oneOf": [
+        { "$ref": "#/$defs/scalar" },
+        {
+          "type": "object",
+          "required": ["type", "items"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "array" },
+            "description": { "$ref": "#/$defs/description" },
+            "items": { "$ref": "#/$defs/scalar" },
+            "minItems": { "type": "integer", "minimum": 0, "maximum": 64 },
+            "maxItems": { "type": "integer", "minimum": 0, "maximum": 64 }
+          }
+        }
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "required": ["type", "properties", "required", "additionalProperties"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "object" },
+        "description": { "$ref": "#/$defs/description" },
+        "properties": {
+          "type": "object",
+          "maxProperties": 64,
+          "propertyNames": { "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$" },
+          "additionalProperties": { "$ref": "#/$defs/inputProperty" }
+        },
+        "required": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "additionalProperties": { "const": false }
+      }
+    },
+    "outputValue": {
+      "oneOf": [
+        { "$ref": "#/$defs/scalar" },
+        { "$ref": "#/$defs/outputObject" },
+        {
+          "type": "object",
+          "required": ["type", "items"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "array" },
+            "description": { "$ref": "#/$defs/description" },
+            "items": { "$ref": "#/$defs/outputValue" },
+            "minItems": { "type": "integer", "minimum": 0, "maximum": 4096 },
+            "maxItems": { "type": "integer", "minimum": 0, "maximum": 4096 }
+          }
+        }
+      ]
+    },
+    "outputObject": {
+      "type": "object",
+      "required": ["type", "properties", "required", "additionalProperties"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "object" },
+        "description": { "$ref": "#/$defs/description" },
+        "properties": {
+          "type": "object",
+          "maxProperties": 64,
+          "additionalProperties": { "$ref": "#/$defs/outputValue" }
+        },
+        "required": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "additionalProperties": { "type": "boolean" }
+      }
+    }
+  }
+}

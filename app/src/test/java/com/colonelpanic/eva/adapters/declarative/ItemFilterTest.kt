@@ -6,8 +6,10 @@ import com.colonelpanic.eva.capability.WaitBudget
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -48,6 +50,32 @@ class ItemFilterTest {
         assertTrue(full.contains("Second WORK"))
         assertFalse(full.contains("[Truncated]"))
         assertTrue(render(json, query = null).contains("Other"))
+    }
+
+    @Test
+    fun `projection returns the same whole items as typed structured data`() {
+        val json = """{"items":[{"title":"Work one","n":1},{"title":"Work two"},{"title":"Other"}],"total":9}"""
+        val projected = ItemResults.project(Json.parseToJsonElement(json), projection.copy(maxItems = 5), 1000, mapOf("q" to "work"))
+        val items = projected.data.getValue("items").jsonArray
+        assertEquals(2, items.size)
+        assertEquals(JsonPrimitive("Work one"), items[0].jsonObject["title"])
+        assertEquals(JsonPrimitive(true), projected.data["truncated"])
+        assertEquals(JsonPrimitive(true), projected.data["sourceTruncated"])
+        assertEquals(JsonPrimitive(9), projected.data["total"])
+        assertFalse(
+            projected.data
+                .getValue("items")
+                .toString()
+                .contains("\"n\""),
+        )
+        val capped = ItemResults.project(Json.parseToJsonElement(json), projection.copy(maxItems = 5), 20, mapOf("q" to "work"))
+        assertEquals(
+            1,
+            capped.data
+                .getValue("items")
+                .jsonArray.size,
+        )
+        assertTrue(capped.text.startsWith("\"Work one\""))
     }
 
     @Test

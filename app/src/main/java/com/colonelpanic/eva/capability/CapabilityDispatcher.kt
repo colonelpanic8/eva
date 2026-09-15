@@ -98,7 +98,7 @@ class CapabilityDispatcher(
                         ExecutionOutcome(InvocationStatus.UNKNOWN, UNKNOWN_MESSAGE)
                     }
                 journal(mayHaveExecuted = true) {
-                    repository.transition(proposal.callId, phase, outcome.status, outcome.message)
+                    repository.transition(proposal.callId, phase, outcome.status, outcome.message, outcome.data)
                 }
             } catch (error: CancellationException) {
                 journal(mayHaveExecuted = phase == InvocationStatus.DISPATCHING) {

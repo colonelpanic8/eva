@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.capability
 
+import kotlinx.serialization.json.JsonObject
 import java.security.MessageDigest
 
 data class ToolProposal(
@@ -47,6 +48,8 @@ data class InvocationRecord(
     /** Null for receipts journaled before threads existed. */
     val threadId: String? = null,
     val turnId: String? = null,
+    /** Machine-readable result the provider returned beside its text, when it returned one. */
+    val data: JsonObject? = null,
 )
 
 data class ClaimResult(
@@ -64,6 +67,7 @@ interface InvocationRepository {
         expected: InvocationStatus,
         status: InvocationStatus,
         message: String,
+        data: JsonObject? = null,
     ): InvocationRecord
 
     suspend fun history(): List<InvocationRecord>
@@ -74,6 +78,8 @@ interface InvocationRepository {
 data class ExecutionOutcome(
     val status: InvocationStatus,
     val message: String,
+    /** Structured result content; text in [message] remains the attributed human-readable form. */
+    val data: JsonObject? = null,
 ) {
     init {
         require(status != InvocationStatus.CLAIMED && status != InvocationStatus.DISPATCHING)

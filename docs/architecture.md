@@ -103,7 +103,10 @@ unknown outcome unless there is evidence the action did not start.
 Receipts distinguish `COMPLETED`, `HANDED_OFF`, `NOT_EXECUTED`, `FAILED`, and
 `UNKNOWN`. An intent launch is a handoff. Extension wait budgets are bounded;
 timeout does not prove failure or cancellation. Changes to an extension's approved
-contract invalidate grants. See the [extension protocol](extension-protocol.md)
+contract invalidate grants. An outcome carries attributed text and, when the
+integration supplies it, structured JSON data; both are journaled, replayed into
+resumed conversations, and delivered to the model within a result budget equal to
+the extension result limit. See the [extension protocol](extension-protocol.md)
 for concrete identity, schema, waiting, and authorization rules.
 
 ## Android capabilities
