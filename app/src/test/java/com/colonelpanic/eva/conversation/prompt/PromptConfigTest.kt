@@ -21,6 +21,7 @@ class PromptConfigTest {
         assertTrue(voice.instructions.contains("This is a spoken conversation."))
         assertTrue(voice.instructions.contains("give only a brief confirmation"))
         assertTrue(voice.instructions.contains("This call is for one request."))
+        assertTrue(voice.instructions.contains("every closing line must be accompanied by that tool call"))
         assertFalse(voice.instructions.contains("This call stays open."))
         assertFalse(typed.instructions.contains("spoken conversation"))
         assertFalse(typed.instructions.contains("This call is for one request."))
@@ -89,7 +90,9 @@ class PromptConfigTest {
         val end = ProviderToolDefinition("eva.session.end", "End", "stock", buildJsonObject {})
         val send = ProviderToolDefinition("eva.android.messages.send", "Send", "sends", buildJsonObject {})
         val stock = PromptDefaults.config.assemble(PromptContext(voice = true, variables)).apply(listOf(end, send))
-        assertTrue(stock.first { it.capabilityId == end.capabilityId }.description.contains("as soon as the user's request is complete"))
+        val endDescription = stock.first { it.capabilityId == end.capabilityId }.description
+        assertTrue(endDescription.contains("same response"))
+        assertTrue(endDescription.contains("spoken goodbye without this tool leaves the call open", ignoreCase = true))
         assertEquals("sends", stock.first { it.capabilityId == send.capabilityId }.description)
 
         val readOnly =
@@ -106,6 +109,62 @@ class PromptConfigTest {
                 .assemble(PromptContext(voice = true, variables))
                 .apply(listOf(end))
         assertEquals("stock", off.single().description)
+    }
+
+    @Test
+    fun `stock call wording is upgraded without replacing custom wording`() {
+        val legacyInstruction =
+            """
+            This call is for one request. Once you have finished it, because the result is reported, the
+            question is answered, or you have said what you could not do, say a short closing line and
+            end the conversation with its tool. Do not ask whether there is anything else. Stay on only
+            while something is genuinely unfinished: an action is still running, or you asked the user a
+            question and are waiting for the answer. If the user asks you to stay on the line or starts
+            another request, keep going and treat that as the request to finish.
+            """.trimIndent()
+        val legacyDescription =
+            """
+            Hang up this voice conversation; your goodbye finishes playing before the call ends.
+            Call it as soon as the user's request is complete and nothing is outstanding, after a
+            short spoken closing line. Do not call it while an action is unfinished, while you
+            are waiting for the user to answer a question, or after the user has asked you to
+            stay on the line.
+            """.trimIndent()
+        val custom = PromptComponent("custom", instruction = "Keep my instructions.")
+        val legacy =
+            PromptConfig(
+                listOf(
+                    PromptComponent(
+                        "one-request",
+                        instruction = legacyInstruction,
+                        describe = mapOf(PromptDefaults.END_CONVERSATION_ID to legacyDescription),
+                    ),
+                    custom,
+                ),
+            )
+
+        val upgraded = PromptDefaults.upgradeStockCallWording(legacy)
+
+        val call = upgraded.components.first()
+        assertTrue(call.instruction.contains("same response"))
+        assertTrue(call.describe.getValue(PromptDefaults.END_CONVERSATION_ID).contains("leaves the call open"))
+        assertEquals(custom, upgraded.components.last())
+
+        val customized =
+            legacy.copy(
+                components =
+                    legacy.components.map {
+                        if (it.id == "one-request") {
+                            it.copy(
+                                instruction = "My call policy.",
+                                describe = mapOf(PromptDefaults.END_CONVERSATION_ID to "My hang-up policy."),
+                            )
+                        } else {
+                            it
+                        }
+                    },
+            )
+        assertEquals(customized, PromptDefaults.upgradeStockCallWording(customized))
     }
 
     @Test

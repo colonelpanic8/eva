@@ -85,7 +85,13 @@ class PromptStore(
                         write(PromptYaml.encode(PromptDefaults.config))
                         PromptDefaults.config
                     } else {
-                        PromptYaml.decode(text).validated(PromptDefaults.VARIABLES)
+                        val parsed = PromptYaml.decode(text).validated(PromptDefaults.VARIABLES)
+                        PromptDefaults.upgradeStockCallWording(parsed).also { upgraded ->
+                            if (upgraded != parsed) {
+                                write(PromptYaml.encode(upgraded))
+                                onChanged()
+                            }
+                        }
                     }
                 mutableState.value = PromptState.Loaded(config)
                 config

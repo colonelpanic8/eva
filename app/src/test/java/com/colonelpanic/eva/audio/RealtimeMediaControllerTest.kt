@@ -257,6 +257,7 @@ class RealtimeMediaControllerTest {
             advanceTimeBy(8_001)
             assertEquals(RealtimeMediaState.Failed(MediaFailure.Disconnected), harness.controller.state.value)
             assertEquals(1, harness.link.closeCount)
+            assertEquals(listOf(VoiceCue.Started, VoiceCue.Ended), harness.cues)
             harness.controller.close()
             assertEquals(RealtimeMediaState.Failed(MediaFailure.Disconnected), harness.controller.state.value)
             assertEquals(1, harness.route.released)
@@ -268,11 +269,14 @@ class RealtimeMediaControllerTest {
             val harness = Harness(this)
             harness.offer(this)
             harness.controller.acceptAnswer("answer")
+            harness.link.connection(PeerConnectionState.CONNECTED)
+            runCurrent()
             harness.link.connection(PeerConnectionState.FAILED)
             runCurrent()
             assertEquals(RealtimeMediaState.Failed(MediaFailure.PeerFailed), harness.controller.state.value)
             assertEquals(1, harness.link.closeCount)
             assertEquals(1, harness.route.released)
+            assertEquals(listOf(VoiceCue.Started, VoiceCue.Ended), harness.cues)
         }
 
     @Test

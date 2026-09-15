@@ -9,6 +9,70 @@ package com.colonelpanic.eva.conversation.prompt
 object PromptDefaults {
     const val END_CONVERSATION_ID = "eva.session.end"
 
+    private val oneRequestInstructionV1 =
+        """
+        This call is for one request. Once you have finished it, because the result is reported, the
+        question is answered, or you have said what you could not do, say a short closing line and
+        end the conversation with its tool. Do not ask whether there is anything else. Stay on only
+        while something is genuinely unfinished: an action is still running, or you asked the user a
+        question and are waiting for the answer. If the user asks you to stay on the line or starts
+        another request, keep going and treat that as the request to finish.
+        """.trimIndent()
+    private val oneRequestInstruction =
+        """
+        This call is for one request. Once you have finished it, because the result is reported, the
+        question is answered, or you have said what you could not do, say a short closing line and
+        call the end-conversation tool in the same response. Saying goodbye or otherwise sounding
+        finished does not end the call by itself; every closing line must be accompanied by that tool
+        call. Do not ask whether there is anything else. Stay on only while something is genuinely
+        unfinished: an action is still running, or you asked the user a question and are waiting for
+        the answer. If the user asks you to stay on the line or starts another request, keep going and
+        treat that as the request to finish.
+        """.trimIndent()
+    private val oneRequestDescriptionV1 =
+        """
+        Hang up this voice conversation; your goodbye finishes playing before the call ends.
+        Call it as soon as the user's request is complete and nothing is outstanding, after a
+        short spoken closing line. Do not call it while an action is unfinished, while you
+        are waiting for the user to answer a question, or after the user has asked you to
+        stay on the line.
+        """.trimIndent()
+    private val oneRequestDescription =
+        """
+        Hang up this voice conversation. In the same response, say a short closing line and call
+        this tool. A spoken goodbye without this tool leaves the call open, so never give a closing
+        line without calling it. Call it as soon as the user's request is complete and nothing is
+        outstanding. Do not call it while an action is unfinished, while you are waiting for the
+        user to answer a question, or after the user has asked you to stay on the line.
+        """.trimIndent()
+    private val openConversationInstructionV1 =
+        """
+        This call stays open. Finishing a request is not a reason to hang up: say what happened and
+        wait for the user. End the conversation with its tool only when the user says goodbye, says
+        that is all, or asks you to hang up, and say a brief goodbye first.
+        """.trimIndent()
+    private val openConversationInstruction =
+        """
+        This call stays open. Finishing a request is not a reason to hang up: say what happened and
+        wait for the user. Only when the user says goodbye, says that is all, or asks you to hang up,
+        say a brief goodbye and call the end-conversation tool in the same response. Saying goodbye
+        without the tool does not end the call.
+        """.trimIndent()
+    private val openConversationDescriptionV1 =
+        """
+        Hang up this voice conversation; your goodbye finishes playing before the call ends.
+        Call it when the user says goodbye, says they are done, or asks you to hang up, after
+        a brief spoken goodbye. A finished request is not a reason to call it; the user
+        decides when the call ends.
+        """.trimIndent()
+    private val openConversationDescription =
+        """
+        Hang up this voice conversation. When the user says goodbye, says they are done, or asks
+        you to hang up, say a brief goodbye and call this tool in the same response. A spoken
+        goodbye without this tool leaves the call open. A finished request is not by itself a
+        reason to call it; the user decides when the call ends.
+        """.trimIndent()
+
     /** The variables every component may reference. */
     val VARIABLES = setOf("clock", "lookup_retries")
 
@@ -78,26 +142,8 @@ object PromptDefaults {
                     summary = "EVA hangs up once it has helped, the way a phone assistant does",
                     slot = "call",
                     applies = Applies.VOICE,
-                    instruction =
-                        """
-                        This call is for one request. Once you have finished it, because the result is reported, the
-                        question is answered, or you have said what you could not do, say a short closing line and
-                        end the conversation with its tool. Do not ask whether there is anything else. Stay on only
-                        while something is genuinely unfinished: an action is still running, or you asked the user a
-                        question and are waiting for the answer. If the user asks you to stay on the line or starts
-                        another request, keep going and treat that as the request to finish.
-                        """.trimIndent(),
-                    describe =
-                        mapOf(
-                            END_CONVERSATION_ID to
-                                """
-                                Hang up this voice conversation; your goodbye finishes playing before the call ends.
-                                Call it as soon as the user's request is complete and nothing is outstanding, after a
-                                short spoken closing line. Do not call it while an action is unfinished, while you
-                                are waiting for the user to answer a question, or after the user has asked you to
-                                stay on the line.
-                                """.trimIndent(),
-                        ),
+                    instruction = oneRequestInstruction,
+                    describe = mapOf(END_CONVERSATION_ID to oneRequestDescription),
                 ),
                 PromptComponent(
                     id = "open-conversation",
@@ -106,22 +152,8 @@ object PromptDefaults {
                     enabled = false,
                     slot = "call",
                     applies = Applies.VOICE,
-                    instruction =
-                        """
-                        This call stays open. Finishing a request is not a reason to hang up: say what happened and
-                        wait for the user. End the conversation with its tool only when the user says goodbye, says
-                        that is all, or asks you to hang up, and say a brief goodbye first.
-                        """.trimIndent(),
-                    describe =
-                        mapOf(
-                            END_CONVERSATION_ID to
-                                """
-                                Hang up this voice conversation; your goodbye finishes playing before the call ends.
-                                Call it when the user says goodbye, says they are done, or asks you to hang up, after
-                                a brief spoken goodbye. A finished request is not a reason to call it; the user
-                                decides when the call ends.
-                                """.trimIndent(),
-                        ),
+                    instruction = openConversationInstruction,
+                    describe = mapOf(END_CONVERSATION_ID to openConversationDescription),
                 ),
                 PromptComponent(
                     id = "clock",
@@ -130,5 +162,52 @@ object PromptDefaults {
                     instruction = "{{clock}}",
                 ),
             ),
+        )
+
+    /** Updates only stock call wording that the user has not edited. */
+    internal fun upgradeStockCallWording(config: PromptConfig): PromptConfig =
+        config.copy(
+            components =
+                config.components.map { component ->
+                    when (component.id) {
+                        "one-request" -> {
+                            component.copy(
+                                instruction =
+                                    if (component.instruction == oneRequestInstructionV1) oneRequestInstruction else component.instruction,
+                                describe =
+                                    component.describe.mapValues { (id, description) ->
+                                        if (id == END_CONVERSATION_ID && description == oneRequestDescriptionV1) {
+                                            oneRequestDescription
+                                        } else {
+                                            description
+                                        }
+                                    },
+                            )
+                        }
+
+                        "open-conversation" -> {
+                            component.copy(
+                                instruction =
+                                    if (component.instruction == openConversationInstructionV1) {
+                                        openConversationInstruction
+                                    } else {
+                                        component.instruction
+                                    },
+                                describe =
+                                    component.describe.mapValues { (id, description) ->
+                                        if (id == END_CONVERSATION_ID && description == openConversationDescriptionV1) {
+                                            openConversationDescription
+                                        } else {
+                                            description
+                                        }
+                                    },
+                            )
+                        }
+
+                        else -> {
+                            component
+                        }
+                    }
+                },
         )
 }
