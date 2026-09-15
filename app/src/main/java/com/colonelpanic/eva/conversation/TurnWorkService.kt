@@ -13,6 +13,7 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import com.colonelpanic.eva.ForegroundServiceGate
 import com.colonelpanic.eva.MainActivity
 
 /** The application supplies the controller so the service can interrupt work Android will not let it finish. */
@@ -50,7 +51,16 @@ class TurnWorkService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
+        if (gate.foregrounded()) {
+            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
         return START_NOT_STICKY
+    }
+
+    override fun onDestroy() {
+        gate.destroyed()
+        super.onDestroy()
     }
 
     override fun onTimeout(startId: Int) {
@@ -61,11 +71,15 @@ class TurnWorkService : Service() {
 
     companion object {
         private const val NOTIFICATION_ID = 42
+        private val gate = ForegroundServiceGate()
 
-        fun start(context: Context) = ContextCompat.startForegroundService(context, Intent(context, TurnWorkService::class.java))
+        fun start(context: Context) {
+            gate.starting()
+            ContextCompat.startForegroundService(context, Intent(context, TurnWorkService::class.java))
+        }
 
         fun stop(context: Context) {
-            context.stopService(Intent(context, TurnWorkService::class.java))
+            if (gate.stopping()) context.stopService(Intent(context, TurnWorkService::class.java))
         }
     }
 }

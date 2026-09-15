@@ -13,6 +13,7 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import com.colonelpanic.eva.ForegroundServiceGate
 import com.colonelpanic.eva.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -54,15 +55,28 @@ class VoiceSessionService : Service() {
         // Action intents only reach a service that is already in the foreground, so they must
         // not re-enter startForeground while the session is being torn down.
         when (intent?.action) {
-            ACTION_TOGGLE_MICROPHONE -> host?.toggleVoiceMicrophone()
-            ACTION_END -> host?.endVoiceSession()
-            else -> startInForeground()
+            ACTION_TOGGLE_MICROPHONE -> {
+                host?.toggleVoiceMicrophone()
+            }
+
+            ACTION_END -> {
+                host?.endVoiceSession()
+            }
+
+            else -> {
+                startInForeground()
+                if (gate.foregrounded()) {
+                    ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                }
+            }
         }
         return START_NOT_STICKY
     }
 
     override fun onDestroy() {
         scope.cancel()
+        gate.destroyed()
         foreground = false
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         super.onDestroy()
@@ -150,10 +164,15 @@ class VoiceSessionService : Service() {
         private const val ACTION_TOGGLE_MICROPHONE = "com.colonelpanic.eva.audio.TOGGLE_MICROPHONE"
         private const val ACTION_END = "com.colonelpanic.eva.audio.END"
 
-        fun start(context: Context) = ContextCompat.startForegroundService(context, Intent(context, VoiceSessionService::class.java))
+        private val gate = ForegroundServiceGate()
+
+        fun start(context: Context) {
+            gate.starting()
+            ContextCompat.startForegroundService(context, Intent(context, VoiceSessionService::class.java))
+        }
 
         fun stop(context: Context) {
-            context.stopService(Intent(context, VoiceSessionService::class.java))
+            if (gate.stopping()) context.stopService(Intent(context, VoiceSessionService::class.java))
         }
     }
 }
