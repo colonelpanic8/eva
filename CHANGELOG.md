@@ -41,6 +41,7 @@ All notable changes to EVA will be documented here.
 
 ### Fixed
 
+- Voice starts again on a conversation that already has history. EVA labelled each replayed history item with a 41-character id, past the Realtime API's 32-character cap, so resuming an existing conversation by voice failed with "Invalid 'item.id': string too long." A new conversation was unaffected, because it has no history to replay.
 - A request carried on after a hang-up no longer dies at the handover. EVA's own replies were resent to the text model as `input_text`, a content type the Responses API only accepts on an incoming turn, so the first request to move from voice to text came back as "OpenAI rejected the request (400): Invalid value: 'input_text'." An assistant turn is now sent as `output_text`.
 - Tool results reach the model whole. Every action result was silently cut to 2,000 characters on its way to the model, so a long agenda lost most of its items and the "[Truncated]" note that would have said so. The budget now matches the 16 KiB extension result limit, and a result EVA does have to cut ends with an explicit truncation note.
 - EVA starts again. The pattern matching `{{variable}}` references in the prompt file was rejected by Android's regex engine, so building the prompt aborted the app on launch. Only a device run catches this: the desktop JVM accepts the same pattern, which is why the unit tests passed.

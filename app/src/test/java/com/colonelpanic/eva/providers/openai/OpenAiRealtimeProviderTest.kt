@@ -332,6 +332,9 @@ class OpenAiRealtimeProviderTest {
                         .getValue("id")
                         .jsonPrimitive.content
                 }
+            // OpenAI rejects the seed outright if an item id runs past its 32-character cap.
+            assertTrue(ids.all { it.length <= REALTIME_ITEM_ID_LIMIT })
+            assertEquals(ids.size, ids.distinct().size)
             media.incoming.send("""{"type":"conversation.item.created","item":{"id":"${ids[0]}"}}""")
             media.incoming.send("""{"type":"conversation.item.added","item":{"id":"${ids[1]}"}}""")
             media.incoming.send("""{"type":"conversation.item.created","item":{"id":"${ids[2]}"}}""")

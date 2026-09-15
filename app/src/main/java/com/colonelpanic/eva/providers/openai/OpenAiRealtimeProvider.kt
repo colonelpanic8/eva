@@ -357,10 +357,17 @@ private class OpenAiRealtimeSession(
     override suspend fun close() = Unit
 }
 
+/** The Realtime API rejects an item id longer than this, so the random part is cut to fit. */
+internal const val REALTIME_ITEM_ID_LIMIT = 32
+
+private const val SEED_ITEM_PREFIX = "item_eva_"
+
+internal fun seedItemId(): String = (SEED_ITEM_PREFIX + UUID.randomUUID().toString().replace("-", "")).take(REALTIME_ITEM_ID_LIMIT)
+
 private fun realtimeSeedItem(message: OpenAiHistoryMessage): RealtimeSeedItem {
     val role = if (message.role == "developer") "system" else message.role
     val contentType = if (role == "assistant") "output_text" else "input_text"
-    val id = "item_eva_${UUID.randomUUID().toString().replace("-", "")}"
+    val id = seedItemId()
     val event =
         buildJsonObject {
             put("type", "conversation.item.create")
