@@ -43,11 +43,13 @@ class EvaVoiceInteractionService : VoiceInteractionService() {
     companion object {
         private var active = WeakReference<EvaVoiceInteractionService>(null)
 
-        fun showAssistant(): Boolean {
+        fun showAssistant(oneShot: Boolean = false): Boolean {
             val service = active.get() ?: return false
-            service.showSession(Bundle.EMPTY, 0)
+            service.showSession(Bundle().apply { putBoolean(EXTRA_ONE_SHOT, oneShot) }, 0)
             return true
         }
+
+        internal const val EXTRA_ONE_SHOT = "com.colonelpanic.eva.extra.ONE_SHOT"
     }
 }
 

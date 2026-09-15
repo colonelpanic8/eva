@@ -30,6 +30,7 @@ class OpenAiSettings(
                 ?: OpenAiModels.VOICE_REASONING_EFFORT,
         )
     private val mutableVoiceLookupRetries = MutableStateFlow(prefs.getInt(VOICE_LOOKUP_RETRIES, DEFAULT_VOICE_LOOKUP_RETRIES))
+    private val mutableOneShotExternal = MutableStateFlow(prefs.getBoolean(ONE_SHOT_EXTERNAL, true))
     private val mutableHasHostLink = MutableStateFlow(secrets.read(HOST_LINK) != null)
 
     /** Model used for typed turns. Changing it applies to the next connection. */
@@ -38,6 +39,7 @@ class OpenAiSettings(
     val reasoningEffortFlow = mutableReasoningEffort.asStateFlow()
     val voiceReasoningEffortFlow = mutableVoiceReasoningEffort.asStateFlow()
     val voiceLookupRetriesFlow = mutableVoiceLookupRetries.asStateFlow()
+    val oneShotExternalFlow = mutableOneShotExternal.asStateFlow()
 
     /** Whether a paired host link is stored. The link itself is never surfaced again. */
     val hasHostLink = mutableHasHostLink.asStateFlow()
@@ -47,6 +49,7 @@ class OpenAiSettings(
     val reasoningEffort: String get() = mutableReasoningEffort.value
     val voiceReasoningEffort: String get() = mutableVoiceReasoningEffort.value
     val voiceLookupRetries: Int get() = mutableVoiceLookupRetries.value
+    val oneShotExternal: Boolean get() = mutableOneShotExternal.value
 
     fun saveTextModel(value: String) = saveModel(TEXT_MODEL, value, OpenAiModels.TEXT, mutableTextModel)
 
@@ -73,6 +76,12 @@ class OpenAiSettings(
         require(value in MIN_VOICE_LOOKUP_RETRIES..MAX_VOICE_LOOKUP_RETRIES) { "Voice lookup retries must be between 0 and 10." }
         commit { putInt(VOICE_LOOKUP_RETRIES, value) }
         mutableVoiceLookupRetries.value = value
+        onChanged()
+    }
+
+    fun saveOneShotExternal(value: Boolean) {
+        commit { putBoolean(ONE_SHOT_EXTERNAL, value) }
+        mutableOneShotExternal.value = value
         onChanged()
     }
 
@@ -148,6 +157,7 @@ class OpenAiSettings(
         const val REASONING_EFFORT = "openai.reasoningEffort"
         const val VOICE_REASONING_EFFORT = "openai.voiceReasoningEffort"
         const val VOICE_LOOKUP_RETRIES = "voice.lookupRetries"
+        const val ONE_SHOT_EXTERNAL = "voice.oneShotExternal"
         const val DEFAULT_VOICE_LOOKUP_RETRIES = 5
         const val MIN_VOICE_LOOKUP_RETRIES = 0
         const val MAX_VOICE_LOOKUP_RETRIES = 10

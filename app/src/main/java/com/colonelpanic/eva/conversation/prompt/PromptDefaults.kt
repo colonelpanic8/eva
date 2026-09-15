@@ -8,6 +8,8 @@ package com.colonelpanic.eva.conversation.prompt
  */
 object PromptDefaults {
     const val END_CONVERSATION_ID = "eva.session.end"
+    const val ONE_REQUEST_ID = "one-request"
+    const val OPEN_CONVERSATION_ID = "open-conversation"
 
     private val oneRequestInstructionV1 =
         """
@@ -137,7 +139,7 @@ object PromptDefaults {
                         """.trimIndent(),
                 ),
                 PromptComponent(
-                    id = "one-request",
+                    id = ONE_REQUEST_ID,
                     title = "One request",
                     summary = "EVA hangs up once it has helped, the way a phone assistant does",
                     slot = "call",
@@ -146,7 +148,7 @@ object PromptDefaults {
                     describe = mapOf(END_CONVERSATION_ID to oneRequestDescription),
                 ),
                 PromptComponent(
-                    id = "open-conversation",
+                    id = OPEN_CONVERSATION_ID,
                     title = "Open conversation",
                     summary = "The call keeps going until you stop it or ask EVA to hang up",
                     enabled = false,

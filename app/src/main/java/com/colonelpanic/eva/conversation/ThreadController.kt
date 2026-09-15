@@ -16,6 +16,7 @@ import com.colonelpanic.eva.conversation.prompt.AssembledPrompt
 import com.colonelpanic.eva.conversation.prompt.PromptConfig
 import com.colonelpanic.eva.conversation.prompt.PromptContext
 import com.colonelpanic.eva.conversation.prompt.PromptDefaults
+import com.colonelpanic.eva.conversation.prompt.VoiceCallMode
 import com.colonelpanic.eva.providers.Continuation
 import com.colonelpanic.eva.providers.ConversationInput
 import com.colonelpanic.eva.providers.ConversationProvider
@@ -140,10 +141,16 @@ class ThreadController(
         .map { ProviderToolDefinition(it.id, it.title, it.modelDescription(), it.inputSchema) }
 
     /** The prompt and the catalog are decided together: components rewrite and hide tools. */
-    private suspend fun assemble(voice: Boolean): AssembledPrompt =
-        prompt().validated(PromptDefaults.VARIABLES).assemble(
-            PromptContext(voice, mapOf("clock" to clock(), "lookup_retries" to voiceLookupRetries().toString())),
-        )
+    private suspend fun assemble(
+        voice: Boolean,
+        callMode: VoiceCallMode? = null,
+    ): AssembledPrompt =
+        prompt()
+            .validated(PromptDefaults.VARIABLES)
+            .let { configured -> if (voice && callMode != null) configured.selectCallMode(callMode) else configured }
+            .assemble(
+                PromptContext(voice, mapOf("clock" to clock(), "lookup_retries" to voiceLookupRetries().toString())),
+            )
 
     init {
         scope.launch {
@@ -233,7 +240,8 @@ class ThreadController(
     fun connectVoice(
         link: String,
         newThread: Boolean = false,
-    ) = connectSession(link, voice = true, newThread = newThread)
+        callMode: VoiceCallMode? = null,
+    ) = connectSession(link, voice = true, newThread = newThread, callMode = callMode)
 
     fun toggleMicrophone() {
         media?.let { it.setMicrophoneMuted(!it.controls.value.microphoneMuted) }
@@ -247,6 +255,7 @@ class ThreadController(
         link: String,
         voice: Boolean,
         newThread: Boolean = false,
+        callMode: VoiceCallMode? = null,
     ) {
         if (state.value.isLoading || state.value.errorMessage != null) return
         disconnect()
@@ -261,7 +270,7 @@ class ThreadController(
                     attachedThreadId = threadId
                     refresh()
                     // Assembled before any provider work so a broken file fails here, with its message.
-                    val assembled = assemble(voice)
+                    val assembled = assemble(voice, callMode)
                     // Only a spoken session is something the model can hang up. The catalog is built per
                     // connection because a switched-off capability and the enabled components both decide
                     // which tools are offered and what they say.

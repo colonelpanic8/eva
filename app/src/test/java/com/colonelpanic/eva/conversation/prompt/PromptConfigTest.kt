@@ -75,6 +75,18 @@ class PromptConfigTest {
     }
 
     @Test
+    fun `external call mode selects one request or an open conversation`() {
+        assertEquals(VoiceCallMode.ONE_REQUEST, VoiceCallMode.external(oneShot = true))
+        assertEquals(VoiceCallMode.OPEN_CONVERSATION, VoiceCallMode.external(oneShot = false))
+        assertEquals(VoiceCallMode.ONE_REQUEST, VoiceCallMode.external(oneShot = false, forceOneShot = true))
+
+        val oneRequest = PromptDefaults.config.selectCallMode(VoiceCallMode.ONE_REQUEST)
+        val open = PromptDefaults.config.selectCallMode(VoiceCallMode.OPEN_CONVERSATION)
+        assertTrue(oneRequest.assemble(PromptContext(true, variables)).instructions.contains("This call is for one request."))
+        assertTrue(open.assemble(PromptContext(true, variables)).instructions.contains("This call stays open."))
+    }
+
+    @Test
     fun `the problems a hand edit can introduce are named`() {
         fun problem(vararg components: PromptComponent) = PromptConfig(components.toList()).problem(setOf("clock"))
         assertTrue(problem(PromptComponent("a"), PromptComponent("a"))!!.contains("“a”"))

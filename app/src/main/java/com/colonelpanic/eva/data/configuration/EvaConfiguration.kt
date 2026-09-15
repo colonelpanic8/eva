@@ -53,6 +53,7 @@ data class EvaConfigurationDocument(
 
 @Serializable data class VoicePatch(
     val lookupRetries: Int? = null,
+    val oneShotExternal: Boolean? = null,
 )
 
 @Serializable data class AppearancePatch(
@@ -176,6 +177,7 @@ data class EvaConfiguration(
 
     data class Voice(
         val lookupRetries: Int,
+        val oneShotExternal: Boolean = true,
     )
 
     data class Appearance(
@@ -367,7 +369,11 @@ object EvaConfigurationCodec {
                 current.models.reasoningEffort.takeIf { it != base?.models?.reasoningEffort },
                 current.models.voiceReasoningEffort.takeIf { it != base?.models?.voiceReasoningEffort },
             ).nonEmpty(),
-        voice = VoicePatch(current.voice.lookupRetries.takeIf { it != base?.voice?.lookupRetries }).nonEmpty(),
+        voice =
+            VoicePatch(
+                current.voice.lookupRetries.takeIf { it != base?.voice?.lookupRetries },
+                current.voice.oneShotExternal.takeIf { it != base?.voice?.oneShotExternal },
+            ).nonEmpty(),
         appearance = AppearancePatch(current.appearance.dynamicColor.takeIf { it != base?.appearance?.dynamicColor }).nonEmpty(),
         capabilities = CapabilitiesPatch(current.capabilities.screenControl.takeIf { it != base?.capabilities?.screenControl }).nonEmpty(),
         messaging =
@@ -412,7 +418,11 @@ object EvaConfigurationCodec {
                     // Documents written before the speech leg had its own effort still load.
                     models?.voiceReasoningEffort ?: OpenAiModels.VOICE_REASONING_EFFORT,
                 ),
-            voice = EvaConfiguration.Voice(requireNotNull(voice?.lookupRetries) { "voice.lookupRetries is missing." }),
+            voice =
+                EvaConfiguration.Voice(
+                    requireNotNull(voice?.lookupRetries) { "voice.lookupRetries is missing." },
+                    voice.oneShotExternal ?: true,
+                ),
             appearance = EvaConfiguration.Appearance(requireNotNull(appearance?.dynamicColor) { "appearance.dynamicColor is missing." }),
             capabilities =
                 EvaConfiguration.Capabilities(requireNotNull(capabilities?.screenControl) { "capabilities.screenControl is missing." }),
@@ -659,7 +669,11 @@ object EvaConfigurationCodec {
                 override.models?.reasoningEffort ?: base.models?.reasoningEffort,
                 override.models?.voiceReasoningEffort ?: base.models?.voiceReasoningEffort,
             ).nonEmpty(),
-        voice = VoicePatch(override.voice?.lookupRetries ?: base.voice?.lookupRetries).nonEmpty(),
+        voice =
+            VoicePatch(
+                override.voice?.lookupRetries ?: base.voice?.lookupRetries,
+                override.voice?.oneShotExternal ?: base.voice?.oneShotExternal,
+            ).nonEmpty(),
         appearance = AppearancePatch(override.appearance?.dynamicColor ?: base.appearance?.dynamicColor).nonEmpty(),
         capabilities = CapabilitiesPatch(override.capabilities?.screenControl ?: base.capabilities?.screenControl).nonEmpty(),
         messaging =
@@ -714,7 +728,7 @@ object EvaConfigurationCodec {
     private fun ModelsPatch.nonEmpty() =
         takeIf { text != null || realtime != null || reasoningEffort != null || voiceReasoningEffort != null }
 
-    private fun VoicePatch.nonEmpty() = takeIf { lookupRetries != null }
+    private fun VoicePatch.nonEmpty() = takeIf { lookupRetries != null || oneShotExternal != null }
 
     private fun AppearancePatch.nonEmpty() = takeIf { dynamicColor != null }
 

@@ -308,6 +308,17 @@ private fun AssistantSection(
         ) {
             TextButton(onClick = actions.onOpenAssistantSettings) { Text("Change") }
         }
+        SettingsSwitchRow(
+            title = "Use one-and-done conversations for external launches",
+            supporting =
+                if (state.oneShotExternal) {
+                    "After finishing the request, EVA says a short closing line and ends the call."
+                } else {
+                    "EVA stays on the line for follow-up requests until you say you are done."
+                },
+            checked = state.oneShotExternal,
+            onCheckedChange = actions.onOneShotExternalChange,
+        )
     }
 }
 

@@ -61,6 +61,21 @@ data class AssembledPrompt(
             .map { tool -> describe[tool.capabilityId]?.let { tool.copy(description = it) } ?: tool }
 }
 
+enum class VoiceCallMode(
+    internal val componentId: String,
+) {
+    ONE_REQUEST(PromptDefaults.ONE_REQUEST_ID),
+    OPEN_CONVERSATION(PromptDefaults.OPEN_CONVERSATION_ID),
+    ;
+
+    companion object {
+        fun external(
+            oneShot: Boolean,
+            forceOneShot: Boolean = false,
+        ): VoiceCallMode = if (oneShot || forceOneShot) ONE_REQUEST else OPEN_CONVERSATION
+    }
+}
+
 @Serializable
 data class PromptConfig(
     val components: List<PromptComponent> = emptyList(),
@@ -104,6 +119,14 @@ data class PromptConfig(
             active.fold(emptyMap()) { acc, component -> acc + component.describe },
             active.flatMap { it.hide }.toSet(),
         )
+    }
+
+    fun selectCallMode(mode: VoiceCallMode): PromptConfig {
+        val target =
+            components.firstOrNull { it.id == mode.componentId }
+                ?: throw PromptConfigException("The prompt is missing the ${mode.componentId} call component.")
+        if (target.slot != "call") throw PromptConfigException("The ${mode.componentId} component must use the call slot.")
+        return toggle(target.id, true)
     }
 
     /** Turning a slot member on turns its alternatives off, so a slot never has two. */

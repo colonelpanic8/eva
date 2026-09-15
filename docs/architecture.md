@@ -148,7 +148,11 @@ for concrete identity, schema, waiting, and authorization rules.
 - `assist/` implements the Android voice-interaction service, overlay session, and
   delegated recognition service. Android's keyguard launch callback opens the
   hands-free activity above the lock screen, starts or joins voice, and hides the
-  conversation. This callback is JVM-tested; locked-device voice verification is
+  conversation. The Device assistant setting chooses whether external assist gestures,
+  headset commands, and voice intents end after one completed request or stay open for
+  follow-up requests; the in-app **Ask once** action always uses one-request behavior.
+  This choice is portable as `voice.oneShotExternal`. The keyguard callback is JVM-tested;
+  locked-device voice verification is
   pending. Assistant selection does not confer unrestricted
   background launch or device access.
 - Optional Shizuku adapters implement Settings AppFunctions and bounded UI observation,

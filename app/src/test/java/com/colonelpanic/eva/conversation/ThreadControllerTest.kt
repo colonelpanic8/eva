@@ -16,6 +16,7 @@ import com.colonelpanic.eva.conversation.prompt.PromptComponent
 import com.colonelpanic.eva.conversation.prompt.PromptConfig
 import com.colonelpanic.eva.conversation.prompt.PromptConfigException
 import com.colonelpanic.eva.conversation.prompt.PromptDefaults
+import com.colonelpanic.eva.conversation.prompt.VoiceCallMode
 import com.colonelpanic.eva.providers.CallIdentity
 import com.colonelpanic.eva.providers.ConversationInput
 import com.colonelpanic.eva.providers.ConversationProvider
@@ -791,6 +792,20 @@ class ThreadControllerTest {
                 muted.request.catalog.tools
                     .any { it.capabilityId == PromptDefaults.END_CONVERSATION_ID },
             )
+        }
+
+    @Test
+    fun `a voice launch can override the configured call mode`() =
+        runTest {
+            val provider = FakeProvider()
+            val controller = controller(provider, media = { VoiceMedia() })
+            advanceUntilIdle()
+
+            controller.connectVoice("test", callMode = VoiceCallMode.OPEN_CONVERSATION)
+            advanceUntilIdle()
+
+            assertTrue(provider.request.instructions.contains("This call stays open."))
+            assertFalse(provider.request.instructions.contains("This call is for one request."))
         }
 
     @Test

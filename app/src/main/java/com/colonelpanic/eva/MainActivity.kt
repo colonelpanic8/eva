@@ -33,6 +33,7 @@ import com.colonelpanic.eva.capability.CatalogAdmission
 import com.colonelpanic.eva.conversation.ProviderStatus
 import com.colonelpanic.eva.conversation.WorkNotifications
 import com.colonelpanic.eva.conversation.prompt.PromptYaml
+import com.colonelpanic.eva.conversation.prompt.VoiceCallMode
 import com.colonelpanic.eva.providers.openai.ModelKind
 import com.colonelpanic.eva.ui.EvaApp
 import com.colonelpanic.eva.ui.HandsFreeSurface
@@ -126,8 +127,17 @@ class MainActivity : ComponentActivity() {
 
     private fun perform(start: VoiceStart) {
         when (start) {
-            is VoiceStart.Connect -> eva.controller.connectVoice(start.link, newThread = surface.startsVoice)
-            is VoiceStart.RequestMicrophone -> requestMissingPermissions()
+            is VoiceStart.Connect -> {
+                eva.controller.connectVoice(
+                    start.link,
+                    newThread = surface.startsVoice,
+                    callMode = surface.takeIf { it.startsVoice }?.let { VoiceCallMode.external(eva.settings.oneShotExternal) },
+                )
+            }
+
+            is VoiceStart.RequestMicrophone -> {
+                requestMissingPermissions()
+            }
         }
     }
 
@@ -149,7 +159,7 @@ class MainActivity : ComponentActivity() {
     private fun openAssistantSettings() = openFirstAvailable(AssistantRole.settingsIntents())
 
     private fun showAssistant() {
-        if (!EvaVoiceInteractionService.showAssistant()) openAssistantSettings()
+        if (!EvaVoiceInteractionService.showAssistant(oneShot = true)) openAssistantSettings()
     }
 
     private fun openMediaControlSettings() = openFirstAvailable(MediaControlAccess.settingsIntents(this))
@@ -210,6 +220,7 @@ class MainActivity : ComponentActivity() {
         val reasoningEffort by settings.reasoningEffortFlow.collectAsStateWithLifecycle()
         val voiceReasoningEffort by settings.voiceReasoningEffortFlow.collectAsStateWithLifecycle()
         val voiceLookupRetries by settings.voiceLookupRetriesFlow.collectAsStateWithLifecycle()
+        val oneShotExternal by settings.oneShotExternalFlow.collectAsStateWithLifecycle()
         val models by eva.availableModels.collectAsStateWithLifecycle()
         val account by eva.chatGpt.account.collectAsStateWithLifecycle()
         val signIn by eva.signIn.state.collectAsStateWithLifecycle()
@@ -256,6 +267,7 @@ class MainActivity : ComponentActivity() {
             reasoningEffort = reasoningEffort,
             voiceReasoningEffort = voiceReasoningEffort,
             voiceLookupRetries = voiceLookupRetries,
+            oneShotExternal = oneShotExternal,
             isDeviceAssistant = deviceAssistant,
             canSeeMediaSessions = mediaControlAccess,
             canControlScreen = eva.deviceControlHost != null,
@@ -358,6 +370,7 @@ class MainActivity : ComponentActivity() {
                 onSelectReasoningEffort = { effort -> save { settings.saveReasoningEffort(effort) } },
                 onSelectVoiceReasoningEffort = { effort -> save { settings.saveVoiceReasoningEffort(effort) } },
                 onVoiceLookupRetriesChange = settings::saveVoiceLookupRetries,
+                onOneShotExternalChange = settings::saveOneShotExternal,
                 onOpenAssistantSettings = ::openAssistantSettings,
                 onMessagingEnable = { enabled ->
                     lifecycleScope.launch {

@@ -578,7 +578,7 @@ class EvaConfigurationManager(
                     app.settings.reasoningEffort,
                     app.settings.voiceReasoningEffort,
                 ),
-            voice = EvaConfiguration.Voice(app.settings.voiceLookupRetries),
+            voice = EvaConfiguration.Voice(app.settings.voiceLookupRetries, app.settings.oneShotExternal),
             appearance = EvaConfiguration.Appearance(app.appearance.dynamicColor),
             capabilities = EvaConfiguration.Capabilities(app.capabilities.screenControlEnabled),
             messaging = EvaConfiguration.Messaging(messaging.enabled, replies),
@@ -712,6 +712,7 @@ class EvaConfigurationManager(
         app.settings.saveReasoningEffort(configuration.models.reasoningEffort)
         app.settings.saveVoiceReasoningEffort(configuration.models.voiceReasoningEffort)
         app.settings.saveVoiceLookupRetries(configuration.voice.lookupRetries)
+        app.settings.saveOneShotExternal(configuration.voice.oneShotExternal)
         app.appearance.saveDynamicColor(configuration.appearance.dynamicColor)
         app.capabilities.saveScreenControl(configuration.capabilities.screenControl)
         app.spotify.saveClientId(configuration.spotify.clientId.orEmpty())
@@ -856,6 +857,7 @@ class EvaConfigurationManager(
         attempt("text reasoning effort") { app.settings.saveReasoningEffort(before.models.reasoningEffort) }
         attempt("voice reasoning effort") { app.settings.saveVoiceReasoningEffort(before.models.voiceReasoningEffort) }
         attempt("voice lookup retries") { app.settings.saveVoiceLookupRetries(before.voice.lookupRetries) }
+        attempt("external conversation mode") { app.settings.saveOneShotExternal(before.voice.oneShotExternal) }
         attempt("appearance") { app.appearance.saveDynamicColor(before.appearance.dynamicColor) }
         attempt("capabilities") { app.capabilities.saveScreenControl(before.capabilities.screenControl) }
         attempt("Spotify client") { app.spotify.saveClientId(before.spotify.clientId.orEmpty()) }

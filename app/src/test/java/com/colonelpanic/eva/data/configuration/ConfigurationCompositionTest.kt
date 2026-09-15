@@ -40,6 +40,17 @@ class ConfigurationCompositionTest {
     }
 
     @Test
+    fun `a document written before external conversation mode defaults to one shot`() {
+        val expected = fullConfiguration()
+        val complete = EvaConfigurationCodec.complete(expected)
+        val encoded = EvaConfigurationCodec.encode(complete.copy(voice = complete.voice?.copy(oneShotExternal = null)))
+
+        val resolved = EvaConfigurationCodec.resolve(reader(mapOf(EvaConfigurationCodec.FILE_NAME to encoded))).configuration
+
+        assertEquals(true, resolved.voice.oneShotExternal)
+    }
+
+    @Test
     fun `full nondefault configuration encodes and resolves deterministically`() {
         val expected = fullConfiguration()
         val encoded = EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(expected))
@@ -321,7 +332,7 @@ class ConfigurationCompositionTest {
     private fun fullConfiguration() =
         EvaConfiguration(
             models = EvaConfiguration.Models("custom-text", "custom-realtime", "high", "medium"),
-            voice = EvaConfiguration.Voice(2),
+            voice = EvaConfiguration.Voice(2, oneShotExternal = false),
             appearance = EvaConfiguration.Appearance(dynamicColor = true),
             capabilities = EvaConfiguration.Capabilities(screenControl = false),
             messaging = EvaConfiguration.Messaging(enabled = true, replies = listOf(MESSAGING_IDENTITY)),

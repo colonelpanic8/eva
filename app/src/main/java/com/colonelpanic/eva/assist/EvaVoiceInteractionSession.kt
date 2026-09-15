@@ -18,6 +18,7 @@ import com.colonelpanic.eva.MainActivity
 import com.colonelpanic.eva.R
 import com.colonelpanic.eva.adapters.android.AssistantLauncher
 import com.colonelpanic.eva.audio.MicrophonePermission
+import com.colonelpanic.eva.conversation.prompt.VoiceCallMode
 import com.colonelpanic.eva.ui.AssistantSurface
 import com.colonelpanic.eva.ui.theme.EvaTheme
 import kotlinx.coroutines.Job
@@ -39,6 +40,7 @@ class EvaVoiceInteractionSession(
     private var hangUpJob: Job? = null
     private var locked by mutableStateOf(false)
     private var needsMicrophone by mutableStateOf(false)
+    private var forceOneShot = false
 
     private val assistantLauncher =
         AssistantLauncher { intent ->
@@ -84,6 +86,7 @@ class EvaVoiceInteractionSession(
         showFlags: Int,
     ) {
         super.onShow(args, showFlags)
+        forceOneShot = args?.getBoolean(EvaVoiceInteractionService.EXTRA_ONE_SHOT) == true
         locked = context.getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
         owners.show()
         eva.intentHost.attachAssistant(assistantLauncher)
@@ -132,7 +135,13 @@ class EvaVoiceInteractionSession(
                 val loaded = eva.controller.state.first { !it.isLoading }
                 val next = assistantStart(MicrophonePermission.isGranted(context), loaded.voiceMode, loaded.providerStatus)
                 needsMicrophone = next == AssistantStart.NEEDS_MICROPHONE
-                if (next == AssistantStart.CONNECT) eva.controller.connectVoice(eva.settings.hostLink(), newThread = true)
+                if (next == AssistantStart.CONNECT) {
+                    eva.controller.connectVoice(
+                        eva.settings.hostLink(),
+                        newThread = true,
+                        callMode = VoiceCallMode.external(eva.settings.oneShotExternal, forceOneShot),
+                    )
+                }
             }
     }
 
