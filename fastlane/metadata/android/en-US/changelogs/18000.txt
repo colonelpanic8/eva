@@ -1,0 +1,2 @@
+* Added: Device assistant settings can choose whether external assist gestures, headset commands, and voice intents end after one completed request or stay open for follow-up requests. The choice is portable in `eva.yaml`; the in-app **Ask once** action remains one-and-done.
+* ...see CHANGELOG.md for the rest.

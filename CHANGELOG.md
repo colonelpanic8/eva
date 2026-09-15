@@ -4,6 +4,16 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-09-14
+
+### Added
+
+- Device assistant settings can choose whether external assist gestures, headset commands, and voice intents end after one completed request or stay open for follow-up requests. The choice is portable in `eva.yaml`; the in-app **Ask once** action remains one-and-done.
+
+### Changed
+
+- Refreshing the extension catalog is now a single action beside the available extensions. EVA no longer asks for an extension index URL in general settings and continues to use the configured catalog source internally.
+
 ## [0.17.1] - 2026-09-14
 
 ### Fixed
