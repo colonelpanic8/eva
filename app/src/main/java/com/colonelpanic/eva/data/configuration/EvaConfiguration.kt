@@ -12,6 +12,7 @@ import com.colonelpanic.eva.conversation.prompt.PromptConfig
 import com.colonelpanic.eva.conversation.prompt.PromptDefaults
 import com.colonelpanic.eva.providers.openai.OpenAiModels
 import kotlinx.serialization.Required
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import java.net.URI
 import java.security.MessageDigest
@@ -38,7 +39,7 @@ data class EvaConfigurationDocument(
 ) {
     companion object {
         const val FORMAT = "eva"
-        const val VERSION = 2
+        const val VERSION = 3
         const val OLDEST_SUPPORTED_VERSION = 1
     }
 }
@@ -75,7 +76,7 @@ data class EvaConfigurationDocument(
 @Serializable
 data class PackagesPatch(
     val repository: String? = null,
-    val bundledInstances: Map<String, String>? = null,
+    @SerialName("bundledInstances") val legacyBundledInstances: Map<String, String>? = null,
     val installed: List<PortablePackage>? = null,
     val waitMillis: Map<String, Long>? = null,
     /** Version-1 per-package services, retained only for migration. */
@@ -197,12 +198,12 @@ data class EvaConfiguration(
 
     data class Packages(
         val repository: String,
-        val bundledInstances: Map<String, String>,
         val installed: List<PortablePackage>,
         val waitMillis: Map<String, Long>,
         /** Version-1 per-package services that could not yet be migrated. */
         val services: List<HttpServiceBinding>,
         val serviceBindings: List<PackageServiceBinding> = emptyList(),
+        val legacyBundledInstances: Map<String, String> = emptyMap(),
     )
 
     data class Services(
@@ -277,6 +278,9 @@ object EvaConfigurationCodec {
         require(document.format == EvaConfigurationDocument.FORMAT) { "This is not an EVA configuration file." }
         require(document.version in EvaConfigurationDocument.OLDEST_SUPPORTED_VERSION..EvaConfigurationDocument.VERSION) {
             "Unsupported EVA configuration version ${document.version}."
+        }
+        require(document.version < 3 || document.packages?.legacyBundledInstances == null) {
+            "packages.bundledInstances was removed in EVA configuration version 3."
         }
         document.include.forEach(::validateInclude)
         require(document.include.distinct().size == document.include.size) { "An include is listed more than once." }
@@ -379,7 +383,7 @@ object EvaConfigurationCodec {
         packages =
             PackagesPatch(
                 current.packages.repository.takeIf { it != base?.packages?.repository },
-                current.packages.bundledInstances.takeIf { it != base?.packages?.bundledInstances },
+                null,
                 current.packages.installed.takeIf { it != base?.packages?.installed },
                 current.packages.waitMillis.takeIf { it != base?.packages?.waitMillis },
                 current.packages.services.takeIf { it != base?.packages?.services },
@@ -425,11 +429,11 @@ object EvaConfigurationCodec {
             packages =
                 EvaConfiguration.Packages(
                     requireNotNull(packages?.repository) { "packages.repository is missing." },
-                    requireNotNull(packages?.bundledInstances) { "packages.bundledInstances is missing." },
                     requireNotNull(packages?.installed) { "packages.installed is missing." },
                     requireNotNull(packages?.waitMillis) { "packages.waitMillis is missing." },
                     packages?.services.orEmpty(),
                     packages?.serviceBindings.orEmpty(),
+                    packages?.legacyBundledInstances.orEmpty(),
                 ),
             services = EvaConfiguration.Services(services?.http.orEmpty()),
             extensions =
@@ -455,14 +459,14 @@ object EvaConfigurationCodec {
         prompt.source.https("prompt.source")
         PromptConfig(prompt.components).validated(PromptDefaults.VARIABLES)
         packages.repository.https("packages.repository")
-        packages.bundledInstances.forEach { (name, id) ->
+        packages.legacyBundledInstances.forEach { (name, id) ->
             require(name.matches(Regex("[A-Za-z0-9._-]{1,200}"))) { "Invalid bundled package name." }
             id.uuid("bundled package")
         }
         require(
-            packages.bundledInstances.values
+            packages.legacyBundledInstances.values
                 .distinct()
-                .size == packages.bundledInstances.size,
+                .size == packages.legacyBundledInstances.size,
         ) { "Duplicate bundled package instance." }
         require(packages.installed.size <= 64) { "At most 64 packages may be installed." }
         packages.installed.forEach { item ->
@@ -476,7 +480,7 @@ object EvaConfigurationCodec {
                 .distinct()
                 .size == packages.installed.size,
         ) { "Duplicate package instance." }
-        val packageIds = packages.bundledInstances.values.toSet() + packages.installed.map { it.instance }
+        val packageIds = packages.legacyBundledInstances.values.toSet() + packages.installed.map { it.instance }
         packages.waitMillis.forEach { (id, millis) ->
             require(id in setOf("voice", "typed") || id in packageIds) { "Wait budget names an unknown package." }
             require(millis in 1_000..60_000) { "Wait budgets must be 1–60 seconds." }
@@ -601,11 +605,11 @@ object EvaConfigurationCodec {
         return copy(
             packages =
                 packages.copy(
-                    bundledInstances = packages.bundledInstances.toSortedMap(),
                     installed = packages.installed.sortedBy { it.instance },
                     waitMillis = packages.waitMillis.toSortedMap(),
                     services = packages.services.sortedBy { it.packageInstance },
                     serviceBindings = packages.serviceBindings.sortedWith(compareBy({ it.packageInstance }, { it.sourceOrigin })),
+                    legacyBundledInstances = packages.legacyBundledInstances.toSortedMap(),
                 ),
             services = services.copy(http = services.http.toSortedMap()),
             extensions =
@@ -623,7 +627,7 @@ object EvaConfigurationCodec {
         document.copy(
             packages =
                 document.packages?.copy(
-                    bundledInstances = document.packages.bundledInstances?.toSortedMap(),
+                    legacyBundledInstances = document.packages.legacyBundledInstances?.toSortedMap(),
                     installed = document.packages.installed?.sortedBy { it.instance },
                     waitMillis = document.packages.waitMillis?.toSortedMap(),
                     services = document.packages.services?.sortedBy { it.packageInstance },
@@ -671,7 +675,7 @@ object EvaConfigurationCodec {
         packages =
             PackagesPatch(
                 override.packages?.repository ?: base.packages?.repository,
-                override.packages?.bundledInstances ?: base.packages?.bundledInstances,
+                override.packages?.legacyBundledInstances ?: base.packages?.legacyBundledInstances,
                 override.packages?.installed ?: base.packages?.installed,
                 override.packages?.waitMillis ?: base.packages?.waitMillis,
                 override.packages?.services ?: base.packages?.services,
@@ -722,7 +726,7 @@ object EvaConfigurationCodec {
 
     private fun PackagesPatch.nonEmpty() =
         takeIf {
-            repository != null || bundledInstances != null || installed != null || waitMillis != null || services != null ||
+            repository != null || legacyBundledInstances != null || installed != null || waitMillis != null || services != null ||
                 serviceBindings != null
         }
 

@@ -49,6 +49,15 @@ class PortableConfigurationStoresTest {
     }
 
     @Test
+    fun `fresh package settings have no declarative packages until one is installed`() {
+        val settings = PackageSettings(context)
+
+        assertTrue(settings.load().isEmpty())
+        assertTrue(settings.state.value.isEmpty())
+        assertTrue(settings.portable().installed.isEmpty())
+    }
+
+    @Test
     fun `package restore preserves exact bytes stable identity waits and endpoint without pretending credentials transferred`() {
         val instance = "00000000-0000-0000-0000-000000000001"
         val serviceName = "agenda"
@@ -56,7 +65,6 @@ class PortableConfigurationStoresTest {
         val restored =
             PortablePackageSettings(
                 repository = "https://plugins.example.test/index.json",
-                bundledInstances = emptyMap(),
                 installed =
                     listOf(
                         PortablePackage(
@@ -71,7 +79,7 @@ class PortableConfigurationStoresTest {
                 httpServices = mapOf(serviceName to HttpServiceDefinition("https://agenda.example.test", credential)),
                 serviceBindings = listOf(PackageServiceBinding(instance, "https://agenda.example.org", serviceName)),
             )
-        val settings = PackageSettings(context, listPackages = { emptyList() })
+        val settings = PackageSettings(context)
 
         assertTrue(settings.restore(restored).isEmpty())
 
@@ -100,77 +108,6 @@ class PortableConfigurationStoresTest {
     }
 
     @Test
-    fun `bundled identity migration keeps matching names and reports build additions and removals`() {
-        val current = PackageSettings(context, listPackages = { listOf("kept.json", "new.json") }, readPackage = { packageJson })
-        val newId = current.portable().bundledInstances.getValue("new.json")
-        val keptId = "00000000-0000-0000-0000-000000000010"
-        val removedId = "00000000-0000-0000-0000-000000000011"
-        val removedCredential = EvaConfigurationCodec.packageSecretId(removedId)
-        val restored =
-            PortablePackageSettings(
-                repository = current.repositorySource,
-                bundledInstances =
-                    mapOf(
-                        "kept.json" to keptId,
-                        "removed.json" to removedId,
-                    ),
-                installed = emptyList(),
-                waitMillis = mapOf(removedId to 31_000),
-                services = listOf(HttpServiceBinding(removedId, "https://removed.example.test", removedCredential)),
-            )
-
-        val notices = current.restore(restored)
-        current.saveRepository("https://plugins.example.test/changed-after-upgrade.json")
-        val portable = current.portable()
-
-        assertEquals(keptId, portable.bundledInstances.getValue("kept.json"))
-        assertEquals(newId, portable.bundledInstances.getValue("new.json"))
-        assertEquals(removedId, portable.bundledInstances.getValue("removed.json"))
-        assertEquals(31_000, portable.waitMillis.getValue(removedId))
-        assertEquals(restored.services, portable.services)
-        assertTrue(notices.any { it.contains("removed.json") && it.contains("not in this EVA build") })
-        assertTrue(notices.any { it.contains("new.json") && it.contains("new on this EVA build") })
-
-        val configuration =
-            EvaConfiguration(
-                models = EvaConfiguration.Models("gpt-portable", "gpt-portable-realtime", "medium", "high"),
-                voice = EvaConfiguration.Voice(2),
-                appearance = EvaConfiguration.Appearance(false),
-                capabilities = EvaConfiguration.Capabilities(false),
-                messaging = EvaConfiguration.Messaging(false, emptyList()),
-                prompt =
-                    EvaConfiguration.Prompt(
-                        "https://instructions.example.test/eva.yaml",
-                        listOf(PromptComponent("portable", instruction = "Portable prompt.")),
-                    ),
-                packages =
-                    EvaConfiguration.Packages(
-                        portable.repository,
-                        portable.bundledInstances,
-                        portable.installed,
-                        portable.waitMillis,
-                        portable.services,
-                        portable.serviceBindings,
-                    ),
-                services = EvaConfiguration.Services(portable.httpServices),
-                extensions = EvaConfiguration.Extensions(emptyList()),
-                spotify = EvaConfiguration.Spotify(null),
-                credentials =
-                    EvaConfiguration.Credentials(
-                        listOf(SecretReference(removedCredential, "http-basic", "https://removed.example.test")),
-                    ),
-                remembered = EvaConfiguration.Remembered(emptyMap()),
-                device = EvaConfiguration.Device(emptyList()),
-            )
-        val encoded = EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(configuration))
-        val resolved =
-            EvaConfigurationCodec.resolve(
-                ConfigurationReader { path -> encoded.takeIf { path == EvaConfigurationCodec.FILE_NAME } },
-            )
-        assertEquals(configuration.packages, resolved.configuration.packages)
-    }
-
-    @Test
     fun `named services are reusable across packages and map multiple package origins independently`() {
         val first = "00000000-0000-0000-0000-000000000031"
         val second = "00000000-0000-0000-0000-000000000032"
@@ -179,11 +116,10 @@ class PortableConfigurationStoresTest {
                 "\"origin\": \"https://agenda.example.org\"",
                 "\"origin\": \"https://secondary.example.org\"",
             )
-        val settings = PackageSettings(context, listPackages = { emptyList() })
+        val settings = PackageSettings(context)
         val restored =
             PortablePackageSettings(
                 repository = "https://plugins.example.test/index.json",
-                bundledInstances = emptyMap(),
                 installed =
                     listOf(
                         PortablePackage(first, "index-one", "first", multiOriginDocument),
@@ -245,11 +181,10 @@ class PortableConfigurationStoresTest {
     fun `available version one package service migrates to a named scoped service`() {
         val instance = "00000000-0000-0000-0000-000000000071"
         val legacyCredential = EvaConfigurationCodec.packageSecretId(instance)
-        val settings = PackageSettings(context, listPackages = { emptyList() })
+        val settings = PackageSettings(context)
         val restored =
             PortablePackageSettings(
                 repository = "https://plugins.example.test/index.json",
-                bundledInstances = emptyMap(),
                 installed =
                     listOf(
                         PortablePackage(

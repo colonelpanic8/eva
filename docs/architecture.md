@@ -340,7 +340,7 @@ The schema separates these groups:
 | `appearance`, `capabilities` | Dynamic color and optional capability switches |
 | `messaging` | Notification-read opt-in and exact app-installation reply identities |
 | `prompt` | Source URL and complete ordered component list |
-| `packages` | Repository, bundled instance IDs, imported package bytes and origins, wait budgets, service bindings |
+| `packages` | Repository, imported package bytes and origins, wait budgets, service bindings |
 | `services.http` | Named HTTPS origins with optional scoped local credential references |
 | `extensions` | Grants bound to exact identity, digest, and mutation names |
 | `spotify` | Public client ID |
@@ -354,8 +354,8 @@ field; collections replace as a whole, so an explicit empty collection clears
 inherited entries. Includes cannot escape the folder, form cycles, or exceed
 eight include levels, 32 file visits, 4 MiB per file, or 8 MiB across the graph.
 Every file must declare `format: eva` and a supported version; unknown fields are
-rejected. EVA writes version 2. Version 1 remains readable and migrates on the next
-complete write.
+rejected. EVA writes version 3. Versions 1 and 2 remain readable; legacy bundled
+package references are reported for manual reinstall and omitted on the next complete write.
 UI writes retain includes and store local overrides.
 They normalize the root YAML and remove its comments; included files are not rewritten.
 
@@ -420,8 +420,8 @@ An invalid folder selection must leave the previous link and configuration usabl
 Apply package definitions and refresh discovered descriptors before restoring grants;
 match the live instance, authenticated identity, contract digest, and mutation names.
 Retain unavailable desired settings and report setup still required rather than
-silently removing them on the next save. Matching bundled identities should survive
-app upgrades that add or remove bundled definitions.
+silently removing them on the next save. Removed bundled package references are
+reported for manual reinstall and reapproval.
 
 A restore spans several existing stores. Preserve a before-state for rollback,
 including the prompt location; importing configuration must not overwrite a

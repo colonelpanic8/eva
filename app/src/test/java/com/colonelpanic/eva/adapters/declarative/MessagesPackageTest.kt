@@ -26,22 +26,20 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], application = Application::class, manifest = Config.NONE)
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class MessagesPackageTest {
     private val json =
-        generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }
-            .map { File(it, "app/src/main/assets/messages.json") }
-            .first { it.isFile }
-            .readText()
+        requireNotNull(javaClass.getResourceAsStream("/packages/messages.json"))
+            .bufferedReader()
+            .use { it.readText() }
     private val source = PackageCodec.decode(json)
     private val capability = source.capabilities.single()
 
     @Test
-    fun `shipped package opens a typed SMS draft without server access or messaging app changes`() =
+    fun `catalog package opens a typed SMS draft without server access or messaging app changes`() =
         runTest {
             val identity = PackageIdentity("00000000-0000-0000-0000-000000000001")
             var launched: Intent? = null

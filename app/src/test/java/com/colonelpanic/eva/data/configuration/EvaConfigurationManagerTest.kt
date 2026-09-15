@@ -533,27 +533,39 @@ class EvaConfigurationManagerTest {
         }
 
     @Test
-    fun `missing bundled package warning remains on unchanged reassessment`() =
+    fun `removed bundled package warning remains on unchanged reassessment`() =
         runTest {
             val baseline = app.configuration.snapshotForTest()
             val missing = "removed-from-build.json"
-            val target =
-                baseline.copy(
+            val current = EvaConfigurationCodec.complete(baseline)
+            val document =
+                current.copy(
+                    version = 2,
                     packages =
-                        baseline.packages.copy(
-                            bundledInstances =
-                                baseline.packages.bundledInstances +
-                                    (missing to "00000000-0000-0000-0000-000000000061"),
+                        requireNotNull(current.packages).copy(
+                            legacyBundledInstances = mapOf(missing to "00000000-0000-0000-0000-000000000061"),
                         ),
                 )
+            (1..2).forEach { version ->
+                val legacy =
+                    EvaConfigurationCodec.resolve(
+                        reader = MemoryDirectory(EvaConfigurationCodec.encode(document.copy(version = version))),
+                    )
+                assertEquals(setOf(missing), legacy.configuration.packages.legacyBundledInstances.keys)
+            }
             val manager = EvaConfigurationManager(app)
-            val directory = MemoryDirectory(EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(target)))
+            val directory = MemoryDirectory(EvaConfigurationCodec.encode(document))
 
             val initial = manager.attachForTest(directory) as LinkedConfigurationResult.Loaded
             val reassessed = manager.reloadForTest(force = false) as LinkedConfigurationResult.Loaded
 
-            assertTrue(initial.setupRequired.any { it.contains(missing) && it.contains("not in this EVA build") })
-            assertTrue(reassessed.setupRequired.any { it.contains(missing) && it.contains("not in this EVA build") })
+            assertTrue(initial.setupRequired.any { it.contains(missing) && it.contains("Browse to reinstall") })
+            assertTrue(reassessed.setupRequired.any { it.contains(missing) && it.contains("Browse to reinstall") })
+            val rewritten =
+                EvaConfigurationCodec.encode(
+                    EvaConfigurationCodec.complete(EvaConfigurationCodec.resolve(reader = directory).configuration),
+                )
+            assertTrue("bundledInstances" !in rewritten)
         }
 
     @Test
@@ -585,7 +597,7 @@ class EvaConfigurationManagerTest {
         }
 
     private fun com.colonelpanic.eva.data.PortablePackageSettings.configuration() =
-        EvaConfiguration.Packages(repository, bundledInstances, installed, waitMillis, services, serviceBindings)
+        EvaConfiguration.Packages(repository, installed, waitMillis, services, serviceBindings)
 
     private class MemoryDirectory(
         var text: String,

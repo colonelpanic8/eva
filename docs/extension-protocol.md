@@ -97,8 +97,8 @@ Repository matching happens locally using Android package IDs; it does not uploa
 the app inventory. Match metadata and icons aid discovery, not trust. Manual imports
 remain useful for apps Android does not make visible and for server-only packages.
 
-The shipped [Caffeine](../app/src/main/assets/caffeine.json) and
-[Messages](../app/src/main/assets/messages.json) definitions are executable examples.
+The [Caffeine](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/caffeine.json) and
+[Messages](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/messages.json) packages are executable examples in the default catalog.
 The [org-agenda fixture](examples/org-agenda.json) exercises HTTP mappings but is
 not shipped and is not a claim of a configured server or verified device workflow.
 
@@ -402,7 +402,7 @@ extension credential namespace, never EVA's model credential namespace.
 write result. Empty pointer selects the whole JSON response; `equals` is a
 non-null scalar. No scripts, filters, inferred success from prose, or polling
 expressions are supported. HTTP execution is implemented by the declarative
-backend; the bundled Caffeine and Messages packages use intents.
+backend; the catalog Caffeine and Messages packages use intents.
 
 Optional `result.notExecutedStatuses` lists explicit 4xx statuses whose documented
 server contract guarantees rejection before execution. Do not add a status merely
@@ -490,8 +490,8 @@ An intent URI may declare optional `opaque`, a string scalar slot, with a
 scheme-only fixed `base` such as `smsto:` or `tel:`. It is mutually exclusive with
 `query`. The interpreter percent-encodes the entire value and appends it to the
 fixed scheme; the model never supplies a parsed URI, scheme, component, or flags.
-The existing forbidden-scheme rules still apply. The shipped
-[Messages package](../app/src/main/assets/messages.json) references the named
+The existing forbidden-scheme rules still apply. The catalog
+[Messages package](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/messages.json) references the named
 phoneNumber validator and maps the message into the fixed sms_body extra. It
 uses ACTION_SENDTO so Android chooses an installed messaging handler. No package
 name, app modification, extension service, or privileged API is required.
@@ -541,8 +541,8 @@ is changed merely because a target is temporarily unavailable. Android permissio
 and export checks still apply. A successful launch is HANDED_OFF, not proof of
 completed work or resulting state.
 
-The bundled example lives in `app/src/main/assets/caffeine.json` and is loaded
-by the same codec as other packages. It pins Caffeine's ToggleActivity and integer
+The catalog [Caffeine package](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/caffeine.json)
+is imported through the same codec as other packages. It pins Caffeine's ToggleActivity and integer
 Status 1/0 for enable/disable. The documented API provides no state query; EVA
 therefore offers no read capability. The package is a concrete example of fixed-component configuration.
 

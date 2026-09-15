@@ -371,7 +371,6 @@ class LinkedConfigurationTest {
         packages =
             EvaConfiguration.Packages(
                 repository = "https://plugins.example.test/index.json",
-                bundledInstances = emptyMap(),
                 installed = emptyList(),
                 waitMillis = emptyMap(),
                 services = emptyList(),

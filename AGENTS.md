@@ -60,7 +60,7 @@ Paths below are relative to `app/src/main/java/com/colonelpanic/eva/`:
 | Stock prompt and YAML composition | `conversation/prompt/` |
 | App navigation and settings | `ui/EvaApp.kt`, `ui/settings/`, `ui/prompt/` |
 
-- Bundled extension definitions: `app/src/main/assets/*.json`.
+- Declarative package catalog: `colonelpanic8/eva-extensions`.
 - Installed-provider ABI: `app/src/main/aidl/com/colonelpanic/eva/extension/`.
 - HTTP/declarative and AIDL wire fixtures: `docs/examples/`; JSON Schemas for the
   package, index, tool, descriptor, and result shapes: `docs/schemas/`; canonical branding sources:

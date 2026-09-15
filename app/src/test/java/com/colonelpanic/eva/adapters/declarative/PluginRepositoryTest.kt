@@ -21,17 +21,15 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.io.File
 import java.security.MessageDigest
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class PluginRepositoryTest {
     private val source = "https://plugins.example.test/index.json"
     private val json =
-        generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }
-            .map { File(it, "docs/examples/caffeine.json") }
-            .first { it.isFile }
-            .readText()
+        requireNotNull(javaClass.getResourceAsStream("/packages/caffeine.json"))
+            .bufferedReader()
+            .use { it.readText() }
 
     private fun index(
         json: String,

@@ -14,7 +14,7 @@ class ConfigurationCompositionTest {
         val encoded = EvaConfigurationCodec.encode(EvaConfigurationDocument())
 
         assertTrue(encoded.contains("format: eva\n"))
-        assertTrue(encoded.contains("version: 2\n"))
+        assertTrue(encoded.contains("version: 3\n"))
         val missingFormat =
             assertThrows(IllegalArgumentException::class.java) {
                 EvaConfigurationCodec.decode("version: 2\n")
@@ -52,7 +52,7 @@ class ConfigurationCompositionTest {
     }
 
     @Test
-    fun `version one package service remains readable and next complete write uses version two`() {
+    fun `version one package service remains readable and next complete write uses version three`() {
         val current = fullConfiguration()
         val legacyCredential = EvaConfigurationCodec.packageSecretId(INSTALLED_INSTANCE)
         val legacy =
@@ -74,7 +74,7 @@ class ConfigurationCompositionTest {
         val versionOne = EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(legacy).copy(version = 1))
 
         assertEquals(legacy, EvaConfigurationCodec.resolve(reader(mapOf("eva.yaml" to versionOne))).configuration)
-        assertTrue(EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(legacy)).contains("version: 2\n"))
+        assertTrue(EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(legacy)).contains("version: 3\n"))
     }
 
     @Test
@@ -225,7 +225,6 @@ class ConfigurationCompositionTest {
                 messaging = inherited.configuration.messaging.copy(replies = emptyList()),
                 packages =
                     inherited.configuration.packages.copy(
-                        bundledInstances = emptyMap(),
                         installed = emptyList(),
                         waitMillis = emptyMap(),
                         services = emptyList(),
@@ -241,7 +240,6 @@ class ConfigurationCompositionTest {
 
         assertEquals(emptyList<PromptComponent>(), override.prompt?.components)
         assertEquals(emptyList<String>(), override.messaging?.replies)
-        assertEquals(emptyMap<String, String>(), override.packages?.bundledInstances)
         assertEquals(emptyList<PortablePackage>(), override.packages?.installed)
         assertEquals(emptyMap<String, Long>(), override.packages?.waitMillis)
         assertEquals(emptyList<PackageServiceBinding>(), override.packages?.serviceBindings)
@@ -342,7 +340,6 @@ class ConfigurationCompositionTest {
             packages =
                 EvaConfiguration.Packages(
                     repository = "https://plugins.example.test/index.json",
-                    bundledInstances = mapOf("caffeine.json" to BUNDLED_INSTANCE),
                     installed =
                         listOf(
                             PortablePackage(
@@ -414,7 +411,6 @@ class ConfigurationCompositionTest {
         )
 
     private companion object {
-        const val BUNDLED_INSTANCE = "11111111-1111-1111-8111-111111111111"
         const val INSTALLED_INSTANCE = "22222222-2222-2222-8222-222222222222"
         const val SERVICE_ORIGIN = "https://service.example.test"
         const val SERVICE_NAME = "example-service"

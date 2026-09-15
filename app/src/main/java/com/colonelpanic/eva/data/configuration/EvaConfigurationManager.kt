@@ -610,7 +610,7 @@ class EvaConfigurationManager(
         val before = snapshot()
         suppressChanges = true
         try {
-            val packageNotices = applyOrdinary(configuration, packageTarget, beforePackagePreferenceRestore)
+            val restoreNotices = applyOrdinary(configuration, packageTarget, beforePackagePreferenceRestore)
             val missingMessagingReplies = restoreMessaging(configuration.messaging)
             val restoredGrants =
                 configuration.extensions.grants.associate { grant ->
@@ -618,7 +618,8 @@ class EvaConfigurationManager(
                 }
             beforeGrantRestore()
             val missingGrants = app.extensions.restoreGrants(restoredGrants, packageTarget.installed.map { it.instance }.toSet())
-            val setup = setupRequirements(configuration, missingGrants, missingMessagingReplies) + packageNotices
+            val setup =
+                setupRequirements(configuration, missingGrants, missingMessagingReplies) + restoreNotices + packageNotices(configuration)
             desired = configuration
             synchronized(changedCredentials) { changedCredentials.clear() }
             synchronized(changedGrants) { changedGrants.clear() }
@@ -776,14 +777,10 @@ class EvaConfigurationManager(
             missingGrants.forEach { add("Install or reapprove extension $it; its saved identity or contract is not currently available.") }
         }
 
-    private fun packageNotices(configuration: EvaConfiguration): List<String> {
-        val configured = configuration.packages.bundledInstances.keys
-        val available = app.packageSettings.availableBundledNames()
-        return buildList {
-            (configured - available).sorted().forEach { add("Bundled package $it is not in this EVA build.") }
-            (available - configured).sorted().forEach { add("Bundled package $it is new on this EVA build.") }
+    private fun packageNotices(configuration: EvaConfiguration): List<String> =
+        configuration.packages.legacyBundledInstances.keys.sorted().map {
+            "Bundled package $it was removed. Browse to reinstall and reapprove it."
         }
-    }
 
     private fun contentAuthorizations(): List<String> =
         app.packageSettings.state.value
@@ -819,10 +816,21 @@ class EvaConfigurationManager(
         }
 
     private fun PortablePackageSettings.configuration() =
-        EvaConfiguration.Packages(repository, bundledInstances, installed, waitMillis, services, serviceBindings)
+        EvaConfiguration.Packages(repository, installed, waitMillis, services, serviceBindings)
 
-    private fun EvaConfiguration.Packages.portable(services: EvaConfiguration.Services = EvaConfiguration.Services(emptyMap())) =
-        PortablePackageSettings(repository, bundledInstances, installed, waitMillis, this.services, services.http, serviceBindings)
+    private fun EvaConfiguration.Packages.portable(
+        services: EvaConfiguration.Services = EvaConfiguration.Services(emptyMap()),
+    ): PortablePackageSettings {
+        val installedInstances = installed.mapTo(mutableSetOf(), PortablePackage::instance)
+        return PortablePackageSettings(
+            repository,
+            installed,
+            waitMillis.filterKeys { it in setOf("voice", "typed") || it in installedInstances },
+            this.services.filter { it.packageInstance in installedInstances },
+            services.http,
+            serviceBindings.filter { it.packageInstance in installedInstances },
+        )
+    }
 
     private suspend fun rollback(
         before: EvaConfiguration,

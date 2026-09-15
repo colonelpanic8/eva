@@ -3,7 +3,6 @@ package com.colonelpanic.eva.data
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
-import android.util.Log
 import com.colonelpanic.eva.adapters.declarative.BasicCredential
 import com.colonelpanic.eva.adapters.declarative.InstalledPlugin
 import com.colonelpanic.eva.adapters.declarative.LoadedPackage
@@ -14,9 +13,7 @@ import com.colonelpanic.eva.adapters.declarative.contentBindings
 import com.colonelpanic.eva.adapters.declarative.httpBindings
 import com.colonelpanic.eva.capability.InteractionMode
 import com.colonelpanic.eva.capability.WaitBudget
-import com.colonelpanic.eva.capability.extensions.InstalledExtension
 import com.colonelpanic.eva.capability.extensions.PackageIdentity
-import com.colonelpanic.eva.capability.extensions.rethrowFatalExtensionFailure
 import com.colonelpanic.eva.data.configuration.HttpServiceBinding
 import com.colonelpanic.eva.data.configuration.HttpServiceDefinition
 import com.colonelpanic.eva.data.configuration.PackageServiceBinding
@@ -27,7 +24,6 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import java.util.UUID
 
 data class PackageConfigurationEntry(
     val id: String,
@@ -43,7 +39,6 @@ data class PackageConfigurationEntry(
 
 data class PortablePackageSettings(
     val repository: String,
-    val bundledInstances: Map<String, String>,
     val installed: List<PortablePackage>,
     val waitMillis: Map<String, Long>,
     /** Version-1 bindings retained only when their package definition is unavailable. */
@@ -60,64 +55,20 @@ private data class StoredServiceSettings(
 
 class PackageSettings(
     context: Context,
-    listPackages: () -> List<String> = {
-        context.assets
-            .list("")
-            .orEmpty()
-            .toList()
-    },
-    readPackage: (String) -> String = { name -> context.assets.open(name).use { it.readBytes().toString(Charsets.UTF_8) } },
     private val onChanged: () -> Unit = {},
     private val onCredentialChanged: (String) -> Unit = {},
 ) {
     private val secrets = SecretStore(context)
     private val prefs = context.getSharedPreferences("eva.packages", Context.MODE_PRIVATE)
-    private val rejected = mutableListOf<InstalledExtension>()
-
-    fun unavailable(): List<InstalledExtension> = rejected.toList()
-
-    private fun <T> loadOrReject(
-        name: String,
-        block: () -> T,
-    ): T? =
-        try {
-            block()
-        } catch (failure: Throwable) {
-            rethrowFatalExtensionFailure(failure)
-            Log.e("EvaExtensions", "Could not load package $name", failure)
-            rejected +=
-                InstalledExtension(name, null, null, "Package could not be loaded. Update or remove this package, then restart EVA.")
-            null
-        }
-
-    private val bundledDefinitions: Map<String, PackageDefinition> =
-        loadOrReject("Bundled packages", listPackages)
-            .orEmpty()
-            .filter { it.endsWith(".json") }
-            .mapNotNull { name ->
-                loadOrReject(name) {
-                    val source = PackageCodec.decode(readPackage(name))
-                    val identityKey = "instance:$name"
-                    val id =
-                        prefs.getString(identityKey, null) ?: UUID.randomUUID().toString().also {
-                            savePreferences { putString(identityKey, it) }
-                        }
-                    name to source
-                }
-            }.toMap()
     private val imports =
-        loadOrReject("Repository extensions") {
-            com.colonelpanic.eva.adapters.declarative.PluginInstallations(
-                { prefs.getString("imports", null) },
-                { encoded -> savePreferences { putString("imports", encoded) } },
-            )
-        }
-    private val bundledSources: Map<PackageIdentity, PackageDefinition>
-        get() = bundledDefinitions.mapKeys { (name, _) -> PackageIdentity(requireNotNull(prefs.getString("instance:$name", null))) }
-    private val sources: Map<PackageIdentity, PackageDefinition>
-        get() = bundledSources + imported().associate { it.identity to it.definition }
+        com.colonelpanic.eva.adapters.declarative.PluginInstallations(
+            { prefs.getString("imports", null) },
+            { encoded -> savePreferences { putString("imports", encoded) } },
+        )
+    private val sources
+        get() = imported().associate { it.identity to it.definition }
 
-    fun imported() = imports?.all().orEmpty()
+    fun imported() = imports.all()
 
     val repositorySource: String get() =
         prefs.getString("repository", null)
@@ -129,13 +80,13 @@ class PackageSettings(
     }
 
     fun installPlugin(preview: com.colonelpanic.eva.adapters.declarative.PluginPreview) {
-        checkNotNull(imports) { "Extension storage could not be loaded" }.install(preview)
+        imports.install(preview)
         mutable.value = entries()
         onChanged()
     }
 
     fun removePlugin(instance: String) {
-        checkNotNull(imports).remove(instance)
+        imports.remove(instance)
         secrets.clear("package:$instance:basic")
         val serviceSettings = serviceSettings()
         val retainedBindings = serviceSettings.bindings.filterNot { it.packageInstance == instance }
@@ -338,10 +289,6 @@ class PackageSettings(
         val configured = resolvedServiceSettings()
         return PortablePackageSettings(
             repositorySource,
-            prefs.all
-                .mapNotNull { (key, value) ->
-                    if (key.startsWith("instance:") && value is String) key.removePrefix("instance:") to value else null
-                }.toMap(),
             imported().map { PortablePackage(it.identity.id, it.source, it.url, it.json) },
             prefs.all
                 .mapNotNull { (key, value) ->
@@ -374,26 +321,16 @@ class PackageSettings(
         beforePreferences: () -> Unit = {},
     ): List<String> {
         val installed = validateRestore(restored)
-        val targetSources =
-            bundledDefinitions
-                .mapNotNull { (name, definition) ->
-                    restored.bundledInstances[name]?.let { PackageIdentity(it) to definition }
-                }.toMap() + installed.associate { it.identity to it.definition }
+        val targetSources = installed.associate { it.identity to it.definition }
         val resolved = resolveLegacy(restored, targetSources)
         validateRuntimeMappings(resolved.http, resolved.bindings, targetSources)
-        checkNotNull(imports) { "Plugin storage could not be loaded" }.restore(installed)
+        imports.restore(installed)
         beforePreferences()
         savePreferences {
             putString("repository", restored.repository)
             prefs.all.keys
-                .filter { key ->
-                    key.startsWith("instance:") &&
-                        key.removePrefix("instance:") !in bundledDefinitions &&
-                        key.removePrefix("instance:") !in restored.bundledInstances
-                }.forEach(::remove)
-            restored.bundledInstances.forEach { (name, instance) ->
-                putString("instance:$name", instance)
-            }
+                .filter { it.startsWith("instance:") }
+                .forEach(::remove)
             prefs.all.keys
                 .filter { it.startsWith("wait:") || it.startsWith("origin:") }
                 .forEach(::remove)
@@ -403,21 +340,8 @@ class PackageSettings(
         }
         defaults.value = modeDefaults()
         mutable.value = entries()
-        return buildList {
-            (restored.bundledInstances.keys - bundledDefinitions.keys).sorted().forEach {
-                add(
-                    "Bundled package $it is not in this EVA build.",
-                )
-            }
-            (bundledDefinitions.keys - restored.bundledInstances.keys).sorted().forEach {
-                add(
-                    "Bundled package $it is new on this EVA build.",
-                )
-            }
-        }
+        return emptyList()
     }
-
-    fun availableBundledNames(): Set<String> = bundledDefinitions.keys
 
     private data class ResolvedServiceSettings(
         val http: Map<String, HttpServiceDefinition>,
@@ -447,7 +371,7 @@ class PackageSettings(
                 }
             }
         return resolveLegacy(
-            PortablePackageSettings("", emptyMap(), emptyList(), emptyMap(), legacy, stored.http, stored.bindings),
+            PortablePackageSettings("", emptyList(), emptyMap(), legacy, stored.http, stored.bindings),
             sources,
         )
     }

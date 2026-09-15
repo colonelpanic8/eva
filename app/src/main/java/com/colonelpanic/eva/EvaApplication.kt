@@ -350,7 +350,6 @@ class EvaApplication :
                 )
             },
             boundedExecution,
-            unavailable = packageSettings::unavailable,
         ) { identity, capability, proposal ->
             packageSettings.budget(identity, capability.execution.maxWaitMillis, proposal.interactionMode)
         }

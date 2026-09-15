@@ -12,7 +12,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], application = android.app.Application::class, manifest = Config.NONE)
@@ -25,10 +24,9 @@ class CaffeinePackageTest {
     }
 
     private val source get() =
-        generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }
-            .map { File(it, "docs/examples/caffeine.json") }
-            .first { it.isFile }
-            .readText()
+        requireNotNull(javaClass.getResourceAsStream("/packages/caffeine.json"))
+            .bufferedReader()
+            .use { it.readText() }
 
     @Test
     fun `example actions pin component and integer status and retain write effects`() {

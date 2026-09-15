@@ -1,0 +1,34 @@
+{
+  "formatVersion": 1,
+  "id": "android.messages",
+  "version": "0.1.0",
+  "title": "Messages",
+  "capabilities": [
+    {
+      "tool": {
+        "name": "compose",
+        "title": "Prepare a message draft",
+        "description": "Open an SMS draft for one explicit phone number and message.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "recipient": {"type": "string", "minLength": 3, "maxLength": 40},
+            "message": {"type": "string", "minLength": 1, "maxLength": 800}
+          },
+          "required": ["recipient", "message"],
+          "additionalProperties": false
+        }
+      },
+      "effects": "external_handoff",
+      "execution": {"mode": "handoff", "requiresForeground": true},
+      "validators": {"recipient": "phoneNumber"},
+      "receipts": {"success": "Message draft opened. Review it and tap Send.", "handlerMissing": "No installed messaging app can open this draft."},
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.intent.action.SENDTO",
+        "uri": {"base": "smsto:", "opaque": {"argument": "recipient", "type": "string", "required": true}},
+        "extras": {"sms_body": {"argument": "message", "type": "string", "required": true}}
+      }
+    }
+  ]
+}

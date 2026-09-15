@@ -223,7 +223,7 @@ Recorded checks from 2026-09-14:
 
 | Surface | Evidence | Limit |
 | --- | --- | --- |
-| Bundled Caffeine and Messages, Pixel 11 Pro Fold API 37, build `0f53e78` | Typed enable/disable produced handoff receipts and independent Caffeine notification changes; Messages opened the correct unsent draft; grants survived restart/replacement | Does not prove SMS sending, remote HTTP execution, or AIDL provider behavior |
+| Catalog Caffeine and Messages, Pixel 11 Pro Fold API 37, build `0f53e78` | Typed enable/disable produced handoff receipts and independent Caffeine notification changes; Messages opened the correct unsent draft; grants survived restart/replacement | Does not prove SMS sending, remote HTTP execution, or AIDL provider behavior |
 | Extension browsing and file preview, subsequent combined build | Repository listings loaded, Caffeine matched, a Downloads JSON opened in preview | Preview is not proof of import persistence followed by execution |
 | Direct subscription voice, Pixel | Synthetic speech, expected transcripts, decoded output audio; timer handoff and connection survival | Does not measure acoustic quality, echo, Bluetooth, or natural barge-in |
 | Assistant role, Pixel API 37, signed `0.13.0` candidate | System assist event opened overlay, voice connected, panel/scrim behavior checked | Keyguard, activity handoff, and delegated recognition still need device verification |
