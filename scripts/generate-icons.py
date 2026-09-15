@@ -34,7 +34,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "source",
         nargs="?",
-        default="docs/branding/eva-face-profile-v8-teal-hair-blue-face.svg",
+        default="assets/branding/eva-face-profile-v8-teal-hair-blue-face.svg",
         type=Path,
     )
     return parser.parse_args()

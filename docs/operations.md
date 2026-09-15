@@ -28,7 +28,8 @@ Debug app: `com.colonelpanic.eva.debug`; production: `com.colonelpanic.eva`.
 Specify `adb -s DEVICE` when multiple devices are connected. Do not replace a
 user's production install merely to run a development test.
 
-`just icons` regenerates icons from `docs/branding/eva-face-profile-v8-teal-hair-blue-face.svg`.
+`just icons` regenerates Android, F-Droid, and repository icons from the canonical
+source at `assets/branding/eva-face-profile-v8-teal-hair-blue-face.svg`.
 `just fdroid-changelogs` derives fastlane changelogs from `CHANGELOG.md`.
 Experiment-local commands belong in the
 [voice harness](../experiments/voice-poc/README.md) and

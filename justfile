@@ -3,7 +3,7 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 default:
     @just --list
 
-# Generate Paseo, F-Droid, and Android icons from the canonical SVG.
+# Generate repository, F-Droid, and Android icons from the canonical SVG.
 icons:
     python3 scripts/generate-icons.py
 
