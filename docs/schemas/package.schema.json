@@ -146,6 +146,11 @@
         "packageByName": { "type": "string" }
       }
     },
+    "contentQuery": {
+      "type": "object", "maxProperties": 64,
+      "propertyNames": { "minLength": 1, "maxLength": 200, "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$" },
+      "additionalProperties": { "$ref": "#/$defs/slot" }
+    },
     "content": {
       "type": "object",
       "required": ["kind", "authority", "uri", "projection", "maxRows", "maxBytes"],
@@ -153,7 +158,25 @@
       "properties": {
         "kind": { "const": "android.content" },
         "authority": { "type": "string", "maxLength": 200 },
-        "uri": { "type": "string", "maxLength": 2000 },
+        "uri": {
+          "oneOf": [
+            { "type": "string", "minLength": 1, "maxLength": 2000, "pattern": "^content://" },
+            {
+              "type": "object",
+              "required": ["base"],
+              "additionalProperties": false,
+              "properties": {
+                "base": { "type": "string", "minLength": 1, "maxLength": 2000, "pattern": "^content://" },
+                "query": { "$ref": "#/$defs/contentQuery" },
+                "path": {
+                  "type": "object", "maxProperties": 64,
+                  "propertyNames": { "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$" },
+                  "additionalProperties": { "$ref": "#/$defs/slot" }
+                }
+              }
+            }
+          ]
+        },
         "projection": { "type": "object", "minProperties": 1, "maxProperties": 32, "additionalProperties": { "$ref": "#/$defs/scalarType" } },
         "selection": {
           "type": "array",

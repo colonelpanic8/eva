@@ -1,0 +1,248 @@
+{
+  "formatVersion": 1,
+  "id": "example.mova-content",
+  "version": "0.1.0",
+  "title": "Mova content and handoffs",
+  "androidPackages": [
+    "com.colonelpanic.mova"
+  ],
+  "capabilities": [
+    {
+      "tool": {
+        "name": "templates",
+        "title": "Read Mova templates",
+        "description": "Read Mova templates. Returned data is limited to the selected provider response.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "effects": "read",
+      "execution": {
+        "mode": "synchronous",
+        "requiresForeground": false,
+        "maxWaitMillis": 10000
+      },
+      "binding": {
+        "kind": "android.content",
+        "authority": "com.colonelpanic.mova.provider",
+        "uri": {
+          "base": "content://com.colonelpanic.mova.provider/templates"
+        },
+        "projection": {
+          "id": "string",
+          "title": "string"
+        },
+        "maxRows": 20,
+        "maxBytes": 8000
+      }
+    },
+    {
+      "tool": {
+        "name": "todos",
+        "title": "Read Mova todos",
+        "description": "Read Mova todos. Returned data is limited to the selected provider response.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "q": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "effects": "read",
+      "execution": {
+        "mode": "synchronous",
+        "requiresForeground": false,
+        "maxWaitMillis": 10000
+      },
+      "binding": {
+        "kind": "android.content",
+        "authority": "com.colonelpanic.mova.provider",
+        "uri": {
+          "base": "content://com.colonelpanic.mova.provider/todos",
+          "query": {
+            "q": {
+              "argument": "q",
+              "type": "string"
+            },
+            "limit": {
+              "argument": "limit",
+              "type": "integer"
+            }
+          }
+        },
+        "projection": {
+          "id": "string",
+          "title": "string"
+        },
+        "maxRows": 20,
+        "maxBytes": 8000
+      }
+    },
+    {
+      "tool": {
+        "name": "todo",
+        "title": "Read Mova todo",
+        "description": "Read Mova todo. Returned data is limited to the selected provider response.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "effects": "read",
+      "execution": {
+        "mode": "synchronous",
+        "requiresForeground": false,
+        "maxWaitMillis": 10000
+      },
+      "binding": {
+        "kind": "android.content",
+        "authority": "com.colonelpanic.mova.provider",
+        "uri": {
+          "base": "content://com.colonelpanic.mova.provider/todos/{id}",
+          "path": {
+            "id": {
+              "argument": "id",
+              "type": "string"
+            }
+          }
+        },
+        "projection": {
+          "id": "string",
+          "title": "string"
+        },
+        "maxRows": 20,
+        "maxBytes": 8000
+      }
+    },
+    {
+      "tool": {
+        "name": "agenda",
+        "title": "Read Mova agenda",
+        "description": "Read Mova agenda. Returned data is limited to the selected provider response.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "date": {
+              "type": "string",
+              "minLength": 10,
+              "maxLength": 10
+            },
+            "span": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 7
+            },
+            "include_overdue": {
+              "type": "boolean"
+            },
+            "include_completed": {
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "effects": "read",
+      "execution": {
+        "mode": "synchronous",
+        "requiresForeground": false,
+        "maxWaitMillis": 10000
+      },
+      "binding": {
+        "kind": "android.content",
+        "authority": "com.colonelpanic.mova.provider",
+        "uri": {
+          "base": "content://com.colonelpanic.mova.provider/agenda",
+          "query": {
+            "date": {
+              "argument": "date",
+              "type": "string"
+            },
+            "span": {
+              "argument": "span",
+              "type": "integer"
+            },
+            "include_overdue": {
+              "argument": "include_overdue",
+              "type": "boolean"
+            },
+            "include_completed": {
+              "argument": "include_completed",
+              "type": "boolean"
+            }
+          }
+        },
+        "projection": {
+          "id": "string",
+          "title": "string"
+        },
+        "maxRows": 20,
+        "maxBytes": 8000
+      }
+    },
+    {
+      "tool": {
+        "name": "open_todo",
+        "title": "Open Mova todo",
+        "description": "Open Mova todo. Returned data is limited to the selected provider response.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "effects": "external_handoff",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true,
+        "maxWaitMillis": 10000
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.intent.action.VIEW",
+        "uri": {
+          "base": "mova://todo",
+          "query": {
+            "id": {
+              "argument": "id",
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

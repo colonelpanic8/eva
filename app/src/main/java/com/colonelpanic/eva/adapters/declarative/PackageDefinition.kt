@@ -108,6 +108,8 @@ sealed interface DeclarativeBinding {
         val selection: List<Predicate>,
         val maxRows: Int,
         val maxBytes: Int,
+        val query: Map<String, ScalarSlot> = emptyMap(),
+        val path: Map<String, ScalarSlot> = emptyMap(),
     ) : DeclarativeBinding
 
     data class Http(
@@ -167,3 +169,13 @@ data class ItemFilter(
     val fields: List<String>,
     val argument: String,
 )
+
+fun PackageDefinition.contentBindings(): List<DeclarativeBinding.Content> {
+    fun leaves(binding: DeclarativeBinding): List<DeclarativeBinding.Content> =
+        when (binding) {
+            is DeclarativeBinding.Content -> listOf(binding)
+            is DeclarativeBinding.Select -> leaves(binding.present) + leaves(binding.absent)
+            else -> emptyList()
+        }
+    return capabilities.flatMap { leaves(it.binding) }
+}

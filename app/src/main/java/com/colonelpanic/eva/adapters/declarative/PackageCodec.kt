@@ -220,9 +220,21 @@ object PackageCodec {
     ): DeclarativeBinding.Content {
         root.fields(setOf("kind", "authority", "uri", "projection", "maxRows", "maxBytes"), setOf("selection"))
         val authority = root.text("authority", 200).also { require(packageId.matches(it)) }
-        val uri = root.text("uri", 2000)
-        val parsed = URI(uri)
+        val uriObject = root["uri"] as? JsonObject
+        uriObject?.fields(setOf("base"), setOf("query", "path"))
+        val uri = uriObject?.text("base", 2000) ?: root.text("uri", 2000)
+        val path = slots(uriObject?.get("path"), properties)
+        val placeholders = pathSlot.findAll(uri).map { it.groupValues[1] }.toSet()
+        require(path.keys == placeholders && path.keys.all(identifier::matches))
+        val parsed = URI(pathSlot.replace(uri, "placeholder"))
         require(parsed.scheme == "content" && parsed.rawAuthority == authority && parsed.rawFragment == null && parsed.rawQuery == null)
+        if (uriObject != null) {
+            require(parsed.rawPath.startsWith('/') && !parsed.rawPath.startsWith("//"))
+            require(parsed.rawPath.none { it in "%\\" || it.isWhitespace() || it.isISOControl() })
+            require(parsed.rawPath.split('/').none { it == "." || it == ".." })
+        }
+        require(pathSlot.findAll(uri).all { match -> match.range.first > uri.indexOf('/', "content://".length) })
+        val query = slots(uriObject?.get("query"), properties)
         val projection =
             root.getValue("projection").obj().also { require(it.size in 1..32) }.mapValues { (name, type) ->
                 require(identifier.matches(name))
@@ -246,6 +258,8 @@ object PackageCodec {
             selection,
             root.bounded("maxRows", 100),
             root.bounded("maxBytes", 16_384),
+            query,
+            path,
         )
     }
 

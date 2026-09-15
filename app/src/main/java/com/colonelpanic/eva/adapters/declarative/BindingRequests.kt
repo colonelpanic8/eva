@@ -108,8 +108,17 @@ class BindingArguments(
 
     fun content(binding: DeclarativeBinding.Content): ContentRequest {
         val arguments = binding.selection.map { requireNotNull(scalar(it.slot)) { "A selection argument is missing" }.content }
+        var base = binding.uri
+        binding.path.forEach { (name, slot) ->
+            val text = requireNotNull(scalar(slot)) { "A path argument is missing" }.content
+            require(text.isNotEmpty() && text !in setOf(".", "..") && text.none { it == '/' || it == '\\' })
+            base = base.replace("{$name}", encode(text))
+        }
+        val query = binding.query.mapNotNull { (name, slot) -> scalar(slot)?.let { encode(name) + "=" + encode(it.content) } }
+        val uri = base + if (query.isEmpty()) "" else query.joinToString("&", "?")
+        require(uri.toByteArray(Charsets.UTF_8).size <= ExtensionProtocol.ARGUMENT_BYTES)
         return ContentRequest(
-            binding.uri,
+            uri,
             binding.projection,
             binding.selection.takeIf { it.isNotEmpty() }?.joinToString(" AND ") { "${it.column} ${it.operator} ?" },
             arguments,
