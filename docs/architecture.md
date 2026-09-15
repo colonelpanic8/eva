@@ -116,7 +116,9 @@ for concrete identity, schema, waiting, and authorization rules.
   a provider that supports it; Spotify has a dedicated API route and Media3 library
   discovery is implemented. Compatibility must be tested per app.
 - SMS draft handoff and native direct-message sending are distinct capabilities.
-  Do not remove native behavior merely because a declarative compose example exists.
+  Notification replies share the same authorized messaging boundary. Do not remove
+  native behavior merely because a declarative compose example exists. See
+  [Messaging](messaging.md) for setup and current verification limits.
 - `assist/` implements the Android voice-interaction service, overlay session, and
   delegated recognition service. Assistant selection does not confer unrestricted
   background launch or device access.
@@ -205,7 +207,7 @@ inherited entries. Includes cannot escape the folder, form cycles, or exceed
 bounded depth/file/size limits. UI writes retain includes and store local overrides.
 They normalize the root YAML and remove its comments; included files are not rewritten.
 
-Imported plugin JSON remains exact text rather than a re-encoded approximation:
+Imported extension JSON remains exact text rather than a re-encoded approximation:
 restoring configuration must preserve the bytes whose digest and identity were
 approved. Missing credentials or target applications must not erase desired
 configuration. Restored grants authorize only the matching installed identity and

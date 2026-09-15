@@ -1,6 +1,7 @@
 package com.colonelpanic.eva
 
 import android.app.Application
+import android.app.KeyguardManager
 import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
@@ -17,6 +18,7 @@ import com.colonelpanic.eva.adapters.android.ContactsQueryBackend
 import com.colonelpanic.eva.adapters.android.DeviceControlHost
 import com.colonelpanic.eva.adapters.android.IntentBackend
 import com.colonelpanic.eva.adapters.android.MapIntentBackend
+import com.colonelpanic.eva.adapters.android.MediaControlAccess
 import com.colonelpanic.eva.adapters.android.MediaControlBackend
 import com.colonelpanic.eva.adapters.android.MediaLibraryQueueProvider
 import com.colonelpanic.eva.adapters.android.MediaPlayBackend
@@ -56,12 +58,15 @@ import com.colonelpanic.eva.data.ChatGptAccountStore
 import com.colonelpanic.eva.data.ChosenNumbers
 import com.colonelpanic.eva.data.ExtensionGrantFile
 import com.colonelpanic.eva.data.JournalDatabase
+import com.colonelpanic.eva.data.MessagingSettings
 import com.colonelpanic.eva.data.OpenAiSettings
 import com.colonelpanic.eva.data.PromptStore
 import com.colonelpanic.eva.data.SpotifyAccountStore
 import com.colonelpanic.eva.data.SqliteConversationStore
 import com.colonelpanic.eva.data.SqliteInvocationRepository
 import com.colonelpanic.eva.data.configuration.EvaConfigurationManager
+import com.colonelpanic.eva.messaging.MessagingBackend
+import com.colonelpanic.eva.messaging.NotificationMessages
 import com.colonelpanic.eva.providers.BrokerConversationProvider
 import com.colonelpanic.eva.providers.BrokerEndpoint
 import com.colonelpanic.eva.providers.openai.ApiKeyAccess
@@ -205,6 +210,22 @@ class EvaApplication :
         scope.launch { spotifyConnect.complete(uri) }
     }
 
+    val messagingSettings by lazy {
+        MessagingSettings(this)
+    }
+    val notificationMessages by lazy {
+        NotificationMessages(
+            enabled = {
+                messagingSettings.state.value.enabled &&
+                    MediaControlAccess
+                        .isGranted(this) &&
+                    !getSystemService(KeyguardManager::class.java).isDeviceLocked
+            },
+            canReply = { it in messagingSettings.state.value.replies },
+            clock = SystemClock::elapsedRealtime,
+        )
+    }
+
     val registry by lazy {
         val queueProviders =
             listOf(
@@ -221,13 +242,25 @@ class EvaApplication :
                         CapabilityRegistry.SMS_COMPOSE to
                             chosenNumbers.remembering(MessageIntentBackend(intentHost, messageTargets), "recipient"),
                         CapabilityRegistry.SMS_SEND to
-                            chosenNumbers.remembering(SmsSendBackend(this@EvaApplication, intentHost, messageTargets), "recipient"),
+                            MessagingBackend(
+                                MessagingBackend.Operation.SEND,
+                                chosenNumbers.remembering(SmsSendBackend(this@EvaApplication, intentHost, messageTargets), "recipient"),
+                                notificationMessages,
+                            ),
                         CapabilityRegistry.CONTACTS_SEARCH to
                             ContactsQueryBackend(this@EvaApplication, intentHost, ::contactHistory),
                         CapabilityRegistry.CONVERSATIONS_SEARCH to
-                            MessagingReadBackend(intentHost, messagingStore, MessagingReadBackend.Operation.CONVERSATIONS),
+                            MessagingBackend(
+                                MessagingBackend.Operation.SEARCH,
+                                MessagingReadBackend(intentHost, messagingStore, MessagingReadBackend.Operation.CONVERSATIONS),
+                                notificationMessages,
+                            ),
                         CapabilityRegistry.CONVERSATION_READ to
-                            MessagingReadBackend(intentHost, messagingStore, MessagingReadBackend.Operation.MESSAGES),
+                            MessagingBackend(
+                                MessagingBackend.Operation.READ,
+                                MessagingReadBackend(intentHost, messagingStore, MessagingReadBackend.Operation.MESSAGES),
+                                notificationMessages,
+                            ),
                         CapabilityRegistry.SET_ALARM to
                             intent("Alarm set.", "No clock app accepted this alarm.", NativeIntents::alarm),
                         CapabilityRegistry.SET_TIMER to

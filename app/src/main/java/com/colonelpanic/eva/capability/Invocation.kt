@@ -81,10 +81,15 @@ data class ExecutionOutcome(
 }
 
 interface ExecutionBackend {
+    /** External content attribution without treating a native operation as an imported tool. */
+    fun receiptSource(): CapabilitySource? = null
+
     fun prepare(proposal: ToolProposal): ToolProposal = proposal
 
     /** Local authorization only, checked under the registry's durable admission lock. */
     fun dispatchRejection(): String? = null
+
+    fun dispatchRejection(proposal: ToolProposal): String? = dispatchRejection()
 
     suspend fun unavailableReason(): String?
 

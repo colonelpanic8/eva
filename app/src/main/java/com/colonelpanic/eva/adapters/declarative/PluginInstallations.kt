@@ -93,7 +93,7 @@ class PluginInstallations(
         }
 
         private fun encode(next: List<InstalledPlugin>): String {
-            require(next.size <= 64) { "At most 64 repository plugins may be installed" }
+            require(next.size <= 64) { "At most 64 repository extensions may be installed" }
             val encoded =
                 JsonArray(
                     next.map { item ->
@@ -107,7 +107,7 @@ class PluginInstallations(
                         )
                     },
                 ).toString()
-            require(encoded.toByteArray(Charsets.UTF_8).size <= MAX_BYTES) { "Installed plugins exceed the storage limit" }
+            require(encoded.toByteArray(Charsets.UTF_8).size <= MAX_BYTES) { "Installed extensions exceed the storage limit" }
             return encoded
         }
     }

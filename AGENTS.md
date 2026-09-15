@@ -57,7 +57,7 @@ Paths below are relative to `app/src/main/java/com/colonelpanic/eva/`:
 | Stock prompt and YAML composition | `conversation/prompt/` |
 | App navigation and settings | `ui/EvaApp.kt`, `ui/settings/`, `ui/prompt/` |
 
-- Bundled plugin definitions: `app/src/main/assets/*.json`.
+- Bundled extension definitions: `app/src/main/assets/*.json`.
 - Installed-provider ABI: `app/src/main/aidl/com/colonelpanic/eva/extension/`.
 - HTTP/declarative fixtures: `docs/examples/`; branding sources: `docs/branding/`.
 - JVM tests mirror production packages in `app/src/test/java/`.
@@ -65,7 +65,7 @@ Paths below are relative to `app/src/main/java/com/colonelpanic/eva/`:
 - Voice broker experiment and evidence: `experiments/voice-poc/`.
 - Isolated Shizuku probe/fixture: `experiments/device-control/`.
 - External configuration sources: `colonelpanic8/eva-instructions` and
-  `colonelpanic8/eva-plugins`. Fetching listings/instructions is distinct from
+  `colonelpanic8/eva-extensions`. Fetching listings/instructions is distinct from
   installing packages, granting actions, or publishing repository changes.
 
 ## Commands and checks

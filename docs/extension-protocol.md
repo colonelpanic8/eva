@@ -19,7 +19,7 @@ not supplied by accepting MCP-shaped tool definitions.
 ## Declarative packages
 
 Packages are single JSON files. Starter packages and an index live separately in
-[eva-plugins](https://github.com/colonelpanic8/eva-plugins). In EVA, use Extensions →
+[eva-extensions](https://github.com/colonelpanic8/eva-extensions). In EVA, use Extensions →
 Browse for repository refresh or URL/file import, inspect the preview, and install.
 Installed holds enablement and action grants; Settings holds service configuration
 and wait budgets. Refresh alone does not install or authorize anything.
@@ -81,14 +81,14 @@ Installation uses those exact previewed bytes, without a second download.
 Source and package ID are retained for explicit update checks. A changed version
 does not retain grants, and a digest is not publisher authentication. A package
 can also be copied and hosted independently at a raw HTTPS URL.
-The Browse tab also offers Import plugin file. The system document picker grants
+The Extensions tab also offers Import extension file. The system document picker grants
 temporary read access; EVA bounds the stream to the same package size limit and
 copies its exact bytes before preview. No persistent file permission is needed.
 Every file import gets a fresh source and instance identity; reimporting a file
 creates a separate disabled installation. Use a stable HTTPS source for updates.
 Packages optionally declare `androidPackages`, a list of up to 16 Android package
 IDs used only as matching hints. The index requires this field (empty for a
-server-only plugin), and its value must match the downloaded package.
+server-only extension), and its value must match the downloaded package.
 
 ### Binding boundaries
 

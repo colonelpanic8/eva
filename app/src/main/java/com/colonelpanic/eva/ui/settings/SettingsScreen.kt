@@ -86,6 +86,8 @@ fun SettingsScreen(
             SettingsDivider()
             AssistantSection(state, actions)
             SettingsDivider()
+            MessagingSection(state, actions)
+            SettingsDivider()
             MediaSection(state, actions)
             ScreenControlSection(state, actions)
             SettingsDivider()
@@ -268,7 +270,7 @@ private fun MediaSection(
                 } else {
                     "Turning on notification access lets EVA read what is playing, choose between apps, and confirm " +
                         "a pause worked. Android offers nothing narrower, so it also delivers your notifications to " +
-                        "EVA, which ignores them."
+                        "EVA. Reading message notifications additionally requires the Messaging opt-in."
                 },
         ) {
             TextButton(onClick = actions.onOpenMediaControlSettings) { Text("Change") }

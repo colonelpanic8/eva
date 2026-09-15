@@ -72,7 +72,8 @@ should disable the operations that need them, not the entire assistant.
 The native Kotlin/Compose app includes typed conversation, WebRTC voice,
 on-phone ChatGPT sign-in and an API-key alternative, an Android assistant
 surface, persistent threads, Android action adapters, and importable extension
-packages. Prompt instructions are editable YAML. Device verification varies by
+packages. Messaging has a shared SMS/MMS and notification-reply interface; direct
+SMS sending is device-verified, while notification replies are JVM-tested. Prompt instructions are editable YAML. Device verification varies by
 feature; implementation is not a promise of universal app or device support.
 
 Paseo and general MCP connectivity remain planned integrations. See
@@ -92,6 +93,7 @@ Use =include= files to share a base and keep local overrides. See
 
 - [[file:docs/architecture.md][Architecture]] — runtime, providers, configuration, persistence, and Android integration.
 - [[file:docs/extension-protocol.md][Extension protocol]] — declarative packages and the installed-app AIDL contract.
+- [[file:docs/messaging.md][Messaging]] — SMS/MMS and notification-reply setup, authorization, and limits.
 - [[file:docs/operations.md][Operations]] — development, testing, signing, and distribution.
 - [[file:AGENTS.md][Agent guide]] — entry points, commands, and development invariants.
 

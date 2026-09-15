@@ -46,11 +46,9 @@ fun ExtensionsScreen(
             )
         },
     ) { padding ->
-        Column(
-            Modifier.fillMaxSize().padding(padding),
-        ) {
+        Column(Modifier.fillMaxSize().padding(padding)) {
             PrimaryTabRow(selectedTabIndex = selected) {
-                listOf("Installed", "Browse", "Settings").forEachIndexed { index, title ->
+                listOf("Extensions", "Settings").forEachIndexed { index, title ->
                     Tab(selected = selected == index, onClick = { selected = index }, text = { Text(title) })
                 }
             }
@@ -58,16 +56,12 @@ fun ExtensionsScreen(
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                     when (selected) {
                         0 -> {
-                            ExtensionsSection(state.extensions, actions, state.extensionOverflow)
-                            RepositoryInstallationsSection(state.plugins, actions)
-                        }
-
-                        1 -> {
-                            PluginRepositorySection(state.plugins, actions)
+                            ExtensionsSection(state, actions)
+                            ExtensionCatalogSection(state.plugins, actions)
                         }
 
                         else -> {
-                            PackageConfigurationSection(state, actions)
+                            GeneralExtensionSettingsSection(state, actions)
                         }
                     }
                     Spacer(Modifier.height(24.dp))
