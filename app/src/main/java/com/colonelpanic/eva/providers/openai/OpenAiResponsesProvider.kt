@@ -200,7 +200,8 @@ private class OpenAiResponsesSession(
                     JsonArray(
                         listOf(
                             buildJsonObject {
-                                put("type", "input_text")
+                                // The Responses API only accepts output_text on an assistant turn.
+                                put("type", if (role == "assistant") "output_text" else "input_text")
                                 put("text", text)
                             },
                         ),

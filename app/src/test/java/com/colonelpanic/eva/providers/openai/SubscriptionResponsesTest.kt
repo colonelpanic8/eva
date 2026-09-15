@@ -194,15 +194,17 @@ class SubscriptionResponsesTest {
                         .jsonPrimitive.content == "message"
                 },
             )
-            assertTrue(
-                first.all {
+            // An assistant turn carried back in only validates as output_text; input_text is a 400.
+            assertEquals(
+                listOf("input_text", "output_text", "input_text", "output_text", "input_text", "input_text"),
+                first.map {
                     it.jsonObject
                         .getValue("content")
                         .jsonArray
                         .single()
                         .jsonObject
                         .getValue("type")
-                        .jsonPrimitive.content == "input_text"
+                        .jsonPrimitive.content
                 },
             )
             val evidenceText =
