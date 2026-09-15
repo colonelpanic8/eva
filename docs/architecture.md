@@ -76,7 +76,11 @@ stay behind their adapters. A working provider does not establish a public or
 stable subscription protocol guarantee.
 
 Realtime voice uses WebRTC audio and explicit microphone ownership, mute, route,
-focus, and teardown handling. Text and voice share capability execution. Realtime
+focus, and teardown handling. The session owns its audible edges: a rising cue when
+the transport connects and a falling one when it is torn down, played once per
+session so a reconnection inside the disconnect grace period stays quiet. Cues use
+sonification attributes rather than the call route, which the session has already
+handed back by the time it ends. Text and voice share capability execution. Realtime
 input identity must survive late transcripts and asynchronous tool events:
 transcript arrival order alone cannot establish which request owns an action.
 Tool correlation carries connection/session, input, generation, turn, catalog,

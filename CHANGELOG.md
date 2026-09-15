@@ -12,6 +12,10 @@ All notable changes to EVA will be documented here.
   leaving it to the server. Existing configuration files keep working; a file written before this
   change takes the built-in voice default.
 
+- A short rising chime plays when a voice call goes live and a falling one when it ends, so a call
+  started by the assistant gesture, or one that hangs up on its own, is obvious without looking at
+  the screen. The tones follow the phone's alert volume.
+
 - An Ask once button on the main conversation screen invokes EVA through Android's device-assistant panel, making the one-request assistant flow easy to test without using the system gesture.
 - Conversations are threads that outlive a call. Hanging up no longer cancels what EVA was doing: an unfinished request carries on in the background, moving from the voice model to the text model once the call ends, and the answer arrives as a notification. Ask for something and hang up, and EVA still finishes it.
 - A conversation list in the drawer. Voice and assist launches start a new conversation, and an earlier one can be reopened and continued by text or voice. A resumed session is given what was already said, including which actions ran and what they reported; a voice session waits for all of it to be acknowledged before the microphone comes back.

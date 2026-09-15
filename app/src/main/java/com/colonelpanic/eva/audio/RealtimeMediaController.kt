@@ -29,11 +29,15 @@ class RealtimeMediaController internal constructor(
     private val route: AudioRoutePort,
     private val microphoneGranted: () -> Boolean,
     parentScope: CoroutineScope,
+    private val cues: VoiceCuePlayer = VoiceCuePlayer {},
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) : RealtimeMediaSession {
     private val scope = CoroutineScope(parentScope.coroutineContext + SupervisorJob(parentScope.coroutineContext[Job]))
     private val signaling = Mutex()
     private val released = AtomicBoolean(false)
+
+    /** True between the cues, so a reconnection inside the grace period does not chime again. */
+    private val cued = AtomicBoolean(false)
     private val resources = Any()
     private var routeHeld = false
     private val mutableState = MutableStateFlow<RealtimeMediaState>(RealtimeMediaState.Idle)
@@ -216,6 +220,9 @@ class RealtimeMediaController internal constructor(
         messageChannel.close()
         mutableControls.update { it.copy(focus = AudioFocusState.NONE) }
         scope.cancel()
+        // Only a session the user was told about is worth closing out loud, and the route is
+        // already back to normal here, so the cue is not cut short by the mode change.
+        if (cued.compareAndSet(true, false)) cues.play(VoiceCue.Ended)
     }
 
     private fun onPeerEvent(
@@ -263,6 +270,9 @@ class RealtimeMediaController internal constructor(
                     } else {
                         it
                     }
+                }
+                if (mutableState.value is RealtimeMediaState.Connected && cued.compareAndSet(false, true)) {
+                    cues.play(VoiceCue.Started)
                 }
             }
 

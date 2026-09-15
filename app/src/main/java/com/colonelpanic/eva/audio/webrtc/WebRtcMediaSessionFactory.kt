@@ -8,6 +8,7 @@ import com.colonelpanic.eva.audio.PeerLinkFactory
 import com.colonelpanic.eva.audio.RealtimeMediaConfig
 import com.colonelpanic.eva.audio.RealtimeMediaController
 import com.colonelpanic.eva.audio.RealtimeMediaSession
+import com.colonelpanic.eva.audio.ToneVoiceCues
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -23,6 +24,7 @@ class WebRtcMediaSessionFactory(
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) {
     private val appContext = context.applicationContext
+    private val cues = ToneVoiceCues()
 
     private val peerConnectionFactory: PeerConnectionFactory by lazy {
         PeerConnectionFactory.initialize(
@@ -54,6 +56,7 @@ class WebRtcMediaSessionFactory(
             route = AndroidAudioRoute(audioManager),
             microphoneGranted = { MicrophonePermission.isGranted(appContext) },
             parentScope = scope,
+            cues = cues,
         )
     }
 }

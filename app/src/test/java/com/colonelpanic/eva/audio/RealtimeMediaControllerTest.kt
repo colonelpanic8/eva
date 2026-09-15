@@ -92,6 +92,7 @@ private class Harness(
 ) {
     val link = FakePeerLink()
     val route = FakeRoute(focus)
+    val cues = mutableListOf<VoiceCue>()
     var opened = 0
     var duringOpen: () -> Unit = {}
     val controller =
@@ -105,6 +106,7 @@ private class Harness(
             route = route,
             microphoneGranted = { granted },
             parentScope = CoroutineScope(scope.backgroundScope.coroutineContext),
+            cues = { cues += it },
             nowMillis = { scope.testScheduler.currentTime },
         )
 
@@ -168,6 +170,43 @@ class RealtimeMediaControllerTest {
             assertEquals(1, harness.link.closeCount)
             assertEquals(1, harness.route.released)
             assertEquals(AudioFocusState.NONE, harness.controller.controls.value.focus)
+        }
+
+    @Test
+    fun `the microphone going live and the session ending are each announced once`() =
+        runTest {
+            val harness = Harness(this)
+            harness.offer(this)
+            harness.controller.acceptAnswer("answer")
+            assertEquals(emptyList<VoiceCue>(), harness.cues)
+
+            harness.link.connection(PeerConnectionState.CONNECTED)
+            runCurrent()
+            assertEquals(listOf(VoiceCue.Started), harness.cues)
+
+            // A drop inside the grace period is the same session, so it must not chime again.
+            harness.link.connection(PeerConnectionState.DISCONNECTED)
+            runCurrent()
+            advanceTimeBy(3_000)
+            harness.link.connection(PeerConnectionState.CONNECTED)
+            runCurrent()
+            assertEquals(listOf(VoiceCue.Started), harness.cues)
+
+            harness.controller.close()
+            harness.controller.close()
+            assertEquals(listOf(VoiceCue.Started, VoiceCue.Ended), harness.cues)
+        }
+
+    @Test
+    fun `a session that fails before the microphone goes live stays silent`() =
+        runTest {
+            val harness = Harness(this)
+            harness.offer(this)
+            harness.controller.acceptAnswer("answer")
+            harness.link.connection(PeerConnectionState.FAILED)
+            runCurrent()
+            assertEquals(RealtimeMediaState.Failed(MediaFailure.PeerFailed), harness.controller.state.value)
+            assertEquals(emptyList<VoiceCue>(), harness.cues)
         }
 
     @Test
