@@ -157,6 +157,7 @@ class LinkedConfigurationTest {
     fun `linked desired setup survives fresh-device apply and unrelated local change`() =
         runTest {
             val missingCredential = SecretReference("provider/openai-api", "openai-api-key")
+            val missingReply = "10123:com.example.chat:1700000000000:${"c".repeat(64)}"
             val missingGrant =
                 PortableGrant(
                     instance = "installed:0:com.example.extension",
@@ -168,6 +169,7 @@ class LinkedConfigurationTest {
                 configuration(
                     credentials = listOf(missingCredential),
                     grants = listOf(missingGrant),
+                    messagingReplies = listOf(missingReply),
                     authorizations = listOf("android.role.ASSISTANT"),
                 )
             val warnings =
@@ -175,6 +177,7 @@ class LinkedConfigurationTest {
                     "Authorize android.role.ASSISTANT on this device.",
                     "Install or reapprove extension ${missingGrant.instance}.",
                     "Provision local credential ${missingCredential.id}.",
+                    "Reapprove messaging replies for $missingReply.",
                 )
             var local = configuration(textModel = "fresh-device-text")
             var linkedDesired: EvaConfiguration? = null
@@ -185,6 +188,7 @@ class LinkedConfigurationTest {
                         local.copy(
                             credentials = owner.credentials,
                             extensions = owner.extensions,
+                            messaging = owner.messaging,
                             device = owner.device,
                         )
                     },
@@ -194,6 +198,7 @@ class LinkedConfigurationTest {
                             incoming.copy(
                                 credentials = EvaConfiguration.Credentials(emptyList()),
                                 extensions = EvaConfiguration.Extensions(emptyList()),
+                                messaging = incoming.messaging.copy(replies = emptyList()),
                                 device = EvaConfiguration.Device(emptyList()),
                             )
                         ConfigurationApplyResult(warnings)
@@ -204,6 +209,7 @@ class LinkedConfigurationTest {
             assertEquals(LinkedConfigurationResult.Loaded(warnings), linked.attach(selected))
             assertTrue(local.credentials.required.isEmpty())
             assertTrue(local.extensions.grants.isEmpty())
+            assertTrue(local.messaging.replies.isEmpty())
             assertTrue(local.device.authorizations.isEmpty())
 
             local = local.copy(models = local.models.copy(text = "unrelated-local-edit"))
@@ -213,6 +219,7 @@ class LinkedConfigurationTest {
             assertEquals("unrelated-local-edit", saved.models.text)
             assertEquals(listOf(missingCredential), saved.credentials.required)
             assertEquals(listOf(missingGrant), saved.extensions.grants)
+            assertEquals(listOf(missingReply), saved.messaging.replies)
             assertEquals(listOf("android.role.ASSISTANT"), saved.device.authorizations)
         }
 
@@ -238,12 +245,14 @@ class LinkedConfigurationTest {
         textModel: String = "custom-text",
         credentials: List<SecretReference> = emptyList(),
         grants: List<PortableGrant> = emptyList(),
+        messagingReplies: List<String> = emptyList(),
         authorizations: List<String> = emptyList(),
     ) = EvaConfiguration(
         models = EvaConfiguration.Models(textModel, "custom-realtime", "high"),
         voice = EvaConfiguration.Voice(3),
         appearance = EvaConfiguration.Appearance(dynamicColor = false),
         capabilities = EvaConfiguration.Capabilities(screenControl = true),
+        messaging = EvaConfiguration.Messaging(enabled = messagingReplies.isNotEmpty(), replies = messagingReplies),
         prompt =
             EvaConfiguration.Prompt(
                 source = "https://instructions.example.test/eva.yaml",

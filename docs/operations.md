@@ -214,6 +214,35 @@ revoked-grant behavior without inventing success. For Messages compose, leave th
 draft unsent. HTTP fixtures need a compatible configured server; installed-service
 AIDL still needs a provider test vehicle.
 
+### Messaging setup and verification
+
+Ivan reporteda verified real SMS send on 2026-09-14. That verifies direct
+sending; it is distinct from the Messages JSON extension's previously verified
+unsent draft. Group MMS and the new notification reply path do not inherit that
+verification. Notification replies have focused JVM/Robolectric tests but have
+not yet been verified against WhatsApp, Telegram, or another real messaging app.
+
+Open **Settings → Messaging**:
+
+1. Enable **Read messaging notifications**. This explicitly permits EVA to use
+   message excerpts with the configured model; media notification access alone
+   does not opt into message collection.
+2. Grant Android notification access using **Change**.
+3. Receive a messaging notification, leave it active, and select **Refresh
+   messaging apps** (returning to EVA also refreshes).
+4. Enable **Allow replies** for the app you intend to use.
+5. In a typed conversation, ask “What recent WhatsApp conversations can you see?”
+   or “Show recent conversations from my messaging apps.”
+6. Identify the intended conversation, then ask for a reply with exact text.
+   Check the destination app to verify the result.
+
+The user must authorize the particular real message sent during a device test.
+Automated tests use fake reply callbacks and construct Android intents without
+sending messages.
+
+See [Architecture](architecture.md#messaging) for tool parameters, grant identity,
+receipt semantics, and notification lifetime limits.
+
 ### Native voice tests
 
 `NativeVoiceLiveTest` replaces microphone buffers with synthetic speech/silence

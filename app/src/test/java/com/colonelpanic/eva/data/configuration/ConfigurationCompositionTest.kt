@@ -133,6 +133,7 @@ class ConfigurationCompositionTest {
         val cleared =
             inherited.configuration.copy(
                 prompt = inherited.configuration.prompt.copy(components = emptyList()),
+                messaging = inherited.configuration.messaging.copy(replies = emptyList()),
                 packages =
                     inherited.configuration.packages.copy(
                         bundledInstances = emptyMap(),
@@ -148,6 +149,7 @@ class ConfigurationCompositionTest {
         val override = EvaConfigurationCodec.overrides(cleared, inherited.included, inherited.root.include)
 
         assertEquals(emptyList<PromptComponent>(), override.prompt?.components)
+        assertEquals(emptyList<String>(), override.messaging?.replies)
         assertEquals(emptyMap<String, String>(), override.packages?.bundledInstances)
         assertEquals(emptyList<PortablePackage>(), override.packages?.installed)
         assertEquals(emptyMap<String, Long>(), override.packages?.waitMillis)
@@ -159,6 +161,19 @@ class ConfigurationCompositionTest {
 
         files["eva.yaml"] = EvaConfigurationCodec.encode(override)
         assertEquals(cleared, EvaConfigurationCodec.resolve(reader(files)).configuration)
+    }
+
+    @Test
+    fun `messaging reply grants require an exact installation and signer identity`() {
+        val invalid = fullConfiguration().copy(messaging = EvaConfiguration.Messaging(true, listOf("com.example.chat")))
+        val encoded = EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(invalid))
+
+        val failure =
+            assertThrows(IllegalArgumentException::class.java) {
+                EvaConfigurationCodec.resolve(reader(mapOf(EvaConfigurationCodec.FILE_NAME to encoded)))
+            }
+
+        assertTrue(failure.message.orEmpty().contains("messaging reply identity"))
     }
 
     @Test
@@ -219,6 +234,7 @@ class ConfigurationCompositionTest {
             voice = EvaConfiguration.Voice(2),
             appearance = EvaConfiguration.Appearance(dynamicColor = true),
             capabilities = EvaConfiguration.Capabilities(screenControl = false),
+            messaging = EvaConfiguration.Messaging(enabled = true, replies = listOf(MESSAGING_IDENTITY)),
             prompt =
                 EvaConfiguration.Prompt(
                     source = "https://instructions.example.test/eva.yaml",
@@ -298,6 +314,7 @@ class ConfigurationCompositionTest {
         const val BUNDLED_INSTANCE = "11111111-1111-1111-8111-111111111111"
         const val INSTALLED_INSTANCE = "22222222-2222-2222-8222-222222222222"
         const val SERVICE_ORIGIN = "https://service.example.test"
+        val MESSAGING_IDENTITY = "10123:com.example.chat:1700000000000:${"a".repeat(64)}"
         val PACKAGE_DOCUMENT =
             """
             {

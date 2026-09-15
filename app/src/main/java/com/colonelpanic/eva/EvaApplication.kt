@@ -211,7 +211,7 @@ class EvaApplication :
     }
 
     val messagingSettings by lazy {
-        MessagingSettings(this)
+        MessagingSettings(this, configuration::onLocalChange, configuration::onMessagingReplyChange)
     }
     val notificationMessages by lazy {
         NotificationMessages(

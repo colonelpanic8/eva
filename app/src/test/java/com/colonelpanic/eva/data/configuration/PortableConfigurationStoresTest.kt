@@ -132,6 +132,7 @@ class PortableConfigurationStoresTest {
                 voice = EvaConfiguration.Voice(2),
                 appearance = EvaConfiguration.Appearance(false),
                 capabilities = EvaConfiguration.Capabilities(false),
+                messaging = EvaConfiguration.Messaging(false, emptyList()),
                 prompt =
                     EvaConfiguration.Prompt(
                         "https://instructions.example.test/eva.yaml",

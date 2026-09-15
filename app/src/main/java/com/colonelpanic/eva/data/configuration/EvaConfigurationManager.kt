@@ -11,6 +11,7 @@ import com.colonelpanic.eva.adapters.android.MediaControlAccess
 import com.colonelpanic.eva.assist.AssistantRole
 import com.colonelpanic.eva.capability.extensions.ExtensionGrant
 import com.colonelpanic.eva.conversation.prompt.PromptConfig
+import com.colonelpanic.eva.data.MessagingPreferences
 import com.colonelpanic.eva.data.PortablePackageSettings
 import com.colonelpanic.eva.providers.BrokerEndpoint
 import kotlinx.coroutines.CancellationException
@@ -37,6 +38,11 @@ data class ConfigurationStatus(
 class EvaConfigurationManager(
     private val app: EvaApplication,
     private val beforeGrantRestore: () -> Unit = {},
+    private val availableMessagingReplies: () -> Set<String> = {
+        app.notificationMessages.apps.value
+            .map { it.identity }
+            .toSet()
+    },
 ) {
     private val prefs = app.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -46,6 +52,7 @@ class EvaConfigurationManager(
     private val changes = Channel<Unit>(Channel.CONFLATED)
     private val changedCredentials = mutableSetOf<String>()
     private val changedGrants = mutableSetOf<String>()
+    private val changedMessagingReplies = mutableSetOf<String>()
     private var desired: EvaConfiguration? = null
 
     @Volatile private var suppressChanges = false
@@ -110,11 +117,19 @@ class EvaConfigurationManager(
         onLocalChange()
     }
 
+    fun onMessagingReplyChange(identity: String) {
+        if (suppressChanges) return
+        synchronized(changedMessagingReplies) { changedMessagingReplies += identity }
+        onLocalChange()
+    }
+
     internal suspend fun attachForTest(directory: ConfigurationDirectory): LinkedConfigurationResult = linked.attach(directory)
 
     internal suspend fun snapshotForTest(): EvaConfiguration = snapshot()
 
     internal suspend fun reloadForTest(force: Boolean): LinkedConfigurationResult = linked.reload(force)
+
+    internal suspend fun localChangeForTest(): LinkedConfigurationResult = linked.localChange()
 
     private suspend fun runAction(action: suspend () -> LinkedConfigurationResult) {
         try {
@@ -127,6 +142,7 @@ class EvaConfigurationManager(
                     desired = snapshot()
                     synchronized(changedCredentials) { changedCredentials.clear() }
                     synchronized(changedGrants) { changedGrants.clear() }
+                    synchronized(changedMessagingReplies) { changedMessagingReplies.clear() }
                     show("Configuration saved.", result.setupRequired)
                 }
 
@@ -188,11 +204,22 @@ class EvaConfigurationManager(
             ).associateBy { it.instance }
                 .values
                 .toList()
+        val messaging = app.messagingSettings.state.value
+        val replyChanges = synchronized(changedMessagingReplies) { changedMessagingReplies.toSet() }
+        val replies =
+            (
+                desired
+                    ?.messaging
+                    ?.replies
+                    .orEmpty()
+                    .filter { it !in replyChanges } + messaging.replies
+            ).distinct()
         return EvaConfiguration(
             models = EvaConfiguration.Models(app.settings.textModel, app.settings.realtimeModel, app.settings.reasoningEffort),
             voice = EvaConfiguration.Voice(app.settings.voiceLookupRetries),
             appearance = EvaConfiguration.Appearance(app.appearance.dynamicColor),
             capabilities = EvaConfiguration.Capabilities(app.capabilities.screenControlEnabled),
+            messaging = EvaConfiguration.Messaging(messaging.enabled, replies),
             prompt = EvaConfiguration.Prompt(prompt.source, prompt.config.components),
             packages = packages.configuration(),
             extensions = EvaConfiguration.Extensions(grants),
@@ -207,25 +234,29 @@ class EvaConfigurationManager(
         val packageTarget = configuration.packages.portable()
         app.packageSettings.validateRestore(packageTarget)
         val promptBefore = app.prompts.portableSnapshot()
+        val messagingBefore = app.messagingSettings.state.value
         val before = snapshot()
         suppressChanges = true
         try {
             val packageNotices = applyOrdinary(configuration, packageTarget)
+            val missingMessagingReplies = restoreMessaging(configuration.messaging)
             val restoredGrants =
                 configuration.extensions.grants.associate { grant ->
                     grant.instance to ExtensionGrant(grant.identity, grant.digest, grant.mutations.toSet())
                 }
             beforeGrantRestore()
             val missingGrants = app.extensions.restoreGrants(restoredGrants, packageTarget.installed.map { it.instance }.toSet())
-            val setup = setupRequirements(configuration, missingGrants) + packageNotices
+            val setup = setupRequirements(configuration, missingGrants, missingMessagingReplies) + packageNotices
             desired = configuration
             synchronized(changedCredentials) { changedCredentials.clear() }
             synchronized(changedGrants) { changedGrants.clear() }
+            synchronized(changedMessagingReplies) { changedMessagingReplies.clear() }
             return ConfigurationApplyResult(setup)
         } catch (error: Exception) {
             withContext(NonCancellable) {
                 runCatching {
                     applyOrdinary(before, before.packages.portable())
+                    app.messagingSettings.replace(messagingBefore)
                     app.prompts.rollback(promptBefore)
                     val grants =
                         before.extensions.grants.associate { grant ->
@@ -249,8 +280,10 @@ class EvaConfigurationManager(
         configuration: EvaConfiguration,
         previous: List<String>,
     ): ConfigurationApplyResult {
+        val messagingBefore = app.messagingSettings.state.value
         suppressChanges = true
         return try {
+            val missingMessagingReplies = restoreMessaging(configuration.messaging)
             val restoredGrants =
                 configuration.extensions.grants.associate { grant ->
                     grant.instance to ExtensionGrant(grant.identity, grant.digest, grant.mutations.toSet())
@@ -262,10 +295,14 @@ class EvaConfigurationManager(
                         .map { it.instance }
                         .toSet(),
                 )
-            ConfigurationApplyResult(setupRequirements(configuration, missingGrants) + packageNotices(configuration))
+            ConfigurationApplyResult(
+                setupRequirements(configuration, missingGrants, missingMessagingReplies) + packageNotices(configuration),
+            )
         } catch (cancelled: CancellationException) {
+            withContext(NonCancellable) { app.messagingSettings.replace(messagingBefore) }
             throw cancelled
         } catch (error: Exception) {
+            app.messagingSettings.replace(messagingBefore)
             ConfigurationApplyResult(previous + (error.message ?: "Could not reassess extension authorization requirements."))
         } finally {
             suppressChanges = false
@@ -312,9 +349,17 @@ class EvaConfigurationManager(
         return notices
     }
 
+    private fun restoreMessaging(configuration: EvaConfiguration.Messaging): Set<String> {
+        val available = availableMessagingReplies()
+        val desiredReplies = configuration.replies.toSet()
+        app.messagingSettings.replace(MessagingPreferences(configuration.enabled, desiredReplies.intersect(available)))
+        return desiredReplies - available
+    }
+
     private fun setupRequirements(
         configuration: EvaConfiguration,
         missingGrants: Set<String>,
+        missingMessagingReplies: Set<String>,
     ): List<String> =
         buildList {
             configuration.credentials.required.forEach { reference ->
@@ -348,6 +393,12 @@ class EvaConfigurationManager(
             }
             val current = currentAuthorizations(includeRequired = false).toSet()
             (configuration.device.authorizations - current).forEach { add("Authorize $it on this device.") }
+            if (configuration.messaging.enabled && !MediaControlAccess.isGranted(app)) {
+                add("Authorize android.notification-listener on this device for messaging notifications.")
+            }
+            missingMessagingReplies.sorted().forEach {
+                add("Reapprove messaging replies for $it; that exact app installation and signer are not currently available.")
+            }
             missingGrants.forEach { add("Install or reapprove extension $it; its saved identity or contract is not currently available.") }
         }
 

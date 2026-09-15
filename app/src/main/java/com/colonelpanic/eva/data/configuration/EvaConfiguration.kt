@@ -25,6 +25,7 @@ data class EvaConfigurationDocument(
     val voice: VoicePatch? = null,
     val appearance: AppearancePatch? = null,
     val capabilities: CapabilitiesPatch? = null,
+    val messaging: MessagingPatch? = null,
     val prompt: PromptPatch? = null,
     val packages: PackagesPatch? = null,
     val extensions: ExtensionsPatch? = null,
@@ -55,6 +56,11 @@ data class EvaConfigurationDocument(
 
 @Serializable data class CapabilitiesPatch(
     val screenControl: Boolean? = null,
+)
+
+@Serializable data class MessagingPatch(
+    val enabled: Boolean? = null,
+    val replies: List<String>? = null,
 )
 
 @Serializable data class PromptPatch(
@@ -127,6 +133,7 @@ data class EvaConfiguration(
     val voice: Voice,
     val appearance: Appearance,
     val capabilities: Capabilities,
+    val messaging: Messaging,
     val prompt: Prompt,
     val packages: Packages,
     val extensions: Extensions,
@@ -151,6 +158,11 @@ data class EvaConfiguration(
 
     data class Capabilities(
         val screenControl: Boolean,
+    )
+
+    data class Messaging(
+        val enabled: Boolean,
+        val replies: List<String>,
     )
 
     data class Prompt(
@@ -302,6 +314,11 @@ object EvaConfigurationCodec {
         voice = VoicePatch(current.voice.lookupRetries.takeIf { it != base?.voice?.lookupRetries }).nonEmpty(),
         appearance = AppearancePatch(current.appearance.dynamicColor.takeIf { it != base?.appearance?.dynamicColor }).nonEmpty(),
         capabilities = CapabilitiesPatch(current.capabilities.screenControl.takeIf { it != base?.capabilities?.screenControl }).nonEmpty(),
+        messaging =
+            MessagingPatch(
+                current.messaging.enabled.takeIf { it != base?.messaging?.enabled },
+                current.messaging.replies.takeIf { it != base?.messaging?.replies },
+            ).nonEmpty(),
         prompt =
             PromptPatch(
                 current.prompt.source.takeIf { it != base?.prompt?.source },
@@ -339,6 +356,11 @@ object EvaConfigurationCodec {
             appearance = EvaConfiguration.Appearance(requireNotNull(appearance?.dynamicColor) { "appearance.dynamicColor is missing." }),
             capabilities =
                 EvaConfiguration.Capabilities(requireNotNull(capabilities?.screenControl) { "capabilities.screenControl is missing." }),
+            messaging =
+                EvaConfiguration.Messaging(
+                    requireNotNull(messaging?.enabled) { "messaging.enabled is missing." },
+                    requireNotNull(messaging?.replies) { "messaging.replies is missing." },
+                ),
             prompt =
                 EvaConfiguration.Prompt(
                     requireNotNull(prompt?.source) { "prompt.source is missing." },
@@ -368,6 +390,9 @@ object EvaConfigurationCodec {
         models.realtime.modelName()
         require(models.reasoningEffort in OpenAiModels.REASONING_EFFORTS) { "Unknown reasoning effort." }
         require(voice.lookupRetries in 0..10) { "voice.lookupRetries must be between 0 and 10." }
+        require(messaging.replies.size <= 100) { "At most 100 messaging reply identities may be configured." }
+        require(messaging.replies.distinct().size == messaging.replies.size) { "Duplicate messaging reply identity." }
+        messaging.replies.forEach { require(MESSAGING_IDENTITY.matches(it)) { "Invalid messaging reply identity." } }
         prompt.source.https("prompt.source")
         PromptConfig(prompt.components).validated(PromptDefaults.VARIABLES)
         packages.repository.https("packages.repository")
@@ -460,6 +485,7 @@ object EvaConfigurationCodec {
                 extensions.copy(
                     grants = extensions.grants.sortedBy { it.instance }.map { it.copy(mutations = it.mutations.sorted()) },
                 ),
+            messaging = messaging.copy(replies = messaging.replies.sorted()),
             credentials = credentials.copy(required = credentials.required.sortedBy { it.id }),
             remembered = remembered.copy(chosenNumbers = remembered.chosenNumbers.toSortedMap()),
             device = device.copy(authorizations = device.authorizations.sorted()),
@@ -482,6 +508,7 @@ object EvaConfigurationCodec {
                             ?.sortedBy { it.instance }
                             ?.map { it.copy(mutations = it.mutations.sorted()) },
                 ),
+            messaging = document.messaging?.copy(replies = document.messaging.replies?.sorted()),
             credentials = document.credentials?.copy(required = document.credentials.required?.sortedBy { it.id }),
             remembered = document.remembered?.copy(chosenNumbers = document.remembered.chosenNumbers?.toSortedMap()),
             device = document.device?.copy(authorizations = document.device.authorizations?.sorted()),
@@ -500,6 +527,11 @@ object EvaConfigurationCodec {
         voice = VoicePatch(override.voice?.lookupRetries ?: base.voice?.lookupRetries).nonEmpty(),
         appearance = AppearancePatch(override.appearance?.dynamicColor ?: base.appearance?.dynamicColor).nonEmpty(),
         capabilities = CapabilitiesPatch(override.capabilities?.screenControl ?: base.capabilities?.screenControl).nonEmpty(),
+        messaging =
+            MessagingPatch(
+                override.messaging?.enabled ?: base.messaging?.enabled,
+                override.messaging?.replies ?: base.messaging?.replies,
+            ).nonEmpty(),
         prompt =
             PromptPatch(
                 override.prompt?.source ?: base.prompt?.source,
@@ -550,6 +582,8 @@ object EvaConfigurationCodec {
 
     private fun CapabilitiesPatch.nonEmpty() = takeIf { screenControl != null }
 
+    private fun MessagingPatch.nonEmpty() = takeIf { enabled != null || replies != null }
+
     private fun PromptPatch.nonEmpty() = takeIf { source != null || components != null }
 
     private fun PackagesPatch.nonEmpty() =
@@ -598,6 +632,8 @@ object EvaConfigurationCodec {
 
     private val SEGMENT = Regex("[A-Za-z0-9][A-Za-z0-9._-]*")
     private val PACKAGE_SECRET = Regex("package/[0-9a-f-]{36}/basic")
+    private val MESSAGING_IDENTITY =
+        Regex("[0-9]+:[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z][A-Za-z0-9_]*)+:[0-9]+:[0-9a-f]{64}(?:,[0-9a-f]{64})*")
     private val PROVIDER_SECRETS =
         mapOf(
             "provider/openai-api" to "openai-api-key",

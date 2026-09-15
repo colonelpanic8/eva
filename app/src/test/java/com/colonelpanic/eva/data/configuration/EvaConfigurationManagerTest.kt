@@ -44,6 +44,7 @@ class EvaConfigurationManagerTest {
                     voice = EvaConfiguration.Voice(8),
                     appearance = EvaConfiguration.Appearance(dynamicColor = true),
                     capabilities = EvaConfiguration.Capabilities(screenControl = false),
+                    messaging = EvaConfiguration.Messaging(enabled = true, replies = listOf(LIVE_REPLY, CHANGED_SIGNER_REPLY)),
                     prompt =
                         EvaConfiguration.Prompt(
                             "https://instructions.example.test/eva.yaml",
@@ -80,8 +81,9 @@ class EvaConfigurationManagerTest {
                     device = EvaConfiguration.Device(listOf("android.role.ASSISTANT", "android.notification-listener")),
                 )
             val directory = MemoryDirectory(EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(target)))
+            val manager = EvaConfigurationManager(app, availableMessagingReplies = { setOf(LIVE_REPLY) })
 
-            val result = app.configuration.attachForTest(directory) as LinkedConfigurationResult.Loaded
+            val result = manager.attachForTest(directory) as LinkedConfigurationResult.Loaded
 
             assertEquals("gpt-portable-text", app.settings.textModel)
             assertEquals("gpt-portable-realtime", app.settings.realtimeModel)
@@ -89,6 +91,8 @@ class EvaConfigurationManagerTest {
             assertEquals(8, app.settings.voiceLookupRetries)
             assertTrue(app.appearance.dynamicColor)
             assertFalse(app.capabilities.screenControlEnabled)
+            assertTrue(app.messagingSettings.state.value.enabled)
+            assertEquals(setOf(LIVE_REPLY), app.messagingSettings.state.value.replies)
             assertEquals("spotify-portable-client", app.spotify.clientId.value)
             assertEquals(
                 target.prompt.components,
@@ -121,15 +125,24 @@ class EvaConfigurationManagerTest {
             )
             assertEquals(
                 target.extensions.grants,
-                app.configuration
+                manager
                     .snapshotForTest()
                     .extensions.grants,
             )
+            assertEquals(target.messaging, manager.snapshotForTest().messaging)
             assertTrue(result.setupRequired.any { it.contains("provider/openai-api") })
             assertTrue(result.setupRequired.any { it.contains(credential) })
             assertTrue(result.setupRequired.any { it.contains("android.role.ASSISTANT") })
             assertTrue(result.setupRequired.any { it.contains("android.notification-listener") })
+            assertTrue(result.setupRequired.any { it.contains(CHANGED_SIGNER_REPLY) })
+            assertTrue(result.setupRequired.none { it.contains(LIVE_REPLY) && it.contains("exact app installation") })
             assertFalse(directory.text.contains("password"))
+
+            app.appearance.saveDynamicColor(false)
+            manager.localChangeForTest()
+            val saved = EvaConfigurationCodec.resolve(reader = directory).configuration
+            assertFalse(saved.appearance.dynamicColor)
+            assertEquals(target.messaging, saved.messaging)
         }
 
     @Test
@@ -140,6 +153,7 @@ class EvaConfigurationManagerTest {
                 baseline.copy(
                     models = baseline.models.copy(text = "must-roll-back"),
                     appearance = baseline.appearance.copy(dynamicColor = !baseline.appearance.dynamicColor),
+                    messaging = EvaConfiguration.Messaging(enabled = true, replies = listOf(LIVE_REPLY)),
                     prompt =
                         baseline.prompt.copy(
                             source = "https://instructions.example.test/rollback.yaml",
@@ -148,7 +162,12 @@ class EvaConfigurationManagerTest {
                     packages = baseline.packages.copy(repository = "https://plugins.example.test/rollback.json"),
                     remembered = EvaConfiguration.Remembered(mapOf("4155559999" to 99)),
                 )
-            val manager = EvaConfigurationManager(app) { error("injected grant persistence failure") }
+            val manager =
+                EvaConfigurationManager(
+                    app,
+                    beforeGrantRestore = { error("injected grant persistence failure") },
+                    availableMessagingReplies = { setOf(LIVE_REPLY) },
+                )
 
             assertTrue(
                 runCatching {
@@ -159,6 +178,7 @@ class EvaConfigurationManagerTest {
             val after = app.configuration.snapshotForTest()
             assertEquals(baseline.models, after.models)
             assertEquals(baseline.appearance, after.appearance)
+            assertEquals(baseline.messaging, after.messaging)
             assertEquals(baseline.prompt, after.prompt)
             assertEquals(baseline.packages, after.packages)
             assertEquals(baseline.remembered, after.remembered)
@@ -209,5 +229,10 @@ class EvaConfigurationManagerTest {
             require(EvaConfigurationCodec.fingerprint(this.text) == expectedRootFingerprint)
             this.text = text
         }
+    }
+
+    private companion object {
+        val LIVE_REPLY = "10123:com.example.chat:1700000000000:${"a".repeat(64)}"
+        val CHANGED_SIGNER_REPLY = "10123:com.example.chat:1700000000000:${"b".repeat(64)}"
     }
 }
