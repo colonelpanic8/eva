@@ -46,6 +46,16 @@ class ContentPackageTest {
                 .intent(open.binding)
                 .uri,
         )
+        val intentClasses =
+            capabilities.values
+                .mapNotNull { capability ->
+                    (capability.binding as? DeclarativeBinding.Intent)?.let { capability.name to it.targetClass }
+                }.toMap()
+        assertEquals("com.colonelpanic.mova.intents.IntentActivity", intentClasses.getValue("create_todo"))
+        assertEquals("com.colonelpanic.mova.QuickCaptureActivity", intentClasses.getValue("capture_todo"))
+        assertEquals("com.colonelpanic.mova.VoiceQuickCaptureActivity", intentClasses.getValue("capture_todo_voice"))
+        assertEquals("com.colonelpanic.mova.MainActivity", intentClasses.getValue("open_todo"))
+        assertTrue(intentClasses.values.all { it != null })
     }
 
     @Test

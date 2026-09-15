@@ -2,6 +2,12 @@
 
 All notable changes to EVA will be documented here.
 
+## [Unreleased]
+
+### Fixed
+
+- The installable Mova fixture pins each `mova://` action to its intended exported activity, avoiding Android's same-app activity chooser.
+
 ## [0.16.0] - 2026-09-14
 
 ### Added

@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "id": "android.mova",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "title": "Mova",
   "capabilities": [
     {
@@ -337,6 +337,7 @@
         "kind": "android.intent",
         "action": "android.intent.action.VIEW",
         "package": "com.colonelpanic.mova",
+        "class": "com.colonelpanic.mova.intents.IntentActivity",
         "uri": {
           "base": "mova://create",
           "query": {
@@ -425,6 +426,7 @@
         "kind": "android.intent",
         "action": "android.intent.action.VIEW",
         "package": "com.colonelpanic.mova",
+        "class": "com.colonelpanic.mova.QuickCaptureActivity",
         "uri": {
           "base": "mova://capture",
           "query": {
@@ -482,6 +484,7 @@
         "kind": "android.intent",
         "action": "android.intent.action.VIEW",
         "package": "com.colonelpanic.mova",
+        "class": "com.colonelpanic.mova.VoiceQuickCaptureActivity",
         "uri": {
           "base": "mova://capture-voice",
           "query": {
@@ -563,6 +566,7 @@
         "kind": "android.intent",
         "action": "android.intent.action.VIEW",
         "package": "com.colonelpanic.mova",
+        "class": "com.colonelpanic.mova.intents.IntentActivity",
         "uri": {
           "base": "mova://complete",
           "query": {
@@ -692,6 +696,7 @@
         "kind": "android.intent",
         "action": "android.intent.action.VIEW",
         "package": "com.colonelpanic.mova",
+        "class": "com.colonelpanic.mova.intents.IntentActivity",
         "uri": {
           "base": "mova://update",
           "query": {
@@ -815,6 +820,7 @@
         "kind": "android.intent",
         "action": "android.intent.action.VIEW",
         "package": "com.colonelpanic.mova",
+        "class": "com.colonelpanic.mova.intents.IntentActivity",
         "uri": {
           "base": "mova://reschedule",
           "query": {
@@ -904,6 +910,7 @@
         "kind": "android.intent",
         "action": "android.intent.action.VIEW",
         "package": "com.colonelpanic.mova",
+        "class": "com.colonelpanic.mova.intents.IntentActivity",
         "uri": {
           "base": "mova://delete",
           "query": {
@@ -977,6 +984,7 @@
         "kind": "android.intent",
         "action": "android.intent.action.VIEW",
         "package": "com.colonelpanic.mova",
+        "class": "com.colonelpanic.mova.MainActivity",
         "uri": {
           "base": "mova://open",
           "query": {
@@ -1032,6 +1040,7 @@
         "kind": "android.intent",
         "action": "android.intent.action.VIEW",
         "package": "com.colonelpanic.mova",
+        "class": "com.colonelpanic.mova.MainActivity",
         "uri": {
           "base": "mova://search",
           "query": {
@@ -1083,6 +1092,7 @@
         "kind": "android.intent",
         "action": "android.intent.action.VIEW",
         "package": "com.colonelpanic.mova",
+        "class": "com.colonelpanic.mova.MainActivity",
         "uri": {
           "base": "mova://agenda",
           "query": {
@@ -1128,6 +1138,7 @@
         "kind": "android.intent",
         "action": "android.intent.action.VIEW",
         "package": "com.colonelpanic.mova",
+        "class": "com.colonelpanic.mova.intents.IntentActivity",
         "uri": {
           "base": "mova://refresh",
           "query": {
