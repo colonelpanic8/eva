@@ -1,0 +1,521 @@
+{
+  "com.android.settings": [
+    {
+      "AppFunctionStaticMetadata-com.android.settings": {
+        "serviceName": [
+          "com.google.android.settings.appfunctions.GoogleDeviceStateAppFunctionService"
+        ],
+        "schemaCategory": [
+          "device_state"
+        ],
+        "schemaName": [
+          "getUncategorizedDeviceState"
+        ],
+        "schemaVersion": [
+          1
+        ],
+        "enabledByDefault": [
+          true
+        ],
+        "functionId": [
+          "getUncategorizedDeviceState"
+        ],
+        "packageNameHash": [
+          1156888975
+        ],
+        "scope": [
+          "global"
+        ],
+        "mobileApplicationQualifiedId": [
+          "android$apps-db\/apps#com.android.settings"
+        ],
+        "packageName": [
+          "com.android.settings"
+        ]
+      },
+      "AppFunctionRuntimeMetadata-com.android.settings": {
+        "AppFunctionRuntimeMetadata-com.android.settings": {
+          "appFunctionStaticMetadataQualifiedId": [
+            "android$apps-db\/app_functions#com.android.settings\/getUncategorizedDeviceState"
+          ],
+          "functionId": [
+            "getUncategorizedDeviceState"
+          ],
+          "packageName": [
+            "com.android.settings"
+          ]
+        }
+      }
+    },
+    {
+      "AppFunctionStaticMetadata-com.android.settings": {
+        "serviceName": [
+          "com.google.android.settings.appfunctions.GoogleDeviceStateAppFunctionService"
+        ],
+        "schemaCategory": [
+          "device_state"
+        ],
+        "schemaName": [
+          "getAppsDeviceState"
+        ],
+        "schemaVersion": [
+          1
+        ],
+        "enabledByDefault": [
+          true
+        ],
+        "functionId": [
+          "getAppsDeviceState"
+        ],
+        "packageNameHash": [
+          1156888975
+        ],
+        "scope": [
+          "global"
+        ],
+        "mobileApplicationQualifiedId": [
+          "android$apps-db\/apps#com.android.settings"
+        ],
+        "packageName": [
+          "com.android.settings"
+        ]
+      },
+      "AppFunctionRuntimeMetadata-com.android.settings": {
+        "AppFunctionRuntimeMetadata-com.android.settings": {
+          "appFunctionStaticMetadataQualifiedId": [
+            "android$apps-db\/app_functions#com.android.settings\/getAppsDeviceState"
+          ],
+          "functionId": [
+            "getAppsDeviceState"
+          ],
+          "packageName": [
+            "com.android.settings"
+          ]
+        }
+      }
+    },
+    {
+      "AppFunctionStaticMetadata-com.android.settings": {
+        "serviceName": [
+          "com.google.android.settings.appfunctions.GoogleDeviceStateAppFunctionService"
+        ],
+        "schemaCategory": [
+          "device_state"
+        ],
+        "schemaName": [
+          "getMobileDataUsageDeviceState"
+        ],
+        "schemaVersion": [
+          1
+        ],
+        "enabledByDefault": [
+          true
+        ],
+        "functionId": [
+          "getMobileDataUsageDeviceState"
+        ],
+        "packageNameHash": [
+          1156888975
+        ],
+        "scope": [
+          "global"
+        ],
+        "mobileApplicationQualifiedId": [
+          "android$apps-db\/apps#com.android.settings"
+        ],
+        "packageName": [
+          "com.android.settings"
+        ]
+      },
+      "AppFunctionRuntimeMetadata-com.android.settings": {
+        "AppFunctionRuntimeMetadata-com.android.settings": {
+          "appFunctionStaticMetadataQualifiedId": [
+            "android$apps-db\/app_functions#com.android.settings\/getMobileDataUsageDeviceState"
+          ],
+          "functionId": [
+            "getMobileDataUsageDeviceState"
+          ],
+          "packageName": [
+            "com.android.settings"
+          ]
+        }
+      }
+    },
+    {
+      "AppFunctionStaticMetadata-com.android.settings": {
+        "serviceName": [
+          "com.google.android.settings.appfunctions.GoogleDeviceStateAppFunctionService"
+        ],
+        "schemaCategory": [
+          "device_state"
+        ],
+        "schemaName": [
+          "getBatteryDeviceState"
+        ],
+        "schemaVersion": [
+          1
+        ],
+        "enabledByDefault": [
+          true
+        ],
+        "functionId": [
+          "getBatteryDeviceState"
+        ],
+        "packageNameHash": [
+          1156888975
+        ],
+        "scope": [
+          "global"
+        ],
+        "mobileApplicationQualifiedId": [
+          "android$apps-db\/apps#com.android.settings"
+        ],
+        "packageName": [
+          "com.android.settings"
+        ]
+      },
+      "AppFunctionRuntimeMetadata-com.android.settings": {
+        "AppFunctionRuntimeMetadata-com.android.settings": {
+          "appFunctionStaticMetadataQualifiedId": [
+            "android$apps-db\/app_functions#com.android.settings\/getBatteryDeviceState"
+          ],
+          "functionId": [
+            "getBatteryDeviceState"
+          ],
+          "packageName": [
+            "com.android.settings"
+          ]
+        }
+      }
+    },
+    {
+      "AppFunctionStaticMetadata-com.android.settings": {
+        "serviceName": [
+          "com.google.android.settings.appfunctions.GoogleDeviceStateAppFunctionService"
+        ],
+        "schemaCategory": [
+          "device_state"
+        ],
+        "schemaName": [
+          "getDeviceStateMetadata"
+        ],
+        "schemaVersion": [
+          1
+        ],
+        "enabledByDefault": [
+          true
+        ],
+        "functionId": [
+          "getDeviceStateMetadata"
+        ],
+        "packageNameHash": [
+          1156888975
+        ],
+        "scope": [
+          "global"
+        ],
+        "mobileApplicationQualifiedId": [
+          "android$apps-db\/apps#com.android.settings"
+        ],
+        "packageName": [
+          "com.android.settings"
+        ]
+      },
+      "AppFunctionRuntimeMetadata-com.android.settings": {
+        "AppFunctionRuntimeMetadata-com.android.settings": {
+          "appFunctionStaticMetadataQualifiedId": [
+            "android$apps-db\/app_functions#com.android.settings\/getDeviceStateMetadata"
+          ],
+          "functionId": [
+            "getDeviceStateMetadata"
+          ],
+          "packageName": [
+            "com.android.settings"
+          ]
+        }
+      }
+    },
+    {
+      "AppFunctionStaticMetadata-com.android.settings": {
+        "serviceName": [
+          "com.google.android.settings.appfunctions.GoogleDeviceStateAppFunctionService"
+        ],
+        "schemaCategory": [
+          "device_state"
+        ],
+        "schemaName": [
+          "getNotificationsDeviceState"
+        ],
+        "schemaVersion": [
+          1
+        ],
+        "enabledByDefault": [
+          true
+        ],
+        "functionId": [
+          "getNotificationsDeviceState"
+        ],
+        "packageNameHash": [
+          1156888975
+        ],
+        "scope": [
+          "global"
+        ],
+        "mobileApplicationQualifiedId": [
+          "android$apps-db\/apps#com.android.settings"
+        ],
+        "packageName": [
+          "com.android.settings"
+        ]
+      },
+      "AppFunctionRuntimeMetadata-com.android.settings": {
+        "AppFunctionRuntimeMetadata-com.android.settings": {
+          "appFunctionStaticMetadataQualifiedId": [
+            "android$apps-db\/app_functions#com.android.settings\/getNotificationsDeviceState"
+          ],
+          "functionId": [
+            "getNotificationsDeviceState"
+          ],
+          "packageName": [
+            "com.android.settings"
+          ]
+        }
+      }
+    },
+    {
+      "AppFunctionStaticMetadata-com.android.settings": {
+        "serviceName": [
+          "com.google.android.settings.appfunctions.GoogleDeviceStateAppFunctionService"
+        ],
+        "schemaCategory": [
+          "device_state"
+        ],
+        "schemaName": [
+          "setDeviceStateItem"
+        ],
+        "schemaVersion": [
+          1
+        ],
+        "enabledByDefault": [
+          true
+        ],
+        "functionId": [
+          "setDeviceStateItem"
+        ],
+        "packageNameHash": [
+          1156888975
+        ],
+        "scope": [
+          "global"
+        ],
+        "mobileApplicationQualifiedId": [
+          "android$apps-db\/apps#com.android.settings"
+        ],
+        "packageName": [
+          "com.android.settings"
+        ]
+      },
+      "AppFunctionRuntimeMetadata-com.android.settings": {
+        "AppFunctionRuntimeMetadata-com.android.settings": {
+          "appFunctionStaticMetadataQualifiedId": [
+            "android$apps-db\/app_functions#com.android.settings\/setDeviceStateItem"
+          ],
+          "functionId": [
+            "setDeviceStateItem"
+          ],
+          "packageName": [
+            "com.android.settings"
+          ]
+        }
+      }
+    },
+    {
+      "AppFunctionStaticMetadata-com.android.settings": {
+        "serviceName": [
+          "com.google.android.settings.appfunctions.GoogleDeviceStateAppFunctionService"
+        ],
+        "schemaCategory": [
+          "device_state"
+        ],
+        "schemaName": [
+          "getDeviceStateItem"
+        ],
+        "schemaVersion": [
+          1
+        ],
+        "enabledByDefault": [
+          true
+        ],
+        "functionId": [
+          "getDeviceStateItem"
+        ],
+        "packageNameHash": [
+          1156888975
+        ],
+        "scope": [
+          "global"
+        ],
+        "mobileApplicationQualifiedId": [
+          "android$apps-db\/apps#com.android.settings"
+        ],
+        "packageName": [
+          "com.android.settings"
+        ]
+      },
+      "AppFunctionRuntimeMetadata-com.android.settings": {
+        "AppFunctionRuntimeMetadata-com.android.settings": {
+          "appFunctionStaticMetadataQualifiedId": [
+            "android$apps-db\/app_functions#com.android.settings\/getDeviceStateItem"
+          ],
+          "functionId": [
+            "getDeviceStateItem"
+          ],
+          "packageName": [
+            "com.android.settings"
+          ]
+        }
+      }
+    },
+    {
+      "AppFunctionStaticMetadata-com.android.settings": {
+        "serviceName": [
+          "com.google.android.settings.appfunctions.GoogleDeviceStateAppFunctionService"
+        ],
+        "schemaCategory": [
+          "device_state"
+        ],
+        "schemaName": [
+          "getStorageDeviceState"
+        ],
+        "schemaVersion": [
+          1
+        ],
+        "enabledByDefault": [
+          true
+        ],
+        "functionId": [
+          "getStorageDeviceState"
+        ],
+        "packageNameHash": [
+          1156888975
+        ],
+        "scope": [
+          "global"
+        ],
+        "mobileApplicationQualifiedId": [
+          "android$apps-db\/apps#com.android.settings"
+        ],
+        "packageName": [
+          "com.android.settings"
+        ]
+      },
+      "AppFunctionRuntimeMetadata-com.android.settings": {
+        "AppFunctionRuntimeMetadata-com.android.settings": {
+          "appFunctionStaticMetadataQualifiedId": [
+            "android$apps-db\/app_functions#com.android.settings\/getStorageDeviceState"
+          ],
+          "functionId": [
+            "getStorageDeviceState"
+          ],
+          "packageName": [
+            "com.android.settings"
+          ]
+        }
+      }
+    },
+    {
+      "AppFunctionStaticMetadata-com.android.settings": {
+        "serviceName": [
+          "com.google.android.settings.appfunctions.GoogleDeviceStateAppFunctionService"
+        ],
+        "schemaCategory": [
+          "device_state"
+        ],
+        "schemaName": [
+          "offsetNumericDeviceStateItemByValue"
+        ],
+        "schemaVersion": [
+          1
+        ],
+        "enabledByDefault": [
+          true
+        ],
+        "functionId": [
+          "offsetNumericDeviceStateItemByValue"
+        ],
+        "packageNameHash": [
+          1156888975
+        ],
+        "scope": [
+          "global"
+        ],
+        "mobileApplicationQualifiedId": [
+          "android$apps-db\/apps#com.android.settings"
+        ],
+        "packageName": [
+          "com.android.settings"
+        ]
+      },
+      "AppFunctionRuntimeMetadata-com.android.settings": {
+        "AppFunctionRuntimeMetadata-com.android.settings": {
+          "appFunctionStaticMetadataQualifiedId": [
+            "android$apps-db\/app_functions#com.android.settings\/offsetNumericDeviceStateItemByValue"
+          ],
+          "functionId": [
+            "offsetNumericDeviceStateItemByValue"
+          ],
+          "packageName": [
+            "com.android.settings"
+          ]
+        }
+      }
+    },
+    {
+      "AppFunctionStaticMetadata-com.android.settings": {
+        "serviceName": [
+          "com.google.android.settings.appfunctions.GoogleDeviceStateAppFunctionService"
+        ],
+        "schemaCategory": [
+          "device_state"
+        ],
+        "schemaName": [
+          "adjustNumericDeviceStateItemByPercentage"
+        ],
+        "schemaVersion": [
+          1
+        ],
+        "enabledByDefault": [
+          true
+        ],
+        "functionId": [
+          "adjustNumericDeviceStateItemByPercentage"
+        ],
+        "packageNameHash": [
+          1156888975
+        ],
+        "scope": [
+          "global"
+        ],
+        "mobileApplicationQualifiedId": [
+          "android$apps-db\/apps#com.android.settings"
+        ],
+        "packageName": [
+          "com.android.settings"
+        ]
+      },
+      "AppFunctionRuntimeMetadata-com.android.settings": {
+        "AppFunctionRuntimeMetadata-com.android.settings": {
+          "appFunctionStaticMetadataQualifiedId": [
+            "android$apps-db\/app_functions#com.android.settings\/adjustNumericDeviceStateItemByPercentage"
+          ],
+          "functionId": [
+            "adjustNumericDeviceStateItemByPercentage"
+          ],
+          "packageName": [
+            "com.android.settings"
+          ]
+        }
+      }
+    }
+  ]
+}
