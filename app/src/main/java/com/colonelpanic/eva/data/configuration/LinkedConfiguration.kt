@@ -73,10 +73,42 @@ class LinkedConfiguration(
                 return@withLock LinkedConfigurationResult.Conflict(outcome.setupRequired)
             }
             val current = snapshot()
-            val document = EvaConfigurationCodec.overrides(current, disk.included, disk.root.include)
+            val ready = EvaConfigurationCodec.resolve(reader = selected)
+            if (ready.fingerprint != disk.fingerprint) {
+                val outcome = applyTransactionally(ready.configuration)
+                resolved = ready
+                setupRequired = outcome.setupRequired
+                return@withLock LinkedConfigurationResult.Conflict(outcome.setupRequired)
+            }
+            val document = EvaConfigurationCodec.overrides(current, ready.included, ready.root.include)
             val text = EvaConfigurationCodec.encode(document)
-            selected.replaceRoot(text, disk.rootFingerprint)
-            val saved = EvaConfigurationCodec.resolve(reader = selected)
+            val writtenRootFingerprint = EvaConfigurationCodec.fingerprint(text)
+            selected.replaceRoot(text, ready.rootFingerprint)
+            val saved =
+                try {
+                    EvaConfigurationCodec.resolve(reader = selected)
+                } catch (failure: Exception) {
+                    restoreWrittenRoot(selected, ready, writtenRootFingerprint, failure)
+                    throw failure
+                }
+            if (saved.includedFingerprint != ready.includedFingerprint) {
+                val actualRoot = selected.read(EvaConfigurationCodec.FILE_NAME)
+                if (actualRoot != null && EvaConfigurationCodec.fingerprint(actualRoot) == writtenRootFingerprint) {
+                    try {
+                        selected.replaceRoot(ready.rootText, writtenRootFingerprint)
+                    } catch (rollback: Exception) {
+                        throw IllegalStateException(
+                            "An included configuration changed during save, and EVA could not restore the prior root. Reload before editing.",
+                            rollback,
+                        )
+                    }
+                }
+                val external = EvaConfigurationCodec.resolve(reader = selected)
+                val outcome = applyTransactionally(external.configuration)
+                resolved = external
+                setupRequired = outcome.setupRequired
+                return@withLock LinkedConfigurationResult.Conflict(outcome.setupRequired)
+            }
             resolved = saved
             if (saved.configuration == current) {
                 LinkedConfigurationResult.Saved(setupRequired)
@@ -106,4 +138,19 @@ class LinkedConfiguration(
     }
 
     private suspend fun applyTransactionally(configuration: EvaConfiguration): ConfigurationApplyResult = apply(configuration)
+
+    private fun restoreWrittenRoot(
+        selected: ConfigurationDirectory,
+        ready: ResolvedConfiguration,
+        writtenRootFingerprint: String,
+        failure: Exception,
+    ) {
+        val actualRoot = selected.read(EvaConfigurationCodec.FILE_NAME) ?: return
+        if (EvaConfigurationCodec.fingerprint(actualRoot) != writtenRootFingerprint) return
+        try {
+            selected.replaceRoot(ready.rootText, writtenRootFingerprint)
+        } catch (rollback: Exception) {
+            failure.addSuppressed(rollback)
+        }
+    }
 }

@@ -6,6 +6,7 @@ import com.charleskorn.kaml.Yaml
 import com.charleskorn.kaml.YamlConfiguration
 import com.charleskorn.kaml.YamlException
 import com.colonelpanic.eva.adapters.declarative.PackageCodec
+import com.colonelpanic.eva.adapters.declarative.httpBindings
 import com.colonelpanic.eva.conversation.prompt.PromptComponent
 import com.colonelpanic.eva.conversation.prompt.PromptConfig
 import com.colonelpanic.eva.conversation.prompt.PromptDefaults
@@ -28,6 +29,7 @@ data class EvaConfigurationDocument(
     val messaging: MessagingPatch? = null,
     val prompt: PromptPatch? = null,
     val packages: PackagesPatch? = null,
+    val services: ServicesPatch? = null,
     val extensions: ExtensionsPatch? = null,
     val spotify: SpotifyPatch? = null,
     val credentials: CredentialsPatch? = null,
@@ -36,7 +38,8 @@ data class EvaConfigurationDocument(
 ) {
     companion object {
         const val FORMAT = "eva"
-        const val VERSION = 1
+        const val VERSION = 2
+        const val OLDEST_SUPPORTED_VERSION = 1
     }
 }
 
@@ -74,7 +77,9 @@ data class PackagesPatch(
     val bundledInstances: Map<String, String>? = null,
     val installed: List<PortablePackage>? = null,
     val waitMillis: Map<String, Long>? = null,
+    /** Version-1 per-package services, retained only for migration. */
     val services: List<HttpServiceBinding>? = null,
+    val serviceBindings: List<PackageServiceBinding>? = null,
 )
 
 @Serializable
@@ -90,6 +95,23 @@ data class HttpServiceBinding(
     val packageInstance: String,
     val origin: String,
     val credential: String,
+)
+
+@Serializable data class ServicesPatch(
+    val http: Map<String, HttpServiceDefinition>? = null,
+)
+
+@Serializable
+data class HttpServiceDefinition(
+    val origin: String,
+    val credential: String? = null,
+)
+
+@Serializable
+data class PackageServiceBinding(
+    val packageInstance: String,
+    val sourceOrigin: String,
+    val service: String,
 )
 
 @Serializable data class ExtensionsPatch(
@@ -136,6 +158,7 @@ data class EvaConfiguration(
     val messaging: Messaging,
     val prompt: Prompt,
     val packages: Packages,
+    val services: Services,
     val extensions: Extensions,
     val spotify: Spotify,
     val credentials: Credentials,
@@ -175,7 +198,13 @@ data class EvaConfiguration(
         val bundledInstances: Map<String, String>,
         val installed: List<PortablePackage>,
         val waitMillis: Map<String, Long>,
+        /** Version-1 per-package services that could not yet be migrated. */
         val services: List<HttpServiceBinding>,
+        val serviceBindings: List<PackageServiceBinding> = emptyList(),
+    )
+
+    data class Services(
+        val http: Map<String, HttpServiceDefinition>,
     )
 
     data class Extensions(
@@ -205,6 +234,8 @@ data class ResolvedConfiguration(
     val included: EvaConfigurationDocument,
     val fingerprint: String,
     val rootFingerprint: String,
+    val includedFingerprint: String,
+    val rootText: String,
 )
 
 fun interface ConfigurationReader {
@@ -241,7 +272,9 @@ object EvaConfigurationCodec {
                 throw IllegalArgumentException("Line ${error.line}, column ${error.column}: ${error.message}", error)
             }
         require(document.format == EvaConfigurationDocument.FORMAT) { "This is not an EVA configuration file." }
-        require(document.version == EvaConfigurationDocument.VERSION) { "Unsupported EVA configuration version ${document.version}." }
+        require(document.version in EvaConfigurationDocument.OLDEST_SUPPORTED_VERSION..EvaConfigurationDocument.VERSION) {
+            "Unsupported EVA configuration version ${document.version}."
+        }
         document.include.forEach(::validateInclude)
         require(document.include.distinct().size == document.include.size) { "An include is listed more than once." }
         return document
@@ -253,6 +286,7 @@ object EvaConfigurationCodec {
     ): ResolvedConfiguration {
         val visited = linkedSetOf<String>()
         val digest = MessageDigest.getInstance("SHA-256")
+        val includedDigest = MessageDigest.getInstance("SHA-256")
         var files = 0
         var totalBytes = 0
 
@@ -269,6 +303,9 @@ object EvaConfigurationCodec {
             digest.update(path.toByteArray(Charsets.UTF_8))
             digest.update(byteArrayOf(0))
             digest.update(text.toByteArray(Charsets.UTF_8))
+            includedDigest.update(path.toByteArray(Charsets.UTF_8))
+            includedDigest.update(byteArrayOf(0))
+            includedDigest.update(text.toByteArray(Charsets.UTF_8))
             val document = decode(text)
             var merged = EvaConfigurationDocument()
             document.include.forEach { child -> merged = merge(merged, load(resolvePath(path, child), depth + 1)) }
@@ -288,7 +325,15 @@ object EvaConfigurationCodec {
         digest.update(byteArrayOf(0))
         digest.update(rootText.toByteArray(Charsets.UTF_8))
         val resolved = merge(included, root.copy(include = emptyList())).materialize().validated()
-        return ResolvedConfiguration(resolved, root, included, digest.digest().hex(), fingerprint(rootText))
+        return ResolvedConfiguration(
+            resolved,
+            root,
+            included,
+            digest.digest().hex(),
+            fingerprint(rootText),
+            includedDigest.digest().hex(),
+            rootText,
+        )
     }
 
     fun resolve(reader: ConfigurationReader): ResolvedConfiguration = resolve(FILE_NAME, reader)
@@ -331,7 +376,9 @@ object EvaConfigurationCodec {
                 current.packages.installed.takeIf { it != base?.packages?.installed },
                 current.packages.waitMillis.takeIf { it != base?.packages?.waitMillis },
                 current.packages.services.takeIf { it != base?.packages?.services },
+                current.packages.serviceBindings.takeIf { it != base?.packages?.serviceBindings },
             ).nonEmpty(),
+        services = ServicesPatch(current.services.http.takeIf { it != base?.services?.http }).nonEmpty(),
         extensions = ExtensionsPatch(current.extensions.grants.takeIf { it != base?.extensions?.grants }).nonEmpty(),
         spotify =
             when {
@@ -372,8 +419,10 @@ object EvaConfigurationCodec {
                     requireNotNull(packages?.bundledInstances) { "packages.bundledInstances is missing." },
                     requireNotNull(packages?.installed) { "packages.installed is missing." },
                     requireNotNull(packages?.waitMillis) { "packages.waitMillis is missing." },
-                    requireNotNull(packages?.services) { "packages.services is missing." },
+                    packages?.services.orEmpty(),
+                    packages?.serviceBindings.orEmpty(),
                 ),
+            services = EvaConfiguration.Services(services?.http.orEmpty()),
             extensions =
                 EvaConfiguration.Extensions(requireNotNull(extensions?.grants) { "extensions.grants is missing." }),
             spotify = EvaConfiguration.Spotify(if (spotify?.clearClientId == true) null else spotify?.clientId),
@@ -435,6 +484,40 @@ object EvaConfigurationCodec {
                 .distinct()
                 .size == packages.services.size,
         ) { "Duplicate HTTP service binding." }
+        services.http.forEach { (name, service) ->
+            require(SERVICE_NAME.matches(name)) { "Invalid HTTP service name." }
+            service.origin.httpsOrigin()
+            require(service.credential == null || service.credential == serviceSecretId(name)) {
+                "HTTP service credential reference is not scoped to its service."
+            }
+        }
+        packages.serviceBindings.forEach { binding ->
+            require(binding.packageInstance in packageIds) { "HTTP service binding names an unknown package." }
+            binding.sourceOrigin.httpsOrigin()
+            require(binding.service in services.http) { "HTTP service binding names an unknown service." }
+        }
+        require(
+            packages.serviceBindings
+                .map { it.packageInstance to it.sourceOrigin }
+                .distinct()
+                .size == packages.serviceBindings.size,
+        ) { "Duplicate package HTTP origin binding." }
+        require(packages.serviceBindings.map { it.service }.toSet() == services.http.keys) {
+            "Every HTTP service must be used by a package binding."
+        }
+        val installedDefinitions = packages.installed.associate { it.instance to PackageCodec.decode(it.document) }
+        packages.serviceBindings.forEach { binding ->
+            installedDefinitions[binding.packageInstance]?.let { definition ->
+                require(definition.httpOrigins().contains(binding.sourceOrigin)) {
+                    "HTTP service binding names an origin not declared by its package."
+                }
+                if (definition.httpBindings().any { it.origin == binding.sourceOrigin && it.credential != null }) {
+                    require(services.http.getValue(binding.service).credential != null) {
+                        "A credential-requiring package origin must use a service with a credential reference."
+                    }
+                }
+            }
+        }
         extensions.grants.forEach { grant ->
             require(grant.instance.length in 1..500 && grant.identity.length in 1..256 && grant.digest.length == 64)
             require(grant.mutations.distinct().size == grant.mutations.size)
@@ -451,10 +534,28 @@ object EvaConfigurationCodec {
             ) { "Invalid Spotify client ID." }
         }
         credentials.required.forEach { reference ->
-            val expectedKind = PROVIDER_SECRETS[reference.id] ?: "http-basic".takeIf { PACKAGE_SECRET.matches(reference.id) }
+            val expectedKind =
+                PROVIDER_SECRETS[reference.id]
+                    ?: "http-basic".takeIf { SERVICE_SECRET.matches(reference.id) || PACKAGE_SECRET.matches(reference.id) }
             require(expectedKind != null) { "Unknown or unscoped secret reference." }
             require(reference.kind == expectedKind) { "Secret reference kind does not match its scope." }
-            reference.endpoint?.let { if (reference.id == BROKER_SECRET) it.websocketEndpoint() else it.httpsOrigin() }
+            when {
+                reference.id == BROKER_SECRET -> {
+                    requireNotNull(
+                        reference.endpoint,
+                    ) { "Broker credential requires its endpoint." }.websocketEndpoint()
+                }
+
+                reference.id in PROVIDER_SECRETS -> {
+                    require(
+                        reference.endpoint == null,
+                    ) { "This provider credential does not use an endpoint." }
+                }
+
+                else -> {
+                    requireNotNull(reference.endpoint) { "HTTP credential requires its service origin." }.httpsOrigin()
+                }
+            }
         }
         require(
             credentials.required
@@ -466,6 +567,20 @@ object EvaConfigurationCodec {
             require(credentials.required.any { it.id == service.credential && it.endpoint == service.origin }) {
                 "HTTP service credential requirement is missing or has a different origin."
             }
+        }
+        services.http.forEach { (_, service) ->
+            service.credential?.let { credential ->
+                require(credentials.required.any { it.id == credential && it.endpoint == service.origin }) {
+                    "HTTP service credential requirement is missing or has a different origin."
+                }
+            }
+        }
+        val declaredCredentials =
+            services.http.values
+                .mapNotNull { it.credential }
+                .toSet() + packages.services.map { it.credential }.toSet()
+        credentials.required.filter { SERVICE_SECRET.matches(it.id) || PACKAGE_SECRET.matches(it.id) }.forEach { reference ->
+            require(reference.id in declaredCredentials) { "HTTP credential requirement does not belong to a declared service." }
         }
         require(remembered.chosenNumbers.size <= 500)
         remembered.chosenNumbers.forEach { (number, time) ->
@@ -480,7 +595,9 @@ object EvaConfigurationCodec {
                     installed = packages.installed.sortedBy { it.instance },
                     waitMillis = packages.waitMillis.toSortedMap(),
                     services = packages.services.sortedBy { it.packageInstance },
+                    serviceBindings = packages.serviceBindings.sortedWith(compareBy({ it.packageInstance }, { it.sourceOrigin })),
                 ),
+            services = services.copy(http = services.http.toSortedMap()),
             extensions =
                 extensions.copy(
                     grants = extensions.grants.sortedBy { it.instance }.map { it.copy(mutations = it.mutations.sorted()) },
@@ -500,7 +617,10 @@ object EvaConfigurationCodec {
                     installed = document.packages.installed?.sortedBy { it.instance },
                     waitMillis = document.packages.waitMillis?.toSortedMap(),
                     services = document.packages.services?.sortedBy { it.packageInstance },
+                    serviceBindings =
+                        document.packages.serviceBindings?.sortedWith(compareBy({ it.packageInstance }, { it.sourceOrigin })),
                 ),
+            services = document.services?.copy(http = document.services.http?.toSortedMap()),
             extensions =
                 document.extensions?.copy(
                     grants =
@@ -544,7 +664,9 @@ object EvaConfigurationCodec {
                 override.packages?.installed ?: base.packages?.installed,
                 override.packages?.waitMillis ?: base.packages?.waitMillis,
                 override.packages?.services ?: base.packages?.services,
+                override.packages?.serviceBindings ?: base.packages?.serviceBindings,
             ).nonEmpty(),
+        services = ServicesPatch(override.services?.http ?: base.services?.http).nonEmpty(),
         extensions = ExtensionsPatch(override.extensions?.grants ?: base.extensions?.grants).nonEmpty(),
         spotify =
             when {
@@ -587,7 +709,12 @@ object EvaConfigurationCodec {
     private fun PromptPatch.nonEmpty() = takeIf { source != null || components != null }
 
     private fun PackagesPatch.nonEmpty() =
-        takeIf { repository != null || bundledInstances != null || installed != null || waitMillis != null || services != null }
+        takeIf {
+            repository != null || bundledInstances != null || installed != null || waitMillis != null || services != null ||
+                serviceBindings != null
+        }
+
+    private fun ServicesPatch.nonEmpty() = takeIf { http != null }
 
     private fun ExtensionsPatch.nonEmpty() = takeIf { grants != null }
 
@@ -632,6 +759,8 @@ object EvaConfigurationCodec {
 
     private val SEGMENT = Regex("[A-Za-z0-9][A-Za-z0-9._-]*")
     private val PACKAGE_SECRET = Regex("package/[0-9a-f-]{36}/basic")
+    private val SERVICE_SECRET = Regex("service/[a-z][a-z0-9-]{0,63}/basic")
+    private val SERVICE_NAME = Regex("[a-z][a-z0-9-]{0,63}")
     private val MESSAGING_IDENTITY =
         Regex("[0-9]+:[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z][A-Za-z0-9_]*)+:[0-9]+:[0-9a-f]{64}(?:,[0-9a-f]{64})*")
     private val PROVIDER_SECRETS =
@@ -655,4 +784,9 @@ object EvaConfigurationCodec {
         )
 
     fun packageSecretId(instance: String) = "package/$instance/basic"
+
+    fun serviceSecretId(name: String) = "service/$name/basic"
+
+    private fun com.colonelpanic.eva.adapters.declarative.PackageDefinition.httpOrigins(): Set<String> =
+        httpBindings().map { it.origin }.toSet()
 }

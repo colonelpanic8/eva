@@ -134,6 +134,11 @@ remote coding agent or on automating Paseo's Android UI.
 
 ## Messaging
 
+The **Messaging** drawer destination owns phone-permission status, contact-name
+lookup retries, notification-message access/reply grants, and remembered-number
+management. Moving these controls does not rename their portable fields:
+`voice.lookupRetries`, `messaging`, and `remembered.chosenNumbers` remain stable.
+
 EVA exposes one search/read/send tool family with two execution paths:
 
 - SMS/MMS: native Android conversation lookup, history and sending.
@@ -246,7 +251,7 @@ and replace the root with a small override file, for example:
 
 ```yaml
 format: eva
-version: 1
+version: 2
 include:
 - shared/base.yaml
 voice:
@@ -266,6 +271,7 @@ The schema separates these groups:
 | `messaging` | Notification-read opt-in and exact app-installation reply identities |
 | `prompt` | Source URL and complete ordered component list |
 | `packages` | Repository, bundled instance IDs, imported package bytes and origins, wait budgets, service bindings |
+| `services.http` | Named HTTPS origins with optional scoped local credential references |
 | `extensions` | Grants bound to exact identity, digest, and mutation names |
 | `spotify` | Public client ID |
 | `credentials` | Required scoped secret references and endpoints, never credential values |
@@ -276,7 +282,11 @@ An `include` list composes relative files under the selected folder. Includes ar
 applied in order and the including file overrides them. Scalar settings merge by
 field; collections replace as a whole, so an explicit empty collection clears
 inherited entries. Includes cannot escape the folder, form cycles, or exceed
-bounded depth/file/size limits. UI writes retain includes and store local overrides.
+eight include levels, 32 file visits, 4 MiB per file, or 8 MiB across the graph.
+Every file must declare `format: eva` and a supported version; unknown fields are
+rejected. EVA writes version 2. Version 1 remains readable and migrates on the next
+complete write.
+UI writes retain includes and store local overrides.
 They normalize the root YAML and remove its comments; included files are not rewritten.
 
 Imported extension JSON remains exact text rather than a re-encoded approximation:
@@ -287,6 +297,51 @@ contract; they cannot confer Android permissions or trust a different signer.
 Messaging reply grants likewise require the exact installed app identity. Missing
 identities remain in the repository and are reported for setup; a different device
 or reinstalled app requires fresh approval.
+
+### Reusable HTTP services
+
+`services.http` defines named origins and optional credential references.
+`packages.serviceBindings` maps each package's declared source origin to one of
+those services. Several packages can share a service; a package can map each of
+its HTTP origins separately. A binding must name an origin declared by its
+package, and credentials remain restricted to the destination service origin.
+
+For example, an override can bind two packages from a shared base to one service:
+
+```yaml
+format: eva
+version: 2
+include:
+- shared/base.yaml
+services:
+  http:
+    agenda:
+      origin: https://agenda.example.net
+      credential: service/agenda/basic
+packages:
+  serviceBindings:
+  - packageInstance: 00000000-0000-0000-0000-000000000021
+    sourceOrigin: https://agenda.example.org
+    service: agenda
+  - packageInstance: 00000000-0000-0000-0000-000000000022
+    sourceOrigin: https://agenda.example.org
+    service: agenda
+credentials:
+  required:
+  - id: service/agenda/basic
+    kind: http-basic
+    endpoint: https://agenda.example.net
+```
+
+Use the package instance IDs from your own export. The example assumes both
+packages are defined in the base and declare `https://agenda.example.org`.
+Collections replace inherited collections, so retain other bindings and credential
+references you still need when constructing an override.
+
+Provision the local username/password through the extension's server settings.
+The **Service name** field identifies the reusable service. The repository stores
+only `service/<name>/basic` and its approved origin; it never stores the credential
+value. Legacy per-package service entries remain readable for migration.
 
 ### Restore and edit contract
 
@@ -301,7 +356,11 @@ app upgrades that add or remove bundled definitions.
 A restore spans several existing stores. Preserve a before-state for rollback,
 including the prompt location; importing configuration must not overwrite a
 previously selected standalone prompt document. In-memory state and persisted
-settings must agree after success or a reported failure.
+settings must agree after a successful restore or rollback. If a rollback write
+also fails, EVA attempts the remaining independent rollback steps and reports
+which stores could not be restored. This is exception recovery across stores; it
+does not provide a single crash-atomic transaction across Android preferences,
+package files, and prompt files.
 
 Linked edits are serialized and compare the resolved content fingerprint before
 writing. A newer external change produces a visible conflict and reload path;

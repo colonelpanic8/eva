@@ -57,12 +57,19 @@ data class BasicCredential(
 fun configurePackage(
     source: PackageDefinition,
     origin: String,
+): PackageDefinition = configurePackage(source, source.httpBindings().associate { it.origin to origin })
+
+/** Replaces only explicitly approved source origins before validation and digesting. */
+fun configurePackage(
+    source: PackageDefinition,
+    origins: Map<String, String>,
 ): PackageDefinition {
     fun replace(element: JsonElement): JsonElement =
         when (element) {
             is JsonObject -> {
                 if (element["kind"] == JsonPrimitive("http")) {
-                    JsonObject(element + ("origin" to JsonPrimitive(origin)))
+                    val sourceOrigin = element["origin"]?.jsonPrimitive?.content
+                    JsonObject(element + ("origin" to JsonPrimitive(origins[sourceOrigin] ?: sourceOrigin.orEmpty())))
                 } else {
                     JsonObject(element.mapValues { replace(it.value) })
                 }

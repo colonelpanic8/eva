@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.net.Uri
 import com.colonelpanic.eva.adapters.declarative.PackageCodec
+import com.colonelpanic.eva.adapters.declarative.httpBindings
 import com.colonelpanic.eva.conversation.prompt.PromptComponent
 import com.colonelpanic.eva.conversation.prompt.PromptConfig
 import com.colonelpanic.eva.data.PackageSettings
@@ -50,7 +51,8 @@ class PortableConfigurationStoresTest {
     @Test
     fun `package restore preserves exact bytes stable identity waits and endpoint without pretending credentials transferred`() {
         val instance = "00000000-0000-0000-0000-000000000001"
-        val credential = EvaConfigurationCodec.packageSecretId(instance)
+        val serviceName = "agenda"
+        val credential = EvaConfigurationCodec.serviceSecretId(serviceName)
         val restored =
             PortablePackageSettings(
                 repository = "https://plugins.example.test/index.json",
@@ -65,7 +67,9 @@ class PortableConfigurationStoresTest {
                         ),
                     ),
                 waitMillis = mapOf("voice" to 11_000, instance to 43_000),
-                services = listOf(HttpServiceBinding(instance, "https://agenda.example.test", credential)),
+                services = emptyList(),
+                httpServices = mapOf(serviceName to HttpServiceDefinition("https://agenda.example.test", credential)),
+                serviceBindings = listOf(PackageServiceBinding(instance, "https://agenda.example.org", serviceName)),
             )
         val settings = PackageSettings(context, listPackages = { emptyList() })
 
@@ -87,10 +91,11 @@ class PortableConfigurationStoresTest {
                 .single()
                 .definition.digest,
         )
-        assertEquals(listOf(credential), settings.missingCredentials(restored.services))
+        assertEquals(listOf(credential), settings.missingCredentials(restored))
         assertFalse(settings.load().single().configured)
         val entry = settings.state.value.single()
         assertEquals("https://agenda.example.test", entry.origin)
+        assertEquals(serviceName, entry.serviceName)
         assertFalse(entry.credentialAvailable)
     }
 
@@ -145,7 +150,9 @@ class PortableConfigurationStoresTest {
                         portable.installed,
                         portable.waitMillis,
                         portable.services,
+                        portable.serviceBindings,
                     ),
+                services = EvaConfiguration.Services(portable.httpServices),
                 extensions = EvaConfiguration.Extensions(emptyList()),
                 spotify = EvaConfiguration.Spotify(null),
                 credentials =
@@ -161,6 +168,114 @@ class PortableConfigurationStoresTest {
                 ConfigurationReader { path -> encoded.takeIf { path == EvaConfigurationCodec.FILE_NAME } },
             )
         assertEquals(configuration.packages, resolved.configuration.packages)
+    }
+
+    @Test
+    fun `named services are reusable across packages and map multiple package origins independently`() {
+        val first = "00000000-0000-0000-0000-000000000031"
+        val second = "00000000-0000-0000-0000-000000000032"
+        val multiOriginDocument =
+            packageJson.replaceFirst(
+                "\"origin\": \"https://agenda.example.org\"",
+                "\"origin\": \"https://secondary.example.org\"",
+            )
+        val settings = PackageSettings(context, listPackages = { emptyList() })
+        val restored =
+            PortablePackageSettings(
+                repository = "https://plugins.example.test/index.json",
+                bundledInstances = emptyMap(),
+                installed =
+                    listOf(
+                        PortablePackage(first, "index-one", "first", multiOriginDocument),
+                        PortablePackage(second, "index-two", "second", packageJson),
+                    ),
+                waitMillis = emptyMap(),
+                services = emptyList(),
+                httpServices =
+                    mapOf(
+                        "agenda" to
+                            HttpServiceDefinition(
+                                "https://agenda.service.test",
+                                EvaConfigurationCodec.serviceSecretId("agenda"),
+                            ),
+                        "secondary" to
+                            HttpServiceDefinition(
+                                "https://secondary.service.test",
+                                EvaConfigurationCodec.serviceSecretId("secondary"),
+                            ),
+                    ),
+                serviceBindings =
+                    listOf(
+                        PackageServiceBinding(first, "https://agenda.example.org", "agenda"),
+                        PackageServiceBinding(first, "https://secondary.example.org", "secondary"),
+                        PackageServiceBinding(second, "https://agenda.example.org", "agenda"),
+                    ),
+            )
+
+        settings.restore(restored)
+
+        assertEquals(restored, settings.portable())
+        assertEquals(
+            setOf("https://agenda.service.test", "https://secondary.service.test"),
+            settings
+                .load()
+                .first { it.identity.id == first }
+                .definition
+                .httpBindings()
+                .map { it.origin }
+                .toSet(),
+        )
+        assertEquals(
+            setOf("https://agenda.service.test"),
+            settings
+                .load()
+                .first { it.identity.id == second }
+                .definition
+                .httpBindings()
+                .map { it.origin }
+                .toSet(),
+        )
+        assertEquals(
+            setOf(EvaConfigurationCodec.serviceSecretId("agenda"), EvaConfigurationCodec.serviceSecretId("secondary")),
+            settings.missingCredentials(restored).toSet(),
+        )
+    }
+
+    @Test
+    fun `available version one package service migrates to a named scoped service`() {
+        val instance = "00000000-0000-0000-0000-000000000071"
+        val legacyCredential = EvaConfigurationCodec.packageSecretId(instance)
+        val settings = PackageSettings(context, listPackages = { emptyList() })
+        val restored =
+            PortablePackageSettings(
+                repository = "https://plugins.example.test/index.json",
+                bundledInstances = emptyMap(),
+                installed =
+                    listOf(
+                        PortablePackage(
+                            instance,
+                            "https://plugins.example.test/index.json",
+                            "https://plugins.example.test/org-agenda.json",
+                            packageJson,
+                        ),
+                    ),
+                waitMillis = emptyMap(),
+                services = listOf(HttpServiceBinding(instance, "https://agenda.example.test", legacyCredential)),
+            )
+
+        settings.restore(restored)
+        val portable = settings.portable()
+        val name = "package-$instance"
+
+        assertTrue(portable.services.isEmpty())
+        assertEquals(
+            HttpServiceDefinition("https://agenda.example.test", EvaConfigurationCodec.serviceSecretId(name)),
+            portable.httpServices.getValue(name),
+        )
+        assertEquals(
+            listOf(PackageServiceBinding(instance, "https://agenda.example.org", name)),
+            portable.serviceBindings,
+        )
     }
 
     @Test

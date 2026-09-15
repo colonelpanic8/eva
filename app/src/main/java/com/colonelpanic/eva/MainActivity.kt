@@ -1,5 +1,6 @@
 package com.colonelpanic.eva
 
+import android.Manifest
 import android.app.KeyguardManager
 import android.content.ActivityNotFoundException
 import android.content.Intent
@@ -38,6 +39,7 @@ import com.colonelpanic.eva.ui.VoiceStart
 import com.colonelpanic.eva.ui.about.AboutInfo
 import com.colonelpanic.eva.ui.prompt.PromptActions
 import com.colonelpanic.eva.ui.prompt.PromptUiState
+import com.colonelpanic.eva.ui.settings.PermissionStatus
 import com.colonelpanic.eva.ui.settings.SettingsActions
 import com.colonelpanic.eva.ui.settings.SettingsUiState
 import com.colonelpanic.eva.ui.theme.EvaTheme
@@ -49,6 +51,7 @@ class MainActivity : ComponentActivity() {
     private var surface by mutableStateOf(Launch.MANUAL)
     private var deviceAssistant by mutableStateOf(false)
     private var mediaControlAccess by mutableStateOf(false)
+    private var messagingPermissions by mutableStateOf(emptyList<PermissionStatus>())
     private val runtimePermissions =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
             voice.requestInFlight = false
@@ -125,6 +128,14 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    private fun permissionLabel(permission: String): String =
+        when (permission) {
+            Manifest.permission.READ_CONTACTS -> "Read contacts"
+            Manifest.permission.READ_SMS -> "Read SMS"
+            Manifest.permission.SEND_SMS -> "Send SMS"
+            else -> permission.substringAfterLast('.')
+        }
+
     /** Whichever of the assistant screens this device actually has. */
     private fun openAssistantSettings() = openFirstAvailable(AssistantRole.settingsIntents())
 
@@ -194,6 +205,7 @@ class MainActivity : ComponentActivity() {
         val signIn by eva.signIn.state.collectAsStateWithLifecycle()
         val messaging by eva.messagingSettings.state.collectAsStateWithLifecycle()
         val messagingApps by eva.notificationMessages.apps.collectAsStateWithLifecycle()
+        val rememberedNumbers by eva.chosenNumbers.count.collectAsStateWithLifecycle()
         val screenControl by eva.capabilities.screenControlFlow.collectAsStateWithLifecycle()
         val extensions by eva.extensions.settings.collectAsStateWithLifecycle()
         val plugins by eva.pluginBrowser.state.collectAsStateWithLifecycle()
@@ -207,6 +219,8 @@ class MainActivity : ComponentActivity() {
             configuration = configuration,
             messaging = messaging,
             messagingApps = messagingApps,
+            messagingPermissions = messagingPermissions,
+            rememberedNumbers = rememberedNumbers,
             plugins = plugins,
             extensions = extensions,
             packages = packages,
@@ -329,6 +343,8 @@ class MainActivity : ComponentActivity() {
                     lifecycleScope.launch { eva.registry.changeAuthorization { eva.messagingSettings.allowReply(identity, allowed) } }
                 },
                 onMessagingRefresh = EvaNotificationListener::refreshMessages,
+                onForgetRememberedNumbers = { lifecycleScope.launch { eva.chosenNumbers.forget() } },
+                onOpenAppSettings = ::openAppSettings,
                 onOpenMediaControlSettings = ::openMediaControlSettings,
                 onScreenControlChange = eva.capabilities::saveScreenControl,
                 onSaveSpotifyClientId = { clientId -> save { eva.spotify.saveClientId(clientId) } },
@@ -416,6 +432,7 @@ class MainActivity : ComponentActivity() {
         // Both grants are made in system settings, so the answers only change while EVA is away.
         deviceAssistant = AssistantRole.isEva(this)
         mediaControlAccess = MediaControlAccess.isGranted(this)
+        messagingPermissions = EvaPermissions.MESSAGING.map { PermissionStatus(permissionLabel(it), EvaPermissions.isGranted(this, it)) }
         EvaNotificationListener
             .refreshMessages()
         if (surface.locked && !isLocked()) surface = Launch.HANDS_FREE

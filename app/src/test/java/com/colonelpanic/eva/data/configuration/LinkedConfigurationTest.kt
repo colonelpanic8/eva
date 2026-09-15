@@ -93,6 +93,116 @@ class LinkedConfigurationTest {
         }
 
     @Test
+    fun `include changed during root replacement restores exact root and applies external graph`() =
+        runTest {
+            val initial = configuration(textModel = "included-text")
+            var local = initial
+            val root =
+                EvaConfigurationCodec.complete(initial).copy(
+                    include = listOf("model.yaml"),
+                    models = ModelsPatch(realtime = initial.models.realtime, reasoningEffort = initial.models.reasoningEffort),
+                )
+            val selected =
+                FakeDirectory(
+                    "linked",
+                    mutableMapOf(
+                        "eva.yaml" to EvaConfigurationCodec.encode(root),
+                        "model.yaml" to
+                            EvaConfigurationCodec.encode(
+                                EvaConfigurationDocument(models = ModelsPatch(text = "included-text")),
+                            ),
+                    ),
+                )
+            val linked = linked(snapshot = { local }, apply = { local = it })
+            linked.attach(selected)
+            val exactRoot = selected.files.getValue("eva.yaml")
+            val externalInclude =
+                EvaConfigurationCodec.encode(EvaConfigurationDocument(models = ModelsPatch(text = "external-during-save"))) +
+                    "# external bytes\n"
+            local = local.copy(models = local.models.copy(text = "local-would-mask"), voice = local.voice.copy(lookupRetries = 9))
+            selected.duringReplacement = { files -> files["model.yaml"] = externalInclude }
+
+            assertEquals(LinkedConfigurationResult.Conflict(emptyList()), linked.localChange())
+            assertEquals(exactRoot, selected.files["eva.yaml"])
+            assertEquals(externalInclude, selected.files["model.yaml"])
+            assertEquals("external-during-save", local.models.text)
+            assertEquals(initial.voice, local.voice)
+        }
+
+    @Test
+    fun `root and include changed after replacement preserve exact external bytes`() =
+        runTest {
+            val initial = configuration(textModel = "included-text")
+            var local = initial
+            val root =
+                EvaConfigurationCodec.complete(initial).copy(
+                    include = listOf("model.yaml"),
+                    models = ModelsPatch(realtime = initial.models.realtime, reasoningEffort = initial.models.reasoningEffort),
+                )
+            val selected =
+                FakeDirectory(
+                    "linked",
+                    mutableMapOf(
+                        "eva.yaml" to EvaConfigurationCodec.encode(root),
+                        "model.yaml" to
+                            EvaConfigurationCodec.encode(
+                                EvaConfigurationDocument(models = ModelsPatch(text = "included-text")),
+                            ),
+                    ),
+                )
+            val linked = linked(snapshot = { local }, apply = { local = it })
+            linked.attach(selected)
+            val externalInclude =
+                EvaConfigurationCodec.encode(EvaConfigurationDocument(models = ModelsPatch(text = "external-included"))) +
+                    "# exact include bytes\n"
+            val externalRoot =
+                EvaConfigurationCodec.encode(root.copy(voice = VoicePatch(lookupRetries = 6))) + "# exact root bytes\n"
+            local = local.copy(models = local.models.copy(text = "local-would-mask"))
+            selected.duringReplacement = { files ->
+                files["model.yaml"] = externalInclude
+                files["eva.yaml"] = externalRoot
+            }
+
+            assertEquals(LinkedConfigurationResult.Conflict(emptyList()), linked.localChange())
+            assertEquals(externalRoot, selected.files["eva.yaml"])
+            assertEquals(externalInclude, selected.files["model.yaml"])
+            assertEquals("external-included", local.models.text)
+            assertEquals(6, local.voice.lookupRetries)
+        }
+
+    @Test
+    fun `invalid include introduced during replacement restores only Evas written root`() =
+        runTest {
+            val initial = configuration(textModel = "included-text")
+            var local = initial
+            val root =
+                EvaConfigurationCodec.complete(initial).copy(
+                    include = listOf("model.yaml"),
+                    models = ModelsPatch(realtime = initial.models.realtime, reasoningEffort = initial.models.reasoningEffort),
+                )
+            val selected =
+                FakeDirectory(
+                    "linked",
+                    mutableMapOf(
+                        "eva.yaml" to EvaConfigurationCodec.encode(root),
+                        "model.yaml" to
+                            EvaConfigurationCodec.encode(
+                                EvaConfigurationDocument(models = ModelsPatch(text = "included-text")),
+                            ),
+                    ),
+                )
+            val linked = linked(snapshot = { local }, apply = { local = it })
+            linked.attach(selected)
+            val exactRoot = selected.files.getValue("eva.yaml")
+            local = local.copy(voice = local.voice.copy(lookupRetries = 9))
+            selected.duringReplacement = { files -> files["model.yaml"] = "not: [valid" }
+
+            assertNotNull(runCatching { linked.localChange() }.exceptionOrNull())
+            assertEquals(exactRoot, selected.files["eva.yaml"])
+            assertEquals("not: [valid", selected.files["model.yaml"])
+        }
+
+    @Test
     fun `failed replacement retains the old root and a retry can save`() =
         runTest {
             var local = configuration(textModel = "old-text")
@@ -266,6 +376,7 @@ class LinkedConfigurationTest {
                 waitMillis = emptyMap(),
                 services = emptyList(),
             ),
+        services = EvaConfiguration.Services(emptyMap()),
         extensions = EvaConfiguration.Extensions(grants),
         spotify = EvaConfiguration.Spotify(clientId = null),
         credentials = EvaConfiguration.Credentials(credentials),
@@ -278,6 +389,7 @@ class LinkedConfigurationTest {
         val files: MutableMap<String, String>,
     ) : ConfigurationDirectory {
         var failReplacement = false
+        var duringReplacement: ((MutableMap<String, String>) -> Unit)? = null
 
         override fun read(path: String): String? = files[path]
 
@@ -289,6 +401,7 @@ class LinkedConfigurationTest {
             require(actual == expectedRootFingerprint) { "Configuration changed outside EVA; reload it before editing." }
             if (failReplacement) throw IOException("Replacement failed before the old root was changed.")
             files["eva.yaml"] = text
+            duringReplacement?.also { duringReplacement = null }?.invoke(files)
         }
     }
 }

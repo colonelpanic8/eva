@@ -13,6 +13,7 @@ import com.colonelpanic.eva.capability.extensions.ExtensionGrant
 import com.colonelpanic.eva.conversation.prompt.PromptConfig
 import com.colonelpanic.eva.data.MessagingPreferences
 import com.colonelpanic.eva.data.PortablePackageSettings
+import com.colonelpanic.eva.data.PromptPersistenceSnapshot
 import com.colonelpanic.eva.providers.BrokerEndpoint
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -38,6 +39,8 @@ data class ConfigurationStatus(
 class EvaConfigurationManager(
     private val app: EvaApplication,
     private val beforeGrantRestore: () -> Unit = {},
+    private val beforePackagePreferenceRestore: () -> Unit = {},
+    private val beforeRollbackStep: (String) -> Unit = {},
     private val availableMessagingReplies: () -> Set<String> = {
         app.notificationMessages.apps.value
             .map { it.identity }
@@ -186,6 +189,9 @@ class EvaConfigurationManager(
                     add(SecretReference(BROKER_REF, "broker-link", BrokerEndpoint.parse(link).socketUrl))
                 }
                 if (app.spotify.account.value != null) add(SecretReference(SPOTIFY_REF, "spotify-account"))
+                packages.httpServices.values.forEach { service ->
+                    service.credential?.let { add(SecretReference(it, "http-basic", service.origin)) }
+                }
                 packages.services.forEach { service -> add(SecretReference(service.credential, "http-basic", service.origin)) }
             }
         val credentialRefs = retainedCredentials(observedCredentialRefs, packages)
@@ -222,6 +228,7 @@ class EvaConfigurationManager(
             messaging = EvaConfiguration.Messaging(messaging.enabled, replies),
             prompt = EvaConfiguration.Prompt(prompt.source, prompt.config.components),
             packages = packages.configuration(),
+            services = EvaConfiguration.Services(packages.httpServices),
             extensions = EvaConfiguration.Extensions(grants),
             spotify = EvaConfiguration.Spotify(app.spotify.clientId.value),
             credentials = EvaConfiguration.Credentials(credentialRefs),
@@ -231,14 +238,14 @@ class EvaConfigurationManager(
     }
 
     private suspend fun apply(configuration: EvaConfiguration): ConfigurationApplyResult {
-        val packageTarget = configuration.packages.portable()
+        val packageTarget = configuration.packages.portable(configuration.services)
         app.packageSettings.validateRestore(packageTarget)
         val promptBefore = app.prompts.portableSnapshot()
         val messagingBefore = app.messagingSettings.state.value
         val before = snapshot()
         suppressChanges = true
         try {
-            val packageNotices = applyOrdinary(configuration, packageTarget)
+            val packageNotices = applyOrdinary(configuration, packageTarget, beforePackagePreferenceRestore)
             val missingMessagingReplies = restoreMessaging(configuration.messaging)
             val restoredGrants =
                 configuration.extensions.grants.associate { grant ->
@@ -253,24 +260,16 @@ class EvaConfigurationManager(
             synchronized(changedMessagingReplies) { changedMessagingReplies.clear() }
             return ConfigurationApplyResult(setup)
         } catch (error: Exception) {
-            withContext(NonCancellable) {
-                runCatching {
-                    applyOrdinary(before, before.packages.portable())
-                    app.messagingSettings.replace(messagingBefore)
-                    app.prompts.rollback(promptBefore)
-                    val grants =
-                        before.extensions.grants.associate { grant ->
-                            grant.instance to ExtensionGrant(grant.identity, grant.digest, grant.mutations.toSet())
-                        }
-                    app.extensions.restoreGrants(
-                        grants,
-                        before.packages.installed
-                            .map { it.instance }
-                            .toSet(),
-                    )
-                }.exceptionOrNull()?.let(error::addSuppressed)
-            }
-            throw error
+            val rollbackFailures = withContext(NonCancellable) { rollback(before, promptBefore, messagingBefore) }
+            if (rollbackFailures.isEmpty()) throw error
+            val failure =
+                IllegalStateException(
+                    "${error.message ?: "Configuration restore failed."} Rollback was incomplete: " +
+                        rollbackFailures.joinToString { it.first },
+                    error,
+                )
+            rollbackFailures.forEach { (_, cause) -> failure.addSuppressed(cause) }
+            throw failure
         } finally {
             suppressChanges = false
         }
@@ -327,14 +326,20 @@ class EvaConfigurationManager(
             current[id]?.let { retained[id] = it }
         }
         current.forEach { (id, reference) -> retained[id] = reference }
-        val serviceIds = packages.services.map { it.credential }.toSet()
-        retained.keys.filter { it.startsWith("package/") && it !in serviceIds }.forEach(retained::remove)
+        val serviceIds =
+            packages.httpServices.values
+                .mapNotNull { it.credential }
+                .toSet() + packages.services.map { it.credential }
+        retained.keys
+            .filter { (it.startsWith("package/") || it.startsWith("service/")) && it !in serviceIds }
+            .forEach(retained::remove)
         return retained.values.sortedBy { it.id }
     }
 
     private suspend fun applyOrdinary(
         configuration: EvaConfiguration,
         packages: PortablePackageSettings,
+        beforePackagePreferences: () -> Unit = {},
     ): List<String> {
         app.settings.saveTextModel(configuration.models.text)
         app.settings.saveRealtimeModel(configuration.models.realtime)
@@ -344,7 +349,7 @@ class EvaConfigurationManager(
         app.capabilities.saveScreenControl(configuration.capabilities.screenControl)
         app.spotify.saveClientId(configuration.spotify.clientId.orEmpty())
         app.prompts.restorePortable(configuration.prompt.source, PromptConfig(configuration.prompt.components))
-        val notices = app.packageSettings.restore(packages)
+        val notices = app.packageSettings.restore(packages, beforePackagePreferences)
         app.chosenNumbers.replace(configuration.remembered.chosenNumbers)
         return notices
     }
@@ -386,7 +391,7 @@ class EvaConfigurationManager(
                         }
 
                         else -> {
-                            reference.id !in app.packageSettings.missingCredentials(configuration.packages.services)
+                            reference.id !in app.packageSettings.missingCredentials(configuration.packages.portable(configuration.services))
                         }
                     }
                 if (!available) add("Provision local credential ${reference.id}${reference.endpoint?.let { " for $it" }.orEmpty()}.")
@@ -404,10 +409,7 @@ class EvaConfigurationManager(
 
     private fun packageNotices(configuration: EvaConfiguration): List<String> {
         val configured = configuration.packages.bundledInstances.keys
-        val available =
-            app.packageSettings
-                .portable()
-                .bundledInstances.keys
+        val available = app.packageSettings.availableBundledNames()
         return buildList {
             (configured - available).sorted().forEach { add("Bundled package $it is not in this EVA build.") }
             (available - configured).sorted().forEach { add("Bundled package $it is new on this EVA build.") }
@@ -434,10 +436,55 @@ class EvaConfigurationManager(
         }
 
     private fun PortablePackageSettings.configuration() =
-        EvaConfiguration.Packages(repository, bundledInstances, installed, waitMillis, services)
+        EvaConfiguration.Packages(repository, bundledInstances, installed, waitMillis, services, serviceBindings)
 
-    private fun EvaConfiguration.Packages.portable() =
-        PortablePackageSettings(repository, bundledInstances, installed, waitMillis, services)
+    private fun EvaConfiguration.Packages.portable(services: EvaConfiguration.Services = EvaConfiguration.Services(emptyMap())) =
+        PortablePackageSettings(repository, bundledInstances, installed, waitMillis, this.services, services.http, serviceBindings)
+
+    private suspend fun rollback(
+        before: EvaConfiguration,
+        promptBefore: PromptPersistenceSnapshot,
+        messagingBefore: MessagingPreferences,
+    ): List<Pair<String, Throwable>> {
+        val failures = mutableListOf<Pair<String, Throwable>>()
+
+        suspend fun attempt(
+            label: String,
+            action: suspend () -> Unit,
+        ) {
+            try {
+                beforeRollbackStep(label)
+                action()
+            } catch (failure: Throwable) {
+                failures += label to failure
+            }
+        }
+
+        attempt("text model") { app.settings.saveTextModel(before.models.text) }
+        attempt("realtime model") { app.settings.saveRealtimeModel(before.models.realtime) }
+        attempt("reasoning effort") { app.settings.saveReasoningEffort(before.models.reasoningEffort) }
+        attempt("voice lookup retries") { app.settings.saveVoiceLookupRetries(before.voice.lookupRetries) }
+        attempt("appearance") { app.appearance.saveDynamicColor(before.appearance.dynamicColor) }
+        attempt("capabilities") { app.capabilities.saveScreenControl(before.capabilities.screenControl) }
+        attempt("Spotify client") { app.spotify.saveClientId(before.spotify.clientId.orEmpty()) }
+        attempt("packages") { app.packageSettings.restore(before.packages.portable(before.services)) }
+        attempt("remembered choices") { app.chosenNumbers.replace(before.remembered.chosenNumbers) }
+        attempt("messaging") { app.messagingSettings.replace(messagingBefore) }
+        attempt("prompt") { app.prompts.rollback(promptBefore) }
+        attempt("extension grants") {
+            val grants =
+                before.extensions.grants.associate { grant ->
+                    grant.instance to ExtensionGrant(grant.identity, grant.digest, grant.mutations.toSet())
+                }
+            app.extensions.restoreGrants(
+                grants,
+                before.packages.installed
+                    .map { it.instance }
+                    .toSet(),
+            )
+        }
+        return failures
+    }
 
     private companion object {
         const val PREFERENCES = "eva.configuration"

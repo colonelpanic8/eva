@@ -7,6 +7,8 @@ import com.colonelpanic.eva.adapters.android.ContactHistory
 import com.colonelpanic.eva.adapters.android.RemembersNumbers
 import com.colonelpanic.eva.capability.ExecutionBackend
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 
 /**
@@ -19,6 +21,10 @@ class ChosenNumbers(
     private val onChanged: () -> Unit = {},
 ) {
     private val prefs = context.applicationContext.getSharedPreferences("eva.chosenNumbers", Context.MODE_PRIVATE)
+    private val mutableCount = MutableStateFlow(prefs.all.size)
+
+    /** How many numbers are held, so the messaging screen can offer to forget them. */
+    val count = mutableCount.asStateFlow()
 
     suspend fun all(): Map<String, Long> =
         withContext(Dispatchers.IO) {
@@ -46,6 +52,7 @@ class ChosenNumbers(
                 keys.forEach { putLong(it, now) }
                 stale.forEach(::remove)
             }
+            mutableCount.value = prefs.all.size
             onChanged()
         }
 
@@ -61,7 +68,14 @@ class ChosenNumbers(
                         for ((key, value) in values) putLong(key, value)
                     }.commit(),
             ) { "Could not restore remembered choices." }
+            mutableCount.value = values.size
         }
+
+    /** Unlike a restore, forgetting is the user's own edit, so it is written back out. */
+    suspend fun forget() {
+        replace(emptyMap())
+        onChanged()
+    }
 
     private companion object {
         const val MAX_NUMBERS = 500

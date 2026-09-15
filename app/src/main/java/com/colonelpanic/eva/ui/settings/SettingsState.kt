@@ -8,12 +8,20 @@ import com.colonelpanic.eva.providers.openai.OpenAiModels
 import com.colonelpanic.eva.providers.openai.SignInState
 import com.colonelpanic.eva.providers.spotify.SpotifyConnectState
 
-/** Everything the settings screen renders, collected once by the activity. */
+/** One runtime grant the messaging screen reports. */
+data class PermissionStatus(
+    val label: String,
+    val granted: Boolean,
+)
+
+/** Everything the settings screens render, collected once by the activity. */
 data class SettingsUiState(
     val configuration: ConfigurationStatus = ConfigurationStatus(),
     val messaging: MessagingPreferences =
         MessagingPreferences(),
     val messagingApps: List<MessagingApp> = emptyList(),
+    val messagingPermissions: List<PermissionStatus> = emptyList(),
+    val rememberedNumbers: Int = 0,
     val plugins: com.colonelpanic.eva.adapters.declarative.PluginBrowserState =
         com.colonelpanic.eva.adapters.declarative
             .PluginBrowserState(),
@@ -56,14 +64,16 @@ data class SettingsActions(
     val onMessagingEnable: (Boolean) -> Unit = {},
     val onMessagingReply: (String, Boolean) -> Unit = { _, _ -> },
     val onMessagingRefresh: () -> Unit = {},
+    val onForgetRememberedNumbers: () -> Unit = {},
+    val onOpenAppSettings: () -> Unit = {},
     val onRepositoryRefresh: (String) -> Unit = {},
     val onPluginFileImport: () -> Unit = {},
     val onPluginUrlPreview: (String) -> Unit = {},
     val onPluginPreview: (String) -> Unit = {},
     val onPluginInstall: () -> Unit = {},
     val onPluginRemove: (String) -> Unit = {},
-    val onSavePackageServer: (String, String, String, String) -> String? = { _, _, _, _ -> null },
-    val onClearPackageServer: (String) -> Unit = {},
+    val onSavePackageServer: (String, String, String, String, String, String) -> String? = { _, _, _, _, _, _ -> null },
+    val onClearPackageServer: (String, String) -> Unit = { _, _ -> },
     val onSaveWait: (String, String) -> String? = { _, _ -> null },
     val onExtensionEnable: (String, Boolean) -> Unit = { _, _ -> },
     val onExtensionMutation: (String, String, Boolean) -> Unit = { _, _, _ -> },

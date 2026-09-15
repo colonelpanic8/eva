@@ -22,7 +22,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -46,11 +45,10 @@ import com.colonelpanic.eva.ui.ReasoningEffortPicker
 import com.colonelpanic.eva.ui.evaTopAppBarColors
 import com.colonelpanic.eva.ui.theme.EvaTheme
 
-private const val MAX_LOOKUP_RETRIES = 10
-
 /**
- * Everything that outlives a session: credentials, models, voice defaults, appearance.
- * It is reachable while connected, which the old in-header panel was not.
+ * Everything that outlives a session and is not about one capability: credentials, models,
+ * appearance, and the device grants EVA holds. It is reachable while connected, which the
+ * old in-header panel was not.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -82,11 +80,7 @@ fun SettingsScreen(
             SettingsDivider()
             ModelsSection(state, actions)
             SettingsDivider()
-            VoiceSection(state, actions)
-            SettingsDivider()
             AssistantSection(state, actions)
-            SettingsDivider()
-            MessagingSection(state, actions)
             SettingsDivider()
             MediaSection(state, actions)
             ScreenControlSection(state, actions)
@@ -197,30 +191,6 @@ private fun ModelsSection(
     }
 }
 
-@Composable
-private fun VoiceSection(
-    state: SettingsUiState,
-    actions: SettingsActions,
-) {
-    SettingsSection("Voice") {
-        SettingsRow(
-            title = "Extra lookup attempts",
-            supporting = "How many more times a spoken name is searched before EVA gives up",
-        ) {
-            Text(state.voiceLookupRetries.toString(), style = MaterialTheme.typography.titleMedium)
-        }
-        SettingsBlock {
-            Slider(
-                value = state.voiceLookupRetries.toFloat(),
-                onValueChange = { actions.onVoiceLookupRetriesChange(it.toInt()) },
-                valueRange = 0f..MAX_LOOKUP_RETRIES.toFloat(),
-                steps = MAX_LOOKUP_RETRIES - 1,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-    }
-}
-
 /**
  * Android has no role request for the assistant, so the most EVA can do is say whether it
  * holds the role and open the screen where the user can grant it.
@@ -270,7 +240,7 @@ private fun MediaSection(
                 } else {
                     "Turning on notification access lets EVA read what is playing, choose between apps, and confirm " +
                         "a pause worked. Android offers nothing narrower, so it also delivers your notifications to " +
-                        "EVA. Reading message notifications additionally requires the Messaging opt-in."
+                        "EVA. Reading message notifications additionally requires the opt-in on the Messaging screen."
                 },
         ) {
             TextButton(onClick = actions.onOpenMediaControlSettings) { Text("Change") }
@@ -529,7 +499,6 @@ private fun SettingsSignedInPreview() {
                     hasHostLink = true,
                     textModel = OpenAiModels.TEXT,
                     realtimeModel = OpenAiModels.REALTIME,
-                    voiceLookupRetries = 5,
                 ),
             actions = SettingsActions(),
             onOpenDrawer = {},

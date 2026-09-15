@@ -53,8 +53,12 @@ with an include active and verify that unrelated inherited settings still follow
 the included file. Invalid YAML must preserve the previous working setup.
 Do not clear a user's app data to create a fresh test state.
 
-Robolectric checks exercise Android store integration but do not establish the
-behavior of every Storage Access Framework provider or directory-sync tool.
+Robolectric checks exercise Android store integration and a real
+`DocumentsProvider` through `SafConfigurationDirectory`: oversized reads, recovery
+when only the backup remains, and failed final replacement preserving the old root.
+These provider tests run at API 25 because the API 28 shadow does not support the
+legacy provider query used by the fixture. They do not establish physical-device
+rename atomicity or the behavior of every directory-sync tool.
 
 ## Signing and releases
 
@@ -222,7 +226,13 @@ unsent draft. Group MMS and the new notification reply path do not inherit that
 verification. Notification replies have focused JVM/Robolectric tests but have
 not yet been verified against WhatsApp, Telegram, or another real messaging app.
 
-Open **Settings → Messaging**:
+Open **Messaging** from the navigation drawer. **Phone permissions** shows
+contacts, SMS history, and SMS-send access, including permissions denied after
+setup. **Contact lookup** controls the retry budget for resolving spoken contact
+names. **Remembered numbers → Forget** clears saved number preferences; this
+change also updates a linked `eva.yaml`.
+
+To use another app's notification replies:
 
 1. Enable **Read messaging notifications**. This explicitly permits EVA to use
    message excerpts with the configured model; media notification access alone

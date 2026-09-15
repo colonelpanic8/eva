@@ -398,17 +398,22 @@ class EvaApplication :
 
     fun savePackageServer(
         id: String,
+        sourceOrigin: String,
+        serviceName: String,
         url: String,
         username: String,
         password: String,
     ): String? {
-        val error = packageSettings.save(id, url, username, password)
+        val error = packageSettings.save(id, sourceOrigin, serviceName, url, username, password)
         if (error == null) packageAdapter.refresh()
         return error
     }
 
-    fun clearPackageServer(id: String) {
-        packageSettings.clear(id)
+    fun clearPackageServer(
+        id: String,
+        sourceOrigin: String,
+    ) {
+        packageSettings.clear(id, sourceOrigin)
         packageAdapter.refresh()
     }
 

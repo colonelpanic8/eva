@@ -171,6 +171,7 @@ class PromptStore(
         }
         mutableLocation.value = currentLocation()
         load()
+        onChanged()
     }
 
     suspend fun useOwnFile() =
@@ -182,6 +183,7 @@ class PromptStore(
             }
             mutableLocation.value = currentLocation()
             load()
+            onChanged()
         }
 
     fun clearNotice() {

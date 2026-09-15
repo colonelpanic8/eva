@@ -103,6 +103,30 @@ class ConfigurationDirectoryTest {
         assertFalse(File(root, TEMP_NAME).exists())
     }
 
+    @Test
+    fun `failed backup recovery preserves old bytes and allows a later retry`() {
+        val old = document(lookupRetries = 2)
+        val replacement = document(lookupRetries = 8)
+        File(root, BACKUP_NAME).writeText(old)
+        provider.failRecoveryRename = true
+
+        assertEquals(old, directory.read(EvaConfigurationCodec.FILE_NAME))
+        val failure =
+            assertThrows(IllegalStateException::class.java) {
+                directory.replaceRoot(replacement, EvaConfigurationCodec.fingerprint(old))
+            }
+
+        assertTrue(failure.message.orEmpty().contains("backup has been preserved"))
+        assertEquals(old, File(root, BACKUP_NAME).readText())
+        assertFalse(File(root, EvaConfigurationCodec.FILE_NAME).exists())
+        assertFalse(File(root, TEMP_NAME).exists())
+
+        provider.failRecoveryRename = false
+        directory.replaceRoot(replacement, EvaConfigurationCodec.fingerprint(old))
+        assertEquals(replacement, directory.read(EvaConfigurationCodec.FILE_NAME))
+        assertFalse(File(root, BACKUP_NAME).exists())
+    }
+
     private fun document(lookupRetries: Int): String =
         EvaConfigurationCodec.encode(
             EvaConfigurationDocument(voice = VoicePatch(lookupRetries = lookupRetries)),
@@ -118,6 +142,7 @@ class ConfigurationDirectoryTest {
 class ConfigurationDocumentsProvider : DocumentsProvider() {
     lateinit var root: File
     var failFinalRename = false
+    var failRecoveryRename = false
 
     override fun onCreate(): Boolean = true
 
@@ -188,6 +213,9 @@ class ConfigurationDocumentsProvider : DocumentsProvider() {
         val source = file(documentId)
         if (failFinalRename && source.name == ".eva.yaml.new" && displayName == EvaConfigurationCodec.FILE_NAME) {
             throw FileNotFoundException("Injected final rename failure")
+        }
+        if (failRecoveryRename && source.name == ".eva.yaml.backup" && displayName == EvaConfigurationCodec.FILE_NAME) {
+            throw FileNotFoundException("Injected backup recovery failure")
         }
         val target = File(root, displayName)
         if (!source.renameTo(target)) throw FileNotFoundException("Could not rename ${source.name}")

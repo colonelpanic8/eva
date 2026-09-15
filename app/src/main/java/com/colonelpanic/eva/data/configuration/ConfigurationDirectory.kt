@@ -43,6 +43,9 @@ class SafConfigurationDirectory(
     ) {
         EvaConfigurationCodec.decode(text)
         val current = find(EvaConfigurationCodec.FILE_NAME) ?: recoverRoot()
+        check(current == null || current.name == EvaConfigurationCodec.FILE_NAME) {
+            "Could not recover the previous configuration; its backup has been preserved."
+        }
         val actualFingerprint = current?.let { EvaConfigurationCodec.fingerprint(readDocument(it)) }
         require(actualFingerprint == expectedRootFingerprint) { "Configuration changed outside EVA; reload it before editing." }
         find(TEMP_NAME)?.let(::delete)

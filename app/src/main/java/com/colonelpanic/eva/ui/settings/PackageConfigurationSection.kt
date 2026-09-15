@@ -48,19 +48,30 @@ internal fun GeneralExtensionSettingsSection(
 internal fun ExtensionConfiguration(
     entry: com.colonelpanic.eva.data.PackageConfigurationEntry,
     actions: SettingsActions,
+    showWait: Boolean = true,
 ) {
     if (entry.credentialName != null) {
         SettingsBlock {
+            var serviceName by remember(entry.id, entry.sourceOrigin, entry.serviceName) {
+                mutableStateOf(entry.serviceName ?: suggestedServiceName(entry.id))
+            }
             var url by remember(entry.id, entry.origin) { mutableStateOf(entry.origin.orEmpty()) }
             var username by remember(entry.id) { mutableStateOf("") }
             var password by remember(entry.id) { mutableStateOf("") }
             var error by remember(entry.id) { mutableStateOf<String?>(null) }
             Text("Server configuration")
-            Text("Credentials stay encrypted on this phone. Saving a URL approves only that origin.")
-            Text("Credential reference: ${entry.credentialName}")
+            Text("Package origin: ${entry.sourceOrigin}")
+            Text("Credentials stay encrypted on this phone. Reusing a service name shares its approved origin and credential.")
+            Text("Package credential: ${entry.credentialName}")
             if (entry.origin != null && !entry.credentialAvailable) {
                 Text("Credentials are required on this device.")
             }
+            OutlinedTextField(
+                serviceName,
+                { serviceName = it },
+                label = { Text("Service name") },
+                singleLine = true,
+            )
             OutlinedTextField(url, { url = it }, label = { Text("HTTPS server URL (origin only)") }, singleLine = true)
             OutlinedTextField(username, { username = it }, label = { Text("Username") }, singleLine = true)
             OutlinedTextField(
@@ -72,7 +83,7 @@ internal fun ExtensionConfiguration(
             )
             error?.let { Text(it) }
             OutlinedButton(onClick = {
-                error = actions.onSavePackageServer(entry.id, url, username, password)
+                error = actions.onSavePackageServer(entry.id, entry.sourceOrigin, serviceName, url, username, password)
                 if (error == null) {
                     username = ""
                     password = ""
@@ -80,12 +91,16 @@ internal fun ExtensionConfiguration(
             }) { Text("Save server and credentials") }
             if (entry.origin != null) {
                 Text("Credentials saved. Values are never read back into these fields.")
-                TextButton(onClick = { actions.onClearPackageServer(entry.id) }) { Text("Remove server credentials") }
+                TextButton(onClick = { actions.onClearPackageServer(entry.id, entry.sourceOrigin) }) {
+                    Text("Remove service binding")
+                }
             }
         }
     }
-    WaitField("Wait override (blank uses extension default)", entry.id, entry.waitMillis, actions)
+    if (showWait) WaitField("Wait override (blank uses extension default)", entry.id, entry.waitMillis, actions)
 }
+
+private fun suggestedServiceName(instance: String) = "package-$instance"
 
 @Composable
 private fun WaitField(

@@ -4,11 +4,17 @@ import android.Manifest
 import com.colonelpanic.eva.EvaApplication
 import com.colonelpanic.eva.adapters.declarative.PackageCodec
 import com.colonelpanic.eva.adapters.declarative.PackageEffect
+import com.colonelpanic.eva.adapters.declarative.configurePackage
+import com.colonelpanic.eva.capability.InteractionMode
+import com.colonelpanic.eva.capability.extensions.ExtensionGrant
 import com.colonelpanic.eva.capability.extensions.PackageIdentity
 import com.colonelpanic.eva.conversation.prompt.PromptComponent
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -34,10 +40,22 @@ class EvaConfigurationManagerTest {
         runTest {
             val baseline = app.configuration.snapshotForTest()
             val instance = "00000000-0000-0000-0000-000000000021"
-            val definition = PackageCodec.decode(packageJson)
-            val identity = PackageIdentity(instance)
-            val mutation = definition.capabilities.first { it.effect != PackageEffect.READ }.name
-            val credential = EvaConfigurationCodec.packageSecretId(instance)
+            val grantedInstance = "00000000-0000-0000-0000-000000000022"
+            val credentialedJson = packageJson.replace("\"id\": \"community.org-agenda\"", "\"id\": \"test.portable-auth\"")
+            val definition = PackageCodec.decode(credentialedJson)
+            val uncredentialedJson =
+                packageJson
+                    .replace("\"id\": \"community.org-agenda\"", "\"id\": \"test.portable-grant\"")
+                    .replace("\"credential\": \"org-agenda\",\n", "")
+            val grantedDefinition =
+                configurePackage(
+                    PackageCodec.decode(uncredentialedJson),
+                    mapOf("https://agenda.example.org" to "https://agenda.example.test"),
+                )
+            val identity = PackageIdentity(grantedInstance)
+            val mutation = grantedDefinition.capabilities.first { it.effect != PackageEffect.READ }.name
+            val serviceName = "shared-agenda"
+            val credential = EvaConfigurationCodec.serviceSecretId(serviceName)
             val target =
                 baseline.copy(
                     models = EvaConfiguration.Models("gpt-portable-text", "gpt-portable-realtime", "high"),
@@ -59,21 +77,39 @@ class EvaConfigurationManagerTest {
                                         instance,
                                         "https://plugins.example.test/index.json",
                                         "https://plugins.example.test/org-agenda.json",
-                                        packageJson,
+                                        credentialedJson,
+                                    ),
+                                    PortablePackage(
+                                        grantedInstance,
+                                        "https://plugins.example.test/secondary-index.json",
+                                        "https://plugins.example.test/org-agenda-uncredentialed.json",
+                                        uncredentialedJson,
                                     ),
                                 ),
-                            waitMillis = mapOf("voice" to 12_000, "typed" to 23_000, instance to 44_000),
-                            services = listOf(HttpServiceBinding(instance, "https://agenda.example.test", credential)),
+                            waitMillis = mapOf("voice" to 12_000, "typed" to 23_000, grantedInstance to 44_000),
+                            services = emptyList(),
+                            serviceBindings =
+                                listOf(
+                                    PackageServiceBinding(instance, "https://agenda.example.org", serviceName),
+                                    PackageServiceBinding(grantedInstance, "https://agenda.example.org", serviceName),
+                                ),
+                        ),
+                    services =
+                        EvaConfiguration.Services(
+                            mapOf(serviceName to HttpServiceDefinition("https://agenda.example.test", credential)),
                         ),
                     extensions =
                         EvaConfiguration.Extensions(
-                            listOf(PortableGrant(identity.instanceId, identity.key, definition.digest, listOf(mutation))),
+                            listOf(PortableGrant(identity.instanceId, identity.key, grantedDefinition.digest, listOf(mutation))),
                         ),
                     spotify = EvaConfiguration.Spotify("spotify-portable-client"),
                     credentials =
                         EvaConfiguration.Credentials(
                             listOf(
                                 SecretReference("provider/openai-api", "openai-api-key"),
+                                SecretReference("provider/chatgpt", "chatgpt-account"),
+                                SecretReference("provider/broker", "broker-link", "ws://localhost:8765/device"),
+                                SecretReference("provider/spotify-account", "spotify-account"),
                                 SecretReference(credential, "http-basic", "https://agenda.example.test"),
                             ),
                         ),
@@ -94,6 +130,7 @@ class EvaConfigurationManagerTest {
             assertTrue(app.messagingSettings.state.value.enabled)
             assertEquals(setOf(LIVE_REPLY), app.messagingSettings.state.value.replies)
             assertEquals("spotify-portable-client", app.spotify.clientId.value)
+            assertEquals(target.prompt.source, app.prompts.portableSnapshot().source)
             assertEquals(
                 target.prompt.components,
                 app.prompts
@@ -101,27 +138,53 @@ class EvaConfigurationManagerTest {
                     .config.components,
             )
             assertEquals(target.packages, app.packageSettings.portable().configuration())
+            assertEquals(target.services.http, app.packageSettings.portable().httpServices)
+            assertEquals(44_000, app.packageSettings.budget(identity, null, InteractionMode.TYPED).effectiveMillis)
             assertEquals(target.remembered.chosenNumbers, app.chosenNumbers.all())
             assertEquals(
                 definition.digest,
                 app.packageSettings
                     .imported()
-                    .single()
+                    .single { it.identity.id == instance }
                     .definition.digest,
             )
             assertEquals(
                 identity.id,
                 app.packageSettings
                     .imported()
-                    .single()
+                    .single { it.identity.id == grantedInstance }
                     .identity.id,
             )
             assertEquals(
-                packageJson,
+                uncredentialedJson,
                 app.packageSettings
                     .imported()
-                    .single()
+                    .single { it.identity.id == grantedInstance }
                     .json,
+            )
+            val liveExtension =
+                withTimeout(5_000) {
+                    app.extensions.settings.first { settings ->
+                        settings.entries.any {
+                            it.installed.identity?.instanceId == identity.instanceId && it.enabled && mutation in it.mutations
+                        }
+                    }
+                }.entries.singleOrNull { it.installed.identity?.instanceId == identity.instanceId }
+            assertNotNull(
+                app.extensions.settings.value.entries
+                    .toString(),
+                liveExtension,
+            )
+            assertEquals(grantedDefinition.digest, liveExtension?.installed?.descriptor?.digest)
+            assertEquals(null, liveExtension?.installed?.problem)
+            assertTrue(result.setupRequired.toString(), result.setupRequired.none { it.contains(identity.instanceId) })
+            assertEquals(
+                ExtensionGrant(identity.key, grantedDefinition.digest, setOf(mutation)),
+                app.extensions.portableGrants()[identity.instanceId],
+            )
+            assertTrue(
+                app.registry.snapshot.catalog
+                    .any { it.id == "extension.package.$grantedInstance.$mutation" },
             )
             assertEquals(
                 target.extensions.grants,
@@ -131,6 +194,9 @@ class EvaConfigurationManagerTest {
             )
             assertEquals(target.messaging, manager.snapshotForTest().messaging)
             assertTrue(result.setupRequired.any { it.contains("provider/openai-api") })
+            assertTrue(result.setupRequired.any { it.contains("provider/chatgpt") })
+            assertTrue(result.setupRequired.any { it.contains("provider/broker") })
+            assertTrue(result.setupRequired.any { it.contains("provider/spotify-account") })
             assertTrue(result.setupRequired.any { it.contains(credential) })
             assertTrue(result.setupRequired.any { it.contains("android.role.ASSISTANT") })
             assertTrue(result.setupRequired.any { it.contains("android.notification-listener") })
@@ -185,6 +251,146 @@ class EvaConfigurationManagerTest {
         }
 
     @Test
+    fun `failure between package import and preferences restores prior package state`() =
+        runTest {
+            val baseline = app.configuration.snapshotForTest()
+            val instance = "00000000-0000-0000-0000-000000000041"
+            val target =
+                baseline.copy(
+                    packages =
+                        baseline.packages.copy(
+                            repository = "https://plugins.example.test/transaction.json",
+                            installed =
+                                listOf(
+                                    PortablePackage(
+                                        instance,
+                                        "https://plugins.example.test/transaction.json",
+                                        "https://plugins.example.test/transaction-package.json",
+                                        packageJson,
+                                    ),
+                                ),
+                        ),
+                )
+            val manager =
+                EvaConfigurationManager(
+                    app,
+                    beforePackagePreferenceRestore = { error("injected between imports and preferences") },
+                )
+
+            val failure =
+                runCatching {
+                    manager.attachForTest(MemoryDirectory(EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(target))))
+                }.exceptionOrNull()
+
+            assertTrue(failure?.message.orEmpty().contains("injected between imports and preferences"))
+            assertEquals(baseline.packages, app.configuration.snapshotForTest().packages)
+        }
+
+    @Test
+    fun `rollback attempts later stores and surfaces an individual rollback failure`() =
+        runTest {
+            val baseline = app.configuration.snapshotForTest()
+            val target =
+                baseline.copy(
+                    models = baseline.models.copy(text = "rollback-step-target"),
+                    appearance = baseline.appearance.copy(dynamicColor = !baseline.appearance.dynamicColor),
+                    remembered = EvaConfiguration.Remembered(mapOf("4155554444" to 44)),
+                )
+            val manager =
+                EvaConfigurationManager(
+                    app,
+                    beforeGrantRestore = { error("primary apply failure") },
+                    beforeRollbackStep = { label -> if (label == "text model") error("injected rollback failure") },
+                )
+
+            val failure =
+                runCatching {
+                    manager.attachForTest(MemoryDirectory(EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(target))))
+                }.exceptionOrNull()
+
+            assertTrue(failure?.message.orEmpty().contains("Rollback was incomplete: text model"))
+            assertEquals("rollback-step-target", app.settings.textModel)
+            assertEquals(baseline.appearance, app.configuration.snapshotForTest().appearance)
+            assertEquals(baseline.remembered, app.configuration.snapshotForTest().remembered)
+        }
+
+    @Test
+    fun `configured digest grant is live while stale digest remains desired and reported`() =
+        runTest {
+            val baseline = app.configuration.snapshotForTest()
+            val instance = "00000000-0000-0000-0000-000000000051"
+            val serviceName = "digest-service"
+            val uncredentialedJson =
+                packageJson
+                    .replace("\"id\": \"community.org-agenda\"", "\"id\": \"test.stale-digest\"")
+                    .replace("\"credential\": \"org-agenda\",\n", "")
+            val configured =
+                configurePackage(
+                    PackageCodec.decode(uncredentialedJson),
+                    mapOf("https://agenda.example.org" to "https://digest.example.test"),
+                )
+            val identity = PackageIdentity(instance)
+            val mutation = configured.capabilities.first { it.effect != PackageEffect.READ }.name
+            val staleGrant = PortableGrant(identity.instanceId, identity.key, "f".repeat(64), listOf(mutation))
+            val target =
+                baseline.copy(
+                    packages =
+                        baseline.packages.copy(
+                            installed =
+                                listOf(
+                                    PortablePackage(
+                                        instance,
+                                        "https://plugins.example.test/digest-index.json",
+                                        "https://plugins.example.test/digest-package.json",
+                                        uncredentialedJson,
+                                    ),
+                                ),
+                            services = emptyList(),
+                            serviceBindings =
+                                listOf(PackageServiceBinding(instance, "https://agenda.example.org", serviceName)),
+                        ),
+                    services =
+                        EvaConfiguration.Services(
+                            mapOf(serviceName to HttpServiceDefinition("https://digest.example.test")),
+                        ),
+                    extensions = EvaConfiguration.Extensions(listOf(staleGrant)),
+                )
+            val manager = EvaConfigurationManager(app)
+
+            val result =
+                manager.attachForTest(MemoryDirectory(EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(target)))) as
+                    LinkedConfigurationResult.Loaded
+
+            assertTrue(result.setupRequired.any { it.contains(identity.instanceId) && it.contains("reapprove extension") })
+            assertFalse(app.extensions.portableGrants().containsKey(identity.instanceId))
+            assertEquals(listOf(staleGrant), manager.snapshotForTest().extensions.grants)
+        }
+
+    @Test
+    fun `missing bundled package warning remains on unchanged reassessment`() =
+        runTest {
+            val baseline = app.configuration.snapshotForTest()
+            val missing = "removed-from-build.json"
+            val target =
+                baseline.copy(
+                    packages =
+                        baseline.packages.copy(
+                            bundledInstances =
+                                baseline.packages.bundledInstances +
+                                    (missing to "00000000-0000-0000-0000-000000000061"),
+                        ),
+                )
+            val manager = EvaConfigurationManager(app)
+            val directory = MemoryDirectory(EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(target)))
+
+            val initial = manager.attachForTest(directory) as LinkedConfigurationResult.Loaded
+            val reassessed = manager.reloadForTest(force = false) as LinkedConfigurationResult.Loaded
+
+            assertTrue(initial.setupRequired.any { it.contains(missing) && it.contains("not in this EVA build") })
+            assertTrue(reassessed.setupRequired.any { it.contains(missing) && it.contains("not in this EVA build") })
+        }
+
+    @Test
     fun `resume reassesses unchanged requirements while explicit reload reapplies settings`() =
         runTest {
             val permission = Manifest.permission.READ_CONTACTS
@@ -213,7 +419,7 @@ class EvaConfigurationManagerTest {
         }
 
     private fun com.colonelpanic.eva.data.PortablePackageSettings.configuration() =
-        EvaConfiguration.Packages(repository, bundledInstances, installed, waitMillis, services)
+        EvaConfiguration.Packages(repository, bundledInstances, installed, waitMillis, services, serviceBindings)
 
     private class MemoryDirectory(
         var text: String,

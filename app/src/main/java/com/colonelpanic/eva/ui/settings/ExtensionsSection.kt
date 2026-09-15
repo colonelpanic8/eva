@@ -40,7 +40,7 @@ internal fun ExtensionsSection(
             val installed = entry.installed
             val descriptor = installed.descriptor
             val packageId = installed.identity?.instanceId?.removePrefix("package:")
-            val configuration = state.packages.find { it.id == packageId }
+            val configurations = state.packages.filter { it.id == packageId }
             val repositoryInstallation = state.plugins.installed.find { it.identity.id == packageId }
             var expanded by rememberSaveable(entry.key) { mutableStateOf(false) }
             SettingsRow(
@@ -89,7 +89,9 @@ internal fun ExtensionsSection(
                             }
                         }
                     }
-                    configuration?.let { ExtensionConfiguration(it, actions) }
+                    configurations.forEachIndexed { index, configuration ->
+                        ExtensionConfiguration(configuration, actions, showWait = index == configurations.lastIndex)
+                    }
                     if (repositoryInstallation != null) {
                         TextButton(
                             onClick = { actions.onPluginRemove(repositoryInstallation.identity.id) },

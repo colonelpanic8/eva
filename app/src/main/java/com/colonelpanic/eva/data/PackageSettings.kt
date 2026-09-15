@@ -17,14 +17,22 @@ import com.colonelpanic.eva.capability.extensions.InstalledExtension
 import com.colonelpanic.eva.capability.extensions.PackageIdentity
 import com.colonelpanic.eva.capability.extensions.rethrowFatalExtensionFailure
 import com.colonelpanic.eva.data.configuration.HttpServiceBinding
+import com.colonelpanic.eva.data.configuration.HttpServiceDefinition
+import com.colonelpanic.eva.data.configuration.PackageServiceBinding
 import com.colonelpanic.eva.data.configuration.PortablePackage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import java.util.UUID
 
 data class PackageConfigurationEntry(
     val id: String,
     val title: String,
+    val sourceOrigin: String,
+    val serviceName: String?,
     val origin: String?,
     val credentialName: String?,
     val waitMillis: Long?,
@@ -36,7 +44,16 @@ data class PortablePackageSettings(
     val bundledInstances: Map<String, String>,
     val installed: List<PortablePackage>,
     val waitMillis: Map<String, Long>,
+    /** Version-1 bindings retained only when their package definition is unavailable. */
     val services: List<HttpServiceBinding>,
+    val httpServices: Map<String, HttpServiceDefinition> = emptyMap(),
+    val serviceBindings: List<PackageServiceBinding> = emptyList(),
+)
+
+@Serializable
+private data class StoredServiceSettings(
+    val http: Map<String, HttpServiceDefinition> = emptyMap(),
+    val bindings: List<PackageServiceBinding> = emptyList(),
 )
 
 class PackageSettings(
@@ -118,9 +135,14 @@ class PackageSettings(
     fun removePlugin(instance: String) {
         checkNotNull(imports).remove(instance)
         secrets.clear("package:$instance:basic")
+        val serviceSettings = serviceSettings()
+        val retainedBindings = serviceSettings.bindings.filterNot { it.packageInstance == instance }
+        val retainedServices = retainUsedServices(serviceSettings.http, retainedBindings)
+        (serviceSettings.http.keys - retainedServices.keys).forEach { secrets.clear(serviceSecretKey(it)) }
         savePreferences {
             remove("origin:$instance")
             remove("wait:$instance")
+            putString(SERVICES, Json.encodeToString(StoredServiceSettings(retainedServices, retainedBindings)))
         }
         mutable.value = entries()
         onChanged()
@@ -131,36 +153,58 @@ class PackageSettings(
     private val defaults = MutableStateFlow(modeDefaults())
     val waits = defaults.asStateFlow()
 
-    private fun storedCredential(identity: PackageIdentity): BasicCredential? =
+    private fun storedCredential(reference: String): BasicCredential? {
+        val direct = secrets.read(secretKey(reference))?.let { runCatching { BasicCredential.decode(it) }.getOrNull() }
+        if (direct != null || !reference.startsWith("service/package-")) return direct
+        val instance = reference.removePrefix("service/package-").removeSuffix("/basic")
+        return legacyCredential(PackageIdentity(instance))
+    }
+
+    private fun legacyCredential(identity: PackageIdentity): BasicCredential? =
         secrets.read("package:${identity.id}:basic")?.let { runCatching { BasicCredential.decode(it) }.getOrNull() }
-
-    private fun desiredOrigin(identity: PackageIdentity): String? =
-        prefs.getString("origin:${identity.id}", null) ?: storedCredential(identity)?.origin
-
-    private fun credential(identity: PackageIdentity): BasicCredential? =
-        storedCredential(identity)?.takeIf { it.origin == desiredOrigin(identity) }
 
     fun credential(
         identity: PackageIdentity,
         origin: String,
         name: String,
-    ): BasicCredential? =
-        credential(identity)?.takeIf { saved ->
-            saved.origin == origin && sources.getValue(identity).httpBindings().any { it.credential == name }
-        }
+    ): BasicCredential? {
+        val source = sources.getValue(identity)
+        val settings = resolvedServiceSettings()
+        val candidates =
+            source
+                .httpBindings()
+                .filter { it.credential == name }
+                .mapNotNull { binding ->
+                    settings.bindings
+                        .singleOrNull { it.packageInstance == identity.id && it.sourceOrigin == binding.origin }
+                        ?.let { settings.http[it.service] }
+                }.filter { it.origin == origin }
+                .distinct()
+        require(candidates.size <= 1) { "Package HTTP credential mapping is ambiguous." }
+        val service = candidates.singleOrNull()
+        return service?.credential?.let(::storedCredential)?.takeIf { it.origin == service.origin }
+            ?: legacyCredential(identity)?.takeIf { it.origin == origin }
+    }
 
     fun load(): List<LoadedPackage> =
         sources.map { (identity, source) ->
-            val saved = credential(identity)
+            val settings = resolvedServiceSettings()
+            val packageBindings = settings.bindings.filter { it.packageInstance == identity.id }.associateBy { it.sourceOrigin }
+            val origins = packageBindings.mapValues { (_, binding) -> settings.http.getValue(binding.service).origin }
+            val configured = configurePackage(source, origins)
             LoadedPackage(
                 identity,
-                saved?.let { configurePackage(source, it.origin) } ?: source,
-                source.httpBindings().isEmpty() || saved != null,
+                configured,
+                configured.httpBindings().all { binding ->
+                    binding.credential == null || credential(identity, binding.origin, binding.credential) != null
+                },
             )
         }
 
     fun save(
         id: String,
+        sourceOrigin: String,
+        serviceName: String,
         url: String,
         username: String,
         password: String,
@@ -168,34 +212,49 @@ class PackageSettings(
         runCatching {
             val identity = sources.keys.single { it.id == id }
             val source = sources.getValue(identity)
-            require(
-                source
-                    .httpBindings()
-                    .map { it.origin }
-                    .distinct()
-                    .size == 1,
-            ) { "Configure packages with multiple origins separately." }
+            require(source.httpBindings().any { it.origin == sourceOrigin && it.credential != null }) {
+                "This package does not declare credentials for that HTTPS origin."
+            }
+            require(SERVICE_NAME.matches(serviceName)) { "Use a lowercase service name with letters, numbers, and hyphens." }
             val saved = BasicCredential.create(url, username, password)
-            configurePackage(source, saved.origin)
-            secrets.write("package:$id:basic", saved.encode())
-            savePreferences { putString("origin:$id", saved.origin) }
-            mutable.value = entries()
-            onCredentialChanged(
+            val current = resolvedServiceSettings()
+            current.http[serviceName]?.let { existing ->
+                require(existing.origin == saved.origin) { "Service $serviceName already approves ${existing.origin}." }
+            }
+            val reference =
                 com.colonelpanic.eva.data.configuration.EvaConfigurationCodec
-                    .packageSecretId(id),
-            )
+                    .serviceSecretId(serviceName)
+            val bindings =
+                current.bindings.filterNot { it.packageInstance == id && it.sourceOrigin == sourceOrigin } +
+                    PackageServiceBinding(id, sourceOrigin, serviceName)
+            val services =
+                retainUsedServices(
+                    current.http + (serviceName to HttpServiceDefinition(saved.origin, reference)),
+                    bindings,
+                )
+            validateRuntimeMappings(services, bindings)
+            secrets.write(serviceSecretKey(serviceName), saved.encode())
+            saveServiceSettings(services, bindings)
+            mutable.value = entries()
+            onCredentialChanged(reference)
             onChanged()
         }.exceptionOrNull()?.let { it.message ?: "Could not save credentials." }
 
-    fun clear(id: String) {
-        require(sources.keys.any { it.id == id })
-        secrets.clear("package:$id:basic")
-        savePreferences { remove("origin:$id") }
+    fun clear(
+        id: String,
+        sourceOrigin: String,
+    ) {
+        require(sources.keys.any { it.id == id && sources.getValue(it).httpBindings().any { binding -> binding.origin == sourceOrigin } })
+        val current = resolvedServiceSettings()
+        val removed = current.bindings.singleOrNull { it.packageInstance == id && it.sourceOrigin == sourceOrigin }
+        val bindings = current.bindings.filterNot { it.packageInstance == id && it.sourceOrigin == sourceOrigin }
+        val services = retainUsedServices(current.http, bindings)
+        removed?.service?.takeIf { it !in services }?.let { service ->
+            current.http[service]?.credential?.let(onCredentialChanged)
+            secrets.clear(serviceSecretKey(service))
+        }
+        saveServiceSettings(services, bindings)
         mutable.value = entries()
-        onCredentialChanged(
-            com.colonelpanic.eva.data.configuration.EvaConfigurationCodec
-                .packageSecretId(id),
-        )
         onChanged()
     }
 
@@ -228,24 +287,44 @@ class PackageSettings(
             override(it.name.lowercase()) ?: WaitBudget.defaultMillis(it)
         }
 
-    private fun entries(): List<PackageConfigurationEntry> =
-        sources.map { (identity, source) ->
-            PackageConfigurationEntry(
-                identity.id,
-                source.title,
-                desiredOrigin(identity),
+    private fun entries(): List<PackageConfigurationEntry> {
+        val settings = resolvedServiceSettings()
+        return sources.flatMap { (identity, source) ->
+            val configured =
                 source
                     .httpBindings()
-                    .mapNotNull { it.credential }
-                    .distinct()
-                    .singleOrNull(),
-                override(identity.id),
-                credential(identity) != null,
-            )
+                    .filter { it.credential != null }
+                    .groupBy { it.origin }
+                    .map { (sourceOrigin, bindings) ->
+                        val serviceBinding =
+                            settings.bindings.singleOrNull { it.packageInstance == identity.id && it.sourceOrigin == sourceOrigin }
+                        val service = serviceBinding?.let { settings.http[it.service] }
+                        PackageConfigurationEntry(
+                            identity.id,
+                            source.title,
+                            sourceOrigin,
+                            serviceBinding?.service,
+                            service?.origin,
+                            bindings
+                                .mapNotNull { it.credential }
+                                .distinct()
+                                .sorted()
+                                .joinToString(),
+                            override(identity.id),
+                            service?.credential?.let(::storedCredential)?.origin == service?.origin,
+                        )
+                    }
+            configured.ifEmpty {
+                listOf(
+                    PackageConfigurationEntry(identity.id, source.title, "", null, null, null, override(identity.id)),
+                )
+            }
         }
+    }
 
-    fun portable(): PortablePackageSettings =
-        PortablePackageSettings(
+    fun portable(): PortablePackageSettings {
+        val configured = resolvedServiceSettings()
+        return PortablePackageSettings(
             repositorySource,
             prefs.all
                 .mapNotNull { (key, value) ->
@@ -256,27 +335,20 @@ class PackageSettings(
                 .mapNotNull { (key, value) ->
                     if (key.startsWith("wait:") && value is Long) key.removePrefix("wait:") to value else null
                 }.toMap(),
-            prefs.all
-                .mapNotNull { (key, value) ->
-                    if (key.startsWith("origin:") && value is String) {
-                        val instance = key.removePrefix("origin:")
-                        HttpServiceBinding(
-                            instance,
-                            value,
-                            com.colonelpanic.eva.data.configuration.EvaConfigurationCodec
-                                .packageSecretId(instance),
-                        )
-                    } else {
-                        null
-                    }
-                },
+            configured.legacy,
+            configured.http,
+            configured.bindings,
         )
+    }
 
-    fun missingCredentials(services: List<HttpServiceBinding>): List<String> =
-        services.mapNotNull { service ->
-            val identity = PackageIdentity(service.packageInstance)
-            if (storedCredential(identity)?.origin == service.origin) null else service.credential
-        }
+    fun missingCredentials(settings: PortablePackageSettings): List<String> =
+        settings.httpServices.values.mapNotNull { service ->
+            service.credential?.takeIf { storedCredential(it)?.origin != service.origin }
+        } +
+            settings.services.mapNotNull { service ->
+                val identity = PackageIdentity(service.packageInstance)
+                if (legacyCredential(identity)?.origin == service.origin) null else service.credential
+            }
 
     fun validateRestore(restored: PortablePackageSettings): List<InstalledPlugin> =
         restored.installed
@@ -285,10 +357,20 @@ class PackageSettings(
                 InstalledPlugin(PackageIdentity(item.instance), item.source, item.url, definition, item.document)
             }.also(com.colonelpanic.eva.adapters.declarative.PluginInstallations::validate)
 
-    fun restore(restored: PortablePackageSettings): List<String> {
-        val installed =
-            validateRestore(restored)
+    fun restore(
+        restored: PortablePackageSettings,
+        beforePreferences: () -> Unit = {},
+    ): List<String> {
+        val installed = validateRestore(restored)
+        val targetSources =
+            bundledDefinitions
+                .mapNotNull { (name, definition) ->
+                    restored.bundledInstances[name]?.let { PackageIdentity(it) to definition }
+                }.toMap() + installed.associate { it.identity to it.definition }
+        val resolved = resolveLegacy(restored, targetSources)
+        validateRuntimeMappings(resolved.http, resolved.bindings, targetSources)
         checkNotNull(imports) { "Plugin storage could not be loaded" }.restore(installed)
+        beforePreferences()
         savePreferences {
             putString("repository", restored.repository)
             prefs.all.keys
@@ -304,7 +386,8 @@ class PackageSettings(
                 .filter { it.startsWith("wait:") || it.startsWith("origin:") }
                 .forEach(::remove)
             restored.waitMillis.forEach { (id, value) -> putLong("wait:$id", value) }
-            restored.services.forEach { service -> putString("origin:${service.packageInstance}", service.origin) }
+            putString(SERVICES, Json.encodeToString(StoredServiceSettings(resolved.http, resolved.bindings)))
+            resolved.legacy.forEach { service -> putString("origin:${service.packageInstance}", service.origin) }
         }
         defaults.value = modeDefaults()
         mutable.value = entries()
@@ -322,9 +405,136 @@ class PackageSettings(
         }
     }
 
+    fun availableBundledNames(): Set<String> = bundledDefinitions.keys
+
+    private data class ResolvedServiceSettings(
+        val http: Map<String, HttpServiceDefinition>,
+        val bindings: List<PackageServiceBinding>,
+        val legacy: List<HttpServiceBinding> = emptyList(),
+    )
+
+    private fun serviceSettings(): StoredServiceSettings =
+        prefs.getString(SERVICES, null)?.let { encoded ->
+            runCatching { Json.decodeFromString<StoredServiceSettings>(encoded) }.getOrNull()
+        } ?: StoredServiceSettings()
+
+    private fun resolvedServiceSettings(): ResolvedServiceSettings {
+        val stored = serviceSettings()
+        val legacy =
+            prefs.all.mapNotNull { (key, value) ->
+                if (key.startsWith("origin:") && value is String) {
+                    val instance = key.removePrefix("origin:")
+                    HttpServiceBinding(
+                        instance,
+                        value,
+                        com.colonelpanic.eva.data.configuration.EvaConfigurationCodec
+                            .packageSecretId(instance),
+                    )
+                } else {
+                    null
+                }
+            }
+        return resolveLegacy(
+            PortablePackageSettings("", emptyMap(), emptyList(), emptyMap(), legacy, stored.http, stored.bindings),
+            sources,
+        )
+    }
+
+    private fun resolveLegacy(
+        settings: PortablePackageSettings,
+        definitions: Map<PackageIdentity, PackageDefinition>,
+    ): ResolvedServiceSettings {
+        val services = settings.httpServices.toMutableMap()
+        val bindings = settings.serviceBindings.toMutableList()
+        val unresolved = mutableListOf<HttpServiceBinding>()
+        settings.services.forEach { legacy ->
+            val identity = PackageIdentity(legacy.packageInstance)
+            val definition = definitions[identity]
+            if (definition == null) {
+                unresolved += legacy
+            } else {
+                val name = legacyServiceName(legacy.packageInstance)
+                val credential =
+                    com.colonelpanic.eva.data.configuration.EvaConfigurationCodec
+                        .serviceSecretId(name)
+                services[name] = HttpServiceDefinition(legacy.origin, credential)
+                definition.httpBindings().map { it.origin }.distinct().forEach { sourceOrigin ->
+                    bindings.removeAll { it.packageInstance == legacy.packageInstance && it.sourceOrigin == sourceOrigin }
+                    bindings += PackageServiceBinding(legacy.packageInstance, sourceOrigin, name)
+                }
+            }
+        }
+        return ResolvedServiceSettings(services, bindings, unresolved)
+    }
+
+    private fun validateRuntimeMappings(
+        services: Map<String, HttpServiceDefinition>,
+        bindings: List<PackageServiceBinding>,
+        definitions: Map<PackageIdentity, PackageDefinition> = sources,
+    ) {
+        require(bindings.all { it.service in services }) { "Package binding names an unknown HTTP service." }
+        require(bindings.map { it.service }.toSet() == services.keys) { "Every HTTP service must be used by a package binding." }
+        bindings.groupBy { it.packageInstance }.forEach { (instance, packageBindings) ->
+            val definition = definitions[PackageIdentity(instance)] ?: return@forEach
+            packageBindings.forEach { binding -> require(definition.httpBindings().any { it.origin == binding.sourceOrigin }) }
+            packageBindings.forEach { binding ->
+                if (definition.httpBindings().any { it.origin == binding.sourceOrigin && it.credential != null }) {
+                    require(services.getValue(binding.service).credential != null) {
+                        "A credential-requiring package origin must use a service with a credential reference."
+                    }
+                }
+            }
+            definition
+                .httpBindings()
+                .filter { it.credential != null }
+                .mapNotNull { sourceBinding ->
+                    val binding = packageBindings.singleOrNull { it.sourceOrigin == sourceBinding.origin } ?: return@mapNotNull null
+                    val service = services.getValue(binding.service)
+                    Triple(service.origin, sourceBinding.credential, service.credential)
+                }.groupBy { it.first to it.second }
+                .values
+                .forEach { candidates ->
+                    require(candidates.map { it.third }.distinct().size == 1) { "Ambiguous HTTP credential mapping." }
+                }
+        }
+    }
+
+    private fun saveServiceSettings(
+        services: Map<String, HttpServiceDefinition>,
+        bindings: List<PackageServiceBinding>,
+    ) {
+        savePreferences {
+            putString(SERVICES, Json.encodeToString(StoredServiceSettings(services, bindings)))
+        }
+    }
+
+    private fun retainUsedServices(
+        services: Map<String, HttpServiceDefinition>,
+        bindings: List<PackageServiceBinding>,
+    ): Map<String, HttpServiceDefinition> {
+        val used = bindings.map { it.service }.toSet()
+        return services.filterKeys { it in used }
+    }
+
+    private fun legacyServiceName(instance: String) = "package-$instance"
+
+    private fun serviceSecretKey(name: String) = "service:$name:basic"
+
+    private fun secretKey(reference: String): String =
+        when {
+            reference.startsWith("service/") -> serviceSecretKey(reference.removePrefix("service/").removeSuffix("/basic"))
+            reference.startsWith("package/") -> "package:${reference.removePrefix("package/").removeSuffix("/basic")}:basic"
+            else -> error("Unsupported package credential reference.")
+        }
+
     // KTX edit discards the commit result; installation identity must fail closed on write failure.
     @SuppressLint("UseKtx")
     private fun savePreferences(change: SharedPreferences.Editor.() -> Unit) {
         check(prefs.edit().apply(change).commit()) { "Could not save package settings." }
+    }
+
+    private companion object {
+        const val SERVICES = "services:v2"
+        val SERVICE_NAME = Regex("[a-z][a-z0-9-]{0,63}")
     }
 }

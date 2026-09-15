@@ -22,6 +22,18 @@ object EvaPermissions {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
         }
 
-    fun missing(context: Context): List<String> =
-        REQUIRED.filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
+    /** The grants the messaging screen reports, in the order it shows them. */
+    val MESSAGING: List<String> =
+        listOf(
+            Manifest.permission.READ_CONTACTS,
+            Manifest.permission.READ_SMS,
+            Manifest.permission.SEND_SMS,
+        )
+
+    fun missing(context: Context): List<String> = REQUIRED.filterNot { isGranted(context, it) }
+
+    fun isGranted(
+        context: Context,
+        permission: String,
+    ): Boolean = ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
 }

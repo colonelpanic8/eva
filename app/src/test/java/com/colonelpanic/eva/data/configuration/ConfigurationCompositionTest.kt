@@ -13,10 +13,10 @@ class ConfigurationCompositionTest {
         val encoded = EvaConfigurationCodec.encode(EvaConfigurationDocument())
 
         assertTrue(encoded.contains("format: eva\n"))
-        assertTrue(encoded.contains("version: 1\n"))
+        assertTrue(encoded.contains("version: 2\n"))
         val missingFormat =
             assertThrows(IllegalArgumentException::class.java) {
-                EvaConfigurationCodec.decode("version: 1\n")
+                EvaConfigurationCodec.decode("version: 2\n")
             }
         val missingVersion =
             assertThrows(IllegalArgumentException::class.java) {
@@ -36,6 +36,82 @@ class ConfigurationCompositionTest {
             expected,
             EvaConfigurationCodec.resolve(reader(mapOf(EvaConfigurationCodec.FILE_NAME to encoded))).configuration,
         )
+    }
+
+    @Test
+    fun `version one package service remains readable and next complete write uses version two`() {
+        val current = fullConfiguration()
+        val legacyCredential = EvaConfigurationCodec.packageSecretId(INSTALLED_INSTANCE)
+        val legacy =
+            current.copy(
+                packages =
+                    current.packages.copy(
+                        services = listOf(HttpServiceBinding(INSTALLED_INSTANCE, SERVICE_ORIGIN, legacyCredential)),
+                        serviceBindings = emptyList(),
+                    ),
+                services = EvaConfiguration.Services(emptyMap()),
+                credentials =
+                    current.credentials
+                        .copy(
+                            required =
+                                current.credentials.required.filterNot { it.id.startsWith("service/") } +
+                                    SecretReference(legacyCredential, "http-basic", SERVICE_ORIGIN),
+                        ).let { it.copy(required = it.required.sortedBy(SecretReference::id)) },
+            )
+        val versionOne = EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(legacy).copy(version = 1))
+
+        assertEquals(legacy, EvaConfigurationCodec.resolve(reader(mapOf("eva.yaml" to versionOne))).configuration)
+        assertTrue(EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(legacy)).contains("version: 2\n"))
+    }
+
+    @Test
+    fun `provider endpoints and orphan HTTP credentials are rejected`() {
+        val current = fullConfiguration()
+        val ignoredProviderEndpoint =
+            current.copy(
+                credentials =
+                    current.credentials.copy(
+                        required =
+                            current.credentials.required +
+                                SecretReference("provider/openai-api", "openai-api-key", "https://ignored.example.test"),
+                    ),
+            )
+        val orphan =
+            current.copy(
+                credentials =
+                    current.credentials.copy(
+                        required =
+                            current.credentials.required +
+                                SecretReference("service/orphan/basic", "http-basic", "https://orphan.example.test"),
+                    ),
+            )
+        val missingPackageCredential =
+            current.copy(
+                services =
+                    current.services.copy(
+                        http = current.services.http.mapValues { (_, service) -> service.copy(credential = null) },
+                    ),
+                credentials =
+                    current.credentials.copy(
+                        required = current.credentials.required.filterNot { it.id.startsWith("service/") },
+                    ),
+            )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            EvaConfigurationCodec.resolve(
+                reader(
+                    mapOf("eva.yaml" to EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(ignoredProviderEndpoint))),
+                ),
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            EvaConfigurationCodec.resolve(reader(mapOf("eva.yaml" to EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(orphan)))))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            EvaConfigurationCodec.resolve(
+                reader(mapOf("eva.yaml" to EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(missingPackageCredential)))),
+            )
+        }
     }
 
     @Test
@@ -140,7 +216,9 @@ class ConfigurationCompositionTest {
                         installed = emptyList(),
                         waitMillis = emptyMap(),
                         services = emptyList(),
+                        serviceBindings = emptyList(),
                     ),
+                services = EvaConfiguration.Services(emptyMap()),
                 extensions = inherited.configuration.extensions.copy(grants = emptyList()),
                 credentials = inherited.configuration.credentials.copy(required = emptyList()),
                 remembered = inherited.configuration.remembered.copy(chosenNumbers = emptyMap()),
@@ -153,7 +231,8 @@ class ConfigurationCompositionTest {
         assertEquals(emptyMap<String, String>(), override.packages?.bundledInstances)
         assertEquals(emptyList<PortablePackage>(), override.packages?.installed)
         assertEquals(emptyMap<String, Long>(), override.packages?.waitMillis)
-        assertEquals(emptyList<HttpServiceBinding>(), override.packages?.services)
+        assertEquals(emptyList<PackageServiceBinding>(), override.packages?.serviceBindings)
+        assertEquals(emptyMap<String, HttpServiceDefinition>(), override.services?.http)
         assertEquals(emptyList<PortableGrant>(), override.extensions?.grants)
         assertEquals(emptyList<SecretReference>(), override.credentials?.required)
         assertEquals(emptyMap<String, Long>(), override.remembered?.chosenNumbers)
@@ -199,7 +278,7 @@ class ConfigurationCompositionTest {
         }
         listOf("../outside.yaml", "/absolute.yaml", "nested/../../outside.yaml", "nested\\outside.yaml").forEach { path ->
             assertThrows(IllegalArgumentException::class.java) {
-                EvaConfigurationCodec.decode("format: eva\nversion: 1\ninclude:\n- '$path'\n")
+                EvaConfigurationCodec.decode("format: eva\nversion: 2\ninclude:\n- '$path'\n")
             }
         }
     }
@@ -261,14 +340,25 @@ class ConfigurationCompositionTest {
                             ),
                         ),
                     waitMillis = mapOf(INSTALLED_INSTANCE to 45_000, "typed" to 25_000, "voice" to 15_000),
-                    services =
+                    services = emptyList(),
+                    serviceBindings =
                         listOf(
-                            HttpServiceBinding(
+                            PackageServiceBinding(
                                 packageInstance = INSTALLED_INSTANCE,
-                                origin = SERVICE_ORIGIN,
-                                credential = EvaConfigurationCodec.packageSecretId(INSTALLED_INSTANCE),
+                                sourceOrigin = SERVICE_ORIGIN,
+                                service = SERVICE_NAME,
                             ),
                         ),
+                ),
+            services =
+                EvaConfiguration.Services(
+                    mapOf(
+                        SERVICE_NAME to
+                            HttpServiceDefinition(
+                                SERVICE_ORIGIN,
+                                EvaConfigurationCodec.serviceSecretId(SERVICE_NAME),
+                            ),
+                    ),
                 ),
             extensions =
                 EvaConfiguration.Extensions(
@@ -288,14 +378,14 @@ class ConfigurationCompositionTest {
                     required =
                         listOf(
                             SecretReference(
-                                id = EvaConfigurationCodec.packageSecretId(INSTALLED_INSTANCE),
-                                kind = "http-basic",
-                                endpoint = SERVICE_ORIGIN,
-                            ),
-                            SecretReference(
                                 id = "provider/broker",
                                 kind = "broker-link",
                                 endpoint = "ws://localhost:8765/device",
+                            ),
+                            SecretReference(
+                                id = EvaConfigurationCodec.serviceSecretId(SERVICE_NAME),
+                                kind = "http-basic",
+                                endpoint = SERVICE_ORIGIN,
                             ),
                         ),
                 ),
@@ -314,6 +404,7 @@ class ConfigurationCompositionTest {
         const val BUNDLED_INSTANCE = "11111111-1111-1111-8111-111111111111"
         const val INSTALLED_INSTANCE = "22222222-2222-2222-8222-222222222222"
         const val SERVICE_ORIGIN = "https://service.example.test"
+        const val SERVICE_NAME = "example-service"
         val MESSAGING_IDENTITY = "10123:com.example.chat:1700000000000:${"a".repeat(64)}"
         val PACKAGE_DOCUMENT =
             """

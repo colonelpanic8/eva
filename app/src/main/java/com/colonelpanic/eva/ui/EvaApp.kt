@@ -27,13 +27,14 @@ import com.colonelpanic.eva.ui.prompt.PromptActions
 import com.colonelpanic.eva.ui.prompt.PromptScreen
 import com.colonelpanic.eva.ui.prompt.PromptUiState
 import com.colonelpanic.eva.ui.settings.ExtensionsScreen
+import com.colonelpanic.eva.ui.settings.MessagingScreen
 import com.colonelpanic.eva.ui.settings.SettingsActions
 import com.colonelpanic.eva.ui.settings.SettingsScreen
 import com.colonelpanic.eva.ui.settings.SettingsUiState
 import com.colonelpanic.eva.ui.theme.EvaTheme
 import kotlinx.coroutines.launch
 
-internal enum class EvaDestination { CONVERSATION, EXTENSIONS, PROMPT, SETTINGS, ABOUT }
+internal enum class EvaDestination { CONVERSATION, EXTENSIONS, MESSAGING, PROMPT, SETTINGS, ABOUT }
 
 /**
  * Top-level destinations behind a navigation drawer. A navigation library would only
@@ -122,6 +123,10 @@ fun EvaApp(
 
             EvaDestination.EXTENSIONS -> {
                 ExtensionsScreen(state = settings, actions = settingsActions, onOpenDrawer = { openDrawer() })
+            }
+
+            EvaDestination.MESSAGING -> {
+                MessagingScreen(state = settings, actions = settingsActions, onOpenDrawer = { openDrawer() })
             }
 
             EvaDestination.PROMPT -> {
