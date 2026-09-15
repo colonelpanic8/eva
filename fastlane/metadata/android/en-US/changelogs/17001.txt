@@ -1,0 +1,2 @@
+* Fixed: Assistant contact lookup, SMS reads/sends, and Shizuku device-setting actions reuse existing permissions without requiring EVA’s main activity. Missing grants still require setup in EVA.
+* Fixed: Android’s lock-screen assistant launch callback now opens EVA’s secure hands-free screen and starts or joins voice with the conversation hidden.

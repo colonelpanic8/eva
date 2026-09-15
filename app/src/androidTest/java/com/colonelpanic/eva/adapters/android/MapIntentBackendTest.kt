@@ -1,6 +1,7 @@
 package com.colonelpanic.eva.adapters.android
 
 import android.content.Intent
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.colonelpanic.eva.capability.InvocationStatus
 import kotlinx.coroutines.runBlocking
@@ -30,7 +31,7 @@ class MapIntentBackendTest {
     @Test
     fun absentSurfaceNeverLaunchesAnIntent() =
         runBlocking {
-            val backend = MapIntentBackend(AndroidIntentHost())
+            val backend = MapIntentBackend(AndroidIntentHost(ApplicationProvider.getApplicationContext()))
             assertNotNull(backend.unavailableReason())
             val result = backend.execute(mapOf("destination" to "Golden Gate Park"))
             assertEquals(InvocationStatus.NOT_EXECUTED, result.status)

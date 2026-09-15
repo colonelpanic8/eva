@@ -1,6 +1,7 @@
 package com.colonelpanic.eva.adapters.android
 
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.activity.ComponentActivity
@@ -24,7 +25,9 @@ fun interface AssistantLauncher {
     fun start(intent: Intent)
 }
 
-class AndroidIntentHost {
+class AndroidIntentHost(
+    private val context: Context,
+) {
     private var surface: WeakReference<ComponentActivity>? = null
     private var assistant: AssistantLauncher? = null
     private var requester: PermissionRequester? = null
@@ -58,8 +61,8 @@ class AndroidIntentHost {
 
     suspend fun ensurePermission(permission: String): Boolean =
         withContext(Dispatchers.Main.immediate) {
-            val activity = resumedSurface() ?: return@withContext false
-            if (ContextCompat.checkSelfPermission(activity, permission) == PackageManager.PERMISSION_GRANTED) return@withContext true
+            if (ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED) return@withContext true
+            if (resumedSurface() == null) return@withContext false
             val requester = requester ?: return@withContext false
             if (pendingPermission != null) return@withContext false
             suspendCancellableCoroutine { continuation ->
@@ -72,6 +75,15 @@ class AndroidIntentHost {
     suspend fun unavailableReason(): String? =
         withContext(Dispatchers.Main.immediate) {
             if (starter() == null) "Open EVA before sending this request." else null
+        }
+
+    suspend fun permissionUnavailableReason(permission: String): String? =
+        withContext(Dispatchers.Main.immediate) {
+            if (ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED || resumedSurface() != null) {
+                null
+            } else {
+                "Open EVA to grant the required Android permission before sending this request."
+            }
         }
 
     suspend fun launch(

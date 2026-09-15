@@ -6,6 +6,8 @@ import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
 import android.service.voice.VoiceInteractionService
+import android.speech.RecognizerIntent
+import com.colonelpanic.eva.MainActivity
 import java.lang.ref.WeakReference
 
 /**
@@ -19,6 +21,15 @@ import java.lang.ref.WeakReference
  * only a weak route back to that system-owned service so its test button can show the same panel.
  */
 class EvaVoiceInteractionService : VoiceInteractionService() {
+    override fun onLaunchVoiceAssistFromKeyguard() {
+        startActivity(
+            Intent(this, MainActivity::class.java)
+                .setAction(RecognizerIntent.ACTION_VOICE_SEARCH_HANDS_FREE)
+                .putExtra(RecognizerIntent.EXTRA_SECURE, true)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }
+
     override fun onReady() {
         super.onReady()
         active = WeakReference(this)

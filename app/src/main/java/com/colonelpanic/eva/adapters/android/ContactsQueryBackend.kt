@@ -24,7 +24,7 @@ class ContactsQueryBackend(
 ) : ExecutionBackend {
     private val resolver = context.applicationContext.contentResolver
 
-    override suspend fun unavailableReason(): String? = host.unavailableReason()
+    override suspend fun unavailableReason(): String? = host.permissionUnavailableReason(Manifest.permission.READ_CONTACTS)
 
     override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome {
         val query = arguments.getValue("query").trim()

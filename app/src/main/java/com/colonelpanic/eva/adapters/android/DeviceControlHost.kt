@@ -15,9 +15,8 @@ import kotlinx.serialization.json.JsonObject
 import java.lang.ref.WeakReference
 
 /**
- * Owns the device-control user service. Deliberately separate from [ShizukuShellHost]: that host
- * gates every AppFunctions call on EVA being on screen, while screen control exists precisely to
- * run while another app is in front. Only the one-time permission prompt needs EVA's own surface.
+ * Owns the device-control user service. Like [ShizukuShellHost], only the one-time
+ * permission prompt needs EVA's own surface.
  */
 @SuppressLint("NewApi")
 class DeviceControlHost(

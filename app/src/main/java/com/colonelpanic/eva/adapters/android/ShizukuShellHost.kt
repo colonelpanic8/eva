@@ -101,8 +101,9 @@ class ShizukuShellHost(
             when {
                 !isShizukuInstalled() -> NOT_INSTALLED
                 !runCatching { Shizuku.pingBinder() }.getOrDefault(false) -> SERVER_STOPPED
+                Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED -> null
+                permissionDenied -> PERMISSION_DENIED
                 resumedSurface() == null -> SURFACE_REQUIRED
-                permissionDenied && Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED -> PERMISSION_DENIED
                 else -> null
             }
         }
@@ -129,9 +130,9 @@ class ShizukuShellHost(
         unavailableReason()?.let { reason ->
             if (reason != PERMISSION_DENIED) throw ShizukuUnavailableException(reason)
         }
-        if (resumedSurface() == null) throw ShizukuUnavailableException(SURFACE_REQUIRED)
-        if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED && !requestPermission()) {
-            throw ShizukuUnavailableException(PERMISSION_DENIED)
+        if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
+            if (resumedSurface() == null) throw ShizukuUnavailableException(SURFACE_REQUIRED)
+            if (!requestPermission()) throw ShizukuUnavailableException(PERMISSION_DENIED)
         }
         service?.takeIf { it.asBinder().isBinderAlive }?.let { return it }
         pendingBinding?.let { return it.await() }
@@ -182,7 +183,7 @@ class ShizukuShellHost(
         const val NOT_INSTALLED = "Shizuku is not installed. Install and start Shizuku to use device-state actions."
         const val SERVER_STOPPED = "Shizuku is not running. Start it before using device-state actions."
         const val PERMISSION_DENIED = "Shizuku access was denied. Allow EVA in Shizuku before trying again."
-        const val SURFACE_REQUIRED = "Open EVA before using a device-state action."
+        const val SURFACE_REQUIRED = "Open EVA once to allow Shizuku access before using device-state actions."
 
         private const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
         private const val PERMISSION_REQUEST_CODE = 62117

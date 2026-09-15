@@ -47,7 +47,7 @@ class SmsSendBackend(
         when {
             Build.VERSION.SDK_INT < Build.VERSION_CODES.S -> SmsSendResults.UNSUPPORTED_ANDROID
             !app.packageManager.hasSystemFeature(PackageManager.FEATURE_TELEPHONY) -> SmsSendResults.NO_TELEPHONY
-            else -> host.unavailableReason()
+            else -> host.permissionUnavailableReason(Manifest.permission.SEND_SMS)
         }
 
     override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome {

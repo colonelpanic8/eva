@@ -96,7 +96,7 @@ class EvaApplication :
     Application(),
     VoiceSessionHost,
     TurnWorkHost {
-    val intentHost = AndroidIntentHost()
+    val intentHost = AndroidIntentHost(this)
     val shizukuShellHost by lazy { if (Build.VERSION.SDK_INT >= 37) ShizukuShellHost(this) else null }
 
     /** Screen control needs Shizuku too, but not Android 17: its helper only needs UiAutomation. */

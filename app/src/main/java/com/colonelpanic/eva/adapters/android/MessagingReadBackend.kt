@@ -21,7 +21,7 @@ class MessagingReadBackend(
         MESSAGES,
     }
 
-    override suspend fun unavailableReason(): String? = host.unavailableReason()
+    override suspend fun unavailableReason(): String? = host.permissionUnavailableReason(Manifest.permission.READ_SMS)
 
     override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome {
         if (!host.ensurePermission(Manifest.permission.READ_SMS)) {

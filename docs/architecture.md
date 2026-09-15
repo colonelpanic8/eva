@@ -146,11 +146,18 @@ for concrete identity, schema, waiting, and authorization rules.
   [messaging setup](operations.md#messaging-setup-and-verification) for setup and
   current verification limits.
 - `assist/` implements the Android voice-interaction service, overlay session, and
-  delegated recognition service. Assistant selection does not confer unrestricted
+  delegated recognition service. Android's keyguard launch callback opens the
+  hands-free activity above the lock screen, starts or joins voice, and hides the
+  conversation. This callback is JVM-tested; locked-device voice verification is
+  pending. Assistant selection does not confer unrestricted
   background launch or device access.
 - Optional Shizuku adapters implement Settings AppFunctions and bounded UI observation,
   text replacement, and taps. UI mutations consume a recent observation and recheck
-  target identity. General AppFunctions discovery/execution and broader device
+  target identity. Existing Shizuku grants allow device-setting actions without
+  EVA's main activity; that activity is needed only to request a missing grant.
+  Contact and SMS Android permission checks likewise reuse existing grants from
+  the assistant without requiring the main activity. Platform restrictions on
+  locked-device actions still apply. General AppFunctions discovery/execution and broader device
   automation are not implied by those implemented operations.
 
 Paseo and general MCP adapters remain future work. They should register capabilities

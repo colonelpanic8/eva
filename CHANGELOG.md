@@ -4,6 +4,13 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.17.1] - 2026-09-14
+
+### Fixed
+
+- Assistant contact lookup, SMS reads/sends, and Shizuku device-setting actions reuse existing permissions without requiring EVA’s main activity. Missing grants still require setup in EVA.
+- Android’s lock-screen assistant launch callback now opens EVA’s secure hands-free screen and starts or joins voice with the conversation hidden.
+
 ## [0.17.0] - 2026-09-14
 
 ### Changed

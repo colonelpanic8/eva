@@ -11,6 +11,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -71,7 +72,7 @@ class CaffeinePackageTest {
         runBlocking {
             val capability = PackageCodec.decode(source).capabilities.first()
             val request = BindingArguments(capability, emptyMap()).intent(capability.binding as DeclarativeBinding.Intent)
-            val intents = AndroidIntentHost()
+            val intents = AndroidIntentHost(RuntimeEnvironment.getApplication())
             val host =
                 AndroidDeclarativeHost(
                     intents,
@@ -81,7 +82,7 @@ class CaffeinePackageTest {
                         ->
                         null
                     }),
-                    org.robolectric.RuntimeEnvironment.getApplication(),
+                    RuntimeEnvironment.getApplication(),
                 )
             intents.attachAssistant { throw ActivityNotFoundException() }
             val outcome = host.launch(request)

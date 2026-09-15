@@ -64,7 +64,17 @@ class AndroidContentHostTest {
     private lateinit var provider: FakeProvider
 
     private fun host(clock: () -> Long = { android.os.SystemClock.elapsedRealtime() }) =
-        AndroidDeclarativeHost(AndroidIntentHost(), PackageHttpClient(credential = { _, _ -> null }), app, clock)
+        AndroidDeclarativeHost(
+            AndroidIntentHost(RuntimeEnvironment.getApplication()),
+            PackageHttpClient(credential = {
+                _,
+                _,
+                ->
+                null
+            }),
+            app,
+            clock,
+        )
 
     @Before
     fun register() {

@@ -78,7 +78,13 @@ class ManagedGitDeviceTest {
             capabilities = EvaConfiguration.Capabilities(true),
             messaging = EvaConfiguration.Messaging(false, emptyList()),
             prompt = EvaConfiguration.Prompt("https://example.com/prompt.yaml", listOf(PromptComponent("test", instruction = "Test."))),
-            packages = EvaConfiguration.Packages("https://example.com/packages.json", emptyMap(), emptyList(), emptyMap(), emptyList()),
+            packages =
+                EvaConfiguration.Packages(
+                    repository = "https://example.com/packages.json",
+                    installed = emptyList(),
+                    waitMillis = emptyMap(),
+                    services = emptyList(),
+                ),
             services = EvaConfiguration.Services(emptyMap()),
             extensions = EvaConfiguration.Extensions(emptyList()),
             spotify = EvaConfiguration.Spotify(null),
