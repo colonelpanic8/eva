@@ -336,7 +336,7 @@ reads**, never in the startup permission sweep or by a model tool. The screen
 reports current access and links to Android permission settings for denial or
 revocation. A grant is checked again before every query, and the resolver enforces
 access at submission. Provider caller checks can still deny the operation.
-Paseo's proposed permissionless provider needs no Android prompt; its own caller
+Paseo's permissionless provider needs no Android prompt; its own caller
 identity policy remains authoritative. Visibility and an EVA extension grant
 are never substitutes for that policy.
 
@@ -361,15 +361,28 @@ Android grant or erase a previously saved desired authorization; manage these
 through Android settings and `device.authorizations` respectively.
 
 The mixed fixtures [Mova](examples/mova-content.json) and
-[Paseo](examples/paseo-content.json) demonstrate read/discover followed by an intent
-using the returned ID, with no AIDL extension service. Their projection columns
-and Mova's `mova://todo?id=` handoff are illustrative authoring contracts to align
-with the installed app. The Paseo provider is proposed, not shipped or
-device-verified by EVA. Both fixtures are decoded in JVM tests; fake-provider
-Robolectric tests cover Android execution. Mova's `/templates`, `/todos`,
-`/todos/{id}` and `/agenda` query shapes and Paseo's `/workspaces`, `/agents` and
-`paseo://agent?agentId=` shape are represented. Read-then-handoff still follows the
-current separate-request policy described below.
+[Paseo](examples/paseo-content.json) are snapshots of the installable
+[`eva-extensions` packages](https://github.com/colonelpanic8/eva-extensions/tree/main/packages).
+They demonstrate read/discover followed by an intent using the returned ID,
+with no AIDL extension service. JVM tests decode these exact definitions;
+fake-provider Robolectric tests cover Android execution. Device verification of
+these integrations remains pending.
+
+Mova 7.0.1 exposes `/templates`, `/todos`, `/todos/{id}` and `/agenda`. The package
+uses the provider's actual columns, string `day`/`week` agenda span and boolean
+query flags. Template `key` feeds capture's `template` slot; todo `id` feeds
+`mova://open?id=` and other actions. Todos without an Org ID retain `file`, `pos`
+and `title` for those intent actions. Mova uses its active server and credentials;
+its provider ignores SQL selection, so these reads use URI parameters.
+
+Paseo's `android-intents` branch implements `/workspaces` and `/agents` at
+`sh.paseo.assistant` (provider commit `3d9943c7df`). Both return `id` and `name`;
+retain `serverId` when handing an agent or workspace to an intent, since IDs
+belong to a host. Rows reflect Paseo's last foreground catalog publish and can
+be incomplete. The provider rejects SQL filtering and enforces its own EVA
+package-family caller check. Its debug authority `sh.paseo.debug.assistant` is
+outside this shared package and EVA's explicit visibility entries. Read-then-handoff
+still follows the current separate-request policy described below.
 
 HTTP fields: `kind`, `origin`, `method`, `path`, `parameters`, `maxResponseBytes`,
 `result`, optional `requestBody` and `credential`. Origins are HTTPS scheme/host

@@ -1,22 +1,23 @@
 {
   "formatVersion": 1,
-  "id": "example.mova-content",
-  "version": "0.1.0",
-  "title": "Mova content and handoffs",
-  "androidPackages": [
-    "com.colonelpanic.mova"
-  ],
+  "id": "android.mova",
+  "version": "0.2.0",
+  "title": "Mova",
   "capabilities": [
     {
       "tool": {
-        "name": "templates",
-        "title": "Read Mova templates",
-        "description": "Read Mova templates. Returned data is limited to the selected provider response.",
+        "name": "list_templates",
+        "title": "List capture templates",
+        "description": "Read capture templates from Mova's active server. Requires Mova login and Android READ_TODOS access granted in EVA extension settings. Use key as the template argument to create_todo or capture_todo. prompts_json describes template prompts; it does not add arguments to this package. Results are bounded and may omit templates.",
         "inputSchema": {
           "type": "object",
           "properties": {},
           "required": [],
           "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
         }
       },
       "effects": "read",
@@ -32,33 +33,44 @@
           "base": "content://com.colonelpanic.mova.provider/templates"
         },
         "projection": {
-          "id": "string",
-          "title": "string"
+          "key": "string",
+          "name": "string",
+          "is_default": "boolean",
+          "title_prompt": "string",
+          "prompts_json": "string",
+          "capture_uri": "string"
         },
-        "maxRows": 20,
-        "maxBytes": 8000
+        "maxRows": 50,
+        "maxBytes": 14000
       }
     },
     {
       "tool": {
-        "name": "todos",
-        "title": "Read Mova todos",
-        "description": "Read Mova todos. Returned data is limited to the selected provider response.",
+        "name": "find_todos",
+        "title": "Find todos",
+        "description": "Search todos on Mova's active server and return bounded rows. Requires Mova login and Android READ_TODOS access granted in EVA extension settings. Use a returned id in read_todo, open_todo, or a separately requested mutation; if id is null, use file, pos, and title with an intent action. q is passed to Mova's search. Only the requested page is searched; absence does not prove no todo exists.",
         "inputSchema": {
           "type": "object",
           "properties": {
             "q": {
               "type": "string",
-              "maxLength": 200
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Mova server search text."
             },
             "limit": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 20
+              "maximum": 50,
+              "description": "Maximum server results. Defaults to 25."
             }
           },
           "required": [],
           "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
         }
       },
       "effects": "read",
@@ -79,36 +91,50 @@
             },
             "limit": {
               "argument": "limit",
-              "type": "integer"
+              "type": "integer",
+              "default": 25
             }
           }
         },
         "projection": {
           "id": "string",
-          "title": "string"
+          "file": "string",
+          "pos": "integer",
+          "title": "string",
+          "state": "string",
+          "priority": "string",
+          "scheduled": "string",
+          "deadline": "string",
+          "tags": "string",
+          "category": "string"
         },
-        "maxRows": 20,
-        "maxBytes": 8000
+        "maxRows": 50,
+        "maxBytes": 14000
       }
     },
     {
       "tool": {
-        "name": "todo",
-        "title": "Read Mova todo",
-        "description": "Read Mova todo. Returned data is limited to the selected provider response.",
+        "name": "read_todo",
+        "title": "Read todo by id",
+        "description": "Read a todo with a known nonempty Org id from Mova's active server. Requires Mova login and Android READ_TODOS access granted in EVA extension settings. Use find_todos to discover ids. IDs must be a single path segment; todos without an id can be opened using file, pos, and title through open_todo.",
         "inputSchema": {
           "type": "object",
           "properties": {
             "id": {
               "type": "string",
               "minLength": 1,
-              "maxLength": 200
+              "maxLength": 500,
+              "description": "Org id returned by find_todos or read_agenda; no slashes or dot segments."
             }
           },
           "required": [
             "id"
           ],
           "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
         }
       },
       "effects": "read",
@@ -131,39 +157,61 @@
         },
         "projection": {
           "id": "string",
-          "title": "string"
+          "file": "string",
+          "pos": "integer",
+          "title": "string",
+          "state": "string",
+          "priority": "string",
+          "scheduled": "string",
+          "deadline": "string",
+          "tags": "string",
+          "category": "string",
+          "scheduled_repeater": "string",
+          "deadline_repeater": "string",
+          "olpath": "string",
+          "completed_at": "string"
         },
-        "maxRows": 20,
-        "maxBytes": 8000
+        "maxRows": 1,
+        "maxBytes": 14000
       }
     },
     {
       "tool": {
-        "name": "agenda",
-        "title": "Read Mova agenda",
-        "description": "Read Mova agenda. Returned data is limited to the selected provider response.",
+        "name": "read_agenda",
+        "title": "Read agenda",
+        "description": "Read a bounded day or week agenda from Mova's active server. Requires Mova login and Android READ_TODOS access granted in EVA extension settings. Defaults are chosen by Mova when omitted. Use returned id, or file/pos/title when id is null, in a later intent action. This reads agenda rows; open_agenda opens Mova's UI.",
         "inputSchema": {
           "type": "object",
           "properties": {
             "date": {
               "type": "string",
               "minLength": 10,
-              "maxLength": 10
+              "maxLength": 10,
+              "description": "Agenda date as YYYY-MM-DD. Omit for Mova's default date."
             },
             "span": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 7
+              "type": "string",
+              "enum": [
+                "day",
+                "week"
+              ],
+              "description": "Agenda span. Mova defaults to day."
             },
             "include_overdue": {
-              "type": "boolean"
+              "type": "boolean",
+              "description": "Include overdue todos."
             },
             "include_completed": {
-              "type": "boolean"
+              "type": "boolean",
+              "description": "Include completed todos."
             }
           },
           "required": [],
           "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
         }
       },
       "effects": "read",
@@ -184,7 +232,7 @@
             },
             "span": {
               "argument": "span",
-              "type": "integer"
+              "type": "string"
             },
             "include_overdue": {
               "argument": "include_overdue",
@@ -198,51 +246,901 @@
         },
         "projection": {
           "id": "string",
-          "title": "string"
+          "file": "string",
+          "pos": "integer",
+          "title": "string",
+          "state": "string",
+          "priority": "string",
+          "scheduled": "string",
+          "deadline": "string",
+          "tags": "string",
+          "category": "string",
+          "agenda_line": "string",
+          "date_relevance": "string",
+          "completed_at": "string"
         },
-        "maxRows": 20,
-        "maxBytes": 8000
+        "maxRows": 50,
+        "maxBytes": 14000
       }
     },
     {
       "tool": {
-        "name": "open_todo",
-        "title": "Open Mova todo",
-        "description": "Open Mova todo. Returned data is limited to the selected provider response.",
+        "name": "create_todo",
+        "title": "Create todo",
+        "description": "Ask Mova 7.0.1 or later on Android to create a todo through a capture template. Title is required. Template selects a known Mova capture-template key; scheduled, deadline, priority, tags, and state are universal capture values. Body is used only when the chosen template declares a body prompt. This package forces Mova's native confirmation sheet. A successful EVA receipt proves handoff only, not creation.",
         "inputSchema": {
           "type": "object",
           "properties": {
-            "id": {
+            "title": {
               "type": "string",
               "minLength": 1,
-              "maxLength": 200
+              "maxLength": 500,
+              "description": "Heading text. Mova fills the template's first required string prompt with this value."
+            },
+            "template": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Known Mova capture-template key. When omitted, Mova uses the active server's default template, then default."
+            },
+            "scheduled": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "description": "YYYY-MM-DD or YYYY-MM-DDTHH:MM, optionally followed by a space and an Org repeater such as +1w, ++1d, or .+2m."
+            },
+            "deadline": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "description": "YYYY-MM-DD or YYYY-MM-DDTHH:MM, optionally followed by a space and an Org repeater such as +1w, ++1d, or .+2m."
+            },
+            "priority": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1,
+              "description": "One priority letter, such as A."
+            },
+            "tags": {
+              "type": "string",
+              "maxLength": 2000,
+              "description": "Comma-separated tag names."
+            },
+            "state": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100,
+              "description": "Todo keyword sent verbatim, such as TODO or NEXT."
+            },
+            "body": {
+              "type": "string",
+              "maxLength": 16000,
+              "description": "Body capture value. Mova's server applies it only when the selected template declares a body prompt."
             }
           },
           "required": [
-            "id"
+            "title"
           ],
+          "additionalProperties": false
+        }
+      },
+      "effects": "write",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true
+      },
+      "receipts": {
+        "success": "Todo creation request handed to Mova. Mova will ask for confirmation; creation is not verified by EVA.",
+        "handlerMissing": "Mova 7.0.1 or later is not installed or cannot handle todo creation."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.intent.action.VIEW",
+        "package": "com.colonelpanic.mova",
+        "uri": {
+          "base": "mova://create",
+          "query": {
+            "title": {
+              "argument": "title",
+              "type": "string",
+              "required": true
+            },
+            "template": {
+              "argument": "template",
+              "type": "string"
+            },
+            "scheduled": {
+              "argument": "scheduled",
+              "type": "string"
+            },
+            "deadline": {
+              "argument": "deadline",
+              "type": "string"
+            },
+            "priority": {
+              "argument": "priority",
+              "type": "string"
+            },
+            "tags": {
+              "argument": "tags",
+              "type": "string"
+            },
+            "state": {
+              "argument": "state",
+              "type": "string"
+            },
+            "body": {
+              "argument": "body",
+              "type": "string"
+            },
+            "confirm": {
+              "value": true,
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "capture_todo",
+        "title": "Open typing capture",
+        "description": "Open Mova's Android typing capture dialog, optionally prefilled and with a known capture-template key selected. The user reviews or edits the text and submits in Mova. EVA observes only the handoff and does not receive the dialog result.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Optional text with which to prefill the typing dialog."
+            },
+            "template": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Known Mova capture-template key to select."
+            },
+            "widgetId": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647,
+              "description": "Optional Android widget ID whose saved template is used when template is omitted."
+            }
+          },
+          "required": [],
           "additionalProperties": false
         }
       },
       "effects": "external_handoff",
       "execution": {
         "mode": "handoff",
-        "requiresForeground": true,
-        "maxWaitMillis": 10000
+        "requiresForeground": true
+      },
+      "receipts": {
+        "success": "Mova's typing capture dialog opened. Submission or cancellation is not observed by EVA.",
+        "handlerMissing": "Mova 7.0.1 or later is not installed or cannot open the typing capture dialog."
       },
       "binding": {
         "kind": "android.intent",
         "action": "android.intent.action.VIEW",
+        "package": "com.colonelpanic.mova",
         "uri": {
-          "base": "mova://todo",
+          "base": "mova://capture",
+          "query": {
+            "title": {
+              "argument": "title",
+              "type": "string"
+            },
+            "template": {
+              "argument": "template",
+              "type": "string"
+            },
+            "widgetId": {
+              "argument": "widgetId",
+              "type": "integer"
+            }
+          }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "capture_todo_voice",
+        "title": "Capture todo by voice",
+        "description": "Start Mova's Android voice-capture flow. Mova opens the system speech recognizer and automatically submits its first recognized phrase through the selected capture template. EVA observes only the activity handoff and does not receive success, failure, or cancellation data.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "template": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Known Mova capture-template key to select."
+            },
+            "widgetId": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647,
+              "description": "Optional Android widget ID whose saved template is used when template is omitted."
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "effects": "write",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true
+      },
+      "receipts": {
+        "success": "Mova's voice-capture flow opened. Recognition and todo creation are not verified by EVA.",
+        "handlerMissing": "Mova 7.0.1 or later is not installed or cannot start voice capture."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.intent.action.VIEW",
+        "package": "com.colonelpanic.mova",
+        "uri": {
+          "base": "mova://capture-voice",
+          "query": {
+            "template": {
+              "argument": "template",
+              "type": "string"
+            },
+            "widgetId": {
+              "argument": "widgetId",
+              "type": "integer"
+            }
+          }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "complete_todo",
+        "title": "Complete todo",
+        "description": "Ask Mova 7.0.1 or later on Android to set a todo's state, DONE by default. Identify it by id; otherwise use file and pos, with title as an optional disambiguator; exact title alone is also accepted through the server's fallback lookup. Date backdates completion as YYYY-MM-DD. strict=true forbids server fallback lookups. This package forces Mova's native confirmation sheet. A successful EVA receipt proves handoff only.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300,
+              "description": "Org ID property. Takes precedence over other references."
+            },
+            "file": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000,
+              "description": "Absolute Org file path returned by Mova or its server. Use together with pos."
+            },
+            "pos": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647,
+              "description": "Integer buffer position returned by Mova or its server. Use together with file."
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Optional exact-title disambiguator, or a title-only fallback reference."
+            },
+            "state": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100,
+              "description": "Todo keyword sent verbatim. Mova defaults to DONE when omitted."
+            },
+            "date": {
+              "type": "string",
+              "minLength": 10,
+              "maxLength": 10,
+              "description": "Optional completion date in YYYY-MM-DD form."
+            },
+            "strict": {
+              "type": "boolean",
+              "description": "True forbids the server's fallback lookups."
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "effects": "write",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true
+      },
+      "receipts": {
+        "success": "Todo completion request handed to Mova. Mova will ask for confirmation; completion is not verified by EVA.",
+        "handlerMissing": "Mova 7.0.1 or later is not installed or cannot handle todo completion."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.intent.action.VIEW",
+        "package": "com.colonelpanic.mova",
+        "uri": {
+          "base": "mova://complete",
           "query": {
             "id": {
               "argument": "id",
+              "type": "string"
+            },
+            "file": {
+              "argument": "file",
+              "type": "string"
+            },
+            "pos": {
+              "argument": "pos",
+              "type": "integer"
+            },
+            "title": {
+              "argument": "title",
+              "type": "string"
+            },
+            "state": {
+              "argument": "state",
+              "type": "string"
+            },
+            "date": {
+              "argument": "date",
+              "type": "string"
+            },
+            "strict": {
+              "argument": "strict",
+              "type": "boolean"
+            },
+            "confirm": {
+              "value": true,
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "update_todo",
+        "title": "Update todo",
+        "description": "Ask Mova 7.0.1 or later on Android to update a todo. Identify it by id; otherwise use file and pos, with title as an optional disambiguator; exact title alone is also accepted through the server's fallback lookup. Supply at least one of new_title, scheduled, deadline, priority, tags, state, or body. An empty scheduled, deadline, priority, tags, state, or body value clears that field. strict=true forbids server fallback lookups. This package forces Mova's native confirmation sheet. A successful EVA receipt proves handoff only.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300,
+              "description": "Org ID property. Takes precedence over other references."
+            },
+            "file": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000,
+              "description": "Absolute Org file path returned by Mova or its server. Use together with pos."
+            },
+            "pos": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647,
+              "description": "Integer buffer position returned by Mova or its server. Use together with file."
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Optional exact-title disambiguator, or a title-only fallback reference."
+            },
+            "new_title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Replacement heading text. title remains the reference field."
+            },
+            "scheduled": {
+              "type": "string",
+              "maxLength": 64,
+              "description": "YYYY-MM-DD or YYYY-MM-DDTHH:MM, optionally followed by an Org repeater; empty clears the scheduled timestamp."
+            },
+            "deadline": {
+              "type": "string",
+              "maxLength": 64,
+              "description": "YYYY-MM-DD or YYYY-MM-DDTHH:MM, optionally followed by an Org repeater; empty clears the deadline."
+            },
+            "priority": {
+              "type": "string",
+              "maxLength": 1,
+              "description": "One priority letter, such as A; empty clears priority."
+            },
+            "tags": {
+              "type": "string",
+              "maxLength": 2000,
+              "description": "Comma-separated tag names; empty removes all tags."
+            },
+            "state": {
+              "type": "string",
+              "maxLength": 100,
+              "description": "Todo keyword sent verbatim; empty clears state."
+            },
+            "body": {
+              "type": "string",
+              "maxLength": 16000,
+              "description": "Replacement todo body; empty clears it."
+            },
+            "strict": {
+              "type": "boolean",
+              "description": "True forbids the server's fallback lookups."
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "effects": "write",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true
+      },
+      "receipts": {
+        "success": "Todo update request handed to Mova. Mova will ask for confirmation; the update is not verified by EVA.",
+        "handlerMissing": "Mova 7.0.1 or later is not installed or cannot handle todo updates."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.intent.action.VIEW",
+        "package": "com.colonelpanic.mova",
+        "uri": {
+          "base": "mova://update",
+          "query": {
+            "id": {
+              "argument": "id",
+              "type": "string"
+            },
+            "file": {
+              "argument": "file",
+              "type": "string"
+            },
+            "pos": {
+              "argument": "pos",
+              "type": "integer"
+            },
+            "title": {
+              "argument": "title",
+              "type": "string"
+            },
+            "new_title": {
+              "argument": "new_title",
+              "type": "string"
+            },
+            "scheduled": {
+              "argument": "scheduled",
+              "type": "string"
+            },
+            "deadline": {
+              "argument": "deadline",
+              "type": "string"
+            },
+            "priority": {
+              "argument": "priority",
+              "type": "string"
+            },
+            "tags": {
+              "argument": "tags",
+              "type": "string"
+            },
+            "state": {
+              "argument": "state",
+              "type": "string"
+            },
+            "body": {
+              "argument": "body",
+              "type": "string"
+            },
+            "strict": {
+              "argument": "strict",
+              "type": "boolean"
+            },
+            "confirm": {
+              "value": true,
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "reschedule_todo",
+        "title": "Reschedule todo",
+        "description": "Ask Mova 7.0.1 or later on Android to set or clear a todo's scheduled and deadline timestamps through the reschedule alias. Identify it by id; otherwise use file and pos, with title as an optional disambiguator; exact title alone is also accepted through the server's fallback lookup. Supply scheduled, deadline, or both. An empty value clears that timestamp. strict=true forbids server fallback lookups. This package forces Mova's native confirmation sheet. A successful EVA receipt proves handoff only.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300,
+              "description": "Org ID property. Takes precedence over other references."
+            },
+            "file": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000,
+              "description": "Absolute Org file path returned by Mova or its server. Use together with pos."
+            },
+            "pos": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647,
+              "description": "Integer buffer position returned by Mova or its server. Use together with file."
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Optional exact-title disambiguator, or a title-only fallback reference."
+            },
+            "scheduled": {
+              "type": "string",
+              "maxLength": 64,
+              "description": "YYYY-MM-DD or YYYY-MM-DDTHH:MM, optionally followed by an Org repeater; empty clears the scheduled timestamp."
+            },
+            "deadline": {
+              "type": "string",
+              "maxLength": 64,
+              "description": "YYYY-MM-DD or YYYY-MM-DDTHH:MM, optionally followed by an Org repeater; empty clears the deadline."
+            },
+            "strict": {
+              "type": "boolean",
+              "description": "True forbids the server's fallback lookups."
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "effects": "write",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true
+      },
+      "receipts": {
+        "success": "Todo reschedule request handed to Mova. Mova will ask for confirmation; the update is not verified by EVA.",
+        "handlerMissing": "Mova 7.0.1 or later is not installed or cannot handle rescheduling."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.intent.action.VIEW",
+        "package": "com.colonelpanic.mova",
+        "uri": {
+          "base": "mova://reschedule",
+          "query": {
+            "id": {
+              "argument": "id",
+              "type": "string"
+            },
+            "file": {
+              "argument": "file",
+              "type": "string"
+            },
+            "pos": {
+              "argument": "pos",
+              "type": "integer"
+            },
+            "title": {
+              "argument": "title",
+              "type": "string"
+            },
+            "scheduled": {
+              "argument": "scheduled",
+              "type": "string"
+            },
+            "deadline": {
+              "argument": "deadline",
+              "type": "string"
+            },
+            "strict": {
+              "argument": "strict",
+              "type": "boolean"
+            },
+            "confirm": {
+              "value": true,
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "delete_todo",
+        "title": "Delete todo",
+        "description": "Ask Mova 7.0.1 or later on Android to permanently delete a todo and its sub-headings. Identify it by id or by file and pos; title may be included as a disambiguator. Mova always shows a confirmation sheet for deletion, regardless of its headless-write setting. A successful EVA receipt proves handoff only, not deletion.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300,
+              "description": "Org ID property. Takes precedence over other references."
+            },
+            "file": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000,
+              "description": "Absolute Org file path returned by Mova or its server. Use together with pos."
+            },
+            "pos": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647,
+              "description": "Integer buffer position returned by Mova or its server. Use together with file."
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Optional exact-title disambiguator; title alone is not a valid delete reference."
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "effects": "write",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true
+      },
+      "receipts": {
+        "success": "Todo deletion request handed to Mova. Mova will always ask for confirmation; deletion is not verified by EVA.",
+        "handlerMissing": "Mova 7.0.1 or later is not installed or cannot handle todo deletion."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.intent.action.VIEW",
+        "package": "com.colonelpanic.mova",
+        "uri": {
+          "base": "mova://delete",
+          "query": {
+            "id": {
+              "argument": "id",
+              "type": "string"
+            },
+            "file": {
+              "argument": "file",
+              "type": "string"
+            },
+            "pos": {
+              "argument": "pos",
+              "type": "integer"
+            },
+            "title": {
+              "argument": "title",
               "type": "string"
             }
           }
         }
       }
+    },
+    {
+      "tool": {
+        "name": "open_todo",
+        "title": "Open todo",
+        "description": "Open a todo's edit screen in the Android Mova app. Identify it by id or by file and pos; title may be included as a disambiguator. Mova shows an alert when no matching todo is found. EVA observes only the app handoff.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300,
+              "description": "Org ID property. Takes precedence over other references."
+            },
+            "file": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000,
+              "description": "Absolute Org file path returned by Mova or its server. Use together with pos."
+            },
+            "pos": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647,
+              "description": "Integer buffer position returned by Mova or its server. Use together with file."
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Optional exact-title disambiguator; title alone is not a documented open reference."
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "effects": "external_handoff",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true
+      },
+      "receipts": {
+        "success": "Todo reference handed to Mova. Whether the edit screen found and opened the todo is not verified by EVA.",
+        "handlerMissing": "Mova is not installed or cannot open this todo reference."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.intent.action.VIEW",
+        "package": "com.colonelpanic.mova",
+        "uri": {
+          "base": "mova://open",
+          "query": {
+            "id": {
+              "argument": "id",
+              "type": "string"
+            },
+            "file": {
+              "argument": "file",
+              "type": "string"
+            },
+            "pos": {
+              "argument": "pos",
+              "type": "integer"
+            },
+            "title": {
+              "argument": "title",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "search_todos",
+        "title": "Open todo search",
+        "description": "Open the Android Mova app's search tab, optionally prefilled with a query. This navigates the app and does not return todo data to EVA.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "q": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Optional search text."
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "effects": "external_handoff",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true
+      },
+      "receipts": {
+        "success": "Search view handed to Mova. Search results are not returned to EVA.",
+        "handlerMissing": "Mova is not installed or cannot open todo search."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.intent.action.VIEW",
+        "package": "com.colonelpanic.mova",
+        "uri": {
+          "base": "mova://search",
+          "query": {
+            "q": {
+              "argument": "q",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "open_agenda",
+        "title": "Open agenda",
+        "description": "Open the Android Mova app's agenda on an optional date and day or week span. This navigates the app and does not return agenda data to EVA.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "date": {
+              "type": "string",
+              "minLength": 10,
+              "maxLength": 10,
+              "description": "Agenda date in YYYY-MM-DD form."
+            },
+            "span": {
+              "type": "string",
+              "enum": [
+                "day",
+                "week"
+              ],
+              "description": "Agenda span."
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "effects": "external_handoff",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true
+      },
+      "receipts": {
+        "success": "Agenda view handed to Mova. Agenda entries are not returned to EVA.",
+        "handlerMissing": "Mova is not installed or cannot open the agenda."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.intent.action.VIEW",
+        "package": "com.colonelpanic.mova",
+        "uri": {
+          "base": "mova://agenda",
+          "query": {
+            "date": {
+              "argument": "date",
+              "type": "string"
+            },
+            "span": {
+              "argument": "span",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "refresh",
+        "title": "Refresh Mova data",
+        "description": "Ask Mova 7.0.1 or later on Android to drop its query caches and redraw agenda widgets. git=true also asks the active org-agenda server to pull its Org repositories first. Mova never shows its write-confirmation sheet for refresh. EVA observes only the activity handoff and cannot verify cache refresh or git pull completion.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "git": {
+              "type": "boolean",
+              "description": "True also requests a server-side git pull before refreshing."
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "effects": "write",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true
+      },
+      "receipts": {
+        "success": "Refresh request handed to Mova. Cache invalidation and any requested git pull are not verified by EVA.",
+        "handlerMissing": "Mova 7.0.1 or later is not installed or cannot handle refresh requests."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.intent.action.VIEW",
+        "package": "com.colonelpanic.mova",
+        "uri": {
+          "base": "mova://refresh",
+          "query": {
+            "git": {
+              "argument": "git",
+              "type": "boolean"
+            }
+          }
+        }
+      }
     }
+  ],
+  "androidPackages": [
+    "com.colonelpanic.mova"
   ]
 }

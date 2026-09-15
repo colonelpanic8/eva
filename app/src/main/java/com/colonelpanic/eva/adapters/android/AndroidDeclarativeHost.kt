@@ -121,7 +121,7 @@ class AndroidDeclarativeHost(
                                     uri,
                                     request.projection.keys.toTypedArray(),
                                     request.selection,
-                                    request.selectionArguments.toTypedArray(),
+                                    request.selectionArguments.takeIf { it.isNotEmpty() }?.toTypedArray(),
                                     null,
                                     signal,
                                 ) ?: throw contentFailure(

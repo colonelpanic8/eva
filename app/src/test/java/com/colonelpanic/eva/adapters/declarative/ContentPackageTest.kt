@@ -21,6 +21,55 @@ internal fun contentFixture(name: String = "paseo-content"): PackageDefinition =
 
 class ContentPackageTest {
     @Test
+    fun `Mova discovery defaults and handoffs match the provider and intent contracts`() {
+        val capabilities = contentFixture("mova-content").capabilities.associateBy { it.name }
+        val find = capabilities.getValue("find_todos")
+        val request = BindingArguments(find, emptyMap()).content(find.binding as DeclarativeBinding.Content)
+        assertEquals("content://com.colonelpanic.mova.provider/todos?limit=25", request.uri)
+        assertEquals("integer", request.projection["pos"])
+        val templates = capabilities.getValue("list_templates").binding as DeclarativeBinding.Content
+        assertEquals(setOf("key", "name", "is_default", "title_prompt", "prompts_json", "capture_uri"), templates.projection.keys)
+        assertEquals("boolean", templates.projection["is_default"])
+        val capture = capabilities.getValue("capture_todo")
+        assertEquals(
+            "mova://capture?template=work%20%26%20home",
+            BindingArguments(capture, mapOf("template" to "work & home")).intent(capture.binding as DeclarativeBinding.Intent).uri,
+        )
+        val open = capabilities.getValue("open_todo")
+        assertEquals(
+            "mova://open?id=org%201",
+            BindingArguments(open, mapOf("id" to "org 1")).intent(open.binding as DeclarativeBinding.Intent).uri,
+        )
+        assertEquals(
+            "mova://open?file=todo%2Finbox.org&pos=42&title=Heading",
+            BindingArguments(open, mapOf("file" to "todo/inbox.org", "pos" to "42", "title" to "Heading"))
+                .intent(open.binding)
+                .uri,
+        )
+    }
+
+    @Test
+    fun `Paseo catalog ids retain their host when passed to an intent`() {
+        val capabilities = contentFixture().capabilities.associateBy { it.name }
+        val agents = capabilities.getValue("list_agents")
+        val request =
+            BindingArguments(
+                agents,
+                mapOf("workspaceId" to "ws/1", "q" to "name & value"),
+            ).content(agents.binding as DeclarativeBinding.Content)
+        assertEquals("content://sh.paseo.assistant/agents?workspaceId=ws%2F1&q=name%20%26%20value", request.uri)
+        assertTrue(setOf("id", "serverId", "workspaceId", "name").all { it in request.projection })
+        val open = capabilities.getValue("open_agent")
+        assertEquals(
+            "paseo://agent?agentId=agent%2F1&serverId=host%201",
+            BindingArguments(
+                open,
+                mapOf("agentId" to "agent/1", "serverId" to "host 1"),
+            ).intent(open.binding as DeclarativeBinding.Intent).uri,
+        )
+    }
+
+    @Test
     fun `both mixed fixtures decode and queries preserve types and omit absent optional slots`() {
         for (name in listOf("mova-content", "paseo-content")) {
             val definition = contentFixture(name)
@@ -33,13 +82,13 @@ class ContentPackageTest {
         assertEquals(binding.uri, BindingArguments(capability, emptyMap()).content(binding).uri)
         val request = BindingArguments(capability, mapOf("q" to "a b&x=/#😀", "limit" to "7")).content(binding)
         assertEquals("content://sh.paseo.assistant/workspaces?q=a%20b%26x%3D%2F%23%F0%9F%98%80&limit=7", request.uri)
-        val agenda = contentFixture("mova-content").capabilities.single { it.name == "agenda" }
+        val agenda = contentFixture("mova-content").capabilities.single { it.name == "read_agenda" }
         val query =
-            BindingArguments(agenda, mapOf("date" to "2026-09-14", "span" to "3", "include_completed" to "false"))
+            BindingArguments(agenda, mapOf("date" to "2026-09-14", "span" to "week", "include_completed" to "false"))
                 .content(agenda.binding as DeclarativeBinding.Content)
         assertEquals(
             "content://com.colonelpanic.mova.provider/agenda?" +
-                "date=2026-09-14&span=3&include_completed=false",
+                "date=2026-09-14&span=week&include_completed=false",
             query.uri,
         )
     }
@@ -97,7 +146,7 @@ class ContentPackageTest {
 
     @Test
     fun `path slots are encoded segments and reject missing or structural values`() {
-        val capability = contentFixture("mova-content").capabilities.single { it.name == "todo" }
+        val capability = contentFixture("mova-content").capabilities.single { it.name == "read_todo" }
         val binding = capability.binding as DeclarativeBinding.Content
         assertEquals(
             "content://com.colonelpanic.mova.provider/todos/id%20%3F%23%25",

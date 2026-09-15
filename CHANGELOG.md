@@ -8,6 +8,7 @@ All notable changes to EVA will be documented here.
 
 - Declarative packages can mix bounded Android content-provider reads with intent handoffs. Content URIs accept typed, encoded query and path slots; reads return whole projected rows as text and structured data with honest truncation and failure outcomes.
 - Extension settings expose Mova's Android read-permission request and provider availability. Mova and Paseo content authorities are visible without an AIDL service; portable configuration retains the device authorization requirements for restore.
+- JVM fixtures use the installable mixed Mova and Paseo packages: template/todo/agenda reads follow Mova 7.0.1's contract, and Paseo catalog reads retain the host ID for subsequent intent actions.
 
 - Reasoning effort is now chosen separately for the text model and the voice model. The two legs
   accept different levels -- `max` only on text, `minimal` only on voice -- so one shared choice

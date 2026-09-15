@@ -53,7 +53,14 @@ import java.util.concurrent.atomic.AtomicLong
 class AndroidContentHostTest {
     private val app: Application get() = RuntimeEnvironment.getApplication()
     private val capability = contentFixture().capabilities.first()
-    private val binding = capability.binding as DeclarativeBinding.Content
+    private val binding =
+        (capability.binding as DeclarativeBinding.Content).copy(
+            projection =
+                linkedMapOf(
+                    "id" to "string",
+                    "name" to "string",
+                ),
+        )
     private lateinit var provider: FakeProvider
 
     private fun host(clock: () -> Long = { android.os.SystemClock.elapsedRealtime() }) =
@@ -109,6 +116,8 @@ class AndroidContentHostTest {
         runBlocking {
             val request = BindingArguments(capability, emptyMap()).content(binding)
             val one = host().query(request.copy(maxRows = 1), 30_000)
+            assertNull(provider.selection)
+            assertNull(provider.arguments)
             assertEquals(1, one.rows.size)
             assertTrue(one.truncated)
             assertTrue(provider.cursor!!.isClosed)

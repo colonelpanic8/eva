@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
-  "id": "example.paseo-content",
+  "id": "android.paseo",
   "version": "0.1.0",
-  "title": "Paseo content and handoffs",
+  "title": "Paseo",
   "androidPackages": [
     "sh.paseo",
     "sh.paseo.assembly"
@@ -10,24 +10,31 @@
   "capabilities": [
     {
       "tool": {
-        "name": "workspaces",
+        "name": "list_workspaces",
         "title": "List Paseo workspaces",
-        "description": "List Paseo workspaces. Returned data is limited to the selected provider response.",
+        "description": "List the workspaces Paseo knows across its hosts, most recently active first. Each row has the workspaceId (id) and host (serverId) that open_workspace takes, plus name, project, branch, status, agent count, and last activity. Answers from the catalog Paseo last published while it was open, so a workspace created since then is missing until Paseo is opened again. query is a case-insensitive substring match over the row.",
         "inputSchema": {
           "type": "object",
           "properties": {
             "q": {
               "type": "string",
-              "maxLength": 200
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Case-insensitive text matched against name, project, branch, status, and ids."
             },
             "limit": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 20
+              "maximum": 100,
+              "description": "Maximum rows to return (Paseo defaults to 25)."
             }
           },
           "required": [],
           "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
         }
       },
       "effects": "read",
@@ -54,36 +61,51 @@
         },
         "projection": {
           "id": "string",
-          "name": "string"
+          "serverId": "string",
+          "name": "string",
+          "project": "string",
+          "branch": "string",
+          "status": "string",
+          "agentCount": "integer",
+          "lastActivityAt": "string"
         },
-        "maxRows": 20,
-        "maxBytes": 8000
+        "maxRows": 50,
+        "maxBytes": 16384
       }
     },
     {
       "tool": {
-        "name": "agents",
+        "name": "list_agents",
         "title": "List Paseo agents",
-        "description": "List Paseo agents. Returned data is limited to the selected provider response.",
+        "description": "List Paseo agent sessions, most recently active first. Each row has the agentId (id) and host (serverId) that open_agent, draft_agent_prompt, and send_agent_prompt take, plus workspaceId, name, provider, status, and last activity. Answers from the catalog Paseo last published while it was open. Filter by workspaceId, or with query as a case-insensitive substring match over the row.",
         "inputSchema": {
           "type": "object",
           "properties": {
             "workspaceId": {
               "type": "string",
-              "maxLength": 200
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Only agents in this workspace."
             },
             "q": {
               "type": "string",
-              "maxLength": 200
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Case-insensitive text matched against name, provider, status, and ids."
             },
             "limit": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 20
+              "maximum": 100,
+              "description": "Maximum rows to return (Paseo defaults to 25)."
             }
           },
           "required": [],
           "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
         }
       },
       "effects": "read",
@@ -114,24 +136,108 @@
         },
         "projection": {
           "id": "string",
-          "name": "string"
+          "serverId": "string",
+          "workspaceId": "string",
+          "name": "string",
+          "provider": "string",
+          "status": "string",
+          "lastActivityAt": "string"
         },
-        "maxRows": 20,
-        "maxBytes": 8000
+        "maxRows": 50,
+        "maxBytes": 16384
+      }
+    },
+    {
+      "tool": {
+        "name": "new_agent",
+        "title": "Start a new agent",
+        "description": "Open Paseo's New workspace screen with the prompt placed in the composer. The user chooses the project, model, and isolation in Paseo and taps Send; nothing is sent by this action. projectId and dir preselect a project or directory Paseo already knows. A successful EVA receipt proves only that Paseo opened.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "prompt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16000,
+              "description": "Prompt text for the agent."
+            },
+            "serverId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Paseo host (daemon serverId). Omit to use the host of the last opened workspace, or the only configured host."
+            },
+            "projectId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Paseo project ID (prj_…) to preselect."
+            },
+            "dir": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "Absolute directory on the host to preselect as the project root."
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "effects": "external_handoff",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true
+      },
+      "receipts": {
+        "success": "Paseo opened its New workspace screen with the prompt in the composer. The user has to choose a project and send it; EVA does not observe that.",
+        "handlerMissing": "Paseo is not installed or this version cannot open paseo://new links."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.intent.action.VIEW",
+        "uri": {
+          "base": "paseo://new",
+          "query": {
+            "prompt": {
+              "argument": "prompt",
+              "type": "string"
+            },
+            "serverId": {
+              "argument": "serverId",
+              "type": "string"
+            },
+            "projectId": {
+              "argument": "projectId",
+              "type": "string"
+            },
+            "dir": {
+              "argument": "dir",
+              "type": "string"
+            }
+          }
+        }
       }
     },
     {
       "tool": {
         "name": "open_agent",
-        "title": "Open Paseo agent",
-        "description": "Open Paseo agent. Returned data is limited to the selected provider response.",
+        "title": "Open an agent",
+        "description": "Open an existing Paseo agent session by ID so the user can read it. Requires the agent ID; the host is resolved by Paseo when omitted. A successful EVA receipt proves only the handoff to Paseo.",
         "inputSchema": {
           "type": "object",
           "properties": {
             "agentId": {
               "type": "string",
               "minLength": 1,
-              "maxLength": 200
+              "maxLength": 200,
+              "description": "Paseo agent session ID on that host."
+            },
+            "serverId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Paseo host (daemon serverId). Omit to use the host of the last opened workspace, or the only configured host."
             }
           },
           "required": [
@@ -143,8 +249,11 @@
       "effects": "external_handoff",
       "execution": {
         "mode": "handoff",
-        "requiresForeground": true,
-        "maxWaitMillis": 10000
+        "requiresForeground": true
+      },
+      "receipts": {
+        "success": "Paseo opened the agent. Paseo shows an error itself if the agent or host is unknown.",
+        "handlerMissing": "Paseo is not installed or this version cannot open paseo://agent links."
       },
       "binding": {
         "kind": "android.intent",
@@ -155,8 +264,250 @@
             "agentId": {
               "argument": "agentId",
               "type": "string"
+            },
+            "serverId": {
+              "argument": "serverId",
+              "type": "string"
             }
           }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "draft_agent_prompt",
+        "title": "Draft a follow-up for an agent",
+        "description": "Open a Paseo agent session with the prompt appended to its composer, unsent, so the user can review and tap Send. Use send_agent_prompt to deliver without a tap. A successful EVA receipt proves only that Paseo opened the agent.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "agentId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Paseo agent session ID on that host."
+            },
+            "prompt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16000,
+              "description": "Prompt text for the agent."
+            },
+            "serverId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Paseo host (daemon serverId). Omit to use the host of the last opened workspace, or the only configured host."
+            }
+          },
+          "required": [
+            "agentId",
+            "prompt"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "effects": "external_handoff",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true
+      },
+      "receipts": {
+        "success": "Paseo opened the agent with the prompt in its composer. The user has to send it; EVA does not observe that.",
+        "handlerMissing": "Paseo is not installed or this version cannot open paseo://agent links."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.intent.action.VIEW",
+        "uri": {
+          "base": "paseo://agent",
+          "query": {
+            "agentId": {
+              "argument": "agentId",
+              "type": "string"
+            },
+            "prompt": {
+              "argument": "prompt",
+              "type": "string"
+            },
+            "serverId": {
+              "argument": "serverId",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "send_agent_prompt",
+        "title": "Send a follow-up to an agent",
+        "description": "Open a Paseo agent session and ask Paseo to send the prompt to it immediately. Paseo only sends when its setting “Send prompts from links” is on; otherwise it places the prompt in the composer unsent and tells the user why. EVA cannot tell which happened: a successful receipt proves only the handoff, not delivery or completion of the agent's work.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "agentId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Paseo agent session ID on that host."
+            },
+            "prompt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16000,
+              "description": "Prompt text for the agent."
+            },
+            "serverId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Paseo host (daemon serverId). Omit to use the host of the last opened workspace, or the only configured host."
+            }
+          },
+          "required": [
+            "agentId",
+            "prompt"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "effects": "write",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true
+      },
+      "receipts": {
+        "success": "Paseo opened the agent and was asked to send the prompt. Delivery depends on Paseo's “Send prompts from links” setting and the host being online; EVA does not verify it.",
+        "handlerMissing": "Paseo is not installed or this version cannot open paseo://agent links."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.intent.action.VIEW",
+        "uri": {
+          "base": "paseo://agent",
+          "query": {
+            "agentId": {
+              "argument": "agentId",
+              "type": "string"
+            },
+            "prompt": {
+              "argument": "prompt",
+              "type": "string"
+            },
+            "serverId": {
+              "argument": "serverId",
+              "type": "string"
+            },
+            "send": {
+              "value": true,
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "open_workspace",
+        "title": "Open a workspace",
+        "description": "Open a Paseo workspace by ID, optionally on a specific agent or terminal tab. A successful EVA receipt proves only the handoff to Paseo.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "workspaceId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Paseo workspace ID on that host."
+            },
+            "serverId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Paseo host (daemon serverId). Omit to use the host of the last opened workspace, or the only configured host."
+            },
+            "agentId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Agent session tab to focus inside the workspace."
+            },
+            "terminalId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Terminal tab to focus inside the workspace. Ignored when agentId is given."
+            }
+          },
+          "required": [
+            "workspaceId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "effects": "external_handoff",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true
+      },
+      "receipts": {
+        "success": "Paseo opened the workspace. Paseo shows an error itself if the workspace or host is unknown.",
+        "handlerMissing": "Paseo is not installed or this version cannot open paseo://workspace links."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.intent.action.VIEW",
+        "uri": {
+          "base": "paseo://workspace",
+          "query": {
+            "workspaceId": {
+              "argument": "workspaceId",
+              "type": "string"
+            },
+            "serverId": {
+              "argument": "serverId",
+              "type": "string"
+            },
+            "agentId": {
+              "argument": "agentId",
+              "type": "string"
+            },
+            "terminalId": {
+              "argument": "terminalId",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "open_history",
+        "title": "Open agent history",
+        "description": "Open Paseo's History screen listing recent agent sessions across hosts. Takes no arguments. A successful EVA receipt proves only the handoff to Paseo.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "effects": "external_handoff",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true
+      },
+      "receipts": {
+        "success": "Paseo opened its History screen.",
+        "handlerMissing": "Paseo is not installed or this version cannot open paseo://sessions links."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.intent.action.VIEW",
+        "uri": {
+          "base": "paseo://sessions",
+          "query": {}
         }
       }
     }
