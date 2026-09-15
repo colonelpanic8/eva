@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+    <issue id="TrustAllX509TrustManager">
+        <!-- JGit contains this opt-out implementation, but EVA pins http.sslVerify=true. -->
+        <ignore regexp=".*org\.eclipse\.jgit-[^/]+\.jar" />
+    </issue>
+</lint>

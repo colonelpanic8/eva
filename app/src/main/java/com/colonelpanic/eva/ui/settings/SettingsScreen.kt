@@ -22,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -98,13 +99,21 @@ private fun ConfigurationSection(
     state: SettingsUiState,
     actions: SettingsActions,
 ) {
+    val git = state.configuration.git
+    var remote by remember(git.remoteUrl) { mutableStateOf(git.remoteUrl) }
+    var branch by remember(git.branch) { mutableStateOf(git.branch) }
+    var authorName by remember(git.authorName) { mutableStateOf(git.authorName) }
+    var authorEmail by remember(git.authorEmail) { mutableStateOf(git.authorEmail) }
+    var username by remember(git.username) { mutableStateOf(git.username) }
+    var token by remember { mutableStateOf("") }
+    var inputError by remember { mutableStateOf<String?>(null) }
     SettingsSection("User configuration") {
         SettingsBlock {
             Text(
                 state.configuration.linkedFolder?.let {
                     "Linked to $it/${com.colonelpanic.eva.data.configuration.EvaConfigurationCodec.FILE_NAME}"
                 }
-                    ?: "Choose a synced folder or git checkout. EVA will create eva.yaml or restore the existing configuration.",
+                    ?: "Choose a synced folder, or let EVA manage a real Git checkout.",
             )
             state.configuration.message?.let {
                 Text(
@@ -117,13 +126,89 @@ private fun ConfigurationSection(
                         },
                 )
             }
+            if (state.configuration.gitEnabled) {
+                Text(
+                    "Git status: ${state.configuration.gitCondition.name.lowercase().replace('_', ' ')}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             state.configuration.setupRequired.forEach { Text("Setup required: $it", color = MaterialTheme.colorScheme.error) }
+            SettingsRow(
+                title = "Managed Git sync",
+                supporting = "HTTPS only; the token stays encrypted on this device.",
+            ) {
+                Switch(checked = state.configuration.gitEnabled, onCheckedChange = actions.onGitEnabled)
+            }
+            OutlinedTextField(
+                value = remote,
+                onValueChange = { remote = it },
+                label = { Text("HTTPS remote URL") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = branch,
+                onValueChange = { branch = it },
+                label = { Text("Branch") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = authorName,
+                onValueChange = { authorName = it },
+                label = { Text("Commit author name") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = authorEmail,
+                onValueChange = { authorEmail = it },
+                label = { Text("Commit author email") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = username,
+                onValueChange = { username = it },
+                label = { Text("Git username") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = token,
+                onValueChange = { token = it },
+                label = { Text(if (git.tokenPresent) "New Git token (optional)" else "Git token") },
+                supportingText = { Text(if (git.tokenPresent) "A token is saved on this device." else "Needed to push an HTTPS remote.") },
+                visualTransformation = PasswordVisualTransformation(),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            inputError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = actions.onSelectConfigurationFolder) {
-                    Text(if (state.configuration.linkedFolder == null) "Choose folder" else "Change folder")
+                Button(
+                    enabled = !state.configuration.busy,
+                    onClick = {
+                        inputError = actions.onSaveGit(remote, branch, authorName, authorEmail, username, token)
+                        if (inputError == null) token = ""
+                    },
+                ) { Text("Save & connect") }
+                if (state.configuration.gitEnabled && state.configuration.linkedFolder != null) {
+                    OutlinedButton(enabled = !state.configuration.busy, onClick = actions.onReloadConfiguration) { Text("Sync") }
                 }
-                if (state.configuration.linkedFolder != null) {
-                    TextButton(onClick = actions.onReloadConfiguration) { Text("Reload") }
+                if (git.tokenPresent) {
+                    TextButton(onClick = actions.onClearGitToken) { Text("Remove token") }
+                }
+            }
+            if (!state.configuration.gitEnabled) {
+                Text("Folder mode keeps Git operations in another app.", style = MaterialTheme.typography.bodySmall)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = actions.onSelectConfigurationFolder) {
+                        Text(if (state.configuration.linkedFolder == null) "Choose folder" else "Change folder")
+                    }
+                    if (state.configuration.linkedFolder != null) {
+                        TextButton(onClick = actions.onReloadConfiguration) { Text("Reload") }
+                    }
                 }
             }
         }

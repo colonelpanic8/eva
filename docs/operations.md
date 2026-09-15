@@ -38,7 +38,8 @@ Experiment-local commands belong in the
 ## Configuration verification
 
 The focused configuration tests cover composition, linked-file conflicts,
-restoration into app stores, and grant matching:
+restoration into app stores, grant matching, and managed Git against local bare
+repositories:
 
 ```sh
 direnv exec . ./gradlew :app:testDebugUnitTest \
@@ -60,6 +61,22 @@ when only the backup remains, and failed final replacement preserving the old ro
 These provider tests run at API 25 because the API 28 shadow does not support the
 legacy provider query used by the fixture. They do not establish physical-device
 rename atomicity or the behavior of every directory-sync tool.
+
+Managed-Git JVM tests exercise initial snapshot and clone, validated fast-forward,
+divergence without force, invalid-content rollback, offline checkout readability,
+failed pushes retaining local commits, token redaction, and staging scope. Debug
+assembly runs D8 with `desugar_jdk_libs_nio` for JGit's Java NIO surface on the
+minimum-SDK build. These checks do not establish TLS/provider behavior or filesystem
+semantics on a physical API-23 device.
+
+For a managed-Git device check, use a dedicated private HTTPS repository and debug
+installation. Enter a test author and device-local token, connect an empty branch,
+verify the initial commit remotely, change a setting, and verify the automatic
+commit/push. Advance the remote from another client and Sync a valid fast-forward;
+then test divergent history and invalid YAML on a disposable branch, confirming
+that active settings and the last good checkout remain unchanged. Disable managed
+Git and confirm the previous SAF folder can still save/reload. Never put the test
+token in the remote URL, YAML, screenshots, logs, or checked-in test arguments.
 
 ## Signing and releases
 

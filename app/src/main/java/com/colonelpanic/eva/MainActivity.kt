@@ -304,6 +304,9 @@ class MainActivity : ComponentActivity() {
             SettingsActions(
                 onSelectConfigurationFolder = { configurationFolder.launch(null) },
                 onReloadConfiguration = eva.configuration::reload,
+                onGitEnabled = eva.configuration::setGitEnabled,
+                onSaveGit = eva.configuration::configureGit,
+                onClearGitToken = eva.configuration::clearGitToken,
                 onRepositoryRefresh = eva.pluginBrowser::refresh,
                 onPluginFileImport = { pluginFile.launch(arrayOf("application/json", "text/*", "application/octet-stream")) },
                 onPluginPreview = eva.pluginBrowser::preview,

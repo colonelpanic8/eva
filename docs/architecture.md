@@ -227,9 +227,9 @@ rather than replacing the common user-facing tools.
 ## Configuration and restoration
 
 The design requirement is a single user-owned repository capable of restoring
-**every EVA setting**. Files should be readable, deterministic, composable, and
-usable through a synced folder or checkout. EVA does not need to own Git to use
-such a repository. UI controls must edit the same configuration model.
+**every EVA setting**. Files are readable, deterministic, composable, and usable
+through either a linked folder or EVA's app-managed Git checkout. UI controls edit
+the same configuration model in both modes.
 
 A complete configuration includes model choices, appearance, capability switches,
 instructions and their sources, extension definitions and identities, grants,
@@ -246,22 +246,31 @@ Conversation history and transient connections are runtime data, not settings.
 
 ### Portable configuration format
 
-The portable format uses `eva.yaml` in a folder selected through Android's
-Storage Access Framework. The folder can be a synced Git checkout; syncing,
-committing, and resolving Git conflicts remain the responsibility of the user's
-tools. The configuration implementation lives in `data/configuration/`.
+The portable format uses a root `eva.yaml`. Folder mode selects its directory
+through Android's Storage Access Framework; synchronization and version control
+remain the responsibility of the user's tools. Managed Git mode uses JGit 6.10.1
+and an app-owned checkout under external-files storage (or internal files when
+external storage is unavailable), including real `.git` metadata. Java NIO
+desugaring supplies JGit's required APIs below Android 8; host
+tests and Android packaging cover that integration, while physical-device
+verification remains separate. The implementation lives in `data/configuration/`.
 
 To use a single user repository:
 
-1. Put the checkout in a folder available through Android's file picker, directly
-   or through a directory-sync tool.
-2. Open **Settings → User configuration → Choose folder**. An empty folder gets
-   an `eva.yaml` snapshot of the current settings; an existing file is validated
-   and restored. Keep this folder under version control with your usual tools.
-3. On another device, sync the same repository and choose that folder in EVA.
+1. For folder mode, make a directory available through Android's file picker,
+   directly or through a directory-sync tool, then choose it under **Settings →
+   User configuration**.
+2. For managed Git, enter an HTTPS remote, branch, author identity, optional Git
+   username, and device-local token, then select **Save & connect**. Remote URLs
+   with credentials, queries, fragments, non-HTTPS schemes, or invalid refs are
+   rejected. SSH is not supported.
+3. An empty folder, checkout, or remote branch gets an `eva.yaml` snapshot of the
+   current settings. An existing graph is validated and restored.
+4. On another device, link or connect the same repository.
    Complete the listed account, app, and device-authorization requirements.
-4. Edit settings in EVA or edit the files. Returning to EVA checks for external
-   edits; **Reload** explicitly reloads the linked configuration.
+5. Edit settings in EVA. Folder mode atomically updates the root and offers
+   **Reload**. Managed mode atomically updates the root, creates a scoped commit,
+   and attempts to push; **Sync** retries pending work and pulls remote changes.
 
 To extract a shared base, move the generated complete file to `shared/base.yaml`
 and replace the root with a small override file, for example:
@@ -276,8 +285,44 @@ voice:
 ```
 
 Each included file also declares its format and version. This lets devices or
-forks reuse a base while overriding selected settings. No Git client, remote
-repository write, or automatic commit is performed by EVA.
+forks reuse a base while overriding selected settings. Managed Git stages only
+the current and previously committed root/include graph paths; unrelated files
+in the repository are never added to EVA's commits.
+
+### Managed Git synchronization
+
+The remote URL and branch select an isolated checkout identity, so changing either
+cannot silently reuse another remote's local history. Author name/email and Git
+username are explicit nonportable bootstrap inputs with non-personal defaults.
+They and the enabled mode live in local preferences; the token lives only in
+`SecretStore`. JGit receives credentials directly for each transport operation.
+Neither credential helpers nor repository credential configuration participate.
+EVA pins TLS certificate verification on and disables HTTP redirects in the
+managed repository.
+
+Connect and Sync fetch only the exact configured branch without tags or
+submodules. Before checkout, EVA bounds the tree to 4,096 entries and 64 MiB of
+blobs, rejects symlinks, gitlinks/submodules, and Git LFS attributes or pointers,
+then resolves the configuration using the normal 4 MiB/file, 8 MiB/graph,
+32-visit, and eight-level include limits. The fetched pack itself cannot currently
+be byte-limited by JGit's high-level fetch API; validation occurs before materializing
+its tree. Git hooks are disabled.
+
+Pull is fast-forward-only. EVA validates the fetched commit and then updates the
+checkout; if applying the complete configuration to app stores fails, it restores
+the prior checkout head and the existing transactional restore keeps active settings
+unchanged. Divergence, a dirty checkout blocking pull, or an exact-head mismatch is
+reported without merge, rebase, retry, or force push. Before every commit EVA
+fetches again, clears the index, stages only owned graph paths, and passes the
+configured identity directly to the commit. Push uses the expected remote head;
+server rejection or transport failure leaves the local commit for a later Sync.
+
+An interrupted atomic YAML write is recovered before reading. Every successful
+connect or Sync also retries the scoped commit/push step, including when local and
+remote heads were initially equal. At startup an already-enabled managed checkout
+is validated and attached before network access, so its last good local configuration
+remains usable offline while sync failure and pending commits stay visible. Git
+operations and configuration callbacks share one serialization boundary.
 
 The schema separates these groups:
 

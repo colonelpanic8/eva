@@ -1,6 +1,7 @@
 package com.colonelpanic.eva.data.configuration
 
 import android.Manifest
+import android.content.Context
 import com.colonelpanic.eva.EvaApplication
 import com.colonelpanic.eva.adapters.declarative.PackageCodec
 import com.colonelpanic.eva.adapters.declarative.PackageEffect
@@ -11,9 +12,11 @@ import com.colonelpanic.eva.capability.extensions.PackageIdentity
 import com.colonelpanic.eva.conversation.prompt.PromptComponent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import org.eclipse.jgit.api.Git
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -25,6 +28,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.io.File
+import java.security.MessageDigest
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], application = EvaApplication::class)
@@ -36,6 +40,81 @@ class EvaConfigurationManagerTest {
             .first { it.isFile }
             .readText()
     }
+
+    @Test
+    fun `failed first Git connection keeps the linked folder authoritative`() =
+        runBlocking {
+            val baseline = app.configuration.snapshotForTest()
+            val folder = MemoryDirectory(EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(baseline)))
+            val manager = EvaConfigurationManager(app, beforeManagedConnect = { error("offline") })
+            manager.attachForTest(folder)
+
+            assertEquals(
+                null,
+                manager.configureGit(
+                    "https://example.test/eva.git",
+                    "main",
+                    "EVA test device",
+                    "eva@localhost",
+                    "git",
+                    "",
+                ),
+            )
+            val failed = withTimeout(10_000) { manager.status.first { it.isError } }
+
+            assertFalse(failed.gitEnabled)
+            app.appearance.saveDynamicColor(!baseline.appearance.dynamicColor)
+            assertTrue(manager.localChangeForTest() is LinkedConfigurationResult.Saved)
+            assertEquals(
+                !baseline.appearance.dynamicColor,
+                EvaConfigurationCodec
+                    .resolve(folder)
+                    .configuration.appearance.dynamicColor,
+            )
+        }
+
+    @Test
+    fun `enabled managed checkout applies local configuration before offline sync`() =
+        runBlocking {
+            val baseline = app.configuration.snapshotForTest()
+            val remote = "https://example.test/offline.git"
+            val branch = "main"
+            val identity =
+                MessageDigest
+                    .getInstance("SHA-256")
+                    .digest("$remote\u0000$branch".toByteArray())
+                    .take(12)
+                    .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+            val checkout = File(File(app.getExternalFilesDir(null) ?: app.filesDir, "configuration-git"), identity)
+            Git
+                .init()
+                .setDirectory(checkout)
+                .setInitialBranch(branch)
+                .call()
+                .close()
+            val expected = baseline.copy(appearance = EvaConfiguration.Appearance(!baseline.appearance.dynamicColor))
+            File(checkout, EvaConfigurationCodec.FILE_NAME).writeText(
+                EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(expected)),
+            )
+            app
+                .getSharedPreferences("eva.configuration", Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean("git.enabled", true)
+                .putString("git.remote", remote)
+                .putString("git.branch", branch)
+                .putString("git.author.name", "EVA test device")
+                .putString("git.author.email", "eva@localhost")
+                .putString("git.username", "git")
+                .commit()
+            val manager = EvaConfigurationManager(app, beforeManagedConnect = { error("offline") })
+
+            manager.start()
+            val failed = withTimeout(10_000) { manager.status.first { it.isError } }
+
+            assertTrue(failed.gitEnabled)
+            assertEquals(expected.appearance.dynamicColor, app.appearance.dynamicColor)
+            assertTrue(failed.linkedFolder?.contains("Managed Git checkout") == true)
+        }
 
     @Test
     fun `manager restores every effective non-secret setting and reports device provisioning`() =

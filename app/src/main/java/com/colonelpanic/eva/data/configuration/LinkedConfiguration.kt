@@ -121,6 +121,13 @@ class LinkedConfiguration(
 
     fun linkedLabel(): String? = directory?.label
 
+    suspend fun detach() =
+        updates.withLock {
+            directory = null
+            resolved = null
+            setupRequired = emptyList()
+        }
+
     private suspend fun load(
         selected: ConfigurationDirectory,
         force: Boolean,

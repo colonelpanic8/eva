@@ -3,4 +3,7 @@
     <exclude domain="root" path="secrets/" />
     <exclude domain="database" path="." />
     <exclude domain="sharedpref" path="eva.secrets.xml" />
+    <exclude domain="sharedpref" path="eva.configuration.xml" />
+    <exclude domain="file" path="configuration-git/" />
+    <exclude domain="external" path="configuration-git/" />
 </full-backup-content>

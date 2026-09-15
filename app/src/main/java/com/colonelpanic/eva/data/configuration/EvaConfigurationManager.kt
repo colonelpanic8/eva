@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.data.configuration
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -14,6 +15,7 @@ import com.colonelpanic.eva.conversation.prompt.PromptConfig
 import com.colonelpanic.eva.data.MessagingPreferences
 import com.colonelpanic.eva.data.PortablePackageSettings
 import com.colonelpanic.eva.data.PromptPersistenceSnapshot
+import com.colonelpanic.eva.data.SecretStore
 import com.colonelpanic.eva.providers.BrokerEndpoint
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -26,6 +28,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
 
@@ -34,6 +38,11 @@ data class ConfigurationStatus(
     val message: String? = null,
     val isError: Boolean = false,
     val setupRequired: List<String> = emptyList(),
+    val gitEnabled: Boolean = false,
+    val git: GitBootstrap = GitBootstrap(),
+    val gitCondition: GitCondition = GitCondition.DISABLED,
+    val pendingCommits: Int = 0,
+    val busy: Boolean = false,
 )
 
 class EvaConfigurationManager(
@@ -41,6 +50,7 @@ class EvaConfigurationManager(
     private val beforeGrantRestore: () -> Unit = {},
     private val beforePackagePreferenceRestore: () -> Unit = {},
     private val beforeRollbackStep: (String) -> Unit = {},
+    private val beforeManagedConnect: () -> Unit = {},
     private val availableMessagingReplies: () -> Set<String> = {
         app.notificationMessages.apps.value
             .map { it.identity }
@@ -48,15 +58,18 @@ class EvaConfigurationManager(
     },
 ) {
     private val prefs = app.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+    private val secrets = SecretStore(app)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val mutableStatus = MutableStateFlow(ConfigurationStatus())
+    private val mutableStatus = MutableStateFlow(bootstrapStatus())
     val status = mutableStatus.asStateFlow()
     private val linked = LinkedConfiguration(::snapshot, ::apply, ::reassess)
+    private val operations = Mutex()
     private val changes = Channel<Unit>(Channel.CONFLATED)
     private val changedCredentials = mutableSetOf<String>()
     private val changedGrants = mutableSetOf<String>()
     private val changedMessagingReplies = mutableSetOf<String>()
     private var desired: EvaConfiguration? = null
+    private var managedGit: ManagedGitRepository? = null
 
     @Volatile private var suppressChanges = false
 
@@ -67,12 +80,16 @@ class EvaConfigurationManager(
                 while (changes.tryReceive().isSuccess) {
                     // Coalesce only work that has not started.
                 }
-                runAction { linked.localChange() }
+                runAction(pushGit = true) { linked.localChange() }
             }
         }
     }
 
     fun start() {
+        if (gitEnabled()) {
+            scope.launch { connectGit(enableOnSuccess = false) }
+            return
+        }
         val value = prefs.getString(TREE, null) ?: return
         scope.launch { runAction { linked.attach(SafConfigurationDirectory(app, value.toUri())) } }
     }
@@ -80,16 +97,18 @@ class EvaConfigurationManager(
     fun select(uri: Uri) {
         scope.launch {
             val previous = prefs.getString(TREE, null)
+            val previousGit = managedGit
             runAction {
                 SafConfigurationDirectory.persistAccess(app.contentResolver, uri)
                 check(prefs.edit().putString(TREE, uri.toString()).commit()) { "Could not remember the configuration folder." }
                 try {
-                    linked.attach(SafConfigurationDirectory(app, uri))
+                    linked.attach(SafConfigurationDirectory(app, uri)).also { disableGitInternal() }
                 } catch (error: Exception) {
                     val editor = prefs.edit()
                     if (previous == null) editor.remove(TREE) else editor.putString(TREE, previous)
                     val restored = editor.commit()
                     check(restored) { "Could not restore the previous configuration-folder selection." }
+                    if (gitEnabled() && previousGit != null) linked.attach(previousGit.directory)
                     throw error
                 }
             }
@@ -97,11 +116,98 @@ class EvaConfigurationManager(
     }
 
     fun reload() {
-        scope.launch { runAction { linked.reload(force = true) } }
+        if (gitEnabled()) scope.launch { syncGit() } else scope.launch { runAction { linked.reload(force = true) } }
     }
 
     fun reloadOnResume() {
         if (linked.linkedLabel() != null) scope.launch { runAction { linked.reload(force = false) } }
+    }
+
+    fun configureGit(
+        remoteUrl: String,
+        branch: String,
+        authorName: String,
+        authorEmail: String,
+        username: String,
+        token: String,
+    ): String? {
+        val value = GitBootstrap(remoteUrl.trim(), branch.trim(), authorName.trim(), authorEmail.trim(), username.trim())
+        return runCatching {
+            validateGitBootstrap(value)
+            scope.launch {
+                operations.withLock {
+                    try {
+                        val previousBootstrap = gitBootstrap()
+                        val previousToken = secrets.read(GIT_TOKEN)
+                        val enableOnSuccess = !gitEnabled()
+                        saveGitBootstrap(value)
+                        if (token.isNotBlank()) {
+                            secrets.write(GIT_TOKEN, token)
+                        } else if (previousBootstrap.remoteUrl != value.remoteUrl) {
+                            secrets.clear(GIT_TOKEN)
+                        }
+                        if (!connectGitLocked(enableOnSuccess) && !enableOnSuccess) {
+                            saveGitBootstrap(previousBootstrap)
+                            if (previousToken == null) secrets.clear(GIT_TOKEN) else secrets.write(GIT_TOKEN, previousToken)
+                            managedGit?.close()
+                            managedGit =
+                                ManagedGitRepository(managedCheckout(), previousBootstrap, token = { previousToken })
+                        }
+                    } catch (failure: Exception) {
+                        publishGitError(failure)
+                    }
+                }
+            }
+        }.exceptionOrNull()?.message
+    }
+
+    fun setGitEnabled(enabled: Boolean) {
+        scope.launch {
+            if (enabled) {
+                try {
+                    validateGitBootstrap(gitBootstrap())
+                    connectGit(enableOnSuccess = true)
+                } catch (failure: Exception) {
+                    publishGitError(failure)
+                }
+            } else {
+                try {
+                    operations.withLock {
+                        val tree = prefs.getString(TREE, null)
+                        val linkedResult =
+                            if (tree != null) {
+                                linked.attach(SafConfigurationDirectory(app, tree.toUri()))
+                            } else {
+                                linked.detach()
+                                null
+                            }
+                        disableGitInternal()
+                        mutableStatus.value =
+                            bootstrapStatus(
+                                linkedFolder = linked.linkedLabel(),
+                                message = "Managed Git sync disabled.",
+                                setupRequired = linkedResult?.requirements().orEmpty(),
+                            )
+                    }
+                } catch (failure: Exception) {
+                    publishGitError(failure)
+                }
+            }
+        }
+    }
+
+    fun clearGitToken() {
+        scope.launch {
+            operations.withLock {
+                secrets.clear(GIT_TOKEN)
+                mutableStatus.value =
+                    mutableStatus.value.copy(
+                        git = gitBootstrap(),
+                        gitCondition = GitCondition.MISSING_CREDENTIALS,
+                        message = "Git token removed from this device.",
+                    )
+            }
+        }
     }
 
     fun onLocalChange() {
@@ -134,7 +240,10 @@ class EvaConfigurationManager(
 
     internal suspend fun localChangeForTest(): LinkedConfigurationResult = linked.localChange()
 
-    private suspend fun runAction(action: suspend () -> LinkedConfigurationResult) {
+    private suspend fun runAction(
+        pushGit: Boolean = false,
+        action: suspend () -> LinkedConfigurationResult,
+    ) = operations.withLock {
         try {
             when (val result = action()) {
                 is LinkedConfigurationResult.Loaded -> {
@@ -142,11 +251,12 @@ class EvaConfigurationManager(
                 }
 
                 is LinkedConfigurationResult.Saved -> {
-                    desired = snapshot()
-                    synchronized(changedCredentials) { changedCredentials.clear() }
-                    synchronized(changedGrants) { changedGrants.clear() }
-                    synchronized(changedMessagingReplies) { changedMessagingReplies.clear() }
-                    show("Configuration saved.", result.setupRequired)
+                    savedSnapshot()
+                    if (pushGit && gitEnabled()) {
+                        showGit(requireNotNull(managedGit).commitAndPush(), result.setupRequired)
+                    } else {
+                        show("Configuration saved.", result.setupRequired)
+                    }
                 }
 
                 is LinkedConfigurationResult.Conflict -> {
@@ -156,26 +266,265 @@ class EvaConfigurationManager(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
-            mutableStatus.value =
-                ConfigurationStatus(
-                    linkedFolder = linked.linkedLabel(),
-                    message = error.message ?: "Configuration could not be loaded.",
-                    isError = true,
-                    setupRequired = mutableStatus.value.setupRequired,
-                )
+            if (gitEnabled()) publishGitError(error) else publishConfigurationError(error)
         }
     }
+
+    private suspend fun connectGit(enableOnSuccess: Boolean) = operations.withLock { connectGitLocked(enableOnSuccess) }
+
+    private suspend fun connectGitLocked(enableOnSuccess: Boolean): Boolean {
+        mutableStatus.value = bootstrapStatus(message = "Connecting managed Git checkout…", busy = true)
+        val token = secrets.read(GIT_TOKEN)
+        val previouslyEnabled = gitEnabled()
+        var modeActivated = previouslyEnabled
+        var switchedLink = false
+        var usable = false
+        try {
+            managedGit?.close()
+            val repository = ManagedGitRepository(managedCheckout(), gitBootstrap(), token = { token })
+            managedGit = repository
+            var localAttachment: LinkedConfigurationResult? = null
+            if (previouslyEnabled && repository.directory.read(EvaConfigurationCodec.FILE_NAME) != null) {
+                localAttachment = linked.attach(repository.directory)
+                usable = true
+            }
+            beforeManagedConnect()
+            val gitResult = repository.connect()
+            if (gitResult.condition == GitCondition.CONFLICT) {
+                showGit(gitResult, mutableStatus.value.setupRequired)
+                return usable
+            }
+            val linkedResult =
+                if (localAttachment != null && gitResult.condition != GitCondition.CLONED &&
+                    gitResult.condition != GitCondition.PULLED
+                ) {
+                    localAttachment
+                } else {
+                    try {
+                        linked.attach(repository.directory).also { switchedLink = true }
+                    } catch (failure: Exception) {
+                        if (gitResult.condition == GitCondition.CLONED || gitResult.condition == GitCondition.PULLED) {
+                            runCatching { repository.rollback(gitResult) }.onFailure(failure::addSuppressed)
+                        }
+                        throw failure
+                    }
+                }
+            val requirements = linkedResult.requirements()
+            usable = true
+            if (enableOnSuccess && !previouslyEnabled) {
+                saveGitEnabled(true)
+                modeActivated = true
+            }
+            val recovered = repository.commitAndPush()
+            val final =
+                if (recovered.condition == GitCondition.READY &&
+                    gitResult.condition != GitCondition.READY
+                ) {
+                    gitResult
+                } else {
+                    recovered
+                }
+            if (linkedResult is LinkedConfigurationResult.Saved) savedSnapshot()
+            showGit(final, requirements)
+            return true
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            if (enableOnSuccess && !modeActivated) {
+                if (switchedLink) {
+                    runCatching {
+                        linked.detach()
+                        prefs.getString(TREE, null)?.let { linked.attach(SafConfigurationDirectory(app, it.toUri())) }
+                    }.onFailure(failure::addSuppressed)
+                }
+            }
+            publishGitError(failure, token)
+            return usable
+        }
+    }
+
+    private suspend fun syncGit() =
+        operations.withLock {
+            mutableStatus.value = mutableStatus.value.copy(message = "Syncing managed Git checkout…", busy = true, isError = false)
+            val token = secrets.read(GIT_TOKEN)
+            try {
+                val repository =
+                    managedGit ?: ManagedGitRepository(managedCheckout(), gitBootstrap(), token = { token }).also { managedGit = it }
+                val gitResult = repository.synchronize()
+                if (gitResult.condition == GitCondition.CONFLICT) {
+                    showGit(gitResult, mutableStatus.value.setupRequired)
+                    return@withLock
+                }
+                val linkedResult =
+                    if (gitResult.condition == GitCondition.PULLED || gitResult.condition == GitCondition.CLONED) {
+                        try {
+                            linked.reload(force = true)
+                        } catch (failure: Exception) {
+                            runCatching { repository.rollback(gitResult) }.onFailure(failure::addSuppressed)
+                            throw failure
+                        }
+                    } else {
+                        linked.reload(force = false)
+                    }
+                val recovered = repository.commitAndPush()
+                val final =
+                    if (recovered.condition == GitCondition.READY &&
+                        gitResult.condition != GitCondition.READY
+                    ) {
+                        gitResult
+                    } else {
+                        recovered
+                    }
+                showGit(final, linkedResult.requirements())
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                publishGitError(failure, token)
+            }
+        }
+
+    private suspend fun savedSnapshot() {
+        desired = snapshot()
+        synchronized(changedCredentials) { changedCredentials.clear() }
+        synchronized(changedGrants) { changedGrants.clear() }
+        synchronized(changedMessagingReplies) { changedMessagingReplies.clear() }
+    }
+
+    private fun LinkedConfigurationResult.requirements(): List<String> =
+        when (this) {
+            is LinkedConfigurationResult.Loaded -> setupRequired
+            is LinkedConfigurationResult.Saved -> setupRequired
+            is LinkedConfigurationResult.Conflict -> setupRequired
+        }
 
     private fun show(
         message: String,
         requirements: List<String>,
     ) {
         mutableStatus.value =
-            ConfigurationStatus(
+            bootstrapStatus(
                 linkedFolder = linked.linkedLabel(),
                 message = message,
                 setupRequired = requirements.distinct().sorted(),
             )
+    }
+
+    private fun showGit(
+        result: ManagedGitResult,
+        requirements: List<String>,
+    ) {
+        mutableStatus.value =
+            bootstrapStatus(
+                linkedFolder = linked.linkedLabel(),
+                message = result.message,
+                isError = result.condition == GitCondition.CONFLICT || result.condition == GitCondition.ERROR,
+                setupRequired = requirements.distinct().sorted(),
+                gitCondition = result.condition,
+                pendingCommits = result.pendingCommits,
+            )
+    }
+
+    private fun publishConfigurationError(error: Exception) {
+        mutableStatus.value =
+            bootstrapStatus(
+                linkedFolder = linked.linkedLabel(),
+                message = error.message ?: "Configuration could not be loaded.",
+                isError = true,
+                setupRequired = mutableStatus.value.setupRequired,
+            )
+    }
+
+    private fun publishGitError(
+        error: Throwable,
+        token: String? = secrets.read(GIT_TOKEN),
+    ) {
+        val credentialsMissing = token.isNullOrBlank() && gitBootstrap().remoteUrl.startsWith("https://", ignoreCase = true)
+        val pending = runCatching { managedGit?.pendingCommits() ?: 0 }.getOrDefault(0)
+        val baseMessage = safeGitError(error, token)
+        val message =
+            if (pending > 0) {
+                "$baseMessage Git sync did not complete; $pending local configuration ${if (pending == 1) "commit remains" else "commits remain"}."
+            } else {
+                baseMessage
+            }
+        mutableStatus.value =
+            bootstrapStatus(
+                linkedFolder = linked.linkedLabel(),
+                message = if (credentialsMissing) "$message No Git token is saved on this device." else message,
+                isError = true,
+                setupRequired = mutableStatus.value.setupRequired,
+                gitCondition = if (credentialsMissing) GitCondition.MISSING_CREDENTIALS else GitCondition.ERROR,
+                pendingCommits = pending,
+            )
+    }
+
+    private fun gitEnabled(): Boolean = prefs.getBoolean(GIT_ENABLED, false)
+
+    private fun gitBootstrap(): GitBootstrap =
+        GitBootstrap(
+            remoteUrl = prefs.getString(GIT_REMOTE, "").orEmpty(),
+            branch = prefs.getString(GIT_BRANCH, "main") ?: "main",
+            authorName = prefs.getString(GIT_AUTHOR_NAME, "EVA on Android") ?: "EVA on Android",
+            authorEmail = prefs.getString(GIT_AUTHOR_EMAIL, "eva@localhost") ?: "eva@localhost",
+            username = prefs.getString(GIT_USERNAME, "").orEmpty(),
+            tokenPresent = secrets.read(GIT_TOKEN) != null,
+        )
+
+    @SuppressLint("UseKtx")
+    private fun saveGitBootstrap(value: GitBootstrap) {
+        check(
+            prefs
+                .edit()
+                .putString(GIT_REMOTE, value.remoteUrl)
+                .putString(GIT_BRANCH, value.branch)
+                .putString(GIT_AUTHOR_NAME, value.authorName)
+                .putString(GIT_AUTHOR_EMAIL, value.authorEmail)
+                .putString(GIT_USERNAME, value.username)
+                .commit(),
+        ) { "Could not save Git configuration." }
+    }
+
+    private fun bootstrapStatus(
+        linkedFolder: String? = null,
+        message: String? = null,
+        isError: Boolean = false,
+        setupRequired: List<String> = emptyList(),
+        gitCondition: GitCondition = if (gitEnabled()) GitCondition.READY else GitCondition.DISABLED,
+        pendingCommits: Int = 0,
+        busy: Boolean = false,
+    ) = ConfigurationStatus(
+        linkedFolder = linkedFolder,
+        message = message,
+        isError = isError,
+        setupRequired = setupRequired,
+        gitEnabled = gitEnabled(),
+        git = gitBootstrap(),
+        gitCondition = gitCondition,
+        pendingCommits = pendingCommits,
+        busy = busy,
+    )
+
+    private fun managedCheckout(): java.io.File {
+        val bootstrap = gitBootstrap()
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        val identity =
+            digest.digest("${bootstrap.remoteUrl}\u0000${bootstrap.branch}".toByteArray()).take(12).joinToString("") {
+                "%02x".format(it.toInt() and 0xff)
+            }
+        return java.io.File(java.io.File(app.getExternalFilesDir(null) ?: app.filesDir, MANAGED_CHECKOUT), identity).also {
+            require(it.isDirectory || it.mkdirs()) { "Could not create the managed Git checkout." }
+        }
+    }
+
+    private fun disableGitInternal() {
+        saveGitEnabled(false)
+        managedGit?.close()
+        managedGit = null
+    }
+
+    @SuppressLint("UseKtx")
+    private fun saveGitEnabled(enabled: Boolean) {
+        check(prefs.edit().putBoolean(GIT_ENABLED, enabled).commit()) { "Could not update managed Git mode." }
     }
 
     private suspend fun snapshot(): EvaConfiguration {
@@ -497,6 +846,14 @@ class EvaConfigurationManager(
     private companion object {
         const val PREFERENCES = "eva.configuration"
         const val TREE = "tree"
+        const val GIT_ENABLED = "git.enabled"
+        const val GIT_REMOTE = "git.remote"
+        const val GIT_BRANCH = "git.branch"
+        const val GIT_AUTHOR_NAME = "git.author.name"
+        const val GIT_AUTHOR_EMAIL = "git.author.email"
+        const val GIT_USERNAME = "git.username"
+        const val GIT_TOKEN = "configuration/git/token"
+        const val MANAGED_CHECKOUT = "configuration-git"
         const val OPENAI_REF = "provider/openai-api"
         const val CHATGPT_REF = "provider/chatgpt"
         const val BROKER_REF = "provider/broker"

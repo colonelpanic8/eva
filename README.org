@@ -82,12 +82,25 @@ Paseo and general MCP connectivity remain planned integrations. See
 
 * Your configuration repository
 
-In *Settings → User configuration → Choose folder*, select a synced checkout.
-EVA creates =eva.yaml= from your settings or restores the file already there.
-Choose the same repository on another device to restore its configuration;
-EVA lists any credentials, apps, or Android authorizations still needed.
-Use =include= files to share a base and keep local overrides. See
-[[file:docs/architecture.md][Architecture]] for the format, composition rules, and restore behavior.
+*Settings → User configuration* offers two modes. Folder mode links a Storage
+Access Framework folder and leaves synchronization to another app. Managed Git
+mode gives EVA an HTTPS remote and branch; EVA keeps a real app-owned checkout,
+pulls validated fast-forwards, commits EVA configuration edits, and pushes them.
+It reports local pending commits when the network or push fails. Managed Git can
+be disabled without deleting its checkout or device-local token.
+
+Both modes create =eva.yaml= from current settings when it is absent, or restore
+the complete configuration graph already present. Choose the same repository on
+another device to restore its configuration; EVA lists any credentials, apps, or
+Android authorizations still needed. Use =include= files to share a base and keep
+local overrides.
+
+The remote URL, branch, commit author, Git username, and enabled mode are local
+bootstrap settings, not fields inside =eva.yaml=. The Git token is encrypted in
+device-local secret storage and is never written into the URL, checkout, Git
+configuration, portable YAML, or ordinary preferences. See
+[[file:docs/architecture.md][Architecture]] for composition, synchronization, and
+restore behavior.
 
 * Documentation
 

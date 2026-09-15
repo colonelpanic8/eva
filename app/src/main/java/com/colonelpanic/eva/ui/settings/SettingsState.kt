@@ -62,6 +62,9 @@ data class SettingsUiState(
 data class SettingsActions(
     val onSelectConfigurationFolder: () -> Unit = {},
     val onReloadConfiguration: () -> Unit = {},
+    val onGitEnabled: (Boolean) -> Unit = {},
+    val onSaveGit: (String, String, String, String, String, String) -> String? = { _, _, _, _, _, _ -> null },
+    val onClearGitToken: () -> Unit = {},
     val onMessagingEnable: (Boolean) -> Unit = {},
     val onMessagingReply: (String, Boolean) -> Unit = { _, _ -> },
     val onMessagingRefresh: () -> Unit = {},

@@ -55,6 +55,7 @@ Paths below are relative to `app/src/main/java/com/colonelpanic/eva/`:
 | Messaging UI, reply access, remembered numbers | `ui/settings/MessagingScreen.kt`, `data/MessagingSettings.kt`, `data/ChosenNumbers.kt` |
 | Media apps as per-app extensions | `adapters/android/MediaAdapter.kt`, `adapters/android/AndroidMediaApps.kt` |
 | Portable configuration, composition, restore | `data/configuration/` |
+| Managed Git checkout, validation, sync | `data/configuration/ManagedGitRepository.kt`, `EvaConfigurationManager.kt` |
 | Persistence, settings, secrets | `data/` |
 | Stock prompt and YAML composition | `conversation/prompt/` |
 | App navigation and settings | `ui/EvaApp.kt`, `ui/settings/`, `ui/prompt/` |

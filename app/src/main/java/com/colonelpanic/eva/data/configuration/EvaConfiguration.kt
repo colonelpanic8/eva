@@ -238,6 +238,7 @@ data class ResolvedConfiguration(
     val rootFingerprint: String,
     val includedFingerprint: String,
     val rootText: String,
+    val paths: Set<String>,
 )
 
 fun interface ConfigurationReader {
@@ -287,6 +288,7 @@ object EvaConfigurationCodec {
         reader: ConfigurationReader,
     ): ResolvedConfiguration {
         val visited = linkedSetOf<String>()
+        val paths = linkedSetOf(rootPath)
         val digest = MessageDigest.getInstance("SHA-256")
         val includedDigest = MessageDigest.getInstance("SHA-256")
         var files = 0
@@ -298,6 +300,7 @@ object EvaConfigurationCodec {
         ): EvaConfigurationDocument {
             require(depth <= MAX_DEPTH) { "Configuration includes are nested too deeply." }
             require(visited.add(path)) { "Configuration include cycle at $path." }
+            paths += path
             require(++files <= MAX_FILES) { "Configuration includes too many files." }
             val text = requireNotNull(reader.read(path)) { "Configuration include $path was not found." }
             totalBytes += text.toByteArray(Charsets.UTF_8).size
@@ -335,6 +338,7 @@ object EvaConfigurationCodec {
             fingerprint(rootText),
             includedDigest.digest().hex(),
             rootText,
+            paths.toSet(),
         )
     }
 

@@ -8,6 +8,8 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.DocumentsContract
 import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 
 interface ConfigurationDirectory : ConfigurationReader {
@@ -17,6 +19,115 @@ interface ConfigurationDirectory : ConfigurationReader {
         text: String,
         expectedRootFingerprint: String?,
     )
+}
+
+class FileConfigurationDirectory(
+    root: File,
+    override val label: String = root.absolutePath,
+) : ConfigurationDirectory {
+    private val root = root.canonicalFile
+
+    init {
+        require(root.isDirectory || root.mkdirs()) { "Could not create the managed configuration checkout." }
+    }
+
+    override fun read(path: String): String? {
+        val file = resolve(path)
+        if (path == EvaConfigurationCodec.FILE_NAME) recoverRoot()
+        if (!file.exists()) return null
+        require(file.canonicalFile == file.absoluteFile && file.isFile) { "Configuration path $path is not a regular file." }
+        require(file.length() <= EvaConfigurationCodec.MAX_FILE_BYTES) { "Configuration file is too large." }
+        return file.readBytes().toString(Charsets.UTF_8)
+    }
+
+    override fun replaceRoot(
+        text: String,
+        expectedRootFingerprint: String?,
+    ) {
+        EvaConfigurationCodec.decode(text)
+        val file = resolve(EvaConfigurationCodec.FILE_NAME)
+        val current = read(EvaConfigurationCodec.FILE_NAME)
+        require(current?.let(EvaConfigurationCodec::fingerprint) == expectedRootFingerprint) {
+            "Configuration changed outside EVA; reload it before editing."
+        }
+        val temporary = resolve(TEMP_NAME)
+        val backup = resolve(BACKUP_NAME)
+        require(!temporary.exists() || temporary.delete()) { "Could not clear the previous configuration update." }
+        require(!backup.exists() || backup.delete()) { "Could not replace the previous configuration backup." }
+        try {
+            FileOutputStream(temporary).use { stream ->
+                stream.write(text.toByteArray(Charsets.UTF_8))
+                stream.flush()
+                stream.fd.sync()
+            }
+            require(readTemporary(temporary) == text) { "Configuration update could not be verified." }
+            require(read(EvaConfigurationCodec.FILE_NAME)?.let(EvaConfigurationCodec::fingerprint) == expectedRootFingerprint) {
+                "Configuration changed outside EVA; reload it before editing."
+            }
+            if (file.exists()) move(file, backup)
+            try {
+                move(temporary, file)
+            } catch (failure: Exception) {
+                if (backup.exists()) runCatching { move(backup, file) }
+                throw failure
+            }
+            backup.delete()
+        } finally {
+            temporary.delete()
+        }
+    }
+
+    private fun resolve(path: String): File {
+        require(path.isNotBlank() && !path.startsWith('/')) { "Configuration path is invalid." }
+        val relative = path.split('/')
+        require(relative.none { it.isBlank() || it == "." || it == ".." }) { "Configuration path is invalid." }
+        var current = root
+        relative.forEach { component ->
+            current = File(current, component)
+            require(!current.exists() || current.canonicalFile == current.absoluteFile) {
+                "Configuration path $path contains a symbolic link."
+            }
+        }
+        val canonicalRoot = root.canonicalFile.path.trimEnd(File.separatorChar) + File.separator
+        require(current.canonicalFile.path.startsWith(canonicalRoot)) { "Configuration path escapes the managed checkout." }
+        return current
+    }
+
+    private fun readTemporary(file: File): String {
+        require(file.length() <= EvaConfigurationCodec.MAX_FILE_BYTES) { "Configuration file is too large." }
+        return file.readBytes().toString(Charsets.UTF_8)
+    }
+
+    private fun move(
+        source: File,
+        destination: File,
+    ) {
+        require(!destination.exists() || destination.delete()) { "Could not replace ${destination.name}." }
+        if (source.renameTo(destination)) return
+        FileInputStream(source).use { input ->
+            FileOutputStream(destination).use { output ->
+                input.copyTo(output)
+                output.flush()
+                output.fd.sync()
+            }
+        }
+        require(source.delete()) { "Could not finish replacing EVA configuration." }
+    }
+
+    private fun recoverRoot() {
+        val file = resolve(EvaConfigurationCodec.FILE_NAME)
+        val backup = resolve(BACKUP_NAME)
+        val temporary = resolve(TEMP_NAME)
+        if (backup.isFile && (!file.exists() || temporary.exists())) {
+            move(backup, file)
+            temporary.delete()
+        }
+    }
+
+    private companion object {
+        const val TEMP_NAME = ".eva.yaml.new"
+        const val BACKUP_NAME = ".eva.yaml.backup"
+    }
 }
 
 class SafConfigurationDirectory(
