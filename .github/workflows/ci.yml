@@ -22,6 +22,8 @@ jobs:
           java-version: "17"
           cache: gradle
       - uses: android-actions/setup-android@v4.0.1
+        with:
+          packages: ""
       - name: Formatting, lint, tests, and debug build
         run: ./gradlew --no-daemon ktlintCheck :app:lintDebug :app:testDebugUnitTest :app:assembleDebug
       - name: Upload debug APK

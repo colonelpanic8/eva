@@ -29,6 +29,8 @@ jobs:
           java-version: "17"
           cache: gradle
       - uses: android-actions/setup-android@v4.0.1
+        with:
+          packages: ""
       - name: Configure version and signing
         env:
           RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
