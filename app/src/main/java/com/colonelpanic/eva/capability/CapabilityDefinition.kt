@@ -303,15 +303,12 @@ object BundledCapabilities {
                     "Spotify, a podcast player, a video, a browser tab. EVA drives the same media session the lock " +
                     "screen and headset buttons drive, so it needs no support for any particular app. " +
                     "It starts nothing that is not already loaded; use the play action for that. " +
-                    "Name an app only when more than one is playing at once, and read the now-playing action first " +
-                    "when you need to know which apps those are.",
+                    "To control one particular app when several are playing, use that app's own control action.",
                 schema(
                     """
                 {"type":"object","properties":{
                 "action":{"type":"string","enum":${MediaCommand.arguments.quoted()},
-                "description":"toggle flips between playing and paused"},
-                "app":{"type":"string","minLength":1,"maxLength":100,
-                "description":"The visible name of the playing app; omit to control whatever is playing"}},
+                "description":"toggle flips between playing and paused"}},
                 "required":["action"],"additionalProperties":false}
             """,
                 ),
@@ -327,19 +324,16 @@ object BundledCapabilities {
             CapabilityDefinition(
                 CapabilityRegistry.MEDIA_PLAY,
                 "Play something",
-                "Ask a music or podcast app to start playing a song, artist, album, playlist, or show by name, " +
-                    "starting the app if it is not already running. Name the app when the user does: " +
-                    "\"play Black Hole Sun on Spotify\". " +
-                    "The words go to the app, which decides what they match, so what plays is that app's choice " +
-                    "and not a track EVA picked. EVA reports back what actually started when it can see it. " +
-                    "Use the control action instead for something already playing.",
+                "Ask whatever app the user is in, or the phone's choice of music app, to start playing a song, " +
+                    "artist, album, playlist, or show by name. When the user names an app, use that app's own play " +
+                    "action instead. The words go to the app, which decides what they match, so what plays is that " +
+                    "app's choice and not a track EVA picked. EVA reports back what actually started when it can see " +
+                    "it. Use the control action instead for something already playing.",
                 schema(
                     """
                 {"type":"object","properties":{
                 "query":{"type":"string","minLength":1,"maxLength":300,
-                "description":"What to play, as the user would say it"},
-                "app":{"type":"string","minLength":1,"maxLength":100,
-                "description":"Which app should play it; omit to let the phone choose"}},
+                "description":"What to play, as the user would say it"}},
                 "required":["query"],"additionalProperties":false}
             """,
                 ),
@@ -347,32 +341,6 @@ object BundledCapabilities {
             ) { args ->
                 if (args.getValue("query").isBlank() || args.getValue("query").any(Char::isISOControl)) {
                     "Say what to play on one line."
-                } else {
-                    null
-                }
-            },
-            CapabilityDefinition(
-                CapabilityRegistry.MEDIA_QUEUE,
-                "Queue something next",
-                "Add a song to the queue in a music app so it plays after what is playing now, without " +
-                    "interrupting it. Use this when the user says queue, play next, or add to the queue; use the " +
-                    "play action when they want it to start now. Android offers no universal way into another app's " +
-                    "queue, so this reaches Spotify when connected or an installed player that exposes searchable " +
-                    "Media3 library queueing. An unsupported app is answered by naming the ones EVA can reach. EVA " +
-                    "searches the app for the words and queues the top match, then reports the track it queued.",
-                schema(
-                    """
-                {"type":"object","properties":{
-                "query":{"type":"string","minLength":1,"maxLength":300,
-                "description":"The song, as the user would say it, with the artist when known"},
-                "app":{"type":"string","minLength":1,"maxLength":100,
-                "description":"Which app should queue it; omit when only one available app can queue"}},
-                "required":["query"],"additionalProperties":false}
-            """,
-                ),
-            ) { args ->
-                if (args.getValue("query").isBlank() || args.getValue("query").any(Char::isISOControl)) {
-                    "Say what to queue on one line."
                 } else {
                     null
                 }

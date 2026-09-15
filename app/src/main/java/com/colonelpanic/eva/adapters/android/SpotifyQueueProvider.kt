@@ -12,8 +12,6 @@ class SpotifyQueueProvider(
 ) : QueueProvider {
     override val label = "Spotify"
 
-    override fun matches(app: String): Boolean = app.contains("spotify", ignoreCase = true)
-
     override fun connected(): Boolean = isConnected()
 
     /**
@@ -26,5 +24,9 @@ class SpotifyQueueProvider(
         val devices = api.devices()
         api.queue(track.uri, devices.firstOrNull { it.isActive }?.id ?: devices.singleOrNull()?.id)
         return QueuedTrack(track.name, track.artists)
+    }
+
+    companion object {
+        const val PACKAGE = "com.spotify.music"
     }
 }

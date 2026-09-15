@@ -114,10 +114,20 @@ for concrete identity, schema, waiting, and authorization rules.
 - Native adapters use intents, contacts, messaging, media sessions, media browser
   interfaces, and other implemented Android contracts. Keep native resolution
   where it needs code; pure mappings can be declarative packages.
-- Media transport can work across apps exposing Android media controls. Notification
-  access supports session inspection and result confirmation. Queue insertion needs
-  a provider that supports it; Spotify has a dedicated API route and Media3 library
-  discovery is implemented. Compatibility must be tested per app.
+- Media apps are surfaced as extensions (`adapters/android/MediaAdapter.kt`): each
+  installed player found through its media browser service, Media3 library
+  service, or play-from-search intent becomes one installed extension whose
+  descriptor lists only the operations it has a route for — control, now-playing,
+  and play through its media session, plus queue only where a route exists (Media3
+  library search, or Spotify's own API once the account is connected). The model
+  selects the app by choosing its tool; there is no app-name argument and no
+  name matching in EVA. Enablement and per-operation grants, settings rows, catalog
+  revisions, and stale-proposal refusal come from the extension runtime unchanged.
+  Unnamed control, now-playing, volume, and play-whatever-the-phone-chooses stay
+  native: they are media-button semantics and belong to no app. Notification access
+  supports session inspection and result confirmation. Compatibility must be
+  tested per app; an app may refuse EVA as a media client, which is remembered so
+  the fallback is not delayed by asking again.
 - SMS draft handoff and native direct-message sending are distinct capabilities.
   Notification replies share the same authorized messaging boundary. Do not remove
   native behavior merely because a declarative compose example exists. See

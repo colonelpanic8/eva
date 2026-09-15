@@ -9,7 +9,8 @@ in the app. [Architecture](architecture.md) explains the runtime;
 | --- | --- | --- |
 | Declarative JSON packages | Existing app intents or HTTP APIs, without app changes | Import, preview, install, grants, intent and HTTP execution implemented; content-provider binding parses but has no execution host |
 | Installed Android extension service | Code and structured protocol responses supplied by an app author | AIDL runtime implemented and JVM-tested; no real provider device verification |
-| Native Android adapters | Operations requiring EVA code or platform privileges | Existing adapters include media, messaging, Settings AppFunctions and Shizuku device control; no universal AppFunctions adapter |
+| Native Android adapters | Operations requiring EVA code or platform privileges | Existing adapters include messaging, Settings AppFunctions and Shizuku device control; no universal AppFunctions adapter |
+| Media apps | Any installed player, through the routes it already registers | Discovered, not authored: each player is one extension with per-operation grants (see [Architecture](architecture.md#android-capabilities)); nothing to import or install |
 
 Prefer declarative packages when an existing interface can do the work. Packages
 cannot download arbitrary code or expand Android permissions. A new execution

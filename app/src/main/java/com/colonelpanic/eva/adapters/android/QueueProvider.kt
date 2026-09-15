@@ -21,9 +21,6 @@ interface QueueProvider {
     /** The name the user would say, and the name EVA uses when it reports what it did. */
     val label: String
 
-    /** Whether a spoken app name means this provider. */
-    fun matches(app: String): Boolean
-
     /** False until the user finishes connecting it, which is a setup step rather than a refusal. */
     fun connected(): Boolean
 

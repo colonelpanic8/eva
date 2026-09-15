@@ -53,13 +53,12 @@ class MediaControlBackend(
         val command =
             MediaCommand.of(arguments.getValue("action"))
                 ?: return ExecutionOutcome(InvocationStatus.NOT_EXECUTED, UNKNOWN_ACTION)
-        val app = arguments["app"]?.trim()?.takeIf(String::isNotBlank)
         val observable = access.observable()
         val sessions = if (observable) access.sessions() else emptyList()
-        return when (val plan = MediaRouting.plan(observable, sessions, app, command)) {
+        return when (val plan = MediaRouting.plan(observable, sessions, command)) {
             is MediaPlan.Refuse -> ExecutionOutcome(InvocationStatus.NOT_EXECUTED, plan.message)
             is MediaPlan.MediaButton -> button(command, observable)
-            is MediaPlan.Control -> drive(plan.target, command)
+            is MediaPlan.Control -> driveSession(access, plan.target, command, settle)
         }
     }
 
@@ -72,21 +71,6 @@ class MediaControlBackend(
         } else {
             ExecutionOutcome(InvocationStatus.FAILED, NO_AUDIO_SERVICE)
         }
-
-    private suspend fun drive(
-        target: MediaSnapshot,
-        command: MediaCommand,
-    ): ExecutionOutcome {
-        val resolved = command.resolve(target)
-        if (!access.send(target.packageName, resolved)) {
-            return ExecutionOutcome(
-                InvocationStatus.NOT_EXECUTED,
-                "${target.appLabel} stopped publishing media controls before EVA could send ${resolved.argument}. Nothing was sent.",
-            )
-        }
-        settle()
-        return MediaText.confirm(resolved, target, access.sessions().firstOrNull { it.packageName == target.packageName })
-    }
 
     private fun volume(arguments: Map<String, String>): ExecutionOutcome {
         val action =
@@ -110,4 +94,22 @@ class MediaControlBackend(
         const val NO_AUDIO_SERVICE = "This phone's audio service did not accept a media button. Nothing was sent."
         const val UNKNOWN_ACTION = "That is not an action this can perform. Nothing was sent."
     }
+}
+
+/** Sends one command to one session and reads it back, the shared last step of naming an app or not. */
+internal suspend fun driveSession(
+    access: MediaSessionAccess,
+    target: MediaSnapshot,
+    command: MediaCommand,
+    settle: suspend () -> Unit,
+): ExecutionOutcome {
+    val resolved = command.resolve(target)
+    if (!access.send(target.packageName, resolved)) {
+        return ExecutionOutcome(
+            InvocationStatus.NOT_EXECUTED,
+            "${target.appLabel} stopped publishing media controls before EVA could send ${resolved.argument}. Nothing was sent.",
+        )
+    }
+    settle()
+    return MediaText.confirm(resolved, target, access.sessions().firstOrNull { it.packageName == target.packageName })
 }

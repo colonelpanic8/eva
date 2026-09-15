@@ -100,19 +100,18 @@ object NativeIntents {
      * app decides what they match, so what starts is that app's interpretation. Naming an app
      * pins the request to it instead of letting Android offer the choice.
      */
-    fun playMedia(
-        context: Context,
-        arguments: Map<String, String>,
-    ): Intent? {
-        val intent =
-            Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH)
-                .putExtra(SearchManager.QUERY, arguments.getValue("query"))
-                .putExtra(MediaStore.EXTRA_MEDIA_FOCUS, UNSTRUCTURED_MEDIA_SEARCH)
-        val requested = arguments["app"]?.trim()?.takeIf(String::isNotBlank) ?: return intent
-        val manager = context.packageManager
-        val match = bestMatch(manager, manager.queryIntentActivities(intent, 0), requested) ?: return null
-        return intent.setPackage(match.activityInfo.packageName)
-    }
+    fun playMedia(arguments: Map<String, String>): Intent = playFromSearch(arguments.getValue("query"))
+
+    /** The same request pinned to one app, for that app's own play action. */
+    fun playMediaIn(
+        packageName: String,
+        query: String,
+    ): Intent = playFromSearch(query).setPackage(packageName)
+
+    private fun playFromSearch(query: String): Intent =
+        Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH)
+            .putExtra(SearchManager.QUERY, query)
+            .putExtra(MediaStore.EXTRA_MEDIA_FOCUS, UNSTRUCTURED_MEDIA_SEARCH)
 
     /** Resolves a launcher activity whose visible label best matches the requested app name. */
     fun launchApp(

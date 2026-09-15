@@ -26,13 +26,6 @@ class MediaLibraryQueueProviderTest {
     private val provider = MediaLibraryQueueProvider(app, client)
 
     @Test
-    fun `an installed library app is matched by label or package name`() {
-        assertTrue(provider.matches("Jellyfin"))
-        assertTrue(provider.matches("jelly"))
-        assertFalse(provider.matches("YouTube Music"))
-    }
-
-    @Test
     fun `queue delegates the search to the app's public media library`() =
         runTest {
             val result = provider.queue("black hole sun")

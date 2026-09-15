@@ -91,14 +91,8 @@ object MediaRouting {
     fun plan(
         observable: Boolean,
         sessions: List<MediaSnapshot>,
-        app: String?,
         command: MediaCommand,
     ): MediaPlan {
-        if (app != null) {
-            if (!observable) return MediaPlan.Refuse(NEEDS_ACCESS_TO_CHOOSE)
-            val target = select(sessions, app) ?: return MediaPlan.Refuse(noSuchApp(app, sessions))
-            return refusalFor(target, command) ?: MediaPlan.Control(target)
-        }
         if (!observable) return MediaPlan.MediaButton
         val target =
             sessions.firstOrNull { it.playing }
@@ -107,13 +101,8 @@ object MediaRouting {
         return refusalFor(target, command) ?: MediaPlan.Control(target)
     }
 
-    fun select(
-        sessions: List<MediaSnapshot>,
-        app: String,
-    ): MediaSnapshot? = AppNames.best(sessions, app, MediaSnapshot::appLabel, MediaSnapshot::packageName)
-
     /** An app that declares no actions at all is attempted anyway; only an explicit omission refuses. */
-    private fun refusalFor(
+    internal fun refusalFor(
         target: MediaSnapshot,
         command: MediaCommand,
     ): MediaPlan.Refuse? {
@@ -121,20 +110,7 @@ object MediaRouting {
         return MediaPlan.Refuse("${target.appLabel} does not accept ${command.argument} right now. Nothing was sent to it.")
     }
 
-    private fun noSuchApp(
-        app: String,
-        sessions: List<MediaSnapshot>,
-    ): String =
-        if (sessions.isEmpty()) {
-            "Nothing is playing on this phone, so there is no $app session to control. Nothing was sent."
-        } else {
-            "No media session belongs to $app. ${MediaText.appList(sessions)} Nothing was sent."
-        }
-
     const val NOTHING_PLAYING = "No app on this phone is playing or paused on anything. Nothing was sent."
-    const val NEEDS_ACCESS_TO_CHOOSE =
-        "EVA cannot tell one playing app from another without notification access. Turn on media controls in " +
-            "EVA's settings, or repeat the request without naming an app so the button reaches whatever is playing."
 }
 
 /** An installed app that publishes a media browser service, which is what can be asked to play. */
@@ -143,22 +119,3 @@ data class MediaApp(
     val label: String,
     val serviceName: String,
 )
-
-object AppNames {
-    /**
-     * Matches how the user would name an app, the way opening an app by name does. Package names
-     * are matched last because a spoken name is a label, not an application ID.
-     */
-    fun <T> best(
-        candidates: List<T>,
-        requested: String,
-        label: (T) -> String,
-        id: (T) -> String,
-    ): T? {
-        val wanted = requested.trim().lowercase()
-        if (wanted.isEmpty()) return null
-        return candidates.firstOrNull { label(it).lowercase() == wanted }
-            ?: candidates.firstOrNull { label(it).lowercase().contains(wanted) }
-            ?: candidates.firstOrNull { id(it).lowercase().contains(wanted) }
-    }
-}

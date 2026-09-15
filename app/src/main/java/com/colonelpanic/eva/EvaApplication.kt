@@ -8,6 +8,7 @@ import android.os.SystemClock
 import androidx.core.content.pm.PackageInfoCompat
 import com.colonelpanic.eva.adapters.android.AndroidExtensionConnector
 import com.colonelpanic.eva.adapters.android.AndroidIntentHost
+import com.colonelpanic.eva.adapters.android.AndroidMediaApps
 import com.colonelpanic.eva.adapters.android.AndroidMediaLauncher
 import com.colonelpanic.eva.adapters.android.AndroidMediaLibraryQueueClient
 import com.colonelpanic.eva.adapters.android.AndroidMediaSessions
@@ -18,11 +19,11 @@ import com.colonelpanic.eva.adapters.android.ContactsQueryBackend
 import com.colonelpanic.eva.adapters.android.DeviceControlHost
 import com.colonelpanic.eva.adapters.android.IntentBackend
 import com.colonelpanic.eva.adapters.android.MapIntentBackend
+import com.colonelpanic.eva.adapters.android.MediaAdapter
 import com.colonelpanic.eva.adapters.android.MediaControlAccess
 import com.colonelpanic.eva.adapters.android.MediaControlBackend
 import com.colonelpanic.eva.adapters.android.MediaLibraryQueueProvider
 import com.colonelpanic.eva.adapters.android.MediaPlayBackend
-import com.colonelpanic.eva.adapters.android.MediaQueueBackend
 import com.colonelpanic.eva.adapters.android.MessageIntentBackend
 import com.colonelpanic.eva.adapters.android.MessageTargets
 import com.colonelpanic.eva.adapters.android.MessagingReadBackend
@@ -227,12 +228,6 @@ class EvaApplication :
     }
 
     val registry by lazy {
-        val queueProviders =
-            listOf(
-                SpotifyQueueProvider(spotifyApi) {
-                    spotify.account.value != null && spotify.clientId.value != null
-                },
-            ) + mediaLibraryQueue.apps().map { MediaLibraryQueueProvider(it, mediaLibraryQueue) }
         CapabilityRegistry(
             buildMap {
                 putAll(
@@ -296,14 +291,11 @@ class EvaApplication :
                             MediaControlBackend(mediaSessions, MediaControlBackend.Operation.VOLUME),
                         CapabilityRegistry.MEDIA_PLAY to
                             MediaPlayBackend(
-                                mediaLauncher,
                                 mediaSessions,
                                 intent("Asked a music app to play that.", "No app on this phone offers to play a request by name.") {
-                                    NativeIntents.playMedia(this@EvaApplication, it)
+                                    NativeIntents.playMedia(it)
                                 },
                             ),
-                        CapabilityRegistry.MEDIA_QUEUE to
-                            MediaQueueBackend(queueProviders),
                     ),
                 )
                 shizukuShellHost?.let { host ->
@@ -439,6 +431,43 @@ class EvaApplication :
                         extensionScope,
                         ::logExtensionFailure,
                     ) { packageAdapter },
+                    com.colonelpanic.eva.capability.extensions.IsolatedCapabilityAdapter(
+                        "Media apps",
+                        extensionScope,
+                        ::logExtensionFailure,
+                    ) {
+                        MediaAdapter(
+                            AndroidMediaApps(this, mediaLauncher, mediaLibraryQueue),
+                            mediaSessions,
+                            mediaLauncher,
+                            queueFor = { app ->
+                                when {
+                                    app.identity.packageName == SpotifyQueueProvider.PACKAGE -> {
+                                        SpotifyQueueProvider(spotifyApi) {
+                                            spotify.account.value != null && spotify.clientId.value != null
+                                        }
+                                    }
+
+                                    app.library != null -> {
+                                        MediaLibraryQueueProvider(app.library, mediaLibraryQueue)
+                                    }
+
+                                    else -> {
+                                        null
+                                    }
+                                }
+                            },
+                            intentFor = { app ->
+                                if (!app.handlesSearchIntent) {
+                                    null
+                                } else {
+                                    intent("Asked ${app.label} to play that.", "${app.label} is not accepting play requests.") {
+                                        NativeIntents.playMediaIn(app.identity.packageName, it.getValue("query"))
+                                    }
+                                }
+                            },
+                        )
+                    },
                 ),
                 extensionScope,
             ),

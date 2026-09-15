@@ -143,7 +143,6 @@ class CapabilityRegistry(
         const val MEDIA_CONTROL = "eva.android.media.control"
         const val MEDIA_NOW_PLAYING = "eva.android.media.nowplaying"
         const val MEDIA_PLAY = "eva.android.media.play"
-        const val MEDIA_QUEUE = "eva.android.media.queue"
         const val MEDIA_VOLUME = "eva.android.media.volume"
         const val UI_OBSERVE = "eva.device.observe"
         const val UI_TAP = "eva.device.tap"

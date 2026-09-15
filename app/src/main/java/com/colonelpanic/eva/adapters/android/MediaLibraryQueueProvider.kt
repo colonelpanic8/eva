@@ -41,9 +41,6 @@ class MediaLibraryQueueProvider(
 ) : QueueProvider {
     override val label: String = target.label
 
-    override fun matches(app: String): Boolean =
-        app.contains(label, ignoreCase = true) || target.packageName.contains(app, ignoreCase = true)
-
     override fun connected(): Boolean = true
 
     override suspend fun queue(query: String): QueuedTrack? = client.queue(target, query)

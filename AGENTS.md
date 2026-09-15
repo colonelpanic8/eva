@@ -53,6 +53,7 @@ Paths below are relative to `app/src/main/java/com/colonelpanic/eva/`:
 | Declarative package parsing/import/execution | `adapters/declarative/` |
 | Native phone operations | `adapters/android/` |
 | Messaging UI, reply access, remembered numbers | `ui/settings/MessagingScreen.kt`, `data/MessagingSettings.kt`, `data/ChosenNumbers.kt` |
+| Media apps as per-app extensions | `adapters/android/MediaAdapter.kt`, `adapters/android/AndroidMediaApps.kt` |
 | Portable configuration, composition, restore | `data/configuration/` |
 | Persistence, settings, secrets | `data/` |
 | Stock prompt and YAML composition | `conversation/prompt/` |
