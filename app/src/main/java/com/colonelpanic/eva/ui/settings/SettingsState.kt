@@ -71,7 +71,7 @@ data class SettingsActions(
     val onMessagingRefresh: () -> Unit = {},
     val onForgetRememberedNumbers: () -> Unit = {},
     val onOpenAppSettings: () -> Unit = {},
-    val onRepositoryRefresh: (String) -> Unit = {},
+    val onRepositoryRefresh: () -> Unit = {},
     val onPluginFileImport: () -> Unit = {},
     val onPluginUrlPreview: (String) -> Unit = {},
     val onPluginPreview: (String) -> Unit = {},

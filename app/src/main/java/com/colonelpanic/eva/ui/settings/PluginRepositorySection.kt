@@ -27,6 +27,9 @@ internal fun ExtensionCatalogSection(
             state.error?.let { Text(it) }
             state.notice?.let { Text(it) }
             Text("App matching happens on this phone. Apps Android does not reveal may still work with a manually selected extension.")
+            TextButton(onClick = actions.onRepositoryRefresh, enabled = !state.busy) {
+                Text("Refresh available extensions")
+            }
             OutlinedTextField(
                 value = packageUrl,
                 onValueChange = { packageUrl = it },

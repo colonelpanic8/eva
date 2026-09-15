@@ -34,6 +34,8 @@ class PluginBrowser(
     val state = mutable.asStateFlow()
     private val work = Mutex()
 
+    fun refresh() = refresh(mutable.value.source)
+
     fun refresh(source: String) =
         run {
             mutable.value = mutable.value.copy(preview = null)

@@ -17,20 +17,10 @@ internal fun GeneralExtensionSettingsSection(
     state: SettingsUiState,
     actions: SettingsActions,
 ) {
-    var source by remember(state.plugins.source) { mutableStateOf(state.plugins.source) }
     SettingsSection("General extension settings") {
         SettingsBlock {
             Text("These settings apply to extensions generally, not to a particular app.")
             TextButton(onClick = actions.onRefreshExtensions) { Text("Refresh installed extensions") }
-            OutlinedTextField(
-                value = source,
-                onValueChange = { source = it },
-                label = { Text("Extension index URL") },
-                singleLine = true,
-            )
-            OutlinedButton(onClick = { actions.onRepositoryRefresh(source) }, enabled = !state.plugins.busy) {
-                Text("Refresh extension repository")
-            }
             Text("A timeout does not undo an action. EVA does not retry actions automatically.")
         }
         for (mode in InteractionMode.entries) {
