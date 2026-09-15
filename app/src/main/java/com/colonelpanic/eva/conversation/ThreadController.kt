@@ -56,7 +56,7 @@ import java.util.UUID
  * Threads are durable; a voice call or text connection is an attachment that comes and goes.
  * The work of a turn belongs to its [TurnTask], which is not a child of the attachment: when
  * the call ends with the turn unfinished, the task re-homes onto a background text leg and
- * finishes there. See docs/threads.md. Calls and [scope] are confined to the UI dispatcher.
+ * finishes there. See docs/architecture.md. Calls and [scope] are confined to the UI dispatcher.
  */
 class ThreadController(
     private val registry: CapabilityRegistry,

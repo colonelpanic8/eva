@@ -47,6 +47,6 @@ version-code version:
 fdroid-changelogs *args:
     ./scripts/fdroid/changelogs.py "$@"
 
-# Build the self-hosted F-Droid repository; see docs/fdroid.md.
+# Build the self-hosted F-Droid repository; see docs/operations.md.
 fdroid-repo:
     ./scripts/fdroid/build-repo.sh

@@ -2,7 +2,7 @@ package com.colonelpanic.eva.conversation
 
 /**
  * A durable conversation. Sessions attach to a thread and detach again; the thread and
- * the work its turns are doing outlive them. See docs/threads.md.
+ * the work its turns are doing outlive them. See docs/architecture.md.
  */
 data class Thread(
     val id: String,

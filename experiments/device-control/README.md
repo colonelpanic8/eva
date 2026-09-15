@@ -1,13 +1,13 @@
 # Device-control experiment
 
-Status: **the app → Shizuku UserService → UiAutomation path works on the tested
-Android 16 emulator**. This is a standalone, debug-only experiment, not an EVA
-feature or a model-driven agent. No root, embedded ADB client, AccessibilityService,
+This standalone debug-only probe recorded the **app → Shizuku UserService →
+UiAutomation path on an Android 16 emulator**. Its fixed fixture workflow is
+separate from EVA's integrated device-control adapter. No root, embedded ADB client, AccessibilityService,
 or MediaProjection is used in either experimental APK.
 
-The main EVA app, its permissions, action dispatcher, model bridge, and design
-documents are unchanged by this experiment. Release variants of the experimental
-apps are disabled.
+Release variants of these experimental apps are disabled. For the main app's
+current device-control boundary, see [Architecture](../../docs/architecture.md);
+this experiment's dated results do not establish support on other devices.
 
 ## What was proved
 
@@ -140,7 +140,7 @@ to `1` using `adb shell settings put system`, then repeat `exercise`. Restore
 rotation racing an injection. To stop an instance you created, use
 `adb -s "$EVA_SERIAL" emu kill`. Its temporary AVD directory remains for inspection.
 
-## Limits and next experiments
+## Scope of the recorded evidence
 
 - Android 17/API 37, a physical phone, fold transitions, secondary displays,
   and other OEMs are unverified. The hidden constructor assumes display 0.
@@ -163,10 +163,9 @@ rotation racing an injection. To stop an instance you created, use
 - APKs, raw run output and AVD data are experimental. The exported activity and
   local result files are test harness interfaces, not production entry points.
 
-Before adding model tools, repeat this probe on API 37, then implement and test
-bounded actions with freshness, cancellation and uncertain-outcome semantics.
-That work can now start from an executable mechanism instead of a platform
-hypothesis.
+Use this fixture to investigate platform compatibility independently of model
+behavior. The main app has separate bounded operations and freshness checks;
+changes there require their own verification.
 
 ## Validation and sources
 

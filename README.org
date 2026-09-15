@@ -1,205 +1,122 @@
 #+TITLE: EVA — Extensible Voice Assistant
 #+OPTIONS: toc:2
 
-* Status
+EVA is an open Android assistant built to turn conversation into action across
+your phone, existing apps, and services. Its design centers on fast voice
+interaction, user-owned configuration, replaceable model providers, and
+integrations that can be added without rebuilding the app.
 
-EVA is an open, extensible Android assistant project. The Kotlin/Compose app
-connects to a development broker using the host's existing ChatGPT login.
-Natural-language typed requests reach a model, which can select map search,
-navigation, and message-draft capabilities from EVA's catalog. The phone validates
-and journals actions before dispatch; message drafts are not direct SMS sends.
-The local command parser remains a diagnostic/test harness.
+* Design philosophy
 
-Native realtime WebRTC voice is implemented as a separate conversation mode,
-with microphone permission, mute controls, audio focus, and cleanup. Voice
-always captures: there is no microphone-less mode. Every runtime permission EVA
-uses is asked for together when the app opens, because a session that continues
-while the phone is locked or another app is in front cannot show a dialog. Voice mode performs phone actions through the same catalog and
-dispatcher as typed mode, verified end to end with synthetic speech on an
-emulator. EVA signs in to a ChatGPT account
-on the phone with a one-time device code. Typed conversation and direct realtime
-voice use that sign-in; an OpenAI API key remains the separately billed
-alternative. No workstation is required for direct voice. Microphone capture
-and speaker playout are verified on a physical
-phone; acoustic quality and interruption behaviour are not yet measured.
-An opt-in [[file:docs/native-voice-testing.md][native speech test]] verifies generated speech, live transcripts,
-and decoded provider audio on the emulator.
-Native subscription login covers typed conversation and voice. Remote pairing
-to a broker is still not implemented in the Android app.
+These principles guide development. They describe the intended product; the
+implementation and its limits are documented in [[file:docs/architecture.md][Architecture]].
 
-Media control works through Android's media session rather than through any
-app-specific integration: pausing, resuming, skipping, stopping, reading what is
-playing, and media volume reach any app that publishes transport controls.
-Starting something by name asks the app's own media session when it has one,
-the same request a car's voice button makes, then the media browser interface
-Android Auto uses to start a cold app, and finally the documented play-from-search
-intent for an app that rejects EVA as a client; an app like Spotify that answers
-that intent with a results screen is then asked through the session it brought
-up, and EVA reports what actually began playing.
-Seeing what is playing, choosing between two playing apps, and confirming a
-command took effect need notification access, which the settings screen explains
-and opens; without it the media button still carries play, pause, and skip
-unconfirmed. Media sessions answer from the background, so these are the first
-capabilities that work with EVA off screen. Beyond the report that Spotify
-answers the play-by-name intent with a search screen, none of this has been
-exercised against a real media app on a device yet.
+** Get things done with minimal friction
 
-Queueing is the exception to all of that, because Android's framework transport
-controls cannot add to another app's queue. EVA uses Spotify's Web API when the
-user connects it, and also discovers installed players that expose searchable,
-editable queues through the public Media3 library contract. Jellyfin implements
-that contract; YouTube Music has no documented queue API and can work only if
-its installed app exposes the Media3 route. Unsupported apps are answered by
-naming the available providers instead of a bare refusal.
+Summon EVA, say what you want, and let it act. Routine authorized actions should
+require little interaction. Opening another app for manual completion is a
+fallback. Remember grants and preferences, and ask a short question when the
+intended action or target is genuinely ambiguous.
 
-EVA now registers a voice interaction service, so it can be selected as the
-phone's digital assistant rather than only answering an assist intent. The
-assistant session draws its panel over the app already in front, controls a live
-voice session, keeps the conversation hidden on a locked phone, reads no screen
-context, and provides an app-launch surface while the panel is shown. Android
-rejects launches through hidden sessions, so dismissed-panel follow-up actions
-still require returning to EVA. Because selecting an assistant also replaces the
-device's speech recognizer, EVA's required recognition service delegates to
-on-device recognition or another installed recognizer, and reports an error if
-neither is available. On a Pixel 11 Pro Fold running Android 17, the signed
-0.13.0 release candidate became the active assistant, opened its translucent
-panel over another app from the system assist key event, connected voice, kept
-panel taps from dismissing it, and dismissed from the surrounding scrim. The
-keyguard path, assistant activity handoff, and delegated system recognition
-remain unverified; JVM tests cover selection, lifecycle, and dispatch logic.
+** Use the apps you already have
 
-The bundled [[file:app/src/main/assets/caffeine.json][Caffeine package]] asks the existing app to enable or disable keep-awake
-through fixed-component intents. Manage extensions, grants and wait budgets on
-the navigation drawer’s Extensions page. Both actions require separate write grants and
-report handoff, not verified state. It needs no server or app-side changes.
-JVM verification covers the contract and missing-activity handling;
-[[file:docs/device-validation-2026-09-14.md][Pixel typed execution verification]] passed for enable and disable, with notification state changes.
+Prefer existing Android interfaces and app capabilities. Useful integration
+should not depend on persuading every app developer to support EVA. Declarative
+packages should connect existing interfaces without code changes to EVA or the
+target app; native adapters cover operations that need code.
 
-The shipped [[file:app/src/main/assets/messages.json][Messages package]] controls the phone's existing messaging app through
-Android's SMS-compose intent. Its JSON definition, enable/action grants, typed
-arguments, and attributed handoff receipts use the declarative adapter. It opens
-a draft; the user taps Send. No update to Messages, server credentials, Shizuku,
-or app-side extension code is needed. JVM tests cover the wiring;
-[[file:docs/device-validation-2026-09-14.md][Pixel verification]] passed with an unsent draft. The org-agenda HTTP example is not bundled.
-The Extensions page supports HTTPS repository refresh, app matching, preview,
-installation, updates and removal. Matched extensions show icons from installed
-Android apps. The separate [[https://github.com/colonelpanic8/eva-plugins][eva-plugins repository]] publishes starter
-packages and an index generator. Extensions separates Installed, Browse and Settings;
-Browse includes an explicit Refresh plugin repository button. Repository imports
-are JVM-tested.
-Browse also imports standalone HTTPS package URLs and JSON files selected through
-Android's file picker. Content-provider execution and Paseo are not integrated. The
-[[file:docs/extension-protocol.md][installed-app extension v1 contract]] now has generic discovery, asynchronous
-AIDL execution, persistent settings grants, attributed receipts, and deterministic
-64-tool admission wired into the app. Extensions appear disabled; enabling grants
-claimed reads, and writes/unknown effects need separate switches. Reads may send
-data to the configured model. Additions appear on the next connection; revocation
-blocks new execution. JVM tests cover the runtime with a fake connection layer,
-including uncertainty and removal. *Device verification against a real installed
-provider has not happened yet.* Search then complete still requires separate user
-requests; in-turn approval and live catalog rotation are deferred.
-The system prompt is a YAML file the user owns rather than text hidden inside the
-app: a list of instructions with their own scope and on/off state, which EVA
-assembles at the start of every session. The Instructions screen can update that
-catalog from the =eva-instructions= GitHub repository or a custom raw HTTPS YAML
-source while retaining switches for matching ids. A baked-in copy makes first
-run and reset work offline. The local file can be EVA's own copy or any file
-chosen through the system picker, so it can live in a synced folder or git
-checkout and be edited there. Ending a call is one such instruction with two
-stock alternatives: hang up once the request is done, or stay on the line until
-asked. The format is described in [[file:docs/prompt.md][the prompt file]].
+** Own the entire configuration
 
+All EVA configuration should be declarative, composable, and persisted primarily
+in readable flat files suited to version control. A single user-owned EVA
+repository should restore every EVA setting: instructions, models, providers,
+extensions, grants, and preferences. Users should be able to combine, edit,
+track, fork, share, and move their configuration between devices.
 
-AppFunctions settings
-control and an experimental device-control backend use Shizuku when it is
-installed and explicitly authorized. On Android 11 and later, the device backend
-can read a bounded text projection of the active accessibility hierarchy, replace
-one editable field, or tap one numbered element. Every mutation consumes a recent
-observation and rechecks the foreground package, element identity, bounds, and
-visibility before input. The integrated path passed observation, Unicode text
-replacement, touch, post-action observation, and Shizuku restart checks on an
-Android 16/API 36 emulator. Screenshots, swipes, keys, navigation actions,
-same-request action chains, and non-default displays are not exposed.
-The [[file:experiments/voice-poc/README.md][browser voice POC]] remains the regression harness for subscription-backed
-speech and counter tools through the host-side Codex process.
+Configuration screens are convenient editors for that configuration. Adding a
+setting means making it participate in the same persistence and restore model.
+Credentials need protected storage and portable references, not plaintext in a
+shareable repository. Android's device-level permissions and account
+authentication require their own provisioning; restoration must make those
+requirements explicit rather than silently dropping settings.
 
-The proposed product direction and acceptance scenarios live in
-[[file:docs/design.md][docs/design.md]]. That document is an outline, not a description of working
-features.
+** Keep voice fast and natural
 
-The proposed component boundaries, provider and capability interfaces, extension
-contracts, and implementation sequence live in
-[[file:docs/architecture.md][docs/architecture.md]]. Voice feasibility experiments are tracked separately in
-[[file:docs/proof-of-concept.md][docs/proof-of-concept.md]].
+Short responses, interruption, and reliable actions matter. Typed interaction
+should access the same capabilities. Simple phone actions should take a direct
+path without unnecessary intermediary agents. Model and voice providers should
+be replaceable independently of what EVA can do.
 
-The [[file:docs/device-control-extension.md][device-control extension design]] uses the same general package and capability
-API, with Shizuku behind versioned native operations and shared result artifacts.
+** Let work outlive a call
 
-Implemented boundaries, limitations, and the plan for adapting the merged voice
-POC are recorded in [[file:docs/implementation.md][docs/implementation.md]].
+EVA owns persistent conversation context and action history. Ending a voice
+interaction should not inherently abandon an accepted task. Remote agents,
+including Paseo instances, fit as capabilities of the same assistant; the
+conversation should not be tied to one service or one connection.
 
-* Foundation
+** Be reliable without becoming obstructive
 
-- Package/application ID: =com.colonelpanic.eva=
-- AGP 9.4.0 built-in Kotlin with Compose compiler 2.4.20
-- Gradle 9.7.1 and stable Compose BOM 2026.09.00
-- compile/target SDK 37, minimum SDK 23, JDK 17
-- Stock Android APIs and documented intents are the intended useful baseline
-- Paseo is the first planned substantial remote adapter
-- OkHttp carries broker control; WebRTC carries native audio directly to the provider
-- Shizuku is an optional dependency for AppFunctions and experimental device control
+Report what actually happened. Opening a draft, sending a message, handing off
+an action, and verifying completion are different outcomes. Validate and record
+actions in executable code, retain their evidence, and avoid repeating an
+uncertain action merely because a connection was lost.
 
-* Development
+** Keep a useful stock-Android baseline
 
-The checked-in Nix flake supplies JDK 17 and Android SDK 37. Enter it through
-direnv or explicitly:
+Standard Android APIs should provide useful capabilities on their own. Optional
+power-user integrations such as Shizuku can expand what EVA does. Their absence
+should disable the operations that need them, not the entire assistant.
+
+* Current implementation
+
+The native Kotlin/Compose app includes typed conversation, WebRTC voice,
+on-phone ChatGPT sign-in and an API-key alternative, an Android assistant
+surface, persistent threads, Android action adapters, and importable extension
+packages. Prompt instructions are editable YAML. Device verification varies by
+feature; implementation is not a promise of universal app or device support.
+
+Paseo and general MCP connectivity remain planned integrations. See
+[[file:docs/architecture.md][Architecture]] for boundaries and current limitations and
+[[file:docs/operations.md][Operations]] for checks and recorded device evidence.
+
+* Your configuration repository
+
+In *Settings → User configuration → Choose folder*, select a synced checkout.
+EVA creates =eva.yaml= from your settings or restores the file already there.
+Choose the same repository on another device to restore its configuration;
+EVA lists any credentials, apps, or Android authorizations still needed.
+Use =include= files to share a base and keep local overrides. See
+[[file:docs/architecture.md][Architecture]] for the format, composition rules, and restore behavior.
+
+* Documentation
+
+- [[file:docs/architecture.md][Architecture]] — runtime, providers, configuration, persistence, and Android integration.
+- [[file:docs/extension-protocol.md][Extension protocol]] — declarative packages and the installed-app AIDL contract.
+- [[file:docs/operations.md][Operations]] — development, testing, signing, and distribution.
+- [[file:AGENTS.md][Agent guide]] — entry points, commands, and development invariants.
+
+Keep durable documentation here and in those references. Update the relevant
+section when behavior changes; use Git history and [[file:CHANGELOG.md][the changelog]] for past
+implementation stages instead of accumulating status reports and dated plans.
+
+* Development and installation
+
+The Nix development environment provides JDK 17 and Android SDK 37:
 
 #+begin_src sh
-direnv allow
-# Or without a direnv hook:
+direnv exec . just --list
 direnv exec . just check
-# Equivalent direct shell:
-nix develop .#android --command just check
-#+end_src
-
-Useful commands:
-
-#+begin_src sh
-just format        # apply Kotlin formatting
-just check         # format check, lint, tests, debug APK
-just icons         # regenerate app, F-Droid, and Paseo icons from the source SVG
-just build         # debug APK only
-just install       # adb-install the debug APK
+direnv exec . just install
+# Or: nix develop .#android --command just check
 #+end_src
 
 The debug APK is =app/build/outputs/apk/debug/app-debug.apk= and installs as
-=com.colonelpanic.eva.debug=, allowing it to coexist with a production build.
+=com.colonelpanic.eva.debug=, alongside the production app.
 
-* Installation
-
-From a checkout after a debug build:
-
-#+begin_src sh
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-#+end_src
-
-Once the external repository and first release exist, production APKs are
-expected at:
-
-- https://github.com/colonelpanic8/eva/releases/latest
-- =https://colonelpanic8.github.io/eva/fdroid/repo= for the self-hosted F-Droid source
-
-The latter is an independently published binary repository; it does not mean
-EVA has been accepted into F-Droid's official catalog. See
-[[file:docs/fdroid.md][docs/fdroid.md]].
-
-* Release operations
-
-Release builds fail closed unless all signing inputs are present. Version codes
-are derived from semantic versions as =major * 1,000,000 + minor * 1,000 + patch=.
-See [[file:docs/release.md][docs/release.md]] for the release procedure and
-[[file:docs/external-setup.md][docs/external-setup.md]] for the one-time GitHub and signing setup that has
-not been performed by this scaffold.
+Production artifacts: [[https://github.com/colonelpanic8/eva/releases][GitHub releases]].
+The configured self-hosted F-Droid source is
+=https://colonelpanic8.github.io/eva/fdroid/repo=; it is separate from F-Droid's
+official catalog. See [[file:docs/operations.md][Operations]] for signing and publication.
 
 * License
 

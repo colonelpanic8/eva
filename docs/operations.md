@@ -1,0 +1,322 @@
+# EVA operations
+
+## Development
+
+Run project commands through `direnv exec . <command>` or
+`nix develop .#android --command <command>`. The supported baseline is JDK 17,
+Android SDK 37, Gradle 9.7.1, AGP 9.4.0, and Kotlin 2.4.20. AGP supplies built-in
+Kotlin; do not add `kotlin-android`. Minimum Android SDK is 23.
+
+```sh
+direnv exec . just --list
+direnv exec . just format
+direnv exec . just check
+```
+
+`just check` runs Kotlin formatting checks, fatal Android lint, JVM tests, and
+debug assembly. For focused iteration, use a targeted Gradle test selection;
+run the required aggregate check before handoff. Android instrumentation and
+live-provider tests are separate, opt-in checks.
+
+```sh
+direnv exec . ./gradlew :app:testDebugUnitTest --tests 'com.colonelpanic.eva.conversation.ThreadControllerTest'
+direnv exec . ./gradlew :app:assembleDebugAndroidTest
+```
+
+Debug app: `com.colonelpanic.eva.debug`; production: `com.colonelpanic.eva`.
+`just install` installs `app/build/outputs/apk/debug/app-debug.apk`.
+Specify `adb -s DEVICE` when multiple devices are connected. Do not replace a
+user's production install merely to run a development test.
+
+`just icons` regenerates icons from `docs/branding/eva-face-profile-v8-teal-hair-blue-face.svg`.
+`just fdroid-changelogs` derives fastlane changelogs from `CHANGELOG.md`.
+Experiment-local commands belong in the
+[voice harness](../experiments/voice-poc/README.md) and
+[device-control probe](../experiments/device-control/README.md) READMEs.
+
+## Configuration verification
+
+The focused configuration tests cover composition, linked-file conflicts,
+restoration into app stores, and grant matching:
+
+```sh
+direnv exec . ./gradlew :app:testDebugUnitTest \
+  --tests 'com.colonelpanic.eva.data.configuration.*' \
+  --tests 'com.colonelpanic.eva.capability.extensions.ExtensionGrantsTest'
+```
+
+For a device check, use a dedicated debug installation and a test folder. Save
+nondefault settings, verify the resulting `eva.yaml`, and restore that folder
+into a fresh test installation. Check effective settings and extension identities,
+then provision the reported missing dependencies and reload. Edit one setting
+with an include active and verify that unrelated inherited settings still follow
+the included file. Invalid YAML must preserve the previous working setup.
+Do not clear a user's app data to create a fresh test state.
+
+Robolectric checks exercise Android store integration but do not establish the
+behavior of every Storage Access Framework provider or directory-sync tool.
+
+## Signing and releases
+
+EVA production releases are signed with one long-lived Android signing identity.
+Losing that key or its passwords prevents updates to existing installations;
+replacing it creates a new, incompatible install lineage. Back up the keystore
+and its metadata before the first public release, then keep the same key for the
+APK and self-hosted F-Droid index.
+
+### Versioning
+
+Tags and release versions use `vMAJOR.MINOR.PATCH`. Android version codes use:
+
+```text
+major * 1,000,000 + minor * 1,000 + patch
+```
+
+Each minor and patch component must be at most 999. Check a value with
+`just version-code 0.1.0`. Every published version must sort above the previous
+one.
+
+### Local signed build
+
+Enter the Nix shell, export the four signing inputs from a secure source, and
+run the release recipe:
+
+```sh
+export ANDROID_KEYSTORE_FILE=/secure/path/eva-release.jks
+export ANDROID_KEYSTORE_PASSWORD=...
+export ANDROID_KEY_ALIAS=...
+export ANDROID_KEY_PASSWORD=...
+just release 0.1.0
+```
+
+The script runs formatting checks, release lint, JVM tests, the optimized APK
+build, and `apksigner verify`. Its output is `dist/eva.apk`. It refuses to
+build when any signing value is absent, and Gradle rejects partially configured
+signing even outside the script.
+
+### GitHub release
+
+With the signing secrets and Pages configured as described below:
+
+1. Update `CHANGELOG.md` and run `just fdroid-changelogs`.
+2. Run `just check` and, ideally, a local signed build.
+3. Commit the release state and create a `vMAJOR.MINOR.PATCH` tag.
+4. Push the tag. `.github/workflows/release.yml` builds from the tag and uploads
+   `eva.apk`; it fails if any signing secret is missing or invalid.
+5. Confirm the APK certificate and install/upgrade behavior before promoting
+   the release widely.
+6. The successful release workflow triggers the Pages/F-Droid workflow.
+
+Do not delete or regenerate the signing key during ordinary version bumps.
+
+### Infrastructure prerequisites
+
+Use the original production signing identity. Store the keystore and its metadata
+in encrypted backed-up storage. Never regenerate an existing release key during
+setup or a version bump. GitHub Actions requires:
+
+- `ANDROID_KEYSTORE_BASE64`: the complete original keystore, base64-encoded;
+- `ANDROID_KEYSTORE_PASSWORD`;
+- `ANDROID_KEY_ALIAS`;
+- `ANDROID_KEY_PASSWORD`.
+
+Configure GitHub Pages to deploy from Actions with the `github-pages` environment.
+Creating repositories, publishing releases, changing Pages, and uploading secrets
+are operator actions, not implicit build steps. Compare the release/index
+certificate fingerprint with the recorded production identity before distribution.
+
+## Self-hosted F-Droid
+
+The configured repository address is
+`https://colonelpanic8.github.io/eva/fdroid/repo`, with a landing page at
+`https://colonelpanic8.github.io/eva/`. Configuration alone is not evidence that
+a deployment is live. This is an independent binary repository, not inclusion
+in F-Droid's official catalog.
+
+### Publication model
+
+`.github/workflows/fdroid-repo.yml` runs after a successful **Release** workflow.
+It installs `fdroidserver`, downloads `eva.apk` from recent non-draft GitHub
+releases, copies the APK bytes without re-signing, builds a signed repository
+index, and deploys the generated site to Pages.
+
+The collector verifies every APK signature and processes releases newest first.
+If it encounters a different signing certificate, it stops at that boundary so
+the index contains one coherent Android upgrade history. `FDROID_RELEASE_COUNT`
+defaults to four; older builds remain GitHub release assets.
+
+The same production keystore signs release APKs and the repository index. The
+index keystore is decoded only into runner-temporary/build storage and removed
+before the Pages artifact is assembled.
+
+### Local repository build
+
+Install `fdroidserver` into a temporary environment, enter EVA's Android shell,
+and use a signed APK plus either a production or throwaway index key:
+
+```sh
+python3 -m venv /tmp/eva-fdroid-venv
+/tmp/eva-fdroid-venv/bin/pip install fdroidserver
+export PATH="/tmp/eva-fdroid-venv/bin:$PATH"
+
+FDROID_APK_FILE=dist/eva.apk \
+FDROID_KEYSTORE_FILE=/secure/path/eva-release.jks \
+FDROID_KEY_ALIAS=eva \
+FDROID_KEYSTORE_PASSWORD=... \
+FDROID_KEY_PASSWORD=... \
+nix develop .#android --command just fdroid-repo
+```
+
+Output is written to `target/fdroid`. A throwaway key is suitable only for a
+local repository test; published index continuity requires the production key.
+
+### Installation
+
+After publication, add `https://colonelpanic8.github.io/eva/fdroid/repo` as an
+additional package source in the F-Droid client, verify the displayed fingerprint,
+refresh repositories, and install EVA. A direct release install uses:
+
+```sh
+adb install -r eva.apk
+```
+
+Because both channels serve the exact same signed APK, they can upgrade one
+another. Debug builds use `com.colonelpanic.eva.debug` and are separate.
+
+### Official catalog distinction
+
+This machinery does not submit EVA to, or build EVA inside, F-Droid's official
+catalog. Official inclusion is a separate future effort involving a source-build
+recipe and policy/reproducibility review. The checked-in fastlane metadata is
+reusable input, not evidence of acceptance.
+
+## Device verification
+
+Do not infer device support from Robolectric or synthetic audio. Record the build,
+device/OS, exact operation, and observed outcome when testing. Keep reusable raw
+evidence with the relevant experiment; update this compact summary rather than
+adding a dated Markdown report for each run.
+
+Recorded checks from 2026-09-14:
+
+| Surface | Evidence | Limit |
+| --- | --- | --- |
+| Bundled Caffeine and Messages, Pixel 11 Pro Fold API 37, build `0f53e78` | Typed enable/disable produced handoff receipts and independent Caffeine notification changes; Messages opened the correct unsent draft; grants survived restart/replacement | Does not prove SMS sending, remote HTTP execution, or AIDL provider behavior |
+| Extension browsing and file preview, subsequent combined build | Repository listings loaded, Caffeine matched, a Downloads JSON opened in preview | Preview is not proof of import persistence followed by execution |
+| Direct subscription voice, Pixel | Synthetic speech, expected transcripts, decoded output audio; timer handoff and connection survival | Does not measure acoustic quality, echo, Bluetooth, or natural barge-in |
+| Assistant role, Pixel API 37, signed `0.13.0` candidate | System assist event opened overlay, voice connected, panel/scrim behavior checked | Keyguard, activity handoff, and delegated recognition still need device verification |
+| Shizuku device control, Android 16/API 36 emulator | Observation, Unicode replacement, tap, post-action observation, service restart | Does not establish Android 17 physical-device compatibility |
+
+A repeatable extension check starts with an installed target app and enabled EVA
+extension/action grants. Invoke each operation separately, inspect its attributed
+receipt, and independently inspect the target state. Verify missing-handler and
+revoked-grant behavior without inventing success. For Messages compose, leave the
+draft unsent. HTTP fixtures need a compatible configured server; installed-service
+AIDL still needs a provider test vehicle.
+
+### Native voice tests
+
+`NativeVoiceLiveTest` replaces microphone buffers with synthetic speech/silence
+before transmission. It requires explicit instrumentation arguments, verifies an
+arithmetic transcript and nonzero decoded output PCM, and uses no tools. The
+injection hook is not shipped in production. Tests that invoke a timer have real
+side effects and should run on a dedicated test device.
+
+### Direct subscription voice on a signed-in phone
+
+Sign in to ChatGPT in the debug app, build and install the debug application and
+test APK, and push the synthetic arithmetic fixture as shown below. Run the
+same native test with `evaSubscriptionVoice` instead of `evaBrokerLink`:
+
+```sh
+direnv exec . adb -s "$EVA_TEST_DEVICE" shell am instrument -w \
+  -e class com.colonelpanic.eva.providers.NativeVoiceLiveTest \
+  -e evaSubscriptionVoice true \
+  -e evaSpeechPcmPath /data/local/tmp/eva-native-speech.pcm \
+  com.colonelpanic.eva.debug.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+This uses the phone's encrypted account store and production Realtime provider;
+no broker, API key, or exported subscription token is needed. Do not supply both
+route arguments. On 2026-09-14 this passed on a Pixel 11 Pro Fold: 467,332
+synthetic input bytes, the expected question and arithmetic answer, and 30,969
+nonzero decoded output bytes. The direct subscription action test also passed:
+timer handoff, spoken confirmation, and a connection that survived Clock taking
+the foreground. See the [evidence record](../experiments/voice-poc/evidence/2026-09-14-direct-subscription-voice.json).
+It verifies synthesized speech, not acoustic quality.
+
+### Run on a dedicated emulator
+
+Start a fresh broker using the [voice harness instructions](../experiments/voice-poc/README.md),
+or use an idle broker owned by the current test session. It must have an existing host ChatGPT
+login. Set the following variables in your shell; do not save a broker code in
+source control. Select the emulator explicitly because the test launches EVA
+and grants microphone permission to the debug application.
+
+```sh
+EVA_TEST_DEVICE=emulator-5576
+EVA_TEST_PORT=PORT_FROM_BROKER
+EVA_TEST_LINK='http://localhost:PORT_FROM_BROKER/#CODE_FROM_BROKER'
+
+direnv exec . espeak -s 145 -w /tmp/eva-native-speech.wav \
+  'Say EVA voice verified. What is thirty seven plus fifty eight?'
+direnv exec . ffmpeg -v error -y -i /tmp/eva-native-speech.wav \
+  -ar 48000 -ac 1 -f s16le /tmp/eva-native-speech.pcm
+direnv exec . ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
+direnv exec . adb -s "$EVA_TEST_DEVICE" install -r app/build/outputs/apk/debug/app-debug.apk
+direnv exec . adb -s "$EVA_TEST_DEVICE" install -r \
+  app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+direnv exec . adb -s "$EVA_TEST_DEVICE" reverse --no-rebind \
+  "tcp:$EVA_TEST_PORT" "tcp:$EVA_TEST_PORT"
+direnv exec . adb -s "$EVA_TEST_DEVICE" push \
+  /tmp/eva-native-speech.pcm /data/local/tmp/eva-native-speech.pcm
+direnv exec . adb -s "$EVA_TEST_DEVICE" shell am instrument -w \
+  -e class com.colonelpanic.eva.providers.NativeVoiceLiveTest \
+  -e evaSpeechPcmPath /data/local/tmp/eva-native-speech.pcm \
+  -e evaBrokerLink "$EVA_TEST_LINK" \
+  com.colonelpanic.eva.debug.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+`espeak` and `ffmpeg` generate a 48 kHz mono PCM16 fixture. If unavailable on
+PATH, obtain them temporarily through Nix. The fixture must be 1–20 seconds and
+its device path must match `/data/local/tmp/eva-[a-z0-9-]+.pcm`.
+Skip the reverse command if this session already owns that exact forwarding.
+The test prints bounded evidence and sample counts; it does not print transcripts
+or credentials. It closes its provider and media resources on success or failure.
+
+
+### Voice action test
+
+`NativeVoiceActionLiveTest` drives the production controller with synthetic
+speech that asks for a timer, and asserts the delegated tool call, the Clock
+handoff, the journaled utterance, the spoken confirmation, and that the session
+is still connected five seconds after Clock takes the foreground.
+
+```sh
+espeak -w /tmp/q.wav -s 140 "Set a timer for three minutes."
+ffmpeg -y -i /tmp/q.wav -af 'adelay=800:all=1,apad=pad_dur=1.5' -ar 48000 -ac 1 -f s16le /tmp/eva-voice-timer.pcm
+adb -s DEVICE push /tmp/eva-voice-timer.pcm /data/local/tmp/eva-voice-timer.pcm
+adb -s DEVICE shell am instrument -w \
+  -e class com.colonelpanic.eva.providers.NativeVoiceActionLiveTest \
+  -e evaSpeechPcmPath /data/local/tmp/eva-voice-timer.pcm \
+  -e evaBrokerLink "$EVA_BROKER_LINK" \
+  com.colonelpanic.eva.debug.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+The test waits for journal recovery before connecting; `connectVoice` is a
+no-op while history is loading, which is why the UI disables the button then.
+
+### Direct OpenAI voice action test
+
+`OpenAiVoiceActionLiveTest` is the workstation-free variant: no broker, the
+phone opens its own Realtime session. Use `-e evaSubscriptionVoice true` with a
+saved ChatGPT sign-in, or supply an API key as an instrumentation argument.
+The fixture asks Clock to start a real three-minute timer.
+
+```sh
+adb -s DEVICE shell am instrument -w \
+  -e class com.colonelpanic.eva.providers.OpenAiVoiceActionLiveTest \
+  -e evaSpeechPcmPath /data/local/tmp/eva-voice-timer.pcm \
+  -e evaOpenAiKey "$OPENAI_API_KEY" \
+  com.colonelpanic.eva.debug.test/androidx.test.runner.AndroidJUnitRunner
+```

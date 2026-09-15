@@ -143,21 +143,42 @@ The smoke runner uses Chrome's **fake capture device**, never an ambient
 microphone. `EVA_CHROME_BIN` overrides `/run/current-system/sw/bin/google-chrome`.
 The voice test requires both counter tools, a final assistant transcript
 confirming 7 and the custom “EVA” instruction, nonzero inbound RTP, and local
-interrupt muting. Failures produce bounded, sanitized metadata. Read
-[RESULTS.md](RESULTS.md) for recorded observations and limitations.
+interrupt muting. Failures produce bounded, sanitized metadata. See the recorded observations below for the scope of the evidence.
 
-## Next vertical slice
+## Recorded browser evidence
 
-Port this proven WebRTC handshake and lifecycle into one native Android screen.
-Keep login/session creation on the host; route a namespaced, validated action
-request with its ID to the phone and return its structured result. Replace
-the counter with one ordinary Android intent and a read-only Paseo status
-adapter, preserving exact host/session IDs. Test a physical phone's mic,
-speaker, Bluetooth, barge-in, permission denial, backgrounding, and reconnect.
-Do not add wakewords or privileged extensions yet.
+The 2026-09-12 [synthetic voice run](evidence/2026-09-12-synthetic-voice.json)
+and [typed backend run](evidence/2026-09-12-typed-backend.json) established the
+counter loop through a private Codex app-server with host-retained ChatGPT
+subscription authentication. Synthetic voice set and read 7, returned nonzero
+provider audio, and satisfied the final transcript assertions. Typed input used
+two explicit backend turns. The final host thread reported `gpt-5.6-luna`;
+the internal delegation model was not independently identified.
 
-The remaining architecture decision is whether Codex's extra delegation turn
-and experimental protocol are acceptable. A phone dispatcher alone does not
-remove that model turn. Direct voice-model function calls under subscription
-auth were not established here. See [THIRD_PARTY.md](THIRD_PARTY.md) for the
-exact custom Paseo source, installed provenance, and license attribution.
+| Observation | Synthetic voice | Typed backend |
+| --- | --- | --- |
+| Browser connect to WebRTC connected | 1,470 ms | 2,010 ms |
+| Observed backend turns | 1 for both tools | 2, one per request |
+| Local tool dispatch | 0.115 / 0.014 ms | 0.093 / 0.055 ms |
+| Local interrupt | Browser audio element muted | Browser audio element muted |
+
+These are individual samples, not latency distributions or cancellation proof.
+Realtime text append alone did not produce a reliable spoken response/action;
+voice used backend-model delegation, not direct voice-model function calls.
+The experiment did not establish acoustic quality, human barge-in, Android
+lifecycle, subscription entitlement for other accounts, or durable recovery of
+external mutations. Metadata evidence excludes transcripts, SDP, and credentials.
+
+At that revision, `npm run check` passed formatting, lint, strict TypeScript,
+nine deterministic tests, and browser bundling. That count is historical; run
+the current check for present behavior. The old narrative report and initial
+Android-port plan are retained in Git history.
+
+## Relationship to the Android app
+
+Native voice and phone-action implementations now live in the main app; this
+browser counter harness remains an isolated protocol/regression experiment.
+It does not define current Android authentication, configuration, or capability
+support. See [Architecture](../../docs/architecture.md) and
+[Operations](../../docs/operations.md#device-verification) for those boundaries.
+[THIRD_PARTY.md](THIRD_PARTY.md) retains source provenance and license attribution.
