@@ -8,11 +8,13 @@ package com.colonelpanic.eva
  * it has gone foreground.
  */
 class ForegroundServiceGate {
+    private var pendingStarts = 0
     private var foreground = false
     private var stopWanted = false
 
     @Synchronized
     fun starting() {
+        pendingStarts++
         stopWanted = false
     }
 
@@ -20,19 +22,20 @@ class ForegroundServiceGate {
     @Synchronized
     fun stopping(): Boolean {
         stopWanted = true
-        return foreground
+        return foreground && pendingStarts == 0
     }
 
-    /** Called right after `startForeground`; true when a stop arrived before the service existed. */
+    /** Called right after `startForeground`; true when a stop arrived after the latest start. */
     @Synchronized
     fun foregrounded(): Boolean {
+        if (pendingStarts > 0) pendingStarts--
         foreground = true
-        return stopWanted
+        return stopWanted && pendingStarts == 0
     }
 
     @Synchronized
     fun destroyed() {
         foreground = false
-        stopWanted = false
+        if (pendingStarts == 0) stopWanted = false
     }
 }

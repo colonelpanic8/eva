@@ -23,11 +23,44 @@ class ForegroundServiceGateTest {
     }
 
     @Test
+    fun `a stop waits for every accepted foreground start`() {
+        gate.starting()
+        gate.starting()
+        assertFalse(gate.stopping())
+        assertFalse(gate.foregrounded())
+        assertTrue(gate.foregrounded())
+    }
+
+    @Test
     fun `a restart before the service is foreground leaves it running`() {
         gate.starting()
         assertFalse(gate.stopping())
         gate.starting()
         assertFalse(gate.foregrounded())
+        assertFalse(gate.foregrounded())
+    }
+
+    @Test
+    fun `a quick stop after restarting a foreground service waits for the new start`() {
+        gate.starting()
+        assertFalse(gate.foregrounded())
+        assertTrue(gate.stopping())
+
+        gate.starting()
+        assertFalse(gate.stopping())
+        assertTrue(gate.foregrounded())
+    }
+
+    @Test
+    fun `destruction of the old service preserves a stop waiting on its replacement`() {
+        gate.starting()
+        assertFalse(gate.foregrounded())
+        assertTrue(gate.stopping())
+
+        gate.starting()
+        assertFalse(gate.stopping())
+        gate.destroyed()
+        assertTrue(gate.foregrounded())
     }
 
     @Test
