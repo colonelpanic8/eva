@@ -1,0 +1,2 @@
+* Added: Declarative packages can mix bounded Android content-provider reads with intent handoffs. Content URIs accept typed, encoded query and path slots; reads return whole projected rows as text and structured data with honest truncation and failure outcomes.
+* ...see CHANGELOG.md for the rest.
