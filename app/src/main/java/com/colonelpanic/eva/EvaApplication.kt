@@ -346,6 +346,7 @@ class EvaApplication :
                     com.colonelpanic.eva.adapters.declarative.PackageHttpClient(credential = { origin, name ->
                         packageSettings.credential(identity, origin, name)
                     }),
+                    this,
                 )
             },
             boundedExecution,

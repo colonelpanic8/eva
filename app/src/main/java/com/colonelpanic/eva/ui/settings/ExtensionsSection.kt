@@ -92,6 +92,23 @@ internal fun ExtensionsSection(
                             }
                         }
                     }
+                    configurations.flatMap { it.contentAuthorities }.distinct().forEach { authority ->
+                        state.contentProviders[authority]?.let { access ->
+                            SettingsBlock {
+                                Text("Content provider: $authority")
+                                Text(access.problem ?: "Android access is available. The provider also enforces its own caller policy.")
+                                if (access.canRequest) {
+                                    Text(
+                                        "Allowing this read can disclose provider data to your configured model. Android access must be authorized on each device.",
+                                    )
+                                    TextButton(onClick = { actions.onContentPermission(authority) }) { Text("Allow provider reads") }
+                                }
+                                if (access.permission != null) {
+                                    TextButton(onClick = actions.onOpenAppSettings) { Text("Android permission settings") }
+                                }
+                            }
+                        }
+                    }
                     configurations.forEachIndexed { index, configuration ->
                         ExtensionConfiguration(configuration, actions, showWait = index == configurations.lastIndex)
                     }

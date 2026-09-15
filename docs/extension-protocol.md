@@ -7,7 +7,7 @@ in the app. [Architecture](architecture.md) explains the runtime;
 
 | Path | Use it for | Current boundary |
 | --- | --- | --- |
-| Declarative JSON packages | Existing app intents or HTTP APIs, without app changes | Import, preview, install, grants, intent and HTTP execution implemented; content-provider binding parses but has no execution host |
+| Declarative JSON packages | Existing app intents, content providers or HTTP APIs | Import, preview, install, grants, intent, HTTP and bounded content-provider reads implemented; content host JVM-tested, device verification pending |
 | Installed Android extension service | Code and structured protocol responses supplied by an app author | AIDL runtime implemented and JVM-tested; no real provider device verification |
 | Native Android adapters | Operations requiring EVA code or platform privileges | Existing adapters include messaging, Settings AppFunctions and Shizuku device control; no universal AppFunctions adapter |
 | Media apps | Any installed player, through the routes it already registers | Discovered, not authored: each player is one extension with per-operation grants (see [Architecture](architecture.md#android-capabilities)); nothing to import or install |
@@ -164,11 +164,11 @@ server-only extension), and its value must match the downloaded package.
   typed encoded query slots, and fixed extra names with scalar values/typed slots.
   No model-controlled components, flags, or parsed intent URIs. Minimum effect:
   external handoff. A launch means `HANDED_OFF`, never verified completion.
-- `android.content`: fixed content authority and URI, declared projection with
+- `android.content`: fixed content authority and URI base, typed encoded query/path slots, declared projection with
   scalar column types, fixed selection template with typed bound arguments,
   bounded row count, and a declared projection of rows to text. Model arguments
   cannot supply SQL fragments, columns, authorities, or permissions. Queries use
-  existing Android permission grants; inaccessible providers are unavailable.
+  Android permission grants; extension settings expose supported runtime permission requests and missing-provider guidance.
   Minimum effect: read/data disclosure. No insert, update, delete, or provider
   `call()` binding is included.
 - `http`: fixed approved origin and OpenAPI-style method, path, parameters
@@ -234,14 +234,142 @@ has no existing query, fragment, or user info. Parsed intent, file, content,
 JavaScript, and data URI schemes are rejected by this binding; use the content
 binding for provider reads.
 
-Content fields: `kind`, `authority`, fixed `uri`, `projection` (map of column name
+Content fields: `kind`, `authority`, `uri: {base, query?, path?}`, `projection` (map of column name
 to scalar type), optional `selection`, `maxRows` (1–100), `maxBytes` (1–16,384).
 Selection is a list of `{column, operator, value}` predicates joined with AND;
 operators are `=`, `!=`, `<`, `<=`, `>`, `>=`, and string-only `LIKE`.
 The compiler produces a fixed selection template with bound selection arguments.
 Columns must be declared in the projection. There is no free-form SQL, sorting,
 subquery, caller-supplied column, or mutation operation. All projected columns
-are rendered to bounded text; extra rows/bytes must be reported as truncated.
+are rendered to bounded text; extra rows/bytes are reported as truncated.
+
+The content URI base is `content://<authority>/<path>`, with the same literal
+`authority` as the binding. No user info, port, existing query, fragment, encoded
+base path, or dot segments are allowed. `query` maps at most 64 fixed names
+(1–200 characters, no control characters) to scalar argument/literal slots, using
+the same types, defaults and `required` rules as intent query slots. Both names
+and values are percent-encoded; an absent optional argument omits the parameter.
+Thus booleans become `true`/`false` and integers remain decimal values, without
+letting an argument create another parameter or change the destination.
+Legacy fixed string `uri` values remain readable.
+
+Optional `path` maps names to scalar slots for `{name}` placeholders in the base
+path, like HTTP path parameters. Every placeholder needs exactly one mapping,
+and unused mappings are rejected. For example,
+`{"base":"content://com.colonelpanic.mova.provider/todos/{id}",
+"path":{"id":{"argument":"id","type":"string"}}}`.
+A path value is required at invocation; empty strings, `.`, `..`, forward slashes
+and backslashes are refused before submission. Other characters are encoded.
+There are at most 64 path mappings; the expanded URI is at most 16,384 UTF-8 bytes.
+Authorities, columns, SQL fragments and permission names never accept slots.
+
+#### Content execution and results
+
+EVA calls `ContentResolver.query` on a background worker with exactly the declared
+projection, compiled selection and bound arguments, no sort order, and a
+`CancellationSignal`. It reads at most `maxRows` rows plus one lookahead to detect
+truncation, closing the cursor on success, failure and late completion. Only
+projected columns are accessed even if the provider returns additional columns.
+Nulls remain JSON null. Strings require string cells, integers require integer
+cells within the tool schema's exact-integer range, numbers require finite numeric
+cells, and booleans require integer 0/1. Blobs and coercions are rejected.
+
+`maxBytes` bounds the UTF-8 JSON row array, including JSON escaping and separators.
+Rows are omitted whole at either cap; text and structured
+`data: {"rows": [...], "truncated": true|false}` contain the same rows. The
+structured object is also kept under 16,384 bytes by reserving metadata space.
+The empty `[]` and EVA-owned truncation/wait annotations are envelope overhead
+when a byte budget is too small even for an empty array. EVA never cuts an ID or
+returns half a row. A cap only describes EVA's cursor consumption: an undocumented
+provider-side `limit` cannot be detected, so results must not imply exhaustive
+search. Providers should also bound their own query work and cursor windows;
+EVA cannot limit allocations inside another app or prevent one large cursor cell
+from crossing Binder.
+
+A valid read returns `completed`. Missing/invisible/disabled providers and missing
+Android grants return `not_executed` with setup guidance (`not_configured`);
+`SecurityException` becomes `not_executed` with `unauthorized_caller` guidance.
+A null cursor, unknown declared column, wrong column type or other definitive query
+failure returns `failed`, with no rows and no provider exception details. These
+reason names are included in the declarative receipt message; the local outcome
+has no separate AIDL `reasonCode` field.
+
+The deadline includes worker admission, provider acquisition and cursor traversal,
+and is capped at 60 seconds. Expiration before submission returns
+`not_executed/deadline_exceeded`; after submission it returns
+`unknown/deadline_exceeded`, with no partial rows. Cancellation is requested but
+cannot prove that the provider stopped. Four process-wide query workers, with no
+waiting queue, bound stuck providers; excess calls return `not_executed/busy`.
+Late results are discarded and their cursor closed. The common dispatcher wait
+may expire first and report its usual unknown outcome. No read is retried.
+
+#### Content visibility and Android permissions
+
+Android 11+ applies package visibility independently of content read permission.
+EVA declares these provider authorities in its manifest:
+
+```xml
+<queries>
+    <provider android:authorities="com.colonelpanic.mova.provider;sh.paseo.assistant" />
+</queries>
+<uses-permission android:name="com.colonelpanic.mova.permission.READ_TODOS" />
+```
+
+These are **per-authority visibility entries**, so both `sh.paseo` and
+`sh.paseo.assembly` work when they own `sh.paseo.assistant`. They require neither
+an AIDL service nor another exported advertisement component in the provider app.
+Provider `<meta-data>` alone is not a package visibility mechanism. EVA deliberately
+uses the concrete authorities for this executable feature, rather than requiring
+a new action convention in existing apps. No `QUERY_ALL_PACKAGES` is used.
+See Android's [visibility declarations](https://developer.android.com/training/package-visibility/declaring).
+
+Other authorities work if their app is already visible (for example through EVA's
+existing launcher or service queries). For an otherwise invisible app, an EVA
+manifest update adding its authority is required; importing JSON cannot extend
+`<queries>`. A missing provider and an invisible provider cannot reliably be
+distinguished, so settings explain both possibilities.
+
+A provider must be enabled and exported and its Android read permission must be
+granted. EVA declares Mova's dangerous `READ_TODOS` permission for these reads;
+it is requested only from **Extensions → expand the extension → Allow provider
+reads**, never in the startup permission sweep or by a model tool. The screen
+reports current access and links to Android permission settings for denial or
+revocation. A grant is checked again before every query, and the resolver enforces
+access at submission. Provider caller checks can still deny the operation.
+Paseo's proposed permissionless provider needs no Android prompt; its own caller
+identity policy remains authoritative. Visibility and an EVA extension grant
+are never substitutes for that policy.
+
+Android requires a permission declaration in EVA's installed manifest before a
+runtime request can succeed. Arbitrary permissions in imported packages cannot
+be requested: there is no permission field in the binding. EVA currently offers
+Mova's permission and its existing declared runtime permissions, after verifying
+the installed provider's requirement is dangerous and declared by EVA. Another
+custom dangerous permission needs an EVA manifest/allowlist update; signature
+permissions cannot be granted by a runtime prompt. See Android's
+[custom permission contract](https://developer.android.com/guide/topics/permissions/defining)
+and [runtime requests](https://developer.android.com/training/permissions/requesting).
+
+The installed package bytes and existing capability grants remain the portable
+settings. Content dependencies add supported permissions to the existing
+`device.authorizations` list in `eva.yaml`; Mova's requirement is known even when
+Mova is absent. No new device-only enablement switch is introduced. Restoration
+keeps that requirement and the exact package bytes, lists missing providers and
+permissions, and requires local Android authorization on each device. Editing or
+restoring YAML cannot grant a permission. Removing a package does not revoke an
+Android grant or erase a previously saved desired authorization; manage these
+through Android settings and `device.authorizations` respectively.
+
+The mixed fixtures [Mova](examples/mova-content.json) and
+[Paseo](examples/paseo-content.json) demonstrate read/discover followed by an intent
+using the returned ID, with no AIDL extension service. Their projection columns
+and Mova's `mova://todo?id=` handoff are illustrative authoring contracts to align
+with the installed app. The Paseo provider is proposed, not shipped or
+device-verified by EVA. Both fixtures are decoded in JVM tests; fake-provider
+Robolectric tests cover Android execution. Mova's `/templates`, `/todos`,
+`/todos/{id}` and `/agenda` query shapes and Paseo's `/workspaces`, `/agents` and
+`paseo://agent?agentId=` shape are represented. Read-then-handoff still follows the
+current separate-request policy described below.
 
 HTTP fields: `kind`, `origin`, `method`, `path`, `parameters`, `maxResponseBytes`,
 `result`, optional `requestBody` and `credential`. Origins are HTTPS scheme/host

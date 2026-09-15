@@ -81,13 +81,23 @@ class DeclarativeBackend(
                         )
                     }
                 }
+            } catch (failure: ContentQueryFailure) {
+                failure.outcome
             } catch (notSubmitted: BindingNotSubmitted) {
                 ExecutionOutcome(InvocationStatus.NOT_EXECUTED, notSubmitted.message.orEmpty())
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
-                ExecutionOutcome(InvocationStatus.UNKNOWN, CapabilityDispatcher.UNKNOWN_MESSAGE)
+                if (binding is DeclarativeBinding.Content) {
+                    ExecutionOutcome(InvocationStatus.FAILED, "The content provider returned an invalid result. No rows were returned.")
+                } else {
+                    ExecutionOutcome(InvocationStatus.UNKNOWN, CapabilityDispatcher.UNKNOWN_MESSAGE)
+                }
             }
         return outcome.copy(message = "${outcome.message}\n${wait.receipt()}")
     }
 }
+
+class ContentQueryFailure(
+    val outcome: ExecutionOutcome,
+) : IllegalStateException(outcome.message)

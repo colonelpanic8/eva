@@ -10,6 +10,7 @@ import com.colonelpanic.eva.adapters.declarative.LoadedPackage
 import com.colonelpanic.eva.adapters.declarative.PackageCodec
 import com.colonelpanic.eva.adapters.declarative.PackageDefinition
 import com.colonelpanic.eva.adapters.declarative.configurePackage
+import com.colonelpanic.eva.adapters.declarative.contentBindings
 import com.colonelpanic.eva.adapters.declarative.httpBindings
 import com.colonelpanic.eva.capability.InteractionMode
 import com.colonelpanic.eva.capability.WaitBudget
@@ -37,6 +38,7 @@ data class PackageConfigurationEntry(
     val credentialName: String?,
     val waitMillis: Long?,
     val credentialAvailable: Boolean = true,
+    val contentAuthorities: List<String> = emptyList(),
 )
 
 data class PortablePackageSettings(
@@ -314,11 +316,21 @@ class PackageSettings(
                             service?.credential?.let(::storedCredential)?.origin == service?.origin,
                         )
                     }
-            configured.ifEmpty {
-                listOf(
-                    PackageConfigurationEntry(identity.id, source.title, "", null, null, null, override(identity.id)),
-                )
-            }
+            configured
+                .ifEmpty {
+                    listOf(
+                        PackageConfigurationEntry(identity.id, source.title, "", null, null, null, override(identity.id)),
+                    )
+                }.map {
+                    it.copy(
+                        contentAuthorities =
+                            source
+                                .contentBindings()
+                                .map { binding -> binding.authority }
+                                .distinct()
+                                .sorted(),
+                    )
+                }
         }
     }
 

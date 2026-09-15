@@ -16,11 +16,13 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import com.colonelpanic.eva.adapters.android.ContentProviderAccess
 import com.colonelpanic.eva.adapters.android.EvaNotificationListener
 import com.colonelpanic.eva.adapters.android.MediaControlAccess
 import com.colonelpanic.eva.assist.AssistantRole
@@ -52,6 +54,13 @@ class MainActivity : ComponentActivity() {
     private var deviceAssistant by mutableStateOf(false)
     private var mediaControlAccess by mutableStateOf(false)
     private var messagingPermissions by mutableStateOf(emptyList<PermissionStatus>())
+    private var contentPermissionRevision by mutableIntStateOf(0)
+    private val contentPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+            contentPermissionRevision++
+            eva.configuration.onLocalChange()
+            eva.extensions.refresh()
+        }
     private val runtimePermissions =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
             voice.requestInFlight = false
@@ -225,6 +234,10 @@ class MainActivity : ComponentActivity() {
             plugins = plugins,
             extensions = extensions,
             packages = packages,
+            contentProviders =
+                remember(packages, contentPermissionRevision) {
+                    packages.flatMap { it.contentAuthorities }.distinct().associateWith { ContentProviderAccess.inspect(this, it) }
+                },
             waitDefaults = waits,
             extensionOverflow =
                 CatalogAdmission.overflowReasons(
@@ -318,7 +331,18 @@ class MainActivity : ComponentActivity() {
                 onSaveWait = eva.packageSettings::saveWait,
                 onExtensionEnable = eva.extensions::enable,
                 onExtensionMutation = eva.extensions::mutation,
-                onRefreshExtensions = eva.extensions::refresh,
+                onRefreshExtensions = {
+                    contentPermissionRevision++
+                    eva.extensions.refresh()
+                },
+                onContentPermission = { authority ->
+                    if (eva.packageSettings.state.value
+                            .any { authority in it.contentAuthorities }
+                    ) {
+                        val access = ContentProviderAccess.inspect(this, authority)
+                        if (access.canRequest) contentPermission.launch(requireNotNull(access.permission))
+                    }
+                },
                 onSignIn = eva::startChatGptSignIn,
                 onCancelSignIn = eva::cancelChatGptSignIn,
                 onSignOut = eva::signOutChatGpt,
@@ -433,6 +457,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        contentPermissionRevision++
         eva.configuration.reloadOnResume()
         eva.extensions.refresh()
         // Both grants are made in system settings, so the answers only change while EVA is away.

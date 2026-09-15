@@ -115,6 +115,14 @@ for concrete identity, schema, waiting, and authorization rules.
 
 ## Android capabilities
 
+- Declarative `android.content` reads use bounded background `ContentResolver`
+  queries with typed URI query/path slots, declared columns and bound selection.
+  Whole rows become attributed text and structured data. Extension settings report
+  missing providers and offer supported Android permission requests; requirements
+  join portable `device.authorizations`. Mova and Paseo authorities have explicit
+  visibility entries; Mova's dangerous read permission is requested only on demand.
+  The host is Robolectric-tested; physical-device verification is pending. See the
+  [content contract](extension-protocol.md#content-execution-and-results).
 - Native adapters use intents, contacts, messaging, media sessions, media browser
   interfaces, and other implemented Android contracts. Keep native resolution
   where it needs code; pure mappings can be declarative packages.

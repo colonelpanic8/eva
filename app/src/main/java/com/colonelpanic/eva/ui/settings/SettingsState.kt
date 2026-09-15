@@ -26,6 +26,7 @@ data class SettingsUiState(
         com.colonelpanic.eva.adapters.declarative
             .PluginBrowserState(),
     val packages: List<com.colonelpanic.eva.data.PackageConfigurationEntry> = emptyList(),
+    val contentProviders: Map<String, com.colonelpanic.eva.adapters.android.ContentProviderAccess> = emptyMap(),
     val waitDefaults: Map<com.colonelpanic.eva.capability.InteractionMode, Long> = emptyMap(),
     val extensions: ExtensionSettings = ExtensionSettings(),
     val extensionOverflow: Map<String, String> = emptyMap(),
@@ -81,6 +82,7 @@ data class SettingsActions(
     val onSaveWait: (String, String) -> String? = { _, _ -> null },
     val onExtensionEnable: (String, Boolean) -> Unit = { _, _ -> },
     val onExtensionMutation: (String, String, Boolean) -> Unit = { _, _, _ -> },
+    val onContentPermission: (String) -> Unit = {},
     val onRefreshExtensions: () -> Unit = {},
     val onSignIn: () -> Unit = {},
     val onCancelSignIn: () -> Unit = {},

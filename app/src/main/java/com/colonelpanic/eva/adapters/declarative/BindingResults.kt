@@ -77,24 +77,26 @@ object BindingResults {
         binding: DeclarativeBinding.Content,
         result: ContentRows,
     ): ExecutionOutcome {
-        val rows =
-            result.rows.take(binding.maxRows).map { row ->
+        val bounded = ContentRowBudget(binding.maxRows, binding.maxBytes)
+        for (row in result.rows) {
+            val projected =
                 JsonObject(
                     binding.projection.mapValues { (column, type) ->
-                        val value = row[column] ?: JsonNull
+                        require(column in row) { "Content column is missing from the approved projection" }
+                        val value = row.getValue(column)
                         require(value == JsonNull || ToolSchema.error(JsonObject(mapOf("type" to JsonPrimitive(type))), value) == null) {
                             "Content column type did not match the approved projection"
                         }
                         value
                     },
                 )
-            }
-        val text = boundedText(JsonArray(rows), binding.maxBytes)
-        val truncated = result.truncated || result.rows.size > binding.maxRows
+            if (!bounded.add(projected)) break
+        }
+        val rows = bounded.result(result.truncated)
         return ExecutionOutcome(
             InvocationStatus.COMPLETED,
-            (if (truncated) "Rows truncated. " else "") + text,
-            boundedData(JsonObject(mapOf("rows" to JsonArray(rows), "truncated" to JsonPrimitive(truncated)))),
+            (if (rows.truncated) "Rows truncated. " else "") + JsonArray(rows.rows).toString(),
+            JsonObject(mapOf("rows" to JsonArray(rows.rows), "truncated" to JsonPrimitive(rows.truncated))),
         )
     }
 
@@ -131,4 +133,28 @@ object BindingResults {
         while (end > 0 && bytes[end].toInt() and 0xC0 == 0x80) end--
         return String(bytes, 0, end, Charsets.UTF_8) + "\n[Result truncated]"
     }
+}
+
+/** The JSON array and its metadata share a byte ceiling; identifiers are never cut. */
+class ContentRowBudget(
+    private val maxRows: Int,
+    maxBytes: Int,
+) {
+    private val rows = mutableListOf<JsonObject>()
+    private val limit = minOf(maxBytes, ExtensionProtocol.RESULT_BYTES - "{\"rows\":,\"truncated\":false}".toByteArray().size)
+    private var bytes = 2
+    private var truncated = false
+
+    fun add(row: JsonObject): Boolean {
+        val size = row.toString().toByteArray(Charsets.UTF_8).size + if (rows.isEmpty()) 0 else 1
+        if (rows.size >= maxRows || bytes + size > limit) {
+            truncated = true
+            return false
+        }
+        rows += row
+        bytes += size
+        return true
+    }
+
+    fun result(sourceTruncated: Boolean = false): ContentRows = ContentRows(rows.toList(), truncated || sourceTruncated)
 }

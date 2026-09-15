@@ -793,6 +793,7 @@ object EvaConfigurationCodec {
             "android.role.ASSISTANT",
             "android.notification-listener",
             "shizuku",
+            com.colonelpanic.eva.adapters.android.ContentProviderAccess.MOVA_READ_TODOS,
         )
 
     fun packageSecretId(instance: String) = "package/$instance/basic"

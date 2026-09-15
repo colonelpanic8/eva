@@ -8,6 +8,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import com.colonelpanic.eva.EvaApplication
 import com.colonelpanic.eva.EvaPermissions
+import com.colonelpanic.eva.adapters.android.ContentProviderAccess
 import com.colonelpanic.eva.adapters.android.MediaControlAccess
 import com.colonelpanic.eva.assist.AssistantRole
 import com.colonelpanic.eva.capability.extensions.ExtensionGrant
@@ -588,7 +589,16 @@ class EvaConfigurationManager(
             spotify = EvaConfiguration.Spotify(app.spotify.clientId.value),
             credentials = EvaConfiguration.Credentials(credentialRefs),
             remembered = EvaConfiguration.Remembered(app.chosenNumbers.all()),
-            device = EvaConfiguration.Device(desired?.device?.authorizations ?: currentAuthorizations(includeRequired = true)),
+            device =
+                EvaConfiguration.Device(
+                    (
+                        (
+                            desired?.device?.authorizations ?: currentAuthorizations(
+                                includeRequired = true,
+                            )
+                        ) + contentAuthorizations()
+                    ).distinct().sorted(),
+                ),
         )
     }
 
@@ -752,6 +762,9 @@ class EvaConfigurationManager(
                     }
                 if (!available) add("Provision local credential ${reference.id}${reference.endpoint?.let { " for $it" }.orEmpty()}.")
             }
+            app.packageSettings.state.value.flatMap { it.contentAuthorities }.distinct().forEach { authority ->
+                ContentProviderAccess.inspect(app, authority).problem?.let { add(it) }
+            }
             val current = currentAuthorizations(includeRequired = false).toSet()
             (configuration.device.authorizations - current).forEach { add("Authorize $it on this device.") }
             if (configuration.messaging.enabled && !MediaControlAccess.isGranted(app)) {
@@ -772,9 +785,23 @@ class EvaConfigurationManager(
         }
     }
 
+    private fun contentAuthorizations(): List<String> =
+        app.packageSettings.state.value
+            .flatMap { it.contentAuthorities }
+            .distinct()
+            .mapNotNull { ContentProviderAccess.requiredPermission(app, it) }
+            .distinct()
+
     private fun currentAuthorizations(includeRequired: Boolean): List<String> =
         buildList {
-            EvaPermissions.REQUIRED.forEach { permission ->
+            (
+                EvaPermissions.REQUIRED.toSet() + contentAuthorizations() +
+                    desired
+                        ?.device
+                        ?.authorizations
+                        .orEmpty()
+                        .filter { it in ContentProviderAccess.supportedPermissions }
+            ).forEach { permission ->
                 if (includeRequired ||
                     ContextCompat.checkSelfPermission(app, permission) == PackageManager.PERMISSION_GRANTED
                 ) {

@@ -3,9 +3,11 @@ package com.colonelpanic.eva.data.configuration
 import android.Manifest
 import android.content.Context
 import com.colonelpanic.eva.EvaApplication
+import com.colonelpanic.eva.adapters.android.ContentProviderAccess
 import com.colonelpanic.eva.adapters.declarative.PackageCodec
 import com.colonelpanic.eva.adapters.declarative.PackageEffect
 import com.colonelpanic.eva.adapters.declarative.configurePackage
+import com.colonelpanic.eva.adapters.declarative.contentFixture
 import com.colonelpanic.eva.capability.InteractionMode
 import com.colonelpanic.eva.capability.extensions.ExtensionGrant
 import com.colonelpanic.eva.capability.extensions.PackageIdentity
@@ -40,6 +42,90 @@ class EvaConfigurationManagerTest {
             .first { it.isFile }
             .readText()
     }
+
+    @Test
+    fun `restored content package retains Android setup across missing provider and later edits`() =
+        runBlocking {
+            val baseline = app.configuration.snapshotForTest()
+            val source =
+                contentFixture("mova-content")
+                    .document
+                    .toString()
+            val instance = "00000000-0000-0000-0000-000000000055"
+            val permission = ContentProviderAccess.MOVA_READ_TODOS
+            val restored =
+                baseline.copy(
+                    packages =
+                        baseline.packages.copy(
+                            installed =
+                                listOf(
+                                    PortablePackage(
+                                        instance,
+                                        "https://example.org/mova.json",
+                                        "https://example.org/mova.json",
+                                        source,
+                                    ),
+                                ),
+                        ),
+                    device = EvaConfiguration.Device(baseline.device.authorizations + permission),
+                )
+            val folder = MemoryDirectory(EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(restored)))
+            val manager = EvaConfigurationManager(app)
+            val loaded = manager.attachForTest(folder) as LinkedConfigurationResult.Loaded
+            assertTrue(loaded.setupRequired.any { permission in it })
+            assertTrue(loaded.setupRequired.any { "com.colonelpanic.mova.provider" in it })
+            assertEquals(
+                listOf("com.colonelpanic.mova.provider"),
+                app.packageSettings.state.value
+                    .single { it.id == instance }
+                    .contentAuthorities,
+            )
+            app.appearance.saveDynamicColor(!baseline.appearance.dynamicColor)
+            manager.localChangeForTest()
+            val saved = EvaConfigurationCodec.resolve(folder).configuration
+            assertTrue(permission in saved.device.authorizations)
+            assertEquals(
+                source,
+                saved.packages.installed
+                    .single()
+                    .document,
+            )
+        }
+
+    @Test
+    fun `installed content dependencies enter portable authorizations even before a runtime grant`() =
+        runBlocking {
+            val baseline = app.configuration.snapshotForTest()
+            val source =
+                contentFixture("mova-content")
+                    .document
+                    .toString()
+            val imported =
+                baseline.copy(
+                    packages =
+                        baseline.packages.copy(
+                            installed =
+                                listOf(
+                                    PortablePackage(
+                                        "00000000-0000-0000-0000-000000000055",
+                                        "https://example.org/mova.json",
+                                        "https://example.org/mova.json",
+                                        source,
+                                    ),
+                                ),
+                        ),
+                )
+            val folder = MemoryDirectory(EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(imported)))
+            val manager = EvaConfigurationManager(app)
+            manager.attachForTest(folder)
+            manager.localChangeForTest()
+            assertTrue(
+                ContentProviderAccess.MOVA_READ_TODOS in
+                    EvaConfigurationCodec
+                        .resolve(folder)
+                        .configuration.device.authorizations,
+            )
+        }
 
     @Test
     fun `failed first Git connection keeps the linked folder authoritative`() =

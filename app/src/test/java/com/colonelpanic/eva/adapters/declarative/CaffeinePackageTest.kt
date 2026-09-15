@@ -74,7 +74,17 @@ class CaffeinePackageTest {
             val capability = PackageCodec.decode(source).capabilities.first()
             val request = BindingArguments(capability, emptyMap()).intent(capability.binding as DeclarativeBinding.Intent)
             val intents = AndroidIntentHost()
-            val host = AndroidDeclarativeHost(intents, PackageHttpClient(credential = { _, _ -> null }))
+            val host =
+                AndroidDeclarativeHost(
+                    intents,
+                    PackageHttpClient(credential = {
+                        _,
+                        _,
+                        ->
+                        null
+                    }),
+                    org.robolectric.RuntimeEnvironment.getApplication(),
+                )
             intents.attachAssistant { throw ActivityNotFoundException() }
             val outcome = host.launch(request)
             assertEquals(InvocationStatus.NOT_EXECUTED, outcome.status)
