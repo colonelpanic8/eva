@@ -1,0 +1,3 @@
+* Added: Web search, opening a web page, email drafts, calendar events, and settings screens are catalog extensions (Web, Email, Calendar, Settings), installed and approved as shipped defaults like Google Maps.
+* Added: Declarative intent bindings can choose the action from a closed publisher map, take a whole URI from one argument restricted to declared schemes, and target a fixed `content:` insert.
+* ...see CHANGELOG.md for the rest.

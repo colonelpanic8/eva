@@ -4,6 +4,8 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-09-16
+
 ### Added
 
 - Web search, opening a web page, email drafts, calendar events, and settings screens are catalog extensions (Web, Email, Calendar, Settings), installed and approved as shipped defaults like Google Maps.
