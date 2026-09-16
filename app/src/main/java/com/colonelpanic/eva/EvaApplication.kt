@@ -261,24 +261,10 @@ class EvaApplication :
                                 intent("Dialer opened.", "No phone app is available.", NativeIntents::dial),
                                 "number",
                             ),
-                        CapabilityRegistry.WEB_SEARCH to
-                            intent("Web search opened.", "No browser or search app is available.", NativeIntents::webSearch),
-                        CapabilityRegistry.OPEN_URL to
-                            intent("Web page opened.", "No browser is available.", NativeIntents::openUrl),
-                        CapabilityRegistry.EMAIL_COMPOSE to
-                            intent("Email draft opened. Send it from your mail app.", "No email app is available.", NativeIntents::email),
-                        CapabilityRegistry.CALENDAR_EVENT to
-                            intent(
-                                "Calendar event opened. Save it in your calendar.",
-                                "No calendar app is available.",
-                                NativeIntents::calendarEvent,
-                            ),
                         CapabilityRegistry.OPEN_APP to
                             intent("App opened.", "No installed app matches that name.") {
                                 NativeIntents.launchApp(this@EvaApplication, it)
                             },
-                        CapabilityRegistry.OPEN_SETTINGS to
-                            intent("Settings opened.", "That settings screen is unavailable on this device.", NativeIntents::settings),
                         CapabilityRegistry.MEDIA_CONTROL to
                             MediaControlBackend(mediaSessions, MediaControlBackend.Operation.CONTROL),
                         CapabilityRegistry.MEDIA_NOW_PLAYING to

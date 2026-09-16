@@ -4,7 +4,6 @@ import com.colonelpanic.eva.adapters.android.ContactField
 import com.colonelpanic.eva.adapters.android.ConversationSummaries
 import com.colonelpanic.eva.adapters.android.MediaCommand
 import com.colonelpanic.eva.adapters.android.MessageRecipients
-import com.colonelpanic.eva.adapters.android.NativeIntents
 import com.colonelpanic.eva.adapters.android.VolumeAction
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -123,74 +122,6 @@ object BundledCapabilities {
             """,
                 ),
             ) { args -> if (phone.matches(args.getValue("number"))) null else "Enter one valid phone number." },
-            CapabilityDefinition(
-                CapabilityRegistry.WEB_SEARCH,
-                "Search the web",
-                "Open a web search for a query in the user's browser. " +
-                    "Prefer answering from your own knowledge; use this when the user asks to search.",
-                schema(
-                    """
-                {"type":"object","properties":{"query":{"type":"string","minLength":1,"maxLength":500}},
-                "required":["query"],"additionalProperties":false}
-            """,
-                ),
-            ) { args -> if (args.getValue("query").isBlank()) "Enter something to search for." else null },
-            CapabilityDefinition(
-                CapabilityRegistry.OPEN_URL,
-                "Open a web page",
-                "Open an http or https web address in the user's browser.",
-                schema(
-                    """
-                {"type":"object","properties":{"url":{"type":"string","minLength":8,"maxLength":2000}},
-                "required":["url"],"additionalProperties":false}
-            """,
-                ),
-            ) { args ->
-                val url = args.getValue("url")
-                if (url.startsWith("http://") || url.startsWith("https://")) {
-                    null
-                } else {
-                    "Enter an http or https web address."
-                }
-            },
-            CapabilityDefinition(
-                CapabilityRegistry.EMAIL_COMPOSE,
-                "Prepare an email",
-                "Open an email draft addressed to one recipient. The user sends it. Does not send mail.",
-                schema(
-                    """
-                {"type":"object","properties":{
-                "recipient":{"type":"string","minLength":3,"maxLength":320},
-                "subject":{"type":"string","minLength":1,"maxLength":300},
-                "body":{"type":"string","minLength":1,"maxLength":4000}},
-                "required":["recipient"],"additionalProperties":false}
-            """,
-                ),
-            ) { args ->
-                val recipient = args.getValue("recipient")
-                if (recipient.count { it == '@' } == 1 && !recipient.first().isWhitespace() && !recipient.contains(' ')) {
-                    null
-                } else {
-                    "Enter one valid email address."
-                }
-            },
-            CapabilityDefinition(
-                CapabilityRegistry.CALENDAR_EVENT,
-                "Create a calendar event",
-                "Open a prefilled new calendar event. The user saves it. " +
-                    "Supply startEpochMillis in Unix milliseconds when a time is known.",
-                schema(
-                    """
-                {"type":"object","properties":{
-                "title":{"type":"string","minLength":1,"maxLength":300},
-                "startEpochMillis":{"type":"integer","minimum":0,"maximum":4102444800000},
-                "durationMinutes":{"type":"integer","minimum":1,"maximum":10080},
-                "location":{"type":"string","minLength":1,"maxLength":300},
-                "description":{"type":"string","minLength":1,"maxLength":2000}},
-                "required":["title"],"additionalProperties":false}
-            """,
-                ),
-            ),
             CapabilityDefinition(
                 CapabilityRegistry.OPEN_APP,
                 "Open an app",
@@ -345,17 +276,6 @@ object BundledCapabilities {
                     null
                 }
             },
-            CapabilityDefinition(
-                CapabilityRegistry.OPEN_SETTINGS,
-                "Open a settings screen",
-                "Open one of the device's settings screens. EVA cannot change a setting directly.",
-                schema(
-                    """
-                {"type":"object","properties":{"screen":{"type":"string","enum":${NativeIntents.settingsScreenNames.quoted()}}},
-                "required":["screen"],"additionalProperties":false}
-            """,
-                ),
-            ),
             CapabilityDefinition(
                 CapabilityRegistry.DEVICE_STATE_GET,
                 "Read device state",

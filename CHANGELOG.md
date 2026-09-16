@@ -9,6 +9,10 @@ All notable changes to EVA will be documented here.
 - Web search, opening a web page, email drafts, calendar events, and settings screens are catalog extensions (Web, Email, Calendar, Settings), installed and approved as shipped defaults like Google Maps.
 - Declarative intent bindings can choose the action from a closed publisher map, take a whole URI from one argument restricted to declared schemes, and target a fixed `content:` insert.
 
+### Removed
+
+- The built-in web search, open page, email, calendar, and settings tools; the four default extensions replace them with the same behaviour.
+
 ## [0.19.0] - 2026-09-16
 
 ### Added

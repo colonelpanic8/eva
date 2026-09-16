@@ -7,9 +7,7 @@ import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.net.Uri
 import android.provider.AlarmClock
-import android.provider.CalendarContract
 import android.provider.MediaStore
-import android.provider.Settings
 import androidx.core.net.toUri
 import com.colonelpanic.eva.capability.ExecutionBackend
 import com.colonelpanic.eva.capability.ExecutionOutcome
@@ -49,51 +47,6 @@ object NativeIntents {
             .apply { arguments["label"]?.let { putExtra(AlarmClock.EXTRA_MESSAGE, it) } }
 
     fun dial(arguments: Map<String, String>): Intent = Intent(Intent.ACTION_DIAL, "tel:${Uri.encode(arguments.getValue("number"))}".toUri())
-
-    fun webSearch(arguments: Map<String, String>): Intent =
-        Intent(Intent.ACTION_WEB_SEARCH).putExtra(SearchManager.QUERY, arguments.getValue("query"))
-
-    fun openUrl(arguments: Map<String, String>): Intent = Intent(Intent.ACTION_VIEW, arguments.getValue("url").toUri())
-
-    fun email(arguments: Map<String, String>): Intent =
-        Intent(Intent.ACTION_SENDTO, "mailto:${Uri.encode(arguments.getValue("recipient"))}".toUri())
-            .apply {
-                arguments["subject"]?.let { putExtra(Intent.EXTRA_SUBJECT, it) }
-                arguments["body"]?.let { putExtra(Intent.EXTRA_TEXT, it) }
-            }
-
-    fun calendarEvent(arguments: Map<String, String>): Intent =
-        Intent(Intent.ACTION_INSERT, CalendarContract.Events.CONTENT_URI)
-            .putExtra(CalendarContract.Events.TITLE, arguments.getValue("title"))
-            .apply {
-                arguments["location"]?.let { putExtra(CalendarContract.Events.EVENT_LOCATION, it) }
-                arguments["description"]?.let { putExtra(CalendarContract.Events.DESCRIPTION, it) }
-                val start = arguments["startEpochMillis"]?.toLongOrNull()
-                if (start != null) {
-                    val minutes = arguments["durationMinutes"]?.toLongOrNull() ?: 60L
-                    putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, start)
-                    putExtra(CalendarContract.EXTRA_EVENT_END_TIME, start + minutes * 60_000L)
-                }
-            }
-
-    private val settingsScreens =
-        mapOf(
-            "wifi" to Settings.ACTION_WIFI_SETTINGS,
-            "bluetooth" to Settings.ACTION_BLUETOOTH_SETTINGS,
-            "display" to Settings.ACTION_DISPLAY_SETTINGS,
-            "sound" to Settings.ACTION_SOUND_SETTINGS,
-            "battery" to Settings.ACTION_BATTERY_SAVER_SETTINGS,
-            "location" to Settings.ACTION_LOCATION_SOURCE_SETTINGS,
-            "apps" to Settings.ACTION_APPLICATION_SETTINGS,
-            "storage" to Settings.ACTION_INTERNAL_STORAGE_SETTINGS,
-            "date" to Settings.ACTION_DATE_SETTINGS,
-            "airplane" to Settings.ACTION_AIRPLANE_MODE_SETTINGS,
-            "all" to Settings.ACTION_SETTINGS,
-        )
-
-    val settingsScreenNames: List<String> get() = settingsScreens.keys.sorted()
-
-    fun settings(arguments: Map<String, String>): Intent? = settingsScreens[arguments.getValue("screen")]?.let(::Intent)
 
     /**
      * Android's documented "play this" request. It carries words, not a chosen track: the music

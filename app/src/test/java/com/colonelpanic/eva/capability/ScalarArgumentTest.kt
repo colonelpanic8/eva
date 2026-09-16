@@ -43,18 +43,16 @@ class ScalarArgumentTest {
 
     @Test
     fun `optional properties may be omitted but unknown ones may not`() {
-        assertNull(registry.validationError(proposal(CapabilityRegistry.CALENDAR_EVENT, mapOf("title" to "Standup"))))
-        assertNotNull(
-            registry.validationError(proposal(CapabilityRegistry.CALENDAR_EVENT, mapOf("title" to "Standup", "guest" to "Sam"))),
-        )
+        assertNull(registry.validationError(proposal(CapabilityRegistry.SET_TIMER, mapOf("seconds" to "600"))))
+        assertNotNull(registry.validationError(proposal(CapabilityRegistry.SET_TIMER, mapOf("seconds" to "600", "repeat" to "yes"))))
     }
 
     @Test
     fun `enumerated and format constrained arguments are enforced`() {
-        assertNull(registry.validationError(proposal(CapabilityRegistry.OPEN_SETTINGS, mapOf("screen" to "wifi"))))
-        assertNotNull(registry.validationError(proposal(CapabilityRegistry.OPEN_SETTINGS, mapOf("screen" to "camera"))))
-        assertNotNull(registry.validationError(proposal(CapabilityRegistry.OPEN_URL, mapOf("url" to "javascript:alert(1)"))))
-        assertNull(registry.validationError(proposal(CapabilityRegistry.OPEN_URL, mapOf("url" to "https://example.com"))))
+        assertNull(registry.validationError(proposal(CapabilityRegistry.MEDIA_CONTROL, mapOf("action" to "pause"))))
+        assertNotNull(registry.validationError(proposal(CapabilityRegistry.MEDIA_CONTROL, mapOf("action" to "rewind"))))
+        assertNotNull(registry.validationError(proposal(CapabilityRegistry.DIAL, mapOf("number" to "call mom"))))
+        assertNull(registry.validationError(proposal(CapabilityRegistry.DIAL, mapOf("number" to "+12025550100"))))
     }
 
     @Test
