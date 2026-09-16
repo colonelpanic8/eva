@@ -60,38 +60,40 @@ class PortableConfigurationStoresTest {
 
     @Test
     fun `shipped defaults are adopted once and a removed default is not reinstalled`() {
-        val default = DefaultPackages.all.single()
-        val asset =
+        val assets =
             generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }
-                .map { File(it, "app/src/main/assets/${default.path}") }
-                .first { it.isFile }
-                .readText()
+                .map { File(it, "app/src/main/assets") }
+                .first { it.isDirectory }
+        val readAsset: (String) -> String = { path -> File(assets, path).readText() }
+        val maps = DefaultPackages.all.single { it.id == "android.google-maps" }
         var changes = 0
-        val settings =
-            PackageSettings(context, onChanged = { changes++ }, readAsset = { name ->
-                asset.also { assertEquals(default.path, name) }
-            })
+        val settings = PackageSettings(context, onChanged = { changes++ }, readAsset = readAsset)
 
-        val adopted = settings.adoptDefaults().single()
-        assertEquals(default.identity, adopted.identity)
-        assertEquals(default.source, adopted.source)
-        assertEquals(default.path, adopted.url)
-        assertEquals(asset, adopted.json)
+        val adopted = settings.adoptDefaults()
+        assertEquals(DefaultPackages.all.map { it.id }, adopted.map { it.definition.id })
+        val installed = adopted.single { it.definition.id == maps.id }
+        assertEquals(maps.identity, installed.identity)
+        assertEquals(maps.source, installed.source)
+        assertEquals(maps.path, installed.url)
+        assertEquals(readAsset(maps.path), installed.json)
         assertEquals(1, changes)
-        assertEquals(listOf(default.id), settings.portable().appliedDefaults)
+        assertEquals(DefaultPackages.all.map { it.id }, settings.portable().appliedDefaults)
         assertTrue(settings.adoptDefaults().isEmpty())
-        assertEquals(adopted, settings.imported().single())
+        assertEquals(adopted, settings.imported())
 
-        settings.removePlugin(default.identity.id)
+        settings.removePlugin(maps.identity.id)
         assertTrue(settings.adoptDefaults().isEmpty())
-        assertTrue(settings.imported().isEmpty())
-        assertEquals(listOf(default.id), PackageSettings(context).appliedDefaults())
+        assertEquals(DefaultPackages.all.size - 1, settings.imported().size)
+        assertEquals(DefaultPackages.all.map { it.id }, PackageSettings(context).appliedDefaults())
 
         val restored = settings.portable().copy(appliedDefaults = emptyList())
-        assertTrue(PackageSettings(context, readAsset = { asset }).restore(restored).isEmpty())
-        val fresh = PackageSettings(context, readAsset = { asset })
+        assertTrue(PackageSettings(context, readAsset = readAsset).restore(restored).isEmpty())
+        val fresh = PackageSettings(context, readAsset = readAsset)
         assertTrue(fresh.appliedDefaults().isEmpty())
-        assertEquals(default.identity, fresh.adoptDefaults().single().identity)
+        val readopted = fresh.adoptDefaults()
+        assertEquals(DefaultPackages.all.map { it.identity }, readopted.map { it.identity })
+        assertEquals(DefaultPackages.all.size, fresh.imported().size)
+        assertEquals(readAsset(maps.path), readopted.single { it.identity == maps.identity }.json)
     }
 
     @Test

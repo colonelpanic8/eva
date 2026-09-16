@@ -1,0 +1,95 @@
+{
+  "formatVersion": 1,
+  "id": "android.web",
+  "version": "0.1.0",
+  "title": "Web",
+  "androidPackages": [],
+  "capabilities": [
+    {
+      "tool": {
+        "name": "search",
+        "title": "Search the web",
+        "description": "Open a web search for a query in the user's browser or search app. Prefer answering from your own knowledge; use this when the user asks to search. Reports handoff, not results.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "effects": "external_handoff",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true
+      },
+      "receipts": {
+        "success": "Web search opened.",
+        "handlerMissing": "No browser or search app is available."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.intent.action.WEB_SEARCH",
+        "extras": {
+          "query": {
+            "argument": "query",
+            "type": "string",
+            "required": true
+          }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "open",
+        "title": "Open a web page",
+        "description": "Open an http or https web address in the user's browser. Reports handoff, not page content.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 2000,
+              "description": "A complete http or https address"
+            }
+          },
+          "required": [
+            "url"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "effects": "external_handoff",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true
+      },
+      "validators": {
+        "url": "httpUrl"
+      },
+      "receipts": {
+        "success": "Web page opened.",
+        "handlerMissing": "No browser is available."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.intent.action.VIEW",
+        "uri": {
+          "argument": "url",
+          "schemes": [
+            "http",
+            "https"
+          ]
+        }
+      }
+    }
+  ]
+}

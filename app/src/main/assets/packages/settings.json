@@ -1,0 +1,72 @@
+{
+  "formatVersion": 1,
+  "id": "android.settings",
+  "version": "0.1.0",
+  "title": "Settings",
+  "androidPackages": [],
+  "capabilities": [
+    {
+      "tool": {
+        "name": "open",
+        "title": "Open a settings screen",
+        "description": "Open one of the phone's settings screens for the user. It cannot change a setting directly; use the device state actions for that when they are available.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "screen": {
+              "type": "string",
+              "enum": [
+                "wifi",
+                "bluetooth",
+                "display",
+                "sound",
+                "battery",
+                "location",
+                "apps",
+                "storage",
+                "date",
+                "airplane",
+                "all"
+              ],
+              "description": "Which settings screen to open; all is the top level"
+            }
+          },
+          "required": [
+            "screen"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "effects": "external_handoff",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true
+      },
+      "receipts": {
+        "success": "Settings opened.",
+        "handlerMissing": "That settings screen is unavailable on this device."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": {
+          "argument": "screen",
+          "type": "string",
+          "required": true,
+          "values": {
+            "wifi": "android.settings.WIFI_SETTINGS",
+            "bluetooth": "android.settings.BLUETOOTH_SETTINGS",
+            "display": "android.settings.DISPLAY_SETTINGS",
+            "sound": "android.settings.SOUND_SETTINGS",
+            "battery": "android.settings.BATTERY_SAVER_SETTINGS",
+            "location": "android.settings.LOCATION_SOURCE_SETTINGS",
+            "apps": "android.settings.APPLICATION_SETTINGS",
+            "storage": "android.settings.INTERNAL_STORAGE_SETTINGS",
+            "date": "android.settings.DATE_SETTINGS",
+            "airplane": "android.settings.AIRPLANE_MODE_SETTINGS",
+            "all": "android.settings.SETTINGS"
+          }
+        }
+      }
+    }
+  ]
+}

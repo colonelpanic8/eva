@@ -105,10 +105,16 @@ not shipped and is not a claim of a configured server or verified device workflo
 ### Shipped default packages
 
 Some catalog packages are useful enough on stock Android that EVA installs and
-approves them without a browse step. The
+approves them without a browse step. The current defaults are
 [Google Maps](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/google-maps.json)
-package (map search through `geo:`, turn-by-turn navigation through
-`google.navigation:` with a travel mode) is the current default. `adapters/declarative/DefaultPackages.kt` lists each default
+(map search through `geo:`, turn-by-turn navigation through `google.navigation:`
+with a travel mode), [Web](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/web.json)
+(web search, open an http/https page),
+[Email](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/email.json)
+(a `mailto:` draft), [Calendar](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/calendar.json)
+(a prefilled event insert), and
+[Settings](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/settings.json)
+(open a settings screen). `adapters/declarative/DefaultPackages.kt` lists each default
 with a byte-identical copy of the catalog file under `app/src/main/assets/packages/`
 and a fixed, name-derived instance ID. After the desired configuration is attached
 at startup, EVA installs each default whose package ID is not yet in
@@ -117,8 +123,8 @@ it is an ordinary installation with the catalog repository as its source, so a
 later catalog update targets the same instance and needs the usual re-enablement.
 `appliedDefaults` is portable: removing or disabling a default is a configuration
 change that other devices restore, and a removed default is never reinstalled.
-Maps and navigation are handoffs, so the model still reports an opened app rather
-than arrival.
+All of them are handoffs, so the model still reports an opened app rather than a
+completed result.
 
 ### Package and repository identity
 

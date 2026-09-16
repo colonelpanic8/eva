@@ -1,0 +1,75 @@
+{
+  "formatVersion": 1,
+  "id": "android.email",
+  "version": "0.1.0",
+  "title": "Email",
+  "androidPackages": [],
+  "capabilities": [
+    {
+      "tool": {
+        "name": "compose",
+        "title": "Prepare an email",
+        "description": "Open an email draft addressed to one recipient, with an optional subject and body. The user reviews and sends it from their mail app. Does not send mail.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "recipient": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 320,
+              "description": "One email address"
+            },
+            "subject": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            },
+            "body": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000
+            }
+          },
+          "required": [
+            "recipient"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "effects": "external_handoff",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true
+      },
+      "validators": {
+        "recipient": "emailAddress"
+      },
+      "receipts": {
+        "success": "Email draft opened. Send it from your mail app.",
+        "handlerMissing": "No email app is available."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.intent.action.SENDTO",
+        "uri": {
+          "base": "mailto:",
+          "opaque": {
+            "argument": "recipient",
+            "type": "string",
+            "required": true
+          }
+        },
+        "extras": {
+          "android.intent.extra.SUBJECT": {
+            "argument": "subject",
+            "type": "string"
+          },
+          "android.intent.extra.TEXT": {
+            "argument": "body",
+            "type": "string"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,91 @@
+{
+  "formatVersion": 1,
+  "id": "android.calendar",
+  "version": "0.1.0",
+  "title": "Calendar",
+  "androidPackages": [],
+  "capabilities": [
+    {
+      "tool": {
+        "name": "event",
+        "title": "Create a calendar event",
+        "description": "Open a prefilled new calendar event for the user to save. Supply startEpochMillis and endEpochMillis in Unix milliseconds when the time is known; an event with only a start takes the calendar app's default length. Does not save the event.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            },
+            "startEpochMillis": {
+              "type": "integer",
+              "minimum": 946684800000,
+              "maximum": 4102444800000,
+              "description": "Start, Unix milliseconds, local time already resolved"
+            },
+            "endEpochMillis": {
+              "type": "integer",
+              "minimum": 946684800000,
+              "maximum": 4102444800000,
+              "description": "End, Unix milliseconds; after the start"
+            },
+            "location": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            },
+            "description": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            }
+          },
+          "required": [
+            "title"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "effects": "external_handoff",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true
+      },
+      "receipts": {
+        "success": "Calendar event opened. Save it in your calendar.",
+        "handlerMissing": "No calendar app is available."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.intent.action.INSERT",
+        "uri": {
+          "base": "content://com.android.calendar/events"
+        },
+        "extras": {
+          "title": {
+            "argument": "title",
+            "type": "string",
+            "required": true
+          },
+          "beginTime": {
+            "argument": "startEpochMillis",
+            "type": "integer"
+          },
+          "endTime": {
+            "argument": "endEpochMillis",
+            "type": "integer"
+          },
+          "eventLocation": {
+            "argument": "location",
+            "type": "string"
+          },
+          "description": {
+            "argument": "description",
+            "type": "string"
+          }
+        }
+      }
+    }
+  ]
+}

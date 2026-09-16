@@ -43,7 +43,13 @@ class GoogleMapsPackageTest {
         assertEquals(default.id, source.id)
         assertEquals("https://github.com/colonelpanic8/eva-extensions.git", default.source)
         assertEquals("packages/google-maps.json", default.path)
-        assertEquals(default.identity, DefaultPackages.all.single().identity)
+        assertEquals(
+            DefaultPackages.all.size,
+            DefaultPackages.all
+                .map { it.identity }
+                .distinct()
+                .size,
+        )
         assertEquals(listOf("com.google.android.apps.maps"), source.androidPackages)
         assertEquals(listOf("search", "navigate"), source.capabilities.map { it.name })
     }

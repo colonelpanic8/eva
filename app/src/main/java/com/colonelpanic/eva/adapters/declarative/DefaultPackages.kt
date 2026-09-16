@@ -18,5 +18,12 @@ data class DefaultPackage(
 }
 
 object DefaultPackages {
-    val all = listOf(DefaultPackage("android.google-maps", "packages/google-maps.json"))
+    val all =
+        listOf(
+            DefaultPackage("android.google-maps", "packages/google-maps.json"),
+            DefaultPackage("android.web", "packages/web.json"),
+            DefaultPackage("android.email", "packages/email.json"),
+            DefaultPackage("android.calendar", "packages/calendar.json"),
+            DefaultPackage("android.settings", "packages/settings.json"),
+        )
 }

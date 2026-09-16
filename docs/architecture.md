@@ -256,7 +256,7 @@ repository sources, service endpoints, wait budgets, and saved user preferences.
 Configuration import must validate before replacing working settings and preserve
 identity-dependent authorization. Invalid or incompatible input must be visible.
 
-Shipped default packages (currently Google Maps) are adopted once per
+Shipped default packages (Google Maps, Web, Email, Calendar, Settings) are adopted once per
 configuration: after the desired configuration is attached at startup, EVA
 installs and approves each default not yet listed in `packages.appliedDefaults`
 and records it there. The result is an ordinary installation and grant, so the
