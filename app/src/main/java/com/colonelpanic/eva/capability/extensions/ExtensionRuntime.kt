@@ -77,6 +77,26 @@ class ExtensionRuntime(
 
     fun portableGrants(): Map<String, ExtensionGrant> = grants.all()
 
+    /** Approves every action of a freshly installed default package once its descriptor is live. */
+    suspend fun adopt(identity: AdapterIdentity): Boolean {
+        adapter.refresh()
+        withTimeoutOrNull(5_000) {
+            adapter.ready.first { it }
+            adapter.installed.first { installed ->
+                installed.any { it.identity?.instanceId == identity.instanceId && it.descriptor != null }
+            }
+        }
+        var adopted = false
+        update {
+            val entry = adapter.installed.value.find { it.identity?.instanceId == identity.instanceId } ?: return@update
+            val descriptor = entry.descriptor ?: return@update
+            grants.enableAll(checkNotNull(entry.identity), descriptor)
+            adopted = true
+        }
+        if (adopted) onGrantChanged(identity.instanceId)
+        return adopted
+    }
+
     suspend fun restoreGrants(
         restored: Map<String, ExtensionGrant>,
         expectedPackageInstances: Set<String>,

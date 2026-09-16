@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
 import com.colonelpanic.eva.adapters.declarative.BasicCredential
+import com.colonelpanic.eva.adapters.declarative.DefaultPackages
 import com.colonelpanic.eva.adapters.declarative.InstalledPlugin
 import com.colonelpanic.eva.adapters.declarative.LoadedPackage
 import com.colonelpanic.eva.adapters.declarative.PackageCodec
@@ -46,6 +47,8 @@ data class PortablePackageSettings(
     val services: List<HttpServiceBinding>,
     val httpServices: Map<String, HttpServiceDefinition> = emptyMap(),
     val serviceBindings: List<PackageServiceBinding> = emptyList(),
+    /** Shipped defaults this configuration has already installed once; a later removal stays removed. */
+    val appliedDefaults: List<String> = emptyList(),
 )
 
 @Serializable
@@ -58,6 +61,7 @@ class PackageSettings(
     context: Context,
     private val onChanged: () -> Unit = {},
     private val onCredentialChanged: (String) -> Unit = {},
+    private val readAsset: (String) -> String = { name -> context.assets.open(name).use { it.readBytes().toString(Charsets.UTF_8) } },
 ) {
     private val secrets = SecretStore(context)
     private val prefs = context.getSharedPreferences("eva.packages", Context.MODE_PRIVATE)
@@ -100,6 +104,26 @@ class PackageSettings(
         }
         mutable.value = entries()
         onChanged()
+    }
+
+    fun appliedDefaults(): List<String> = prefs.getString(DEFAULTS, null)?.let { Json.decodeFromString<List<String>>(it) }.orEmpty()
+
+    /** Installs each shipped default once per configuration and returns the installations still needing grants. */
+    fun adoptDefaults(): List<InstalledPlugin> {
+        val applied = appliedDefaults()
+        val pending = DefaultPackages.all.filter { it.id !in applied }
+        if (pending.isEmpty()) return emptyList()
+        val adopted =
+            pending.map { default ->
+                val json = readAsset(default.path)
+                val definition = PackageCodec.decode(json)
+                require(definition.id == default.id) { "Shipped default ${default.path} declares ${definition.id}." }
+                imports.adopt(InstalledPlugin(default.identity, default.source, default.path, definition, json))
+            }
+        savePreferences { putString(DEFAULTS, Json.encodeToString(applied + pending.map { it.id })) }
+        mutable.value = entries()
+        onChanged()
+        return adopted
     }
 
     private val mutable = MutableStateFlow(entries())
@@ -298,6 +322,7 @@ class PackageSettings(
             configured.legacy,
             configured.http,
             configured.bindings,
+            appliedDefaults(),
         )
     }
 
@@ -342,6 +367,7 @@ class PackageSettings(
                 .filter { it.startsWith("wait:") || it.startsWith("origin:") }
                 .forEach(::remove)
             restored.waitMillis.forEach { (id, value) -> putLong("wait:$id", value) }
+            if (restored.appliedDefaults.isEmpty()) remove(DEFAULTS) else putString(DEFAULTS, Json.encodeToString(restored.appliedDefaults))
             putString(SERVICES, Json.encodeToString(StoredServiceSettings(resolved.http, resolved.bindings)))
             resolved.legacy.forEach { service -> putString("origin:${service.packageInstance}", service.origin) }
         }
@@ -478,6 +504,7 @@ class PackageSettings(
 
     private companion object {
         const val SERVICES = "services:v2"
+        const val DEFAULTS = "defaults"
         val SERVICE_NAME = Regex("[a-z][a-z0-9-]{0,63}")
     }
 }

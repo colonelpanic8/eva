@@ -84,6 +84,19 @@ class ExtensionGrants(
         )
     }
 
+    /** Enables the extension and every non-read action at once, as for a shipped default package. */
+    suspend fun enableAll(
+        identity: AdapterIdentity,
+        descriptor: Descriptor,
+    ) {
+        val mutations =
+            descriptor.capabilities
+                .filter { it.effect != Effect.READ }
+                .map { it.name }
+                .toSet()
+        save(grants + (identity.instanceId to ExtensionGrant(identity.key, descriptor.digest, mutations)))
+    }
+
     suspend fun mutation(
         identity: AdapterIdentity,
         descriptor: Descriptor,

@@ -83,6 +83,7 @@ data class PackagesPatch(
     /** Version-1 per-package services, retained only for migration. */
     val services: List<HttpServiceBinding>? = null,
     val serviceBindings: List<PackageServiceBinding>? = null,
+    val appliedDefaults: List<String>? = null,
 )
 
 @Serializable
@@ -206,6 +207,8 @@ data class EvaConfiguration(
         val services: List<HttpServiceBinding>,
         val serviceBindings: List<PackageServiceBinding> = emptyList(),
         val legacyBundledInstances: Map<String, String> = emptyMap(),
+        /** Shipped default packages already installed once; EVA never reinstalls a default listed here. */
+        val appliedDefaults: List<String> = emptyList(),
     )
 
     data class Services(
@@ -394,6 +397,7 @@ object EvaConfigurationCodec {
                 current.packages.waitMillis.takeIf { it != base?.packages?.waitMillis },
                 current.packages.services.takeIf { it != base?.packages?.services },
                 current.packages.serviceBindings.takeIf { it != base?.packages?.serviceBindings },
+                current.packages.appliedDefaults.takeIf { it != base?.packages?.appliedDefaults },
             ).nonEmpty(),
         services = ServicesPatch(current.services.http.takeIf { it != base?.services?.http }).nonEmpty(),
         extensions = ExtensionsPatch(current.extensions.grants.takeIf { it != base?.extensions?.grants }).nonEmpty(),
@@ -444,6 +448,7 @@ object EvaConfigurationCodec {
                     packages?.services.orEmpty(),
                     packages?.serviceBindings.orEmpty(),
                     packages?.legacyBundledInstances.orEmpty(),
+                    packages?.appliedDefaults.orEmpty(),
                 ),
             services = EvaConfiguration.Services(services?.http.orEmpty()),
             extensions =
@@ -478,6 +483,8 @@ object EvaConfigurationCodec {
                 .distinct()
                 .size == packages.legacyBundledInstances.size,
         ) { "Duplicate bundled package instance." }
+        require(packages.appliedDefaults.distinct().size == packages.appliedDefaults.size) { "Duplicate applied default package." }
+        packages.appliedDefaults.forEach { require(it.matches(Regex("[A-Za-z0-9._-]{1,128}"))) { "Invalid applied default package." } }
         require(packages.installed.size <= 64) { "At most 64 packages may be installed." }
         packages.installed.forEach { item ->
             item.instance.uuid("package")
@@ -620,6 +627,7 @@ object EvaConfigurationCodec {
                     services = packages.services.sortedBy { it.packageInstance },
                     serviceBindings = packages.serviceBindings.sortedWith(compareBy({ it.packageInstance }, { it.sourceOrigin })),
                     legacyBundledInstances = packages.legacyBundledInstances.toSortedMap(),
+                    appliedDefaults = packages.appliedDefaults.sorted(),
                 ),
             services = services.copy(http = services.http.toSortedMap()),
             extensions =
@@ -643,6 +651,7 @@ object EvaConfigurationCodec {
                     services = document.packages.services?.sortedBy { it.packageInstance },
                     serviceBindings =
                         document.packages.serviceBindings?.sortedWith(compareBy({ it.packageInstance }, { it.sourceOrigin })),
+                    appliedDefaults = document.packages.appliedDefaults?.sorted(),
                 ),
             services = document.services?.copy(http = document.services.http?.toSortedMap()),
             extensions =
@@ -694,6 +703,7 @@ object EvaConfigurationCodec {
                 override.packages?.waitMillis ?: base.packages?.waitMillis,
                 override.packages?.services ?: base.packages?.services,
                 override.packages?.serviceBindings ?: base.packages?.serviceBindings,
+                override.packages?.appliedDefaults ?: base.packages?.appliedDefaults,
             ).nonEmpty(),
         services = ServicesPatch(override.services?.http ?: base.services?.http).nonEmpty(),
         extensions = ExtensionsPatch(override.extensions?.grants ?: base.extensions?.grants).nonEmpty(),
@@ -741,7 +751,7 @@ object EvaConfigurationCodec {
     private fun PackagesPatch.nonEmpty() =
         takeIf {
             repository != null || legacyBundledInstances != null || installed != null || waitMillis != null || services != null ||
-                serviceBindings != null
+                serviceBindings != null || appliedDefaults != null
         }
 
     private fun ServicesPatch.nonEmpty() = takeIf { http != null }

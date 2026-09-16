@@ -3,6 +3,7 @@ package com.colonelpanic.eva.data.configuration
 import android.app.Application
 import android.content.Context
 import android.net.Uri
+import com.colonelpanic.eva.adapters.declarative.DefaultPackages
 import com.colonelpanic.eva.adapters.declarative.PackageCodec
 import com.colonelpanic.eva.adapters.declarative.httpBindings
 import com.colonelpanic.eva.conversation.prompt.PromptComponent
@@ -55,6 +56,42 @@ class PortableConfigurationStoresTest {
         assertTrue(settings.load().isEmpty())
         assertTrue(settings.state.value.isEmpty())
         assertTrue(settings.portable().installed.isEmpty())
+    }
+
+    @Test
+    fun `shipped defaults are adopted once and a removed default is not reinstalled`() {
+        val default = DefaultPackages.all.single()
+        val asset =
+            generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }
+                .map { File(it, "app/src/main/assets/${default.path}") }
+                .first { it.isFile }
+                .readText()
+        var changes = 0
+        val settings =
+            PackageSettings(context, onChanged = { changes++ }, readAsset = { name ->
+                asset.also { assertEquals(default.path, name) }
+            })
+
+        val adopted = settings.adoptDefaults().single()
+        assertEquals(default.identity, adopted.identity)
+        assertEquals(default.source, adopted.source)
+        assertEquals(default.path, adopted.url)
+        assertEquals(asset, adopted.json)
+        assertEquals(1, changes)
+        assertEquals(listOf(default.id), settings.portable().appliedDefaults)
+        assertTrue(settings.adoptDefaults().isEmpty())
+        assertEquals(adopted, settings.imported().single())
+
+        settings.removePlugin(default.identity.id)
+        assertTrue(settings.adoptDefaults().isEmpty())
+        assertTrue(settings.imported().isEmpty())
+        assertEquals(listOf(default.id), PackageSettings(context).appliedDefaults())
+
+        val restored = settings.portable().copy(appliedDefaults = emptyList())
+        assertTrue(PackageSettings(context, readAsset = { asset }).restore(restored).isEmpty())
+        val fresh = PackageSettings(context, readAsset = { asset })
+        assertTrue(fresh.appliedDefaults().isEmpty())
+        assertEquals(default.identity, fresh.adoptDefaults().single().identity)
     }
 
     @Test

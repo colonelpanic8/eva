@@ -6,6 +6,7 @@ All notable changes to EVA will be documented here.
 
 ### Added
 
+- Google Maps is a catalog extension: map search through `geo:` and turn-by-turn navigation through `google.navigation:` with a travel mode (driving, bicycling, walking, two-wheeler). EVA installs and approves it automatically the first time a configuration runs; `packages.appliedDefaults` in `eva.yaml` records that, so removing it stays removed everywhere.
 - Declarative intent bindings can place `{name}` placeholders in the URI after its scheme, and enum string slots can map the model's readable values onto the target's codes.
 
 ### Changed

@@ -256,6 +256,13 @@ repository sources, service endpoints, wait budgets, and saved user preferences.
 Configuration import must validate before replacing working settings and preserve
 identity-dependent authorization. Invalid or incompatible input must be visible.
 
+Shipped default packages (currently Google Maps) are adopted once per
+configuration: after the desired configuration is attached at startup, EVA
+installs and approves each default not yet listed in `packages.appliedDefaults`
+and records it there. The result is an ordinary installation and grant, so the
+same restore, update, and removal rules apply, and a removed default stays removed
+on every device. See the [extension protocol](extension-protocol.md#shipped-default-packages).
+
 Credentials require protected provisioning and references; neither a package nor
 a shareable configuration may embed application-owned secrets. Android permission
 grants, assistant selection, document access, and installed applications are
@@ -351,7 +358,7 @@ The schema separates these groups:
 | `appearance`, `capabilities` | Dynamic color and optional capability switches |
 | `messaging` | Notification-read opt-in and exact app-installation reply identities |
 | `prompt` | Source URL and complete ordered component list |
-| `packages` | Repository, imported package bytes and origins, wait budgets, service bindings |
+| `packages` | Repository, imported package bytes and origins, wait budgets, service bindings, applied shipped defaults |
 | `services.http` | Named HTTPS origins with optional scoped local credential references |
 | `extensions` | Grants bound to exact identity, digest, and mutation names |
 | `spotify` | Public client ID |

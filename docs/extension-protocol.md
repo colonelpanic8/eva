@@ -102,6 +102,24 @@ The [Caffeine](https://github.com/colonelpanic8/eva-extensions/blob/main/package
 The [org-agenda fixture](examples/org-agenda.json) exercises HTTP mappings but is
 not shipped and is not a claim of a configured server or verified device workflow.
 
+### Shipped default packages
+
+Some catalog packages are useful enough on stock Android that EVA installs and
+approves them without a browse step. The
+[Google Maps](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/google-maps.json)
+package (map search through `geo:`, turn-by-turn navigation through
+`google.navigation:` with a travel mode) is the current default. `adapters/declarative/DefaultPackages.kt` lists each default
+with a byte-identical copy of the catalog file under `app/src/main/assets/packages/`
+and a fixed, name-derived instance ID. After the desired configuration is attached
+at startup, EVA installs each default whose package ID is not yet in
+`packages.appliedDefaults`, records it there, and grants every action; from then on
+it is an ordinary installation with the catalog repository as its source, so a
+later catalog update targets the same instance and needs the usual re-enablement.
+`appliedDefaults` is portable: removing or disabling a default is a configuration
+change that other devices restore, and a removed default is never reinstalled.
+Maps and navigation are handoffs, so the model still reports an opened app rather
+than arrival.
+
 ### Package and repository identity
 
 A package is one self-contained JSON file, without scripts or embedded secrets.

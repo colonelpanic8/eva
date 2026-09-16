@@ -69,6 +69,14 @@ class PluginInstallations(
         return installed
     }
 
+    /** Adds a shipped default unless the same catalog package is already installed, whatever its version. */
+    @Synchronized fun adopt(candidate: InstalledPlugin): InstalledPlugin {
+        entries.find { it.source == candidate.source && it.definition.id == candidate.definition.id }?.let { return it }
+        require(entries.none { it.identity == candidate.identity }) { "Default package identity is already in use" }
+        commit(entries + candidate)
+        return candidate
+    }
+
     @Synchronized fun remove(instance: String) = commit(entries.filterNot { it.identity.id == instance })
 
     @Synchronized fun restore(restored: List<InstalledPlugin>) {

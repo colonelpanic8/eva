@@ -71,6 +71,7 @@ class EvaConfigurationManager(
     private val changedMessagingReplies = mutableSetOf<String>()
     private var desired: EvaConfiguration? = null
     private var managedGit: ManagedGitRepository? = null
+    private var startup: Job? = null
 
     @Volatile private var suppressChanges = false
 
@@ -87,12 +88,30 @@ class EvaConfigurationManager(
     }
 
     fun start() {
-        if (gitEnabled()) {
-            scope.launch { connectGit(enableOnSuccess = false) }
-            return
+        startup =
+            scope.launch {
+                if (gitEnabled()) {
+                    connectGit(enableOnSuccess = false)
+                } else {
+                    prefs.getString(TREE, null)?.let { value -> runAction { linked.attach(SafConfigurationDirectory(app, value.toUri())) } }
+                }
+                adoptDefaults()
+            }
+    }
+
+    /** Runs after the desired configuration is attached so a restored removal of a default is not undone. */
+    private suspend fun adoptDefaults() {
+        try {
+            operations.withLock {
+                var adopted = emptyList<com.colonelpanic.eva.adapters.declarative.InstalledPlugin>()
+                app.registry.changeAuthorization { adopted = app.packageSettings.adoptDefaults() }
+                adopted.forEach { app.extensions.adopt(it.identity) }
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            android.util.Log.e("EvaConfiguration", "Default packages were not adopted", failure)
         }
-        val value = prefs.getString(TREE, null) ?: return
-        scope.launch { runAction { linked.attach(SafConfigurationDirectory(app, value.toUri())) } }
     }
 
     fun select(uri: Uri) {
@@ -233,11 +252,22 @@ class EvaConfigurationManager(
         onLocalChange()
     }
 
-    internal suspend fun attachForTest(directory: ConfigurationDirectory): LinkedConfigurationResult = linked.attach(directory)
+    internal suspend fun awaitStartupForTest() = startup?.join()
 
-    internal suspend fun snapshotForTest(): EvaConfiguration = snapshot()
+    internal suspend fun attachForTest(directory: ConfigurationDirectory): LinkedConfigurationResult {
+        awaitStartupForTest()
+        return linked.attach(directory)
+    }
 
-    internal suspend fun reloadForTest(force: Boolean): LinkedConfigurationResult = linked.reload(force)
+    internal suspend fun snapshotForTest(): EvaConfiguration {
+        awaitStartupForTest()
+        return snapshot()
+    }
+
+    internal suspend fun reloadForTest(force: Boolean): LinkedConfigurationResult {
+        awaitStartupForTest()
+        return linked.reload(force)
+    }
 
     internal suspend fun localChangeForTest(): LinkedConfigurationResult = linked.localChange()
 
@@ -817,7 +847,7 @@ class EvaConfigurationManager(
         }
 
     private fun PortablePackageSettings.configuration() =
-        EvaConfiguration.Packages(repository, installed, waitMillis, services, serviceBindings)
+        EvaConfiguration.Packages(repository, installed, waitMillis, services, serviceBindings, appliedDefaults = appliedDefaults)
 
     private fun EvaConfiguration.Packages.portable(
         services: EvaConfiguration.Services = EvaConfiguration.Services(emptyMap()),
@@ -830,6 +860,7 @@ class EvaConfigurationManager(
             this.services.filter { it.packageInstance in installedInstances },
             services.http,
             serviceBindings.filter { it.packageInstance in installedInstances },
+            appliedDefaults,
         )
     }
 

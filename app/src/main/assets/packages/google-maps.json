@@ -1,0 +1,122 @@
+{
+  "formatVersion": 1,
+  "id": "android.google-maps",
+  "version": "0.1.0",
+  "title": "Google Maps",
+  "androidPackages": [
+    "com.google.android.apps.maps"
+  ],
+  "capabilities": [
+    {
+      "tool": {
+        "name": "search",
+        "title": "Search maps",
+        "description": "Open a map search for a place, business, or address in the phone's map app (Google Maps when it is installed). Reports handoff to the map app, not arrival.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "destination": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Place name, business, or address to search for."
+            }
+          },
+          "required": [
+            "destination"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "effects": "external_handoff",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true
+      },
+      "receipts": {
+        "success": "Map search opened.",
+        "handlerMissing": "No map app is available. Install Google Maps or another map app and try again."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.intent.action.VIEW",
+        "uri": {
+          "base": "geo:0,0",
+          "query": {
+            "q": {
+              "argument": "destination",
+              "type": "string",
+              "required": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "navigate",
+        "title": "Start navigation",
+        "description": "Start turn-by-turn navigation to a destination from the phone's current location in Google Maps (or another navigation app that handles google.navigation links). Choose travelmode for driving, bicycling, walking, or two-wheeler directions; driving is the default. Transit is not available for navigation. Reports handoff, not arrival.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "destination": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Place name, business, or address to navigate to."
+            },
+            "travelmode": {
+              "type": "string",
+              "enum": [
+                "driving",
+                "bicycling",
+                "walking",
+                "two-wheeler"
+              ],
+              "description": "How the user wants to travel; driving when omitted."
+            }
+          },
+          "required": [
+            "destination"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "effects": "external_handoff",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true
+      },
+      "receipts": {
+        "success": "Navigation requested.",
+        "handlerMissing": "No navigation app is available. Install Google Maps and try again."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.intent.action.VIEW",
+        "uri": {
+          "base": "google.navigation:q={destination}&mode={mode}",
+          "path": {
+            "destination": {
+              "argument": "destination",
+              "type": "string",
+              "required": true
+            },
+            "mode": {
+              "argument": "travelmode",
+              "type": "string",
+              "default": "driving",
+              "values": {
+                "driving": "d",
+                "bicycling": "b",
+                "walking": "w",
+                "two-wheeler": "l"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

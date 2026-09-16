@@ -370,6 +370,7 @@ class ConfigurationCompositionTest {
                                 service = SERVICE_NAME,
                             ),
                         ),
+                    appliedDefaults = listOf("android.google-maps"),
                 ),
             services =
                 EvaConfiguration.Services(
