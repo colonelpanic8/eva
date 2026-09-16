@@ -62,7 +62,14 @@ internal fun ExtensionCatalogSection(
         state.preview?.let { preview ->
             SettingsBlock {
                 Text("Review ${preview.definition.title} ${preview.definition.version}")
-                Text("Source: ${if (preview.source.startsWith("file-import:")) "Selected file" else preview.url}")
+                Text(
+                    "Source: " +
+                        when {
+                            preview.source.startsWith("file-import:") -> "Selected file"
+                            preview.url == preview.source -> preview.url
+                            else -> "${preview.source} · ${preview.url}"
+                        },
+                )
                 Text("Targets: ${preview.definition.androidPackages.joinToString().ifEmpty { "See destinations below" }}")
                 preview.definition.capabilities.forEach { capability ->
                     Text("${capability.title} · ${capability.effect.name.lowercase()}")

@@ -29,7 +29,6 @@ decode.
 | --- | --- |
 | [`tool.schema.json`](schemas/tool.schema.json) | The MCP tool object embedded in every capability |
 | [`package.schema.json`](schemas/package.schema.json) | A declarative package file |
-| [`index.schema.json`](schemas/index.schema.json) | A repository index |
 | [`extension-descriptor.schema.json`](schemas/extension-descriptor.schema.json) | An installed-app `describe` reply |
 | [`extension-result.schema.json`](schemas/extension-result.schema.json) | An installed-app `execute` reply |
 
@@ -87,9 +86,10 @@ beside the text, and a resumed conversation replays both.
 
 ## Declarative packages
 
-Packages are single JSON files. Starter packages and an index live separately in
-[eva-extensions](https://github.com/colonelpanic8/eva-extensions). In EVA, use Extensions →
-Browse for repository refresh or URL/file import, inspect the preview, and install.
+Packages are single JSON files. The catalog is a Git repository, by default
+[eva-extensions](https://github.com/colonelpanic8/eva-extensions), whose `packages/`
+directory holds them. In EVA, use Extensions → Browse for a catalog refresh or
+URL/file import, inspect the preview, and install.
 Installed holds enablement and action grants; Settings holds service configuration
 and wait budgets. Refresh alone does not install or authorize anything.
 
@@ -117,46 +117,35 @@ changed content requires re-enablement. Updates target an existing instance only
 through an explicit preview and install action. Historical receipts retain the
 previous identity and revision.
 
-A starter repository needs no executable server or git client:
+A catalog needs nothing but a Git repository with one file per package:
 
 ```text
-index.json
+packages/google-maps.json
 packages/org-agenda.json
-packages/maps.json
 ```
 
-The index envelope is:
+EVA keeps a read-only clone of the configured catalog remote under app storage
+(`extension-catalogs/`). Refresh fetches the clone's branch, fast-forwards to the
+remote head, and lists every `packages/*.json` that decodes; a file that does not
+decode is reported by name and skipped rather than hiding the rest, and duplicate
+package IDs fail the refresh. Preview reads the listed file from the clone, and
+installation uses those exact bytes. The remote must be an HTTPS Git URL without
+credentials; an index-era `raw.githubusercontent.com/…/index.json` source, and
+installations recorded against one, are read as that repository so they keep
+matching catalog updates. There is no separate index or digest to regenerate:
+the repository's own history is the integrity record.
 
-```json
-{
-  "formatVersion": 1,
-  "packages": [{
-    "id": "community.org-agenda",
-    "version": "0.1.0",
-    "title": "Org agenda",
-    "url": "packages/org-agenda.json",
-    "sha256": "<SHA-256 of the exact package file bytes>",
-    "androidPackages": []
-  }]
-}
-```
-
-EVA fetches a raw package URL or an index over HTTPS with bounded response sizes.
-Relative package URLs resolve against the index URL; index entries stay on its
-origin. A selected package must match the indexed ID, version, and byte digest.
 The preview shows the source, operations, effects, destinations, and data disclosure.
-Installation uses those exact previewed bytes, without a second download.
 Source and package ID are retained for explicit update checks. A changed version
-does not retain grants, and a digest is not publisher authentication. A package
-can also be copied and hosted independently at a raw HTTPS URL.
+does not retain grants, and a catalog is not publisher authentication. A single
+package can also be previewed from a raw HTTPS URL of the file itself.
 The Extensions tab also offers Import extension file. The system document picker grants
 temporary read access; EVA bounds the stream to the same package size limit and
 copies its exact bytes before preview. No persistent file permission is needed.
 Every file import gets a fresh source and instance identity; reimporting a file
 creates a separate disabled installation. Use a stable HTTPS source for updates.
 Packages optionally declare `androidPackages`, a list of up to 16 Android package
-IDs used only as matching hints. The index requires this field (empty for a
-server-only extension), and its value must match the downloaded package.
+IDs used only as matching hints.
 
 ### Binding boundaries
 

@@ -39,7 +39,7 @@ class ExtensionFixtureTest {
     fun `published schemas parse and name the draft they use`() {
         val schemas = File(docs, "schemas").listFiles { file -> file.extension == "json" }.orEmpty()
         assertEquals(
-            setOf("tool", "extension-result", "extension-descriptor", "package", "index"),
+            setOf("tool", "extension-result", "extension-descriptor", "package"),
             schemas.map { it.name.removeSuffix(".schema.json") }.toSet(),
         )
         schemas.forEach { file ->

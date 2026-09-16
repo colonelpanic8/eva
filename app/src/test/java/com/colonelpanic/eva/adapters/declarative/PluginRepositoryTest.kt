@@ -13,50 +13,127 @@ import com.colonelpanic.eva.capability.extensions.ExtensionGrants
 import com.colonelpanic.eva.capability.extensions.ExtensionRuntime
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import org.eclipse.jgit.api.Git
+import org.eclipse.jgit.transport.RefSpec
+import org.eclipse.jgit.transport.URIish
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.security.MessageDigest
+import java.io.File
+import java.nio.file.Files
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class PluginRepositoryTest {
-    private val source = "https://plugins.example.test/index.json"
     private val json =
         requireNotNull(javaClass.getResourceAsStream("/packages/caffeine.json"))
             .bufferedReader()
             .use { it.readText() }
+    private val root = Files.createTempDirectory("eva-catalog").toFile()
 
-    private fun index(
-        json: String,
-        url: String = "caffeine.json",
-    ): String {
-        val definition = PackageCodec.decode(json)
-        val hash = MessageDigest.getInstance("SHA-256").digest(json.toByteArray()).joinToString("") { "%02x".format(it) }
-        return JsonObject(
-            mapOf(
-                "formatVersion" to JsonPrimitive(1),
-                "packages" to
-                    JsonArray(
-                        listOf(
-                            JsonObject(
-                                mapOf(
-                                    "id" to JsonPrimitive(definition.id),
-                                    "version" to JsonPrimitive(definition.version),
-                                    "title" to JsonPrimitive(definition.title),
-                                    "url" to JsonPrimitive(url),
-                                    "sha256" to JsonPrimitive(hash),
-                                    "androidPackages" to JsonArray(definition.androidPackages.map(::JsonPrimitive)),
-                                ),
-                            ),
-                        ),
-                    ),
-            ),
-        ).toString()
+    /** A bare remote plus a publishing clone standing in for the catalog repository on its host. */
+    private inner class Catalog {
+        private val remote =
+            File(root, "remote.git").also {
+                Git
+                    .init()
+                    .setDirectory(it)
+                    .setBare(true)
+                    .setInitialBranch("main")
+                    .call()
+                    .close()
+            }
+        private val work = File(root, "work")
+        private val git =
+            Git.init().setDirectory(work).setInitialBranch("main").call().also {
+                it
+                    .remoteAdd()
+                    .setName("origin")
+                    .setUri(URIish(remote.toURI().toString()))
+                    .call()
+            }
+        val source: String = remote.toURI().toString()
+
+        fun publish(
+            name: String,
+            content: String,
+        ) {
+            File(work, "packages/$name").apply {
+                parentFile.mkdirs()
+                writeText(content)
+            }
+            git.add().addFilepattern(".").call()
+            git
+                .commit()
+                .setMessage("publish $name")
+                .setAuthor("Catalog", "catalog@example.test")
+                .call()
+            git
+                .push()
+                .setRemote("origin")
+                .setRefSpecs(RefSpec("refs/heads/main:refs/heads/main"))
+                .call()
+        }
+
+        fun close() = git.close()
+    }
+
+    private val catalog = Catalog()
+    private val repository = PluginRepository(File(root, "checkouts"), { _, _ -> error("The catalog is not fetched over HTTP") }, true)
+
+    @After
+    fun cleanUp() {
+        catalog.close()
+        root.deleteRecursively()
+    }
+
+    @Test
+    fun `catalog listing follows the remote head and reports unreadable files without hiding the rest`() {
+        catalog.publish("caffeine.json", json)
+        val first = repository.list(catalog.source)
+        val listing = first.listings.single()
+        assertEquals("android.caffeine", listing.id)
+        assertEquals("0.1.0", listing.version)
+        assertEquals("packages/caffeine.json", listing.url)
+        assertEquals(listOf("moe.zhs.caffeine"), listing.androidPackages)
+        assertTrue(first.problems.isEmpty())
+        assertEquals(json, repository.preview(catalog.source, listing).json)
+
+        catalog.publish("broken.json", "{")
+        catalog.publish("caffeine.json", json.replace("0.1.0", "0.2.0"))
+        val second = repository.list(catalog.source)
+        assertEquals("0.2.0", second.listings.single().version)
+        assertEquals(1, second.problems.size)
+        assertTrue(second.problems.single().startsWith("broken.json"))
+        assertThrows(IllegalArgumentException::class.java) { repository.preview(catalog.source, listing) }
+        val preview = repository.preview(catalog.source, second.listings.single())
+        assertEquals(catalog.source.trimEnd('/'), preview.source)
+        assertEquals("packages/caffeine.json", preview.url)
+    }
+
+    @Test
+    fun `catalog sources are HTTPS git remotes and index era identities map onto them`() {
+        assertEquals(
+            "https://github.com/colonelpanic8/eva-extensions.git",
+            PluginRepository.installationSource("https://raw.githubusercontent.com/colonelpanic8/eva-extensions/main/index.json"),
+        )
+        assertEquals(
+            "packages/google-maps.json",
+            PluginRepository.legacyUrl("https://raw.githubusercontent.com/colonelpanic8/eva-extensions/main/packages/google-maps.json"),
+        )
+        assertEquals(
+            "https://plugins.example.test/catalog.git",
+            PluginRepository.catalogSource(" https://plugins.example.test/catalog.git/ "),
+        )
+        assertEquals("packages/x.json", PluginRepository.installationUrl("packages/x.json"))
+        assertThrows(IllegalArgumentException::class.java) { PluginRepository.catalogSource("http://plugins.example.test/catalog.git") }
+        assertThrows(IllegalArgumentException::class.java) { PluginRepository.catalogSource("https://user:pw@plugins.example.test/c.git") }
+        assertThrows(IllegalArgumentException::class.java) { PluginRepository.catalogSource(catalog.source) }
+        assertThrows(IllegalArgumentException::class.java) { PluginRepository.installationUrl("../packages/x.json") }
+        assertThrows(Exception::class.java) { PluginRepository(File(root, "other"), { _, _ -> ByteArray(0) }).list(catalog.source) }
     }
 
     @Test
@@ -86,26 +163,13 @@ class PluginRepositoryTest {
     }
 
     @Test
-    fun `index destinations and file digest are validated before preview`() {
-        var document = index(json)
-        var file = json
-        val repo = PluginRepository { url, _ -> (if (url == source) document else file).toByteArray() }
-        val listing = repo.list(source).single()
-        assertEquals("Caffeine", repo.preview(source, listing).definition.title)
-        file += " "
-        assertThrows(IllegalArgumentException::class.java) { repo.preview(source, listing) }
-        document = index(json, "https://other.example.test/plugin.json")
-        assertThrows(IllegalArgumentException::class.java) { repo.list(source) }
-        assertThrows(IllegalArgumentException::class.java) { repo.list("http://plugins.example.test/index.json") }
-    }
-
-    @Test
     fun `installation persists exact approved bytes retains identity on update and refuses rollback`() {
         var disk: String? = null
         var fail = false
         val store = PluginInstallations({ disk }, { if (fail) error("disk failed") else disk = it })
+        val source = "https://plugins.example.test/catalog.git"
 
-        fun preview(value: String) = PluginPreview(source, "https://plugins.example.test/caffeine.json", value, PackageCodec.decode(value))
+        fun preview(value: String) = PluginPreview(source, "packages/caffeine.json", value, PackageCodec.decode(value))
         val first = store.install(preview(json))
         assertEquals(json, PluginInstallations({ disk }, {}).all().single().json)
         val next = json.replace("0.1.0", "0.2.0").replace("Caffeine", "Caffeine updated")
@@ -126,18 +190,22 @@ class PluginRepositoryTest {
     }
 
     @Test
-    fun `repository addition reaches the registry without an app rebuild and updates revoke grants`() =
+    fun `stored index era installations reload as catalog installations`() {
+        val disk =
+            """[{"instance":"00000000-0000-0000-0000-000000000009",
+            "source":"https://raw.githubusercontent.com/colonelpanic8/eva-extensions/main/index.json",
+            "url":"https://raw.githubusercontent.com/colonelpanic8/eva-extensions/main/packages/caffeine.json",
+            "json":${JsonPrimitive(json)}}]"""
+        val plugin = PluginInstallations({ disk }, {}).all().single()
+        assertEquals("https://github.com/colonelpanic8/eva-extensions.git", plugin.source)
+        assertEquals("packages/caffeine.json", plugin.url)
+    }
+
+    @Test
+    fun `catalog addition reaches the registry without an app rebuild and updates revoke grants`() =
         runTest {
             var disk: String? = null
             val store = PluginInstallations({ disk }, { disk = it })
-            var remoteIndex = """{"formatVersion":1,"packages":[]}"""
-            var remoteFile = json
-            var fetches = 0
-            val repo =
-                PluginRepository { url, _ ->
-                    fetches++
-                    (if (url == source) remoteIndex else remoteFile).toByteArray()
-                }
             var launches = 0
             val host =
                 object : DeclarativeHost {
@@ -184,9 +252,9 @@ class PluginRepositoryTest {
             val runtime = ExtensionRuntime(registry, adapter, grants, backgroundScope)
             val browser =
                 PluginBrowser(
-                    repo,
+                    repository,
                     backgroundScope,
-                    source,
+                    catalog.source,
                     store::all,
                     { setOf("moe.zhs.caffeine") },
                     {},
@@ -203,22 +271,22 @@ class PluginRepositoryTest {
                         }
                     },
                 )
-            browser.refresh(source)
+            catalog.publish("README.json.txt", "not a package")
+            browser.refresh(catalog.source)
             runCurrent()
             assertTrue(
                 browser.state.value.listings
                     .isEmpty(),
             )
-            remoteIndex = index(remoteFile)
-            browser.refresh(source)
+            catalog.publish("caffeine.json", json)
+            browser.refresh(catalog.source)
             runCurrent()
             assertEquals(1, browser.state.value.listings.size)
             browser.preview("android.caffeine")
             runCurrent()
-            val fetched = fetches
             browser.installPreview()
             runCurrent()
-            assertEquals(fetched, fetches)
+            assertEquals(catalog.source.trimEnd('/'), store.all().single().source)
             assertTrue(registry.catalog.isEmpty())
             val entry =
                 runtime.settings.value.entries
@@ -233,9 +301,8 @@ class PluginRepositoryTest {
             val proposal = ToolProposal("first", definition.id, emptyMap(), "Keep awake", registry.snapshot.revision)
             assertEquals(InvocationStatus.HANDED_OFF, dispatcher.execute(proposal).status)
             assertEquals(1, launches)
-            remoteFile = json.replace("0.1.0", "0.2.0")
-            remoteIndex = index(remoteFile)
-            browser.refresh(source)
+            catalog.publish("caffeine.json", json.replace("0.1.0", "0.2.0"))
+            browser.refresh(catalog.source)
             runCurrent()
             browser.preview("android.caffeine")
             runCurrent()

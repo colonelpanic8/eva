@@ -358,6 +358,7 @@ class EvaApplication :
     val pluginBrowser by lazy {
         com.colonelpanic.eva.adapters.declarative.PluginBrowser(
             com.colonelpanic.eva.adapters.declarative.PluginRepository(
+                java.io.File(noBackupFilesDir, "extension-catalogs"),
                 com.colonelpanic.eva.adapters.declarative
                     .RepositoryHttpClient()::fetch,
             ),

@@ -8,7 +8,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 
 data class PluginBrowserState(
-    val source: String = DEFAULT_PLUGIN_INDEX,
+    val source: String = DEFAULT_PLUGIN_REPOSITORY,
     val listings: List<PluginListing> = emptyList(),
     val installed: List<InstalledPlugin> = emptyList(),
     val visibleApps: Set<String> = emptySet(),
@@ -18,7 +18,7 @@ data class PluginBrowserState(
     val notice: String? = null,
 )
 
-const val DEFAULT_PLUGIN_INDEX = "https://raw.githubusercontent.com/colonelpanic8/eva-extensions/main/index.json"
+const val DEFAULT_PLUGIN_REPOSITORY = "https://github.com/colonelpanic8/eva-extensions.git"
 
 class PluginBrowser(
     private val repository: PluginRepository,
@@ -39,10 +39,18 @@ class PluginBrowser(
     fun refresh(source: String) =
         run {
             mutable.value = mutable.value.copy(preview = null)
-            val normalized = PluginRepository.repositoryUrl(source).toString()
-            val listings = repository.list(normalized)
+            val normalized = repository.source(source)
+            val catalog = repository.list(normalized)
             saveSource(normalized)
-            mutable.value = PluginBrowserState(normalized, listings, installed(), visibleApps(), busy = true)
+            mutable.value =
+                PluginBrowserState(
+                    normalized,
+                    catalog.listings,
+                    installed(),
+                    visibleApps(),
+                    busy = true,
+                    notice = catalog.problems.takeIf { it.isNotEmpty() }?.joinToString("\n") { "Skipped $it" },
+                )
         }
 
     fun previewUrl(url: String) =

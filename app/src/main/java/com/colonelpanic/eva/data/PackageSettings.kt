@@ -8,6 +8,7 @@ import com.colonelpanic.eva.adapters.declarative.InstalledPlugin
 import com.colonelpanic.eva.adapters.declarative.LoadedPackage
 import com.colonelpanic.eva.adapters.declarative.PackageCodec
 import com.colonelpanic.eva.adapters.declarative.PackageDefinition
+import com.colonelpanic.eva.adapters.declarative.PluginRepository
 import com.colonelpanic.eva.adapters.declarative.configurePackage
 import com.colonelpanic.eva.adapters.declarative.contentBindings
 import com.colonelpanic.eva.adapters.declarative.httpBindings
@@ -71,8 +72,8 @@ class PackageSettings(
     fun imported() = imports.all()
 
     val repositorySource: String get() =
-        prefs.getString("repository", null)
-            ?: com.colonelpanic.eva.adapters.declarative.DEFAULT_PLUGIN_INDEX
+        prefs.getString("repository", null)?.let(PluginRepository::legacySource)
+            ?: com.colonelpanic.eva.adapters.declarative.DEFAULT_PLUGIN_REPOSITORY
 
     fun saveRepository(source: String) {
         savePreferences { putString("repository", source) }
@@ -313,7 +314,13 @@ class PackageSettings(
         restored.installed
             .map { item ->
                 val definition = PackageCodec.decode(item.document)
-                InstalledPlugin(PackageIdentity(item.instance), item.source, item.url, definition, item.document)
+                InstalledPlugin(
+                    PackageIdentity(item.instance),
+                    PluginRepository.legacySource(item.source),
+                    PluginRepository.legacyUrl(item.url),
+                    definition,
+                    item.document,
+                )
             }.also(com.colonelpanic.eva.adapters.declarative.PluginInstallations::validate)
 
     fun restore(

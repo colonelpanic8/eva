@@ -63,7 +63,7 @@ Paths below are relative to `app/src/main/java/com/colonelpanic/eva/`:
 - Declarative package catalog: `colonelpanic8/eva-extensions`.
 - Installed-provider ABI: `app/src/main/aidl/com/colonelpanic/eva/extension/`.
 - HTTP/declarative and AIDL wire fixtures: `docs/examples/`; JSON Schemas for the
-  package, index, tool, descriptor, and result shapes: `docs/schemas/`; canonical branding sources:
+  package, tool, descriptor, and result shapes: `docs/schemas/`; canonical branding sources:
   `assets/branding/`.
 - JVM tests mirror production packages in `app/src/test/java/`.
 - Device/live tests: `app/src/androidTest/java/`; live providers require opt-in arguments.

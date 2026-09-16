@@ -8,6 +8,10 @@ All notable changes to EVA will be documented here.
 
 - Declarative intent bindings can place `{name}` placeholders in the URI after its scheme, and enum string slots can map the model's readable values onto the target's codes.
 
+### Changed
+
+- The extension catalog is a Git repository, cloned read-only under app storage and fast-forwarded on refresh; every `packages/*.json` in it is listed. Repository indexes and their digests are gone, and index-era sources are read as their repository.
+
 ## [0.18.0] - 2026-09-14
 
 ### Added

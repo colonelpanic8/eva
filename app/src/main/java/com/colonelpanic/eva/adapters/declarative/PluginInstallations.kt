@@ -33,8 +33,8 @@ class PluginInstallations(
                         val json = root.getValue("json").jsonPrimitive.content
                         InstalledPlugin(
                             PackageIdentity(root.getValue("instance").jsonPrimitive.content),
-                            root.getValue("source").jsonPrimitive.content,
-                            root.getValue("url").jsonPrimitive.content,
+                            PluginRepository.legacySource(root.getValue("source").jsonPrimitive.content),
+                            PluginRepository.legacyUrl(root.getValue("url").jsonPrimitive.content),
                             PackageCodec.decode(json),
                             json,
                         )
@@ -61,7 +61,7 @@ class PluginInstallations(
             InstalledPlugin(
                 old?.identity ?: PackageIdentity(UUID.randomUUID().toString()),
                 source,
-                PluginRepository.installationSource(preview.url),
+                PluginRepository.installationUrl(preview.url),
                 definition,
                 preview.json,
             )
