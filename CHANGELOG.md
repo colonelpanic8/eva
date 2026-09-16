@@ -4,6 +4,10 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Declarative intent bindings can place `{name}` placeholders in the URI after its scheme, and enum string slots can map the model's readable values onto the target's codes.
+
 ## [0.18.0] - 2026-09-14
 
 ### Added

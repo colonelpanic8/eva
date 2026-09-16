@@ -64,6 +64,8 @@ sealed interface ScalarSlot {
         override val type: String,
         val default: JsonElement? = null,
         val required: Boolean = false,
+        /** Bound value for each tool enum value; keys cover the enum exactly, so the model never sees the target's codes. */
+        val values: Map<String, String>? = null,
     ) : ScalarSlot
 
     data class Literal(
@@ -99,6 +101,8 @@ sealed interface DeclarativeBinding {
         val packageByName: String? = null,
         val opaque: ScalarSlot? = null,
         val targetClass: String? = null,
+        /** Slots for `{name}` placeholders in the fixed base, each percent-encoded whole. */
+        val path: Map<String, ScalarSlot> = emptyMap(),
     ) : DeclarativeBinding
 
     data class Content(

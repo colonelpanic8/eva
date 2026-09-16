@@ -112,6 +112,54 @@ class PackageCodecTest {
     }
 
     @Test
+    fun `URI placeholders stay after the scheme and value maps cover the argument enum`() {
+        fun packageWith(binding: String) =
+            """
+            {"formatVersion":1,"id":"community.example","version":"0.1.0","title":"Example",
+            "capabilities":[{"tool":{"name":"go","title":"Go","description":"Navigate","inputSchema":{"type":"object",
+            "properties":{"title":{"type":"string","maxLength":100},"mode":{"type":"string","enum":["driving","bicycling"]}},
+            "required":["title"],"additionalProperties":false}},
+            "effects":"external_handoff","execution":{"mode":"handoff","requiresForeground":true},"binding":$binding}]}
+            """.trimIndent()
+
+        fun intent(
+            base: String,
+            path: String,
+        ) = """{"kind":"android.intent","action":"android.intent.action.VIEW","uri":{"base":"$base","path":{$path}}}"""
+        val title = """"title":{"argument":"title","type":"string","required":true}"""
+        val mode = """"mode":{"argument":"mode","type":"string","default":"driving","values":{"driving":"d","bicycling":"b"}}"""
+        val capability =
+            PackageCodec
+                .decode(
+                    packageWith(intent("google.navigation:q={title}&mode={mode}", "$title,$mode")),
+                ).capabilities
+                .single()
+        val binding = capability.binding as DeclarativeBinding.Intent
+        assertEquals(
+            "google.navigation:q=Park%20%26%20caf%C3%A9%3Fx%3D1&mode=b",
+            BindingArguments(capability, mapOf("title" to "Park & café?x=1", "mode" to "bicycling")).intent(binding).uri,
+        )
+        assertEquals("google.navigation:q=Park&mode=d", BindingArguments(capability, mapOf("title" to "Park")).intent(binding).uri)
+        assertThrows(Exception::class.java) { BindingArguments(capability, mapOf("title" to "Park", "mode" to "b")) }
+        assertThrows(Exception::class.java) { BindingArguments(capability, mapOf("title" to "")).intent(binding) }
+        listOf(
+            intent("{title}:q=x&mode={mode}", "$title,$mode"),
+            intent("google.navigation:q={title}", "$title,$mode"),
+            intent("google.navigation:q={title}&mode={mode}", title),
+            intent("google.navigation:q={title}?mode={mode}", "$title,$mode"),
+            intent(
+                "google.navigation:q={title}&mode={mode}",
+                """$title,"mode":{"argument":"mode","type":"string","values":{"driving":"d"}}""",
+            ),
+            intent("google.navigation:q={title}&mode={mode}", """"title":{"argument":"title","type":"string","values":{"x":"y"}},$mode"""),
+            intent(
+                "google.navigation:q={title}&mode={mode}",
+                "$title,$mode",
+            ).replace("\"path\":", "\"opaque\":$title,\"path\":".replace(title, "{$title}")),
+        ).forEach { json -> assertThrows(Exception::class.java) { PackageCodec.decode(packageWith(json)) } }
+    }
+
+    @Test
     fun `share request carries a visible app name without accepting a model supplied package`() {
         val binding = """{"kind":"android.intent","action":"android.intent.action.SEND","mimeType":"text/plain",
             "packageByName":"title","extras":{"android.intent.extra.TEXT":{"type":"string","value":"Untyped text"}}}"""

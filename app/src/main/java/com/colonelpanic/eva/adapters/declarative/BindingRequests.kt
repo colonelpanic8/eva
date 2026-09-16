@@ -58,9 +58,10 @@ class BindingArguments(
     private fun value(slot: ScalarSlot): JsonElement? =
         when (slot) {
             is ScalarSlot.Argument -> {
-                (values[slot.name] ?: slot.default).also {
-                    require(it != null || !slot.required) { "A required binding argument is missing" }
-                }
+                val value = values[slot.name] ?: slot.default
+                require(value != null || !slot.required) { "A required binding argument is missing" }
+                val mapping = slot.values
+                if (value != null && mapping != null) JsonPrimitive(mapping.getValue((value as JsonPrimitive).content)) else value
             }
 
             is ScalarSlot.Literal -> {
@@ -73,8 +74,14 @@ class BindingArguments(
 
     fun intent(binding: DeclarativeBinding.Intent): IntentRequest {
         val query = binding.query.mapNotNull { (name, slot) -> scalar(slot)?.let { encode(name) + "=" + encode(it.content) } }
+        var base = binding.uriBase
+        binding.path.forEach { (name, slot) ->
+            val text = requireNotNull(scalar(slot)) { "A URI argument is missing" }.content
+            require(text.isNotEmpty()) { "A URI argument is empty" }
+            base = base.replace("{$name}", encode(text))
+        }
         val uri =
-            binding.uriBase +
+            base +
                 (
                     binding.opaque?.let { encode(requireNotNull(scalar(it)) { "An opaque URI argument is missing" }.content) }
                         ?: if (query.isEmpty()) "" else query.joinToString("&", "?")

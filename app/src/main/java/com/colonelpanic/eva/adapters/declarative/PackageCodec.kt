@@ -177,14 +177,23 @@ object PackageCodec {
         root.fields(setOf("kind", "action"), setOf("uri", "extras", "package", "mimeType", "packageByName", "class"))
         val action = root.text("action", 200).also { require(Regex("[A-Za-z][A-Za-z0-9_.]+").matches(it)) }
         val uri = root["uri"]?.obj()
+        val path = slots(uri?.get("path"), properties)
         val base =
             uri
                 ?.let {
-                    it.fields(setOf("base"), setOf("query", "opaque"))
+                    it.fields(setOf("base"), setOf("query", "opaque", "path"))
                     it.text("base", 2000).also { base ->
-                        val parsed = URI(if ("opaque" in it) base + "placeholder" else base)
+                        val placeholders = pathSlot.findAll(base).map { match -> match.groupValues[1] }.toSet()
+                        require(
+                            path.keys == placeholders && path.keys.all(identifier::matches),
+                        ) { "URI placeholders and path slots must match" }
+                        val fixed = pathSlot.replace(base, "placeholder")
+                        val parsed = URI(if ("opaque" in it) fixed + "placeholder" else fixed)
                         require(parsed.isAbsolute && parsed.scheme.lowercase() !in setOf("intent", "file", "content", "javascript", "data"))
                         require(parsed.rawFragment == null && parsed.rawUserInfo == null && '?' !in base)
+                        require(pathSlot.findAll(base).all { match -> match.range.first > base.indexOf(':') }) {
+                            "A placeholder cannot form the scheme"
+                        }
                     }
                 }.orEmpty()
         val opaque =
@@ -211,7 +220,7 @@ object PackageCodec {
                 require(properties[it]?.obj()?.get("type") == JsonPrimitive("string"))
                 require(target == null) { "Choose either a fixed package or a visible app name" }
             }
-        return DeclarativeBinding.Intent(action, base, query, extras, target, mimeType, byName, opaque, targetClass)
+        return DeclarativeBinding.Intent(action, base, query, extras, target, mimeType, byName, opaque, targetClass, path)
     }
 
     private fun content(
@@ -418,7 +427,7 @@ object PackageCodec {
     ): ScalarSlot {
         val type = root.text("type", 10).also { require(it in scalarTypes || (allowArray && it == "array")) }
         return if ("argument" in root) {
-            root.fields(setOf("argument", "type"), setOf("default", "required"))
+            root.fields(setOf("argument", "type"), setOf("default", "required", "values"))
             val name = root.text("argument", 64)
             require(properties[name]?.obj()?.get("type") == JsonPrimitive(type)) { "Slot type does not match tool schema" }
             val default =
@@ -429,7 +438,22 @@ object PackageCodec {
                     ) { "Default does not satisfy the argument schema" }
                     it
                 }
-            ScalarSlot.Argument(name, type, default, root["required"]?.bool() ?: false)
+            val values =
+                root["values"]?.obj()?.let { mapping ->
+                    require(type == "string") { "Value maps apply to string arguments" }
+                    val allowed =
+                        properties
+                            .getValue(name)
+                            .obj()["enum"]
+                            ?.array()
+                            ?.map { it.string() }
+                            ?.toSet()
+                    require(allowed != null && mapping.keys == allowed) { "A value map must cover the argument enum exactly" }
+                    mapping.mapValues { (_, bound) ->
+                        bound.string().also { require(it.length in 1..200 && it.none(Char::isISOControl)) { "Invalid mapped value" } }
+                    }
+                }
+            ScalarSlot.Argument(name, type, default, root["required"]?.bool() ?: false, values)
         } else {
             require(type != "array") { "Literal slots are scalars" }
             root.fields(setOf("value", "type"))

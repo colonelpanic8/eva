@@ -59,7 +59,12 @@
         "argument": { "type": "string", "maxLength": 64 },
         "type": { "$ref": "#/$defs/scalarType" },
         "default": { "type": ["string", "integer", "number", "boolean"] },
-        "required": { "type": "boolean" }
+        "required": { "type": "boolean" },
+        "values": {
+          "type": "object",
+          "description": "Bound value per tool enum value; keys must equal the string argument's enum.",
+          "additionalProperties": { "type": "string", "minLength": 1, "maxLength": 200 }
+        }
       }
     },
     "literalSlot": {
@@ -136,7 +141,13 @@
           "properties": {
             "base": { "type": "string", "maxLength": 2000 },
             "query": { "type": "object", "maxProperties": 64, "additionalProperties": { "$ref": "#/$defs/slot" } },
-            "opaque": { "$ref": "#/$defs/slot" }
+            "opaque": { "$ref": "#/$defs/slot" },
+            "path": {
+              "type": "object",
+              "maxProperties": 64,
+              "description": "Slots for {name} placeholders after the scheme in base; each value is percent-encoded whole.",
+              "additionalProperties": { "$ref": "#/$defs/slot" }
+            }
           }
         },
         "extras": { "type": "object", "maxProperties": 64, "additionalProperties": { "$ref": "#/$defs/slot" } },

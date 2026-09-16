@@ -221,16 +221,25 @@ codec, applies the 60-second clamp.
 
 A typed slot is exactly `{"argument":"title","type":"string"}` or
 `{"value":"default","type":"string"}`. Argument types must match the tool
-schema; literal types must match their values. Argument slots never change
+schema; literal types must match their values. A string argument slot whose
+tool property declares an `enum` may add `values`, a map from every enum value to
+the string the binding sends (`{"driving":"d","bicycling":"b"}`); the map must
+cover the enum exactly, so the model chooses readable names and the target's codes
+never appear in the tool schema. Argument slots never change
 binding authority. Optional query slots omit a missing argument. Required path
 and selection slots must have a value before anything is submitted. An
 `array`-typed argument can only fill a `requestBody` slot
 (`{"argument":"tags","type":"array"}`, optional array `default`), where it becomes
 a JSON array; path, query, intent, and selection slots stay scalar.
 
-Intent fields: `kind`, `action`, optional `uri: {base, query?, opaque?}`, `extras`,
-`package`, `class`, `mimeType`, and `packageByName`. `query` and `extras` are maps of fixed names to typed slots. The base
-has no existing query, fragment, or user info. Parsed intent, file, content,
+Intent fields: `kind`, `action`, optional `uri: {base, query?, path?, opaque?}`, `extras`,
+`package`, `class`, `mimeType`, and `packageByName`. `query`, `path`, and `extras` are maps of fixed names to typed slots. The base
+has no existing query, fragment, or user info. `path` fills `{name}` placeholders
+written into the base after its scheme, as the content binding does; each value is
+percent-encoded whole, so `google.navigation:q={destination}&mode={mode}` keeps
+the publisher's `q=`/`&mode=` structure while the model supplies only the two
+scalars. Every placeholder needs exactly one mapping, unused mappings are rejected,
+a placeholder cannot form the scheme, and an empty value refuses to launch. Parsed intent, file, content,
 JavaScript, and data URI schemes are rejected by this binding; use the content
 binding for provider reads.
 
@@ -488,7 +497,8 @@ mode, and effect floors account for both. It cannot construct new destinations.
 
 An intent URI may declare optional `opaque`, a string scalar slot, with a
 scheme-only fixed `base` such as `smsto:` or `tel:`. It is mutually exclusive with
-`query`. The interpreter percent-encodes the entire value and appends it to the
+`query` and `path`; it is the single-placeholder case of `path` (`smsto:{number}`)
+kept for existing packages. The interpreter percent-encodes the entire value and appends it to the
 fixed scheme; the model never supplies a parsed URI, scheme, component, or flags.
 The existing forbidden-scheme rules still apply. The catalog
 [Messages package](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/messages.json) references the named
