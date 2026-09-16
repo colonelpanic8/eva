@@ -4,6 +4,8 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-09-16
+
 ### Added
 
 - Google Maps is a catalog extension: map search through `geo:` and turn-by-turn navigation through `google.navigation:` with a travel mode (driving, bicycling, walking, two-wheeler). EVA installs and approves it automatically the first time a configuration runs; `packages.appliedDefaults` in `eva.yaml` records that, so removing it stays removed everywhere.
