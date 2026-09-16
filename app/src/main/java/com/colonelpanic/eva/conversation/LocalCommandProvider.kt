@@ -18,24 +18,6 @@ class LocalCommandProvider : TypedInputProvider {
         catalogRevision: String,
     ): ToolProposal? {
         val text = input.trim()
-        mapCommand.matchEntire(text)?.let {
-            return ToolProposal(
-                callId,
-                CapabilityRegistry.MAP_SEARCH,
-                mapOf("destination" to it.groupValues[1].trim()),
-                input,
-                catalogRevision,
-            )
-        }
-        navigationCommand.matchEntire(text)?.let {
-            return ToolProposal(
-                callId,
-                CapabilityRegistry.NAVIGATE,
-                mapOf("destination" to it.groupValues[1].trim()),
-                input,
-                catalogRevision,
-            )
-        }
         messageCommand.matchEntire(text)?.let {
             return ToolProposal(
                 callId,
@@ -49,7 +31,5 @@ class LocalCommandProvider : TypedInputProvider {
     }
 
     private val options = setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
-    private val mapCommand = Regex("(?:map|open maps to)(?:\\s+(.*))?", options)
-    private val navigationCommand = Regex("navigate to(?:\\s+(.*))?", options)
     private val messageCommand = Regex("text\\s+([^:]*):(.*)", options)
 }

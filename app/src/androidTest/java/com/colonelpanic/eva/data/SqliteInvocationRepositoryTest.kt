@@ -2,6 +2,7 @@ package com.colonelpanic.eva.data
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.colonelpanic.eva.capability.CapabilityDefinition
 import com.colonelpanic.eva.capability.CapabilityDispatcher
 import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.capability.ExecutionBackend
@@ -10,6 +11,8 @@ import com.colonelpanic.eva.capability.InvocationRecord
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.ToolProposal
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -19,6 +22,20 @@ import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 class SqliteInvocationRepositoryTest {
+    private val search =
+        CapabilityDefinition(
+            SEARCH,
+            "Search maps",
+            "Open a map search for a destination.",
+            Json
+                .parseToJsonElement(
+                    """
+                    {"type":"object","properties":{"destination":{"type":"string","minLength":1,"maxLength":500}},
+                    "required":["destination"],"additionalProperties":false}
+                    """,
+                ).jsonObject,
+        )
+
     @Test
     fun versionOneJournalMigratesWithoutLosingReceipts() =
         runBlocking {
@@ -62,7 +79,7 @@ class SqliteInvocationRepositoryTest {
             val proposal =
                 ToolProposal(
                     "session:'call",
-                    CapabilityRegistry.MAP_SEARCH,
+                    SEARCH,
                     mapOf("destination" to "Park & café"),
                     "map Park & café",
                     "legacy-revision",
@@ -100,7 +117,7 @@ class SqliteInvocationRepositoryTest {
                     assertEquals(
                         restored,
                         CapabilityDispatcher(
-                            CapabilityRegistry(mapOf(CapabilityRegistry.MAP_SEARCH to backend)),
+                            CapabilityRegistry(mapOf(SEARCH to backend), listOf(search)),
                             repository,
                         ).execute(proposal),
                     )
@@ -126,7 +143,7 @@ class SqliteInvocationRepositoryTest {
                             InvocationStatus.CLAIMED,
                             "Pending",
                             1,
-                            CapabilityRegistry.MAP_SEARCH,
+                            SEARCH,
                             "legacy-revision",
                         ),
                     )
@@ -139,7 +156,7 @@ class SqliteInvocationRepositoryTest {
                             InvocationStatus.HANDED_OFF,
                             "Opened",
                             0,
-                            CapabilityRegistry.MAP_SEARCH,
+                            SEARCH,
                             "legacy-revision",
                         ),
                     )
@@ -152,4 +169,8 @@ class SqliteInvocationRepositoryTest {
                 context.deleteDatabase(name)
             }
         }
+
+    private companion object {
+        const val SEARCH = "test.maps.search"
+    }
 }

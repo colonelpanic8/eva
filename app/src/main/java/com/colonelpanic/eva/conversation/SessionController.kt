@@ -53,7 +53,7 @@ class SessionController(
                 ConversationEntry(
                     id,
                     input,
-                    "Try ‘map <place>’, ‘navigate to <place>’, or ‘text <number>: <message>’.",
+                    "Try ‘text <number>: <message>’.",
                     EntryStatus.NOT_EXECUTED,
                 ),
             )

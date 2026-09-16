@@ -10,7 +10,7 @@ class ReceiptProvenanceTest {
     fun `receipts retain approved arguments source and binding after removal`() =
         runTest {
             val source = CapabilitySource("extension.fixture/.Service@signer", "Fixture agenda")
-            val definition = BundledCapabilities.definitions.first().copy(source = source)
+            val definition = TestCapabilities.search.copy(source = source)
             val args = mutableMapOf("destination" to "Original")
             val backend =
                 object : ExecutionBackend {

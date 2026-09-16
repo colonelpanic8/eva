@@ -13,7 +13,7 @@ import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class RegistrySnapshotTest {
-    private val definition = BundledCapabilities.definitions.first()
+    private val definition = TestCapabilities.search
     private val backend =
         object : ExecutionBackend {
             override suspend fun unavailableReason(): String? = null
@@ -134,7 +134,7 @@ class RegistrySnapshotTest {
                     override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome =
                         error("Must not execute removed binding")
                 }
-            val registry = CapabilityRegistry(mapOf(definition.id to waiting))
+            val registry = CapabilityRegistry(mapOf(definition.id to waiting), listOf(definition))
             val memory = MemoryInvocationRepository()
             val dispatcher = CapabilityDispatcher(registry, memory)
             val proposal = ToolProposal("call", definition.id, mapOf("destination" to "Park"), "map Park", registry.snapshot.revision)

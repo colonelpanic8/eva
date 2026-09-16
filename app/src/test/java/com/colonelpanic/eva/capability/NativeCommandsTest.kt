@@ -9,7 +9,7 @@ class NativeCommandsTest {
     private val received = mutableListOf<Pair<String, Map<String, String>>>()
     private val registry =
         CapabilityRegistry(
-            listOf(CapabilityRegistry.MAP_SEARCH, CapabilityRegistry.NAVIGATE, CapabilityRegistry.SMS_COMPOSE).associateWith { id ->
+            listOf(CapabilityRegistry.SMS_COMPOSE).associateWith { id ->
                 object : ExecutionBackend {
                     override suspend fun unavailableReason(): String? = null
 
@@ -26,7 +26,7 @@ class NativeCommandsTest {
     @Test
     fun `typed commands dispatch to the matching backend with distinct arguments`() =
         runTest {
-            val commands = listOf("map Park", "navigate to 1 Ferry Building", "text +1 (202) 555-0100: Hello: meet at 5 & bring café?")
+            val commands = listOf("text +1 (202) 555-0100: Hello: meet at 5 & bring café?")
             commands.forEachIndexed { index, command ->
                 val proposal = checkNotNull(provider.propose("call:$index", command, registry.snapshot.revision))
                 dispatcher.execute(proposal)
@@ -34,8 +34,6 @@ class NativeCommandsTest {
             }
             assertEquals(
                 listOf(
-                    CapabilityRegistry.MAP_SEARCH to mapOf("destination" to "Park"),
-                    CapabilityRegistry.NAVIGATE to mapOf("destination" to "1 Ferry Building"),
                     CapabilityRegistry.SMS_COMPOSE to
                         mapOf("recipient" to "+1 (202) 555-0100", "message" to "Hello: meet at 5 & bring café?"),
                 ),
@@ -80,20 +78,5 @@ class NativeCommandsTest {
                 )
             }
             assertEquals(listOf(CapabilityRegistry.SMS_COMPOSE to group, CapabilityRegistry.SMS_COMPOSE to thread), received)
-        }
-
-    @Test
-    fun `navigation does not accept route parameters disguised as arguments`() =
-        runTest {
-            val proposal =
-                ToolProposal(
-                    "navigation",
-                    CapabilityRegistry.NAVIGATE,
-                    mapOf("destination" to "Park", "mode" to "b"),
-                    "navigate to Park",
-                    registry.snapshot.revision,
-                )
-            assertEquals(InvocationStatus.NOT_EXECUTED, dispatcher.execute(proposal).status)
-            assertEquals(0, received.size)
         }
 }

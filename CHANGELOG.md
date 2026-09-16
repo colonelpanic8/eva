@@ -13,6 +13,10 @@ All notable changes to EVA will be documented here.
 
 - The extension catalog is a Git repository, cloned read-only under app storage and fast-forwarded on refresh; every `packages/*.json` in it is listed. Repository indexes and their digests are gone, and index-era sources are read as their repository.
 
+### Removed
+
+- The built-in map search and driving navigation tools; the Google Maps extension replaces them.
+
 ## [0.18.0] - 2026-09-14
 
 ### Added

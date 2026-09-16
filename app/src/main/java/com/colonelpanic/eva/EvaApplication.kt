@@ -18,7 +18,6 @@ import com.colonelpanic.eva.adapters.android.ContactNameKeywords
 import com.colonelpanic.eva.adapters.android.ContactsQueryBackend
 import com.colonelpanic.eva.adapters.android.DeviceControlHost
 import com.colonelpanic.eva.adapters.android.IntentBackend
-import com.colonelpanic.eva.adapters.android.MapIntentBackend
 import com.colonelpanic.eva.adapters.android.MediaAdapter
 import com.colonelpanic.eva.adapters.android.MediaControlAccess
 import com.colonelpanic.eva.adapters.android.MediaControlBackend
@@ -29,7 +28,6 @@ import com.colonelpanic.eva.adapters.android.MessageTargets
 import com.colonelpanic.eva.adapters.android.MessagingReadBackend
 import com.colonelpanic.eva.adapters.android.MessagingStore
 import com.colonelpanic.eva.adapters.android.NativeIntents
-import com.colonelpanic.eva.adapters.android.NavigationIntentBackend
 import com.colonelpanic.eva.adapters.android.ObservationStore
 import com.colonelpanic.eva.adapters.android.ShizukuShellHost
 import com.colonelpanic.eva.adapters.android.SmsSendBackend
@@ -232,8 +230,6 @@ class EvaApplication :
             buildMap {
                 putAll(
                     mapOf(
-                        CapabilityRegistry.MAP_SEARCH to MapIntentBackend(intentHost),
-                        CapabilityRegistry.NAVIGATE to NavigationIntentBackend(intentHost),
                         CapabilityRegistry.SMS_COMPOSE to
                             chosenNumbers.remembering(MessageIntentBackend(intentHost, messageTargets), "recipient"),
                         CapabilityRegistry.SMS_SEND to

@@ -121,8 +121,6 @@ class CapabilityRegistry(
         const val STALE_MESSAGE =
             "This action catalog changed or is unavailable. " +
                 "Reconnect before requesting the action again. Nothing was executed."
-        const val MAP_SEARCH = "eva.android.maps.search"
-        const val NAVIGATE = "eva.android.maps.navigate"
         const val SMS_COMPOSE = "eva.android.messages.compose"
         const val SMS_SEND = "eva.android.messages.send"
         const val SET_ALARM = "eva.android.alarm.set"

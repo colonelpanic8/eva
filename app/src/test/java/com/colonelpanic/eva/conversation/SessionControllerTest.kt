@@ -1,13 +1,14 @@
 package com.colonelpanic.eva.conversation
 
 import com.colonelpanic.eva.capability.CapabilityDispatcher
-import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.capability.ExecutionBackend
 import com.colonelpanic.eva.capability.ExecutionOutcome
 import com.colonelpanic.eva.capability.InvocationRecord
 import com.colonelpanic.eva.capability.InvocationRepository
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.MemoryInvocationRepository
+import com.colonelpanic.eva.capability.TestCapabilities
+import com.colonelpanic.eva.capability.ToolProposal
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -20,6 +21,17 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class SessionControllerTest {
     private val repository = MemoryInvocationRepository()
+    private val provider =
+        object : TypedInputProvider {
+            override fun propose(
+                callId: String,
+                input: String,
+                catalogRevision: String,
+            ): ToolProposal? =
+                Regex("map\\s+(.*)").matchEntire(input.trim())?.let {
+                    ToolProposal(callId, TestCapabilities.SEARCH, mapOf("destination" to it.groupValues[1]), input, catalogRevision)
+                }
+        }
     private var calls = 0
     private val backend =
         object : ExecutionBackend {
@@ -36,11 +48,9 @@ class SessionControllerTest {
         runTest {
             val controller =
                 SessionController(
-                    LocalCommandProvider(),
+                    provider,
                     CapabilityDispatcher(
-                        CapabilityRegistry(
-                            mapOf(CapabilityRegistry.MAP_SEARCH to backend),
-                        ),
+                        TestCapabilities.registry(backend),
                         repository,
                     ),
                     repository,
@@ -64,11 +74,9 @@ class SessionControllerTest {
         runTest {
             val controller =
                 SessionController(
-                    LocalCommandProvider(),
+                    provider,
                     CapabilityDispatcher(
-                        CapabilityRegistry(
-                            mapOf(CapabilityRegistry.MAP_SEARCH to backend),
-                        ),
+                        TestCapabilities.registry(backend),
                         repository,
                     ),
                     repository,
@@ -97,11 +105,9 @@ class SessionControllerTest {
                 }
             val controller =
                 SessionController(
-                    LocalCommandProvider(),
+                    provider,
                     CapabilityDispatcher(
-                        CapabilityRegistry(
-                            mapOf(CapabilityRegistry.MAP_SEARCH to backend),
-                        ),
+                        TestCapabilities.registry(backend),
                         broken,
                     ),
                     broken,
@@ -124,15 +130,13 @@ class SessionControllerTest {
                         callId: String,
                         input: String,
                         catalogRevision: String,
-                    ) = LocalCommandProvider().propose(callId, input, catalogRevision)?.copy(callId = "")
+                    ) = provider.propose(callId, input, catalogRevision)?.copy(callId = "")
                 }
             val controller =
                 SessionController(
                     invalid,
                     CapabilityDispatcher(
-                        CapabilityRegistry(
-                            mapOf(CapabilityRegistry.MAP_SEARCH to backend),
-                        ),
+                        TestCapabilities.registry(backend),
                         repository,
                     ),
                     repository,
@@ -157,11 +161,9 @@ class SessionControllerTest {
         runTest {
             val controller =
                 SessionController(
-                    LocalCommandProvider(),
+                    provider,
                     CapabilityDispatcher(
-                        CapabilityRegistry(
-                            mapOf(CapabilityRegistry.MAP_SEARCH to backend),
-                        ),
+                        TestCapabilities.registry(backend),
                         repository,
                     ),
                     repository,
@@ -188,11 +190,9 @@ class SessionControllerTest {
         runTest {
             val controller =
                 SessionController(
-                    LocalCommandProvider(),
+                    provider,
                     CapabilityDispatcher(
-                        CapabilityRegistry(
-                            mapOf(CapabilityRegistry.MAP_SEARCH to backend),
-                        ),
+                        TestCapabilities.registry(backend),
                         repository,
                     ),
                     repository,
@@ -225,17 +225,15 @@ class SessionControllerTest {
                     InvocationStatus.DISPATCHING,
                     "Opening",
                     1L,
-                    CapabilityRegistry.MAP_SEARCH,
+                    TestCapabilities.SEARCH,
                     "legacy-revision",
                 ),
             )
             val controller =
                 SessionController(
-                    LocalCommandProvider(),
+                    provider,
                     CapabilityDispatcher(
-                        CapabilityRegistry(
-                            mapOf(CapabilityRegistry.MAP_SEARCH to backend),
-                        ),
+                        TestCapabilities.registry(backend),
                         repository,
                     ),
                     repository,

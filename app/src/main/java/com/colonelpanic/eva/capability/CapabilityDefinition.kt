@@ -22,13 +22,6 @@ data class CapabilityDefinition(
 )
 
 object BundledCapabilities {
-    private val destinationSchema =
-        schema(
-            """
-        {"type":"object","properties":{"destination":{"type":"string","minLength":1,"maxLength":500}},
-        "required":["destination"],"additionalProperties":false}
-    """,
-        )
     private val messageSchema =
         schema(
             """
@@ -59,20 +52,6 @@ object BundledCapabilities {
 
     val definitions =
         listOf(
-            CapabilityDefinition(
-                CapabilityRegistry.MAP_SEARCH,
-                "Search maps",
-                "Open a map search for a destination. Returns handoff to a map app, not arrival.",
-                destinationSchema,
-                validateOperation = ::validateDestination,
-            ),
-            CapabilityDefinition(
-                CapabilityRegistry.NAVIGATE,
-                "Driving navigation",
-                "Request driving navigation to a destination. Returns handoff to a navigation app, not arrival.",
-                destinationSchema,
-                validateOperation = ::validateDestination,
-            ),
             CapabilityDefinition(
                 CapabilityRegistry.SMS_COMPOSE,
                 "Prepare a text message",
@@ -505,13 +484,6 @@ object BundledCapabilities {
             }
         }
     }
-
-    private fun validateDestination(args: Map<String, String>): String? =
-        if (args.getValue("destination").isBlank() || args.getValue("destination").any { it.isISOControl() }) {
-            "Enter a destination on one line."
-        } else {
-            null
-        }
 
     private fun validateDeviceStateSet(args: Map<String, String>): String? {
         val key = args.getValue("key")

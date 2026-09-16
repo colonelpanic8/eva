@@ -30,7 +30,7 @@ class CapabilityDispatcherTest {
                 return action()
             }
         }
-    private val registry = CapabilityRegistry(mapOf(CapabilityRegistry.MAP_SEARCH to backend))
+    private val registry = TestCapabilities.registry(backend)
     private val dispatcher = CapabilityDispatcher(registry, repository) { 10L }
 
     private fun proposal(
@@ -38,7 +38,7 @@ class CapabilityDispatcherTest {
         destination: String = "Golden Gate Park",
     ) = ToolProposal(
         id,
-        CapabilityRegistry.MAP_SEARCH,
+        TestCapabilities.SEARCH,
         mapOf("destination" to destination),
         "map $destination",
         registry.snapshot.revision,
@@ -137,7 +137,7 @@ class CapabilityDispatcherTest {
                         return ExecutionOutcome(InvocationStatus.HANDED_OFF, "Opened")
                     }
                 }
-            val isolated = CapabilityDispatcher(CapabilityRegistry(mapOf(CapabilityRegistry.MAP_SEARCH to changingBackend)), repository)
+            val isolated = CapabilityDispatcher(TestCapabilities.registry(changingBackend), repository)
             val result = isolated.execute(proposal().copy(arguments = arguments))
             assertEquals("Golden Gate Park", result.destination)
         }
@@ -189,7 +189,7 @@ class CapabilityDispatcherTest {
                 object : ExecutionBackend by backend {
                     override suspend fun unavailableReason(): String? = error("Unavailable platform")
                 }
-            val isolated = CapabilityDispatcher(CapabilityRegistry(mapOf(CapabilityRegistry.MAP_SEARCH to failing)), repository)
+            val isolated = CapabilityDispatcher(TestCapabilities.registry(failing), repository)
             assertEquals(InvocationStatus.NOT_EXECUTED, isolated.execute(proposal()).status)
             assertEquals(0, executions)
         }
@@ -206,7 +206,7 @@ class CapabilityDispatcherTest {
                         return null
                     }
                 }
-            val isolated = CapabilityDispatcher(CapabilityRegistry(mapOf(CapabilityRegistry.MAP_SEARCH to waiting)), repository)
+            val isolated = CapabilityDispatcher(TestCapabilities.registry(waiting), repository)
             val job = launch { isolated.execute(proposal()) }
             entered.await()
             job.cancelAndJoin()
@@ -247,7 +247,7 @@ class CapabilityDispatcherTest {
                             return result
                         }
                     }
-                val isolated = CapabilityDispatcher(CapabilityRegistry(mapOf(CapabilityRegistry.MAP_SEARCH to backend)), delayed)
+                val isolated = CapabilityDispatcher(TestCapabilities.registry(backend), delayed)
                 val job = launch { isolated.execute(proposal()) }
                 written.await()
                 job.cancel()
