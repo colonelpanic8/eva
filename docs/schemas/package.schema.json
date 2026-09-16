@@ -127,28 +127,51 @@
         "absent": { "oneOf": [{ "$ref": "#/$defs/intent" }, { "$ref": "#/$defs/content" }, { "$ref": "#/$defs/http" }] }
       }
     },
+    "intentUri": {
+      "type": "object",
+      "required": ["base"],
+      "additionalProperties": false,
+      "properties": {
+        "base": { "type": "string", "maxLength": 2000, "description": "Fixed and absolute; a content: base admits no slots at all." },
+        "query": { "type": "object", "maxProperties": 64, "additionalProperties": { "$ref": "#/$defs/slot" } },
+        "opaque": { "$ref": "#/$defs/slot" },
+        "path": {
+          "type": "object",
+          "maxProperties": 64,
+          "description": "Slots for {name} placeholders after the scheme in base; each value is percent-encoded whole.",
+          "additionalProperties": { "$ref": "#/$defs/slot" }
+        }
+      }
+    },
     "intent": {
       "type": "object",
       "required": ["kind", "action"],
       "additionalProperties": false,
       "properties": {
         "kind": { "const": "android.intent" },
-        "action": { "type": "string", "maxLength": 200, "pattern": "^[A-Za-z][A-Za-z0-9_.]+$" },
-        "uri": {
-          "type": "object",
-          "required": ["base"],
-          "additionalProperties": false,
-          "properties": {
-            "base": { "type": "string", "maxLength": 2000 },
-            "query": { "type": "object", "maxProperties": 64, "additionalProperties": { "$ref": "#/$defs/slot" } },
-            "opaque": { "$ref": "#/$defs/slot" },
-            "path": {
-              "type": "object",
-              "maxProperties": 64,
-              "description": "Slots for {name} placeholders after the scheme in base; each value is percent-encoded whole.",
-              "additionalProperties": { "$ref": "#/$defs/slot" }
+        "action": {
+          "oneOf": [
+            { "type": "string", "maxLength": 200, "pattern": "^[A-Za-z][A-Za-z0-9_.]+$" },
+            {
+              "description": "A string argument slot whose values map covers its enum; every mapped value is an intent action.",
+              "$ref": "#/$defs/argumentSlot"
             }
-          }
+          ]
+        },
+        "uri": {
+          "oneOf": [
+            { "$ref": "#/$defs/intentUri" },
+            {
+              "type": "object",
+              "description": "The whole data URI comes from a string argument; only the listed schemes are launched.",
+              "required": ["argument", "schemes"],
+              "additionalProperties": false,
+              "properties": {
+                "argument": { "type": "string", "maxLength": 64 },
+                "schemes": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "type": "string", "pattern": "^[a-z][a-z0-9+.-]*$" } }
+              }
+            }
+          ]
         },
         "extras": { "type": "object", "maxProperties": 64, "additionalProperties": { "$ref": "#/$defs/slot" } },
         "package": { "type": "string" },

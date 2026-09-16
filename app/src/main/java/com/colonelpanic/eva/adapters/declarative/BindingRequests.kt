@@ -4,6 +4,7 @@ import com.colonelpanic.eva.capability.extensions.ExtensionProtocol
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import java.net.URI
 import java.net.URLEncoder
 
 data class IntentRequest(
@@ -73,12 +74,24 @@ class BindingArguments(
     private fun scalar(slot: ScalarSlot): JsonPrimitive? = value(slot)?.let { it as? JsonPrimitive ?: error("Expected a scalar slot") }
 
     fun intent(binding: DeclarativeBinding.Intent): IntentRequest {
+        val action =
+            binding.action
+                ?: requireNotNull(scalar(requireNotNull(binding.actionSlot))) { "An action argument is missing" }.content.also {
+                    require(PackageCodec.isIntentAction(it)) { "Mapped action is not an intent action" }
+                }
         val query = binding.query.mapNotNull { (name, slot) -> scalar(slot)?.let { encode(name) + "=" + encode(it.content) } }
         var base = binding.uriBase
         binding.path.forEach { (name, slot) ->
             val text = requireNotNull(scalar(slot)) { "A URI argument is missing" }.content
             require(text.isNotEmpty()) { "A URI argument is empty" }
             base = base.replace("{$name}", encode(text))
+        }
+        binding.uriArgument?.let { name ->
+            val value = requireNotNull(values[name] as? JsonPrimitive) { "A URI argument is missing" }.content
+            require(value.length <= 2048 && value.none { it.isISOControl() || it.isWhitespace() }) { "Invalid URI" }
+            val parsed = runCatching { URI(value) }.getOrElse { throw IllegalArgumentException("Invalid URI") }
+            require(parsed.isAbsolute && parsed.scheme.lowercase() in binding.uriSchemes) { "URI scheme is not allowed by this package" }
+            base = value
         }
         val uri =
             base +
@@ -95,7 +108,7 @@ class BindingArguments(
                 }
             }
         return IntentRequest(
-            binding.action,
+            action,
             uri,
             extras,
             binding.targetPackage,

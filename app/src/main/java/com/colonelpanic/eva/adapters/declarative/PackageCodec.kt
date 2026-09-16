@@ -22,6 +22,10 @@ object PackageCodec {
     private val version = Regex("(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})")
     private val pathSlot = Regex("\\{([A-Za-z_][A-Za-z0-9_]{0,63})\\}")
     private val scalarTypes = setOf("string", "integer", "number", "boolean")
+    private val intentAction = Regex("[A-Za-z][A-Za-z0-9_.]+")
+    private val FORBIDDEN_SCHEMES = setOf("intent", "file", "javascript", "data")
+
+    fun isIntentAction(value: String): Boolean = value.length <= 200 && intentAction.matches(value)
 
     fun decode(json: String): PackageDefinition {
         val root = (BoundedJson.freeze(BoundedJson.parse(json, MAX_BYTES)) as? JsonObject) ?: error("Expected package object")
@@ -175,11 +179,41 @@ object PackageCodec {
         properties: JsonObject,
     ): DeclarativeBinding.Intent {
         root.fields(setOf("kind", "action"), setOf("uri", "extras", "package", "mimeType", "packageByName", "class"))
-        val action = root.text("action", 200).also { require(Regex("[A-Za-z][A-Za-z0-9_.]+").matches(it)) }
+        val actionSlot =
+            (root.getValue("action") as? JsonObject)?.let { spec ->
+                val argument = slot(spec, properties) as? ScalarSlot.Argument ?: error("An action slot names an argument")
+                val mapped = requireNotNull(argument.values) { "An action slot needs a closed value map" }
+                require(mapped.values.all(::isIntentAction)) { "Every mapped action must be an intent action" }
+                argument
+            }
+        val action = if (actionSlot == null) root.text("action", 200).also { require(isIntentAction(it)) } else null
         val uri = root["uri"]?.obj()
-        val path = slots(uri?.get("path"), properties)
+        val wholeUri = uri != null && "argument" in uri
+        val uriArgument =
+            if (wholeUri) {
+                uri.fields(setOf("argument", "schemes"))
+                uri.text("argument", 64).also { require(properties[it]?.obj()?.get("type") == JsonPrimitive("string")) }
+            } else {
+                null
+            }
+        val uriSchemes =
+            if (wholeUri) {
+                uri
+                    .getValue("schemes")
+                    .array()
+                    .also { require(it.size in 1..8) }
+                    .map { scheme ->
+                        scheme.string().also {
+                            require(Regex("[a-z][a-z0-9+.-]*").matches(it) && it !in FORBIDDEN_SCHEMES) { "Unsupported URI scheme" }
+                        }
+                    }.also { require(it.distinct().size == it.size) }
+            } else {
+                emptyList()
+            }
+        val path = if (wholeUri) emptyMap() else slots(uri?.get("path"), properties)
         val base =
             uri
+                ?.takeUnless { wholeUri }
                 ?.let {
                     it.fields(setOf("base"), setOf("query", "opaque", "path"))
                     it.text("base", 2000).also { base ->
@@ -189,7 +223,11 @@ object PackageCodec {
                         ) { "URI placeholders and path slots must match" }
                         val fixed = pathSlot.replace(base, "placeholder")
                         val parsed = URI(if ("opaque" in it) fixed + "placeholder" else fixed)
-                        require(parsed.isAbsolute && parsed.scheme.lowercase() !in setOf("intent", "file", "content", "javascript", "data"))
+                        require(parsed.isAbsolute && parsed.scheme.lowercase() !in FORBIDDEN_SCHEMES)
+                        // A provider URI is only a fixed destination; no slot may shape it.
+                        require(parsed.scheme.lowercase() != "content" || it.keys == setOf("base")) {
+                            "A content URI must be fixed"
+                        }
                         require(parsed.rawFragment == null && parsed.rawUserInfo == null && '?' !in base)
                         require(pathSlot.findAll(base).all { match -> match.range.first > base.indexOf(':') }) {
                             "A placeholder cannot form the scheme"
@@ -197,12 +235,12 @@ object PackageCodec {
                     }
                 }.orEmpty()
         val opaque =
-            uri?.get("opaque")?.let { value ->
+            uri?.takeUnless { wholeUri }?.get("opaque")?.let { value ->
                 require(Regex("[A-Za-z][A-Za-z0-9+.-]*:").matches(base)) { "An opaque slot needs a fixed scheme-only base" }
                 require("query" !in uri) { "Opaque slots cannot be combined with query mappings" }
                 slot(value.obj(), properties).also { require(it.type == "string") }
             }
-        val query = slots(uri?.get("query"), properties)
+        val query = if (wholeUri) emptyMap() else slots(uri?.get("query"), properties)
         val extras = slots(root["extras"], properties)
         val target = root["package"]?.string()?.also { require(packageId.matches(it)) }
         val targetClass =
@@ -220,7 +258,21 @@ object PackageCodec {
                 require(properties[it]?.obj()?.get("type") == JsonPrimitive("string"))
                 require(target == null) { "Choose either a fixed package or a visible app name" }
             }
-        return DeclarativeBinding.Intent(action, base, query, extras, target, mimeType, byName, opaque, targetClass, path)
+        return DeclarativeBinding.Intent(
+            action,
+            base,
+            query,
+            extras,
+            target,
+            mimeType,
+            byName,
+            opaque,
+            targetClass,
+            path,
+            actionSlot,
+            uriArgument,
+            uriSchemes,
+        )
     }
 
     private fun content(

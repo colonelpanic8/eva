@@ -88,9 +88,12 @@ internal fun ExtensionCatalogSection(
 private fun bindingDestination(binding: com.colonelpanic.eva.adapters.declarative.DeclarativeBinding): String =
     when (binding) {
         is com.colonelpanic.eva.adapters.declarative.DeclarativeBinding.Intent -> {
-            "${binding.action} · ${binding.targetPackage ?: "Android handler"}${binding.targetClass?.let {
+            val action = binding.action ?: "one of ${binding.actionSlot?.values?.values?.sorted()?.joinToString()}"
+            val destination =
+                binding.uriArgument?.let { "a ${binding.uriSchemes.joinToString("/")} URL from the request" } ?: binding.uriBase
+            "$action · ${binding.targetPackage ?: "Android handler"}${binding.targetClass?.let {
                 "/$it"
-            }.orEmpty()} · ${binding.uriBase}"
+            }.orEmpty()} · $destination"
         }
 
         is com.colonelpanic.eva.adapters.declarative.DeclarativeBinding.Http -> {

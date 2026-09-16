@@ -4,6 +4,10 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Declarative intent bindings can choose the action from a closed publisher map, take a whole URI from one argument restricted to declared schemes, and target a fixed `content:` insert.
+
 ## [0.19.0] - 2026-09-16
 
 ### Added

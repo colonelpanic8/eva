@@ -160,6 +160,63 @@ class PackageCodecTest {
     }
 
     @Test
+    fun `action slots whole URI arguments and fixed provider bases stay within declared sets`() {
+        fun packageWith(binding: String) =
+            """
+            {"formatVersion":1,"id":"community.example","version":"0.1.0","title":"Example",
+            "capabilities":[{"tool":{"name":"go","title":"Go","description":"Go","inputSchema":{"type":"object",
+            "properties":{"screen":{"type":"string","enum":["wifi","all"]},"url":{"type":"string","maxLength":200},
+            "title":{"type":"string","maxLength":100}},"required":[],"additionalProperties":false}},
+            "effects":"external_handoff","execution":{"mode":"handoff","requiresForeground":true},"binding":$binding}]}
+            """.trimIndent()
+
+        fun capability(binding: String) = PackageCodec.decode(packageWith(binding)).capabilities.single()
+        val screens =
+            """{"argument":"screen","type":"string","required":true,
+            "values":{"wifi":"android.settings.WIFI_SETTINGS","all":"android.settings.SETTINGS"}}"""
+        val settings = capability("""{"kind":"android.intent","action":$screens}""")
+        val settingsBinding = settings.binding as DeclarativeBinding.Intent
+        assertEquals("android.settings.WIFI_SETTINGS", BindingArguments(settings, mapOf("screen" to "wifi")).intent(settingsBinding).action)
+        assertThrows(Exception::class.java) { BindingArguments(settings, emptyMap()).intent(settingsBinding) }
+        assertThrows(Exception::class.java) { BindingArguments(settings, mapOf("screen" to "android.settings.SETTINGS")) }
+
+        val open =
+            capability(
+                """{"kind":"android.intent","action":"android.intent.action.VIEW","uri":{"argument":"url","schemes":["https","http"]}}""",
+            )
+        val openBinding = open.binding as DeclarativeBinding.Intent
+        assertEquals(
+            "https://example.com/a?b=1#c",
+            BindingArguments(open, mapOf("url" to "https://example.com/a?b=1#c")).intent(openBinding).uri,
+        )
+        assertEquals("HTTP://example.com", BindingArguments(open, mapOf("url" to "HTTP://example.com")).intent(openBinding).uri)
+        listOf("javascript:alert(1)", "geo:0,0", "example.com", "https://ex ample.com").forEach { url ->
+            assertThrows(Exception::class.java) { BindingArguments(open, mapOf("url" to url)).intent(openBinding) }
+        }
+
+        val insert =
+            capability(
+                """{"kind":"android.intent","action":"android.intent.action.INSERT","uri":{"base":"content://com.android.calendar/events"},
+                "extras":{"title":{"argument":"title","type":"string"}}}""",
+            )
+        assertEquals(
+            "content://com.android.calendar/events",
+            BindingArguments(insert, mapOf("title" to "x")).intent(insert.binding as DeclarativeBinding.Intent).uri,
+        )
+
+        listOf(
+            """{"kind":"android.intent","action":{"argument":"screen","type":"string"}}""",
+            """{"kind":"android.intent","action":{"argument":"screen","type":"string","values":{"wifi":"android.settings.WIFI_SETTINGS"}}}""",
+            """{"kind":"android.intent","action":{"argument":"screen","type":"string","values":{"wifi":"not an action!","all":"x.y"}}}""",
+            """{"kind":"android.intent","action":"android.intent.action.VIEW","uri":{"argument":"url","schemes":["javascript"]}}""",
+            """{"kind":"android.intent","action":"android.intent.action.VIEW","uri":{"argument":"url","schemes":[]}}""",
+            """{"kind":"android.intent","action":"android.intent.action.VIEW","uri":{"argument":"screen","schemes":["https"],"base":"https://x"}}""",
+            """{"kind":"android.intent","action":"android.intent.action.VIEW","uri":{"base":"content://com.android.calendar/events","query":{"t":{"argument":"title","type":"string"}}}}""",
+            """{"kind":"android.intent","action":"android.intent.action.VIEW","uri":{"base":"content://com.android.calendar/{title}","path":{"title":{"argument":"title","type":"string"}}}}""",
+        ).forEach { json -> assertThrows("$json should be rejected", Exception::class.java) { PackageCodec.decode(packageWith(json)) } }
+    }
+
+    @Test
     fun `share request carries a visible app name without accepting a model supplied package`() {
         val binding = """{"kind":"android.intent","action":"android.intent.action.SEND","mimeType":"text/plain",
             "packageByName":"title","extras":{"android.intent.extra.TEXT":{"type":"string","value":"Untyped text"}}}"""

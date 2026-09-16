@@ -92,7 +92,8 @@ sealed interface DeclarativeBinding {
     ) : DeclarativeBinding
 
     data class Intent(
-        val action: String,
+        /** The fixed action, or null when [actionSlot] chooses one from its closed value map. */
+        val action: String?,
         val uriBase: String,
         val query: Map<String, ScalarSlot>,
         val extras: Map<String, ScalarSlot>,
@@ -103,7 +104,16 @@ sealed interface DeclarativeBinding {
         val targetClass: String? = null,
         /** Slots for `{name}` placeholders in the fixed base, each percent-encoded whole. */
         val path: Map<String, ScalarSlot> = emptyMap(),
-    ) : DeclarativeBinding
+        val actionSlot: ScalarSlot.Argument? = null,
+        /** A string argument supplying the whole data URI, accepted only with a scheme in [uriSchemes]. */
+        val uriArgument: String? = null,
+        val uriSchemes: List<String> = emptyList(),
+    ) : DeclarativeBinding {
+        init {
+            require((action == null) != (actionSlot == null)) { "An intent has either a fixed action or an action slot" }
+            require((uriArgument == null) == uriSchemes.isEmpty())
+        }
+    }
 
     data class Content(
         val uri: String,

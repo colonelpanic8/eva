@@ -167,10 +167,12 @@ IDs used only as matching hints.
 
 ### Binding boundaries
 
-- `android.intent`: fixed action, optional fixed package, fixed URI base with
-  typed encoded query slots, and fixed extra names with scalar values/typed slots.
-  No model-controlled components, flags, or parsed intent URIs. Minimum effect:
-  external handoff. A launch means `HANDED_OFF`, never verified completion.
+- `android.intent`: a fixed action or one chosen from a closed publisher map,
+  optional fixed package, a fixed URI base with typed encoded query/path slots (or
+  a whole URI from one argument restricted to declared schemes), and fixed extra
+  names with scalar values/typed slots. No model-controlled components, flags, or
+  parsed intent URIs. Minimum effect: external handoff. A launch means
+  `HANDED_OFF`, never verified completion.
 - `android.content`: fixed content authority and URI base, typed encoded query/path slots, declared projection with
   scalar column types, fixed selection template with typed bound arguments,
   bounded row count, and a declared projection of rows to text. Model arguments
@@ -241,7 +243,17 @@ a JSON array; path, query, intent, and selection slots stay scalar.
 
 Intent fields: `kind`, `action`, optional `uri: {base, query?, path?, opaque?}`, `extras`,
 `package`, `class`, `mimeType`, and `packageByName`. `query`, `path`, and `extras` are maps of fixed names to typed slots. The base
-has no existing query, fragment, or user info. `path` fills `{name}` placeholders
+has no existing query, fragment, or user info. `action` may instead be a string
+argument slot whose `values` map covers the argument's enum, each value an intent
+action (`{"argument":"screen","values":{"wifi":"android.settings.WIFI_SETTINGS"}}`);
+the publisher still declares every action that can launch, the model only names
+one. `uri` may instead be `{"argument":"url","schemes":["http","https"]}`, in
+which case the argument supplies the whole data URI and is launched as given
+only when it parses as absolute with one of the listed schemes; this is the one
+binding where the model chooses the destination, so it is reserved for tools such
+as opening a web page whose purpose is exactly that. A `content:` base is allowed
+only when the URI object holds nothing but the base, so a provider insert can be
+targeted but never shaped by an argument. `path` fills `{name}` placeholders
 written into the base after its scheme, as the content binding does; each value is
 percent-encoded whole, so `google.navigation:q={destination}&mode={mode}` keeps
 the publisher's `q=`/`&mode=` structure while the model supplies only the two
