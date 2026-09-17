@@ -9,6 +9,35 @@ import org.junit.Test
 
 class ToolSchemaTest {
     @Test
+    fun `string maps bound their keys and values and cannot mix with declared properties`() {
+        val schema =
+            Json
+                .parseToJsonElement(
+                    """{"type":"object","properties":{"prompts":{"type":"object","maxProperties":2,
+                    "additionalProperties":{"type":"string","maxLength":5}}},"required":[],"additionalProperties":false}""",
+                ).jsonObject
+        ToolSchema.check(schema)
+
+        fun error(arguments: String) = ToolSchema.error(schema, Json.parseToJsonElement(arguments).jsonObject)
+        assertNull(error("""{"prompts":{"Room":"4","Who":"Sam"}}"""))
+        assertNull(error("""{"prompts":{}}"""))
+        assertNotNull(error("""{"prompts":{"a":"1","b":"2","c":"3"}}"""))
+        assertNotNull(error("""{"prompts":{"Room":"too long"}}"""))
+        assertNotNull(error("""{"prompts":{"Room":4}}"""))
+        assertNotNull(error("""{"prompts":{"":"4"}}"""))
+        assertNotNull(error("""{"prompts":["Room"]}"""))
+        assertNull(ToolSchema.error(schema, ToolSchema.coerce(schema, mapOf("prompts" to """{"Room":"4"}"""))))
+        listOf(
+            """{"type":"object","properties":{"m":{"type":"object","maxProperties":2,"additionalProperties":{"type":"integer"}}},"required":[],"additionalProperties":false}""",
+            """{"type":"object","properties":{"m":{"type":"object","additionalProperties":{"type":"string"}}},"required":[],"additionalProperties":false}""",
+            """{"type":"object","properties":{"m":{"type":"object","maxProperties":2,"properties":{},"required":[],"additionalProperties":{"type":"string"}}},"required":[],"additionalProperties":false}""",
+            """{"type":"object","maxProperties":2,"additionalProperties":{"type":"string"}}""",
+        ).forEach { json ->
+            assertThrows(json, IllegalArgumentException::class.java) { ToolSchema.check(Json.parseToJsonElement(json).jsonObject) }
+        }
+    }
+
+    @Test
     fun `nested objects enforce required fields closed properties and scalar bounds`() {
         val schema =
             Json

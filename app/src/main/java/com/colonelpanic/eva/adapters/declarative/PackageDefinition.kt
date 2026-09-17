@@ -108,6 +108,8 @@ sealed interface DeclarativeBinding {
         /** A string argument supplying the whole data URI, accepted only with a scheme in [uriSchemes]. */
         val uriArgument: String? = null,
         val uriSchemes: List<String> = emptyList(),
+        /** A string-map argument whose entries become further query parameters, never overriding a fixed one. */
+        val querySpread: String? = null,
     ) : DeclarativeBinding {
         init {
             require((action == null) != (actionSlot == null)) { "An intent has either a fixed action or an action slot" }

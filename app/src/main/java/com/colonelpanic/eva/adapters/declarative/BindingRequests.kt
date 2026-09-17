@@ -79,7 +79,14 @@ class BindingArguments(
                 ?: requireNotNull(scalar(requireNotNull(binding.actionSlot))) { "An action argument is missing" }.content.also {
                     require(PackageCodec.isIntentAction(it)) { "Mapped action is not an intent action" }
                 }
-        val query = binding.query.mapNotNull { (name, slot) -> scalar(slot)?.let { encode(name) + "=" + encode(it.content) } }
+        val fixed = binding.query.mapNotNull { (name, slot) -> scalar(slot)?.let { encode(name) + "=" + encode(it.content) } }
+        val spread =
+            binding.querySpread?.let { name -> values[name] as? JsonObject }.orEmpty().map { (key, value) ->
+                require(binding.query.keys.none { it.equals(key, ignoreCase = true) }) { "A spread parameter cannot replace a fixed one" }
+                val text = (value as? JsonPrimitive)?.takeIf { it.isString }?.content ?: error("Spread values are strings")
+                encode(key) + "=" + encode(text)
+            }
+        val query = fixed + spread
         var base = binding.uriBase
         binding.path.forEach { (name, slot) ->
             val text = requireNotNull(scalar(slot)) { "A URI argument is missing" }.content

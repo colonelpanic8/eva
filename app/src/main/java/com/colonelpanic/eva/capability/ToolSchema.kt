@@ -38,6 +38,7 @@ object ToolSchema {
                     "number" -> value.toDoubleOrNull()?.let { JsonPrimitive(it) }
                     "boolean" -> value.toBooleanStrictOrNull()?.let { JsonPrimitive(it) }
                     "array" -> runCatching { Json.parseToJsonElement(value) as? JsonArray }.getOrNull()
+                    "object" -> runCatching { Json.parseToJsonElement(value) as? JsonObject }.getOrNull()
                     else -> null
                 } ?: JsonPrimitive(value)
             },
@@ -54,7 +55,7 @@ object ToolSchema {
         val allowed =
             setOf("type", "description", "enum") +
                 when (type) {
-                    "object" -> setOf("properties", "required", "additionalProperties")
+                    "object" -> setOf("properties", "required", "additionalProperties", "maxProperties")
                     "array" -> setOf("items", "minItems", "maxItems")
                     "string" -> setOf("minLength", "maxLength")
                     "integer", "number" -> setOf("minimum", "maximum")
@@ -68,7 +69,16 @@ object ToolSchema {
             val withoutEnum = JsonObject(schema - "enum")
             require(values.all { error(withoutEnum, it, depth) == null }) { "Invalid enum value" }
         }
-        if (type == "object") {
+        if (type == "object" && schema["additionalProperties"] is JsonObject) {
+            // A string map: the keys are the request's, bounded in count; only the value shape is declared.
+            require(depth > 0 && "properties" !in schema && "required" !in schema) { "A map object declares only its values" }
+            val values = schema.getValue("additionalProperties") as JsonObject
+            require(output || values["type"] == JsonPrimitive("string")) { "Input maps hold strings" }
+            check(values, depth + 1, output)
+            val cap = (schema["maxProperties"] as? JsonPrimitive)?.takeUnless { it.isString }?.intOrNull
+            require(cap != null && cap in 1..MAX_INPUT_ITEMS) { "Maps declare maxProperties" }
+        } else if (type == "object") {
+            require("maxProperties" !in schema) { "maxProperties belongs to map objects" }
             val open = (schema["additionalProperties"] as? JsonPrimitive)?.takeUnless { it.isString }?.booleanOrNull
             require(open == false || (output && open == true)) { "Objects must be closed" }
             val properties = schema["properties"] as? JsonObject ?: error("Missing properties")
@@ -119,15 +129,24 @@ object ToolSchema {
         val valid =
             when ((schema["type"] as? JsonPrimitive)?.contentOrNull) {
                 "object" -> {
-                    val properties = schema["properties"] as? JsonObject ?: return "Invalid schema."
-                    val required = schema["required"] as? JsonArray ?: return "Invalid schema."
-                    val open = schema["additionalProperties"] == JsonPrimitive(true)
-                    value is JsonObject && (open || value.keys.all { it in properties }) &&
-                        required.all { (it as JsonPrimitive).content in value } &&
-                        value.all { (key, child) ->
-                            val property = properties[key] as? JsonObject
-                            property == null || error(property, child, depth + 1) == null
-                        }
+                    val values = schema["additionalProperties"] as? JsonObject
+                    if (values != null) {
+                        value is JsonObject &&
+                            value.size.toDouble() <= bound(schema, "maxProperties", MAX_INPUT_ITEMS.toDouble()) &&
+                            value.all { (key, child) ->
+                                key.length in 1..64 && key.none { it.isISOControl() } && error(values, child, depth + 1) == null
+                            }
+                    } else {
+                        val properties = schema["properties"] as? JsonObject ?: return "Invalid schema."
+                        val required = schema["required"] as? JsonArray ?: return "Invalid schema."
+                        val open = schema["additionalProperties"] == JsonPrimitive(true)
+                        value is JsonObject && (open || value.keys.all { it in properties }) &&
+                            required.all { (it as JsonPrimitive).content in value } &&
+                            value.all { (key, child) ->
+                                val property = properties[key] as? JsonObject
+                                property == null || error(property, child, depth + 1) == null
+                            }
+                    }
                 }
 
                 "array" -> {

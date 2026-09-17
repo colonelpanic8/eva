@@ -173,6 +173,13 @@
             }
           ]
         },
+        "querySpread": {
+          "type": "object",
+          "required": ["argument"],
+          "additionalProperties": false,
+          "description": "A string-map argument whose entries become further query parameters; a key equal to a fixed query name is refused.",
+          "properties": { "argument": { "type": "string", "maxLength": 64 } }
+        },
         "extras": { "type": "object", "maxProperties": 64, "additionalProperties": { "$ref": "#/$defs/slot" } },
         "package": { "type": "string" },
         "class": { "type": "string", "maxLength": 300 },

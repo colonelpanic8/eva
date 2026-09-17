@@ -163,8 +163,15 @@ object ExtensionProtocol {
 
     private fun checkProperty(property: JsonObject) {
         val type = property.getValue("type").text(20)
-        require(type in ToolSchema.scalarTypes || type == "array")
+        require(type in ToolSchema.scalarTypes || type == "array" || type == "object")
         property["description"]?.text(2000)
+        if (type == "object") {
+            require(property.keys.all { it in setOf("type", "description", "additionalProperties", "maxProperties") })
+            val values = property.getValue("additionalProperties").obj()
+            require(values.keys.all { it in setOf("type", "description", "minLength", "maxLength") })
+            checkProperty(values)
+            return
+        }
         if (type == "array") {
             val items = property.getValue("items").obj()
             require(items.keys.all { it in setOf("type", "description", "enum", "minLength", "maxLength", "minimum", "maximum") })
@@ -304,10 +311,28 @@ object ExtensionProtocol {
         value: JsonElement,
     ) {
         when (schema["type"]) {
-            JsonPrimitive("integer") -> checkInteger(value)
-            JsonPrimitive("string") -> require(BoundedJson.validUnicode((value as JsonPrimitive).content))
-            JsonPrimitive("array") -> (value as JsonArray).forEach { checkValue(schema.getValue("items").obj(), it) }
-            else -> Unit
+            JsonPrimitive("integer") -> {
+                checkInteger(value)
+            }
+
+            JsonPrimitive("string") -> {
+                require(BoundedJson.validUnicode((value as JsonPrimitive).content))
+            }
+
+            JsonPrimitive("array") -> {
+                (value as JsonArray).forEach { checkValue(schema.getValue("items").obj(), it) }
+            }
+
+            JsonPrimitive("object") -> {
+                (value as JsonObject).forEach { (key, child) ->
+                    require(BoundedJson.validUnicode(key))
+                    checkValue(schema.getValue("additionalProperties").obj(), child)
+                }
+            }
+
+            else -> {
+                Unit
+            }
         }
     }
 

@@ -60,8 +60,12 @@ A capability object contains:
 
 `inputSchema` is a closed object (`additionalProperties: false`, explicit
 `required`) of 0–64 properties named `[A-Za-z][A-Za-z0-9_]{0,63}`. Each property is
-a scalar (`string`, `integer`, `number`, `boolean`) or an `array` of one scalar
-`items` type with optional `minItems`/`maxItems` (0–64). Scalars accept
+a scalar (`string`, `integer`, `number`, `boolean`), an `array` of one scalar
+`items` type with optional `minItems`/`maxItems` (0–64), or a string map: an
+`object` with no `properties`, an `additionalProperties` schema of type `string`,
+and a required `maxProperties` (1–64). A map lets the request choose the keys
+(1–64 characters each) when the target defines them at runtime, as Mova's capture
+prompts do; the package still bounds their number and value shape. Scalars accept
 `description` and `enum`; strings accept `minLength`/`maxLength` (code points,
 0–65,536); integers and numbers accept finite `minimum`/`maximum`; integers stay
 within ±9,007,199,254,740,991. No nested objects, nulls, unions, references,
@@ -248,8 +252,12 @@ and selection slots must have a value before anything is submitted. An
 a JSON array; path, query, intent, and selection slots stay scalar.
 
 Intent fields: `kind`, `action`, optional `uri: {base, query?, path?, opaque?}`, `extras`,
-`package`, `class`, `mimeType`, and `packageByName`. `query`, `path`, and `extras` are maps of fixed names to typed slots. The base
-has no existing query, fragment, or user info. `action` may instead be a string
+`package`, `class`, `mimeType`, `packageByName`, and `querySpread`. `query`, `path`, and `extras` are maps of fixed names to typed slots. The base
+has no existing query, fragment, or user info. `querySpread: {argument}` names a
+string-map argument whose entries are appended as further encoded query
+parameters after the fixed ones; an entry whose key matches a fixed query name in
+any letter case is refused, so a request can add a parameter the package left open
+but never replace one it fixed. `action` may instead be a string
 argument slot whose `values` map covers the argument's enum, each value an intent
 action (`{"argument":"screen","values":{"wifi":"android.settings.WIFI_SETTINGS"}}`);
 the publisher still declares every action that can launch, the model only names

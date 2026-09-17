@@ -46,6 +46,28 @@
         { "$ref": "#/$defs/scalar" },
         {
           "type": "object",
+          "description": "A string map: the request chooses the keys, bounded in count; only the value shape is declared.",
+          "required": ["type", "additionalProperties", "maxProperties"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "object" },
+            "description": { "$ref": "#/$defs/description" },
+            "additionalProperties": {
+              "type": "object",
+              "required": ["type"],
+              "additionalProperties": false,
+              "properties": {
+                "type": { "const": "string" },
+                "description": { "$ref": "#/$defs/description" },
+                "minLength": { "type": "integer", "minimum": 0, "maximum": 65536 },
+                "maxLength": { "type": "integer", "minimum": 0, "maximum": 65536 }
+              }
+            },
+            "maxProperties": { "type": "integer", "minimum": 1, "maximum": 64 }
+          }
+        },
+        {
+          "type": "object",
           "required": ["type", "items"],
           "additionalProperties": false,
           "properties": {

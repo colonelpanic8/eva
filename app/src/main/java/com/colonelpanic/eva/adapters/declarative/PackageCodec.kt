@@ -178,7 +178,7 @@ object PackageCodec {
         root: JsonObject,
         properties: JsonObject,
     ): DeclarativeBinding.Intent {
-        root.fields(setOf("kind", "action"), setOf("uri", "extras", "package", "mimeType", "packageByName", "class"))
+        root.fields(setOf("kind", "action"), setOf("uri", "extras", "package", "mimeType", "packageByName", "class", "querySpread"))
         val actionSlot =
             (root.getValue("action") as? JsonObject)?.let { spec ->
                 val argument = slot(spec, properties) as? ScalarSlot.Argument ?: error("An action slot names an argument")
@@ -241,6 +241,17 @@ object PackageCodec {
                 slot(value.obj(), properties).also { require(it.type == "string") }
             }
         val query = if (wholeUri) emptyMap() else slots(uri?.get("query"), properties)
+        val querySpread =
+            root["querySpread"]?.obj()?.let { spread ->
+                spread.fields(setOf("argument"))
+                val argument = spread.text("argument", 64)
+                val property = properties[argument]?.obj() ?: error("querySpread names a tool argument")
+                require(property["type"] == JsonPrimitive("object") && property["additionalProperties"] is JsonObject) {
+                    "querySpread needs a string-map argument"
+                }
+                require(uri != null && !wholeUri && "opaque" !in uri) { "querySpread needs a fixed base with query parameters" }
+                argument
+            }
         val extras = slots(root["extras"], properties)
         val target = root["package"]?.string()?.also { require(packageId.matches(it)) }
         val targetClass =
@@ -272,6 +283,7 @@ object PackageCodec {
             actionSlot,
             uriArgument,
             uriSchemes,
+            querySpread,
         )
     }
 
