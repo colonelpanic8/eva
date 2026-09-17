@@ -4,6 +4,8 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-09-16
+
 ### Added
 
 - Tool schemas accept a bounded string map, and an intent binding can spread such an argument into extra query parameters; content projections can declare a `json` column that decodes a provider's embedded document into data. The Mova package uses both so a capture template's own prompts are readable and fillable.
