@@ -1,8 +1,13 @@
 {
   "formatVersion": 1,
   "id": "android.clock",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "title": "Clock",
+  "description": "Set an alarm at a local wall-clock time, or start a countdown timer, through Android's standard alarm and timer intents. Whichever clock app the phone has accepts them and stays on screen showing what was asked for, so the user sees and confirms it; the receipt says the request was handed over, never that the alarm or timer now exists.",
+  "setup": [
+    "Have a clock app that handles Android's standard alarm and timer intents; a phone's built-in Clock normally does."
+  ],
+  "androidPackages": [],
   "capabilities": [
     {
       "tool": {
@@ -125,6 +130,5 @@
         }
       }
     }
-  ],
-  "androidPackages": []
+  ]
 }
