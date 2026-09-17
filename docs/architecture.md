@@ -126,6 +126,12 @@ for concrete identity, schema, waiting, and authorization rules.
 - Native adapters use intents, contacts, messaging, media sessions, media browser
   interfaces, and other implemented Android contracts. Keep native resolution
   where it needs code; pure mappings can be declarative packages.
+- Alarms and timers come from the shipped Clock catalog package, not native tool
+  definitions. It uses standard Android intents with bounded integer extras and
+  optional labels, retaining EVA's existing `SET_ALARM` manifest permission.
+  Default adoption and action grants use the same portable configuration as Maps;
+  removal or disablement is preserved. Results are handoffs, not verified alarm
+  creation or timer start. Package device verification is pending.
 - Media apps are surfaced as extensions (`adapters/android/MediaAdapter.kt`): each
   installed player found through its media browser service, Media3 library
   service, or play-from-search intent becomes one installed extension whose

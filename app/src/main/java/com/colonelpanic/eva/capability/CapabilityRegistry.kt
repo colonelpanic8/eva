@@ -123,8 +123,6 @@ class CapabilityRegistry(
                 "Reconnect before requesting the action again. Nothing was executed."
         const val SMS_COMPOSE = "eva.android.messages.compose"
         const val SMS_SEND = "eva.android.messages.send"
-        const val SET_ALARM = "eva.android.alarm.set"
-        const val SET_TIMER = "eva.android.timer.set"
         const val DIAL = "eva.android.phone.dial"
         const val OPEN_APP = "eva.android.app.open"
         const val CONTACTS_SEARCH = "eva.android.contacts.search"

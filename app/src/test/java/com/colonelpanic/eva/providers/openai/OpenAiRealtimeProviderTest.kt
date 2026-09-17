@@ -46,7 +46,17 @@ class OpenAiRealtimeProviderTest {
                 "required":["seconds"],"additionalProperties":false}""",
             ).jsonObject
     private val catalog =
-        ProviderToolCatalog("rev-1", listOf(ProviderToolDefinition("eva.android.timer.set", "Set a timer", "Start a timer", schema)))
+        ProviderToolCatalog(
+            "rev-1",
+            listOf(
+                ProviderToolDefinition(
+                    "extension.package.00000000-0000-0000-0000-000000000001.set_timer",
+                    "Set a timer",
+                    "Start a timer",
+                    schema,
+                ),
+            ),
+        )
     private val requests = mutableListOf<String>()
     private val calls = mutableListOf<okhttp3.Request>()
     private val client =
@@ -106,7 +116,7 @@ class OpenAiRealtimeProviderTest {
             assertEquals("voice:resp_1", events.filterIsInstance<ProviderEvent.ResponseStarted>().single().inputId)
             assertEquals("Set a timer for three minutes", events.filterIsInstance<ProviderEvent.Transcript>().single().text)
             val call = events.filterIsInstance<ProviderEvent.ToolCallReady>().single()
-            assertEquals("eva.android.timer.set", call.capabilityId)
+            assertEquals("extension.package.00000000-0000-0000-0000-000000000001.set_timer", call.capabilityId)
             assertEquals(JsonPrimitive(180), call.arguments["seconds"])
             assertEquals("voice:resp_1", call.call.inputId)
             assertEquals("resp_1", call.call.providerTurnId)

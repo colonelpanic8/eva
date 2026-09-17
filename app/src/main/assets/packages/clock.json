@@ -1,0 +1,130 @@
+{
+  "formatVersion": 1,
+  "id": "android.clock",
+  "version": "0.1.0",
+  "title": "Clock",
+  "capabilities": [
+    {
+      "tool": {
+        "name": "set_alarm",
+        "title": "Set an alarm",
+        "description": "Set an alarm in the phone's clock app at a local wall-clock time on a 24-hour scale. Use for a specific time of day, not for a countdown. Uses Android's standard alarm intent, so any installed clock app that handles alarms can accept it. A successful launch is handoff evidence only; whether the alarm was added is not verified.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "hour": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 23,
+              "description": "Local hour on a 24-hour clock"
+            },
+            "minute": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 59
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            }
+          },
+          "required": [
+            "hour",
+            "minute"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "effects": "write",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true
+      },
+      "receipts": {
+        "success": "Alarm request handed to the clock app. Whether the alarm was added is not verified.",
+        "handlerMissing": "No installed clock app can handle this alarm."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.intent.action.SET_ALARM",
+        "extras": {
+          "android.intent.extra.alarm.HOUR": {
+            "argument": "hour",
+            "type": "integer",
+            "required": true
+          },
+          "android.intent.extra.alarm.MINUTES": {
+            "argument": "minute",
+            "type": "integer",
+            "required": true
+          },
+          "android.intent.extra.alarm.MESSAGE": {
+            "argument": "label",
+            "type": "string"
+          },
+          "android.intent.extra.alarm.SKIP_UI": {
+            "type": "boolean",
+            "value": false
+          }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "set_timer",
+        "title": "Start a countdown timer",
+        "description": "Start a countdown timer in the phone's clock app for a number of seconds. Use for durations such as ten minutes. Uses Android's standard timer intent, so any installed clock app that handles timers can accept it. A successful launch is handoff evidence only; whether the timer actually started is not verified.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "seconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 86400,
+              "description": "Countdown length in seconds"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            }
+          },
+          "required": [
+            "seconds"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "effects": "write",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true
+      },
+      "receipts": {
+        "success": "Timer request handed to the clock app. Whether the timer started is not verified.",
+        "handlerMissing": "No installed clock app can handle this timer."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.intent.action.SET_TIMER",
+        "extras": {
+          "android.intent.extra.alarm.LENGTH": {
+            "argument": "seconds",
+            "type": "integer",
+            "required": true
+          },
+          "android.intent.extra.alarm.MESSAGE": {
+            "argument": "label",
+            "type": "string"
+          },
+          "android.intent.extra.alarm.SKIP_UI": {
+            "type": "boolean",
+            "value": false
+          }
+        }
+      }
+    }
+  ],
+  "androidPackages": []
+}

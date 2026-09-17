@@ -24,27 +24,39 @@ class ScalarArgumentTest {
 
     @Test
     fun `integer arguments survive the string round trip`() {
-        assertNull(registry.validationError(proposal(CapabilityRegistry.SET_ALARM, mapOf("hour" to "7", "minute" to "30"))))
-        assertNull(registry.validationError(proposal(CapabilityRegistry.SET_TIMER, mapOf("seconds" to "600"))))
+        assertNull(registry.validationError(proposal(CapabilityRegistry.CONVERSATION_READ, mapOf("conversationId" to "12"))))
+        assertNull(
+            registry.validationError(
+                proposal(CapabilityRegistry.CONVERSATION_READ, mapOf("conversationId" to "12", "limit" to "25")),
+            ),
+        )
     }
 
     @Test
     fun `out of range and non numeric integers are rejected`() {
         for (arguments in listOf(
-            mapOf("hour" to "24", "minute" to "0"),
-            mapOf("hour" to "7", "minute" to "60"),
-            mapOf("hour" to "seven", "minute" to "0"),
-            mapOf("hour" to "7.5", "minute" to "0"),
-            mapOf("hour" to "7"),
+            mapOf("conversationId" to "0"),
+            mapOf("conversationId" to "-1"),
+            mapOf("conversationId" to "12", "limit" to "0"),
+            mapOf("conversationId" to "12", "limit" to "26"),
+            mapOf("conversationId" to "twelve"),
+            mapOf("conversationId" to "12.5"),
         )) {
-            assertNotNull("$arguments should be rejected", registry.validationError(proposal(CapabilityRegistry.SET_ALARM, arguments)))
+            assertNotNull(
+                "$arguments should be rejected",
+                registry.validationError(proposal(CapabilityRegistry.CONVERSATION_READ, arguments)),
+            )
         }
     }
 
     @Test
     fun `optional properties may be omitted but unknown ones may not`() {
-        assertNull(registry.validationError(proposal(CapabilityRegistry.SET_TIMER, mapOf("seconds" to "600"))))
-        assertNotNull(registry.validationError(proposal(CapabilityRegistry.SET_TIMER, mapOf("seconds" to "600", "repeat" to "yes"))))
+        assertNull(registry.validationError(proposal(CapabilityRegistry.CONVERSATION_READ, mapOf("conversationId" to "12"))))
+        assertNotNull(
+            registry.validationError(
+                proposal(CapabilityRegistry.CONVERSATION_READ, mapOf("conversationId" to "12", "unread" to "yes")),
+            ),
+        )
     }
 
     @Test

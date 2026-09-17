@@ -116,9 +116,11 @@ with a travel mode), [Web](https://github.com/colonelpanic8/eva-extensions/blob/
 (web search, open an http/https page),
 [Email](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/email.json)
 (a `mailto:` draft), [Calendar](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/calendar.json)
-(a prefilled event insert), and
+(a prefilled event insert),
 [Settings](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/settings.json)
-(open a settings screen). `adapters/declarative/DefaultPackages.kt` lists each default
+(open a settings screen), and
+[Clock](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/clock.json)
+(alarms and timers through Android's standard intents). `adapters/declarative/DefaultPackages.kt` lists each default
 with a byte-identical copy of the catalog file under `app/src/main/assets/packages/`
 and a fixed, name-derived instance ID. After the desired configuration is attached
 at startup, EVA installs each default whose package ID is not yet in
@@ -128,7 +130,13 @@ later catalog update targets the same instance and needs the usual re-enablement
 `appliedDefaults` is portable: removing or disabling a default is a configuration
 change that other devices restore, and a removed default is never reinstalled.
 All of them are handoffs, so the model still reports an opened app rather than a
-completed result.
+completed result. Clock replaces the native alarm and timer tools with `set_alarm`
+and `set_timer`. Its fixed integer extras preserve the native input bounds,
+optional labels remain strings, and `SKIP_UI: false` requests the clock UI. The
+existing `com.android.alarm.permission.SET_ALARM` manifest permission remains
+required; importing JSON cannot add it. A clock handoff does not verify that an
+alarm was created or a timer started. Physical-device verification of the package
+is pending.
 
 ### Package and repository identity
 

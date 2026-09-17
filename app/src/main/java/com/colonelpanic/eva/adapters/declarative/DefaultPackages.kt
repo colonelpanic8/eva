@@ -25,5 +25,6 @@ object DefaultPackages {
             DefaultPackage("android.email", "packages/email.json"),
             DefaultPackage("android.calendar", "packages/calendar.json"),
             DefaultPackage("android.settings", "packages/settings.json"),
+            DefaultPackage("android.clock", "packages/clock.json"),
         )
 }

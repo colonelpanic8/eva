@@ -8,6 +8,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.colonelpanic.eva.EvaApplication
 import com.colonelpanic.eva.MainActivity
+import com.colonelpanic.eva.adapters.declarative.DefaultPackages
 import com.colonelpanic.eva.audio.AndroidAudioRoute
 import com.colonelpanic.eva.audio.MicrophonePermission
 import com.colonelpanic.eva.audio.PeerLinkFactory
@@ -17,7 +18,6 @@ import com.colonelpanic.eva.audio.RealtimeMediaState
 import com.colonelpanic.eva.audio.VoiceSessionService
 import com.colonelpanic.eva.audio.webrtc.WebRtcPeerLink
 import com.colonelpanic.eva.capability.CapabilityDispatcher
-import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.conversation.EntryStatus
 import com.colonelpanic.eva.conversation.ProviderStatus
@@ -64,6 +64,8 @@ class NativeVoiceActionLiveTest {
         val context = instrumentation.targetContext
         instrumentation.uiAutomation.grantRuntimePermission(context.packageName, MicrophonePermission.PERMISSION)
         val app = context.applicationContext as EvaApplication
+        val clock = DefaultPackages.all.single { it.id == "android.clock" }
+        val setTimer = "extension.package.${clock.identity.id}.set_timer"
         ActivityScenario.launch(MainActivity::class.java).use {
             runBlocking(Dispatchers.Main.immediate) {
                 val armed = AtomicBoolean(false)
@@ -138,12 +140,12 @@ class NativeVoiceActionLiveTest {
                             controller.state
                                 .first { state ->
                                     state.entries.any { entry ->
-                                        entry.capabilityId == CapabilityRegistry.SET_TIMER && entry.status == EntryStatus.HANDED_OFF
+                                        entry.capabilityId == setTimer && entry.status == EntryStatus.HANDED_OFF
                                     }
                                 }.entries
-                                .first { it.capabilityId == CapabilityRegistry.SET_TIMER }
+                                .first { it.capabilityId == setTimer }
                         }
-                    val record = repository.history().first { it.capabilityId == CapabilityRegistry.SET_TIMER }
+                    val record = repository.history().first { it.capabilityId == setTimer }
                     assertEquals(InvocationStatus.HANDED_OFF, record.status)
                     assertTrue("Journal must carry the utterance or a voice placeholder", record.request.isNotBlank())
                     // The model must get to speak about the result after Clock took the foreground.

@@ -252,10 +252,6 @@ class EvaApplication :
                                 MessagingReadBackend(intentHost, messagingStore, MessagingReadBackend.Operation.MESSAGES),
                                 notificationMessages,
                             ),
-                        CapabilityRegistry.SET_ALARM to
-                            intent("Alarm set.", "No clock app accepted this alarm.", NativeIntents::alarm),
-                        CapabilityRegistry.SET_TIMER to
-                            intent("Timer started.", "No clock app accepted this timer.", NativeIntents::timer),
                         CapabilityRegistry.DIAL to
                             chosenNumbers.remembering(
                                 intent("Dialer opened.", "No phone app is available.", NativeIntents::dial),

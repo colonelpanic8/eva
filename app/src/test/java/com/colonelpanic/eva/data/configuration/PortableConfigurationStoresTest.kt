@@ -97,6 +97,50 @@ class PortableConfigurationStoresTest {
     }
 
     @Test
+    fun `a newly shipped default joins a configuration that adopted the earlier ones and its removal survives restart and restore`() {
+        val assets =
+            generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }
+                .map { File(it, "app/src/main/assets") }
+                .first { it.isDirectory }
+        val readAsset: (String) -> String = { path -> File(assets, path).readText() }
+        val clock = DefaultPackages.all.single { it.id == "android.clock" }
+        val earlier = DefaultPackages.all.filterNot { it.id == clock.id }
+        val configured =
+            PortablePackageSettings(
+                repository = clock.source,
+                installed = earlier.map { PortablePackage(it.identity.id, it.source, it.path, readAsset(it.path)) },
+                waitMillis = emptyMap(),
+                services = emptyList(),
+                appliedDefaults = earlier.map { it.id },
+            )
+        assertTrue(PackageSettings(context, readAsset = readAsset).restore(configured).isEmpty())
+
+        val settings = PackageSettings(context, readAsset = readAsset)
+        assertEquals(earlier.map { it.identity }, settings.imported().map { it.identity })
+        val adopted = settings.adoptDefaults().single()
+        assertEquals(clock.identity, adopted.identity)
+        assertEquals(clock.source, adopted.source)
+        assertEquals(clock.path, adopted.url)
+        assertEquals(readAsset(clock.path), adopted.json)
+        assertEquals(DefaultPackages.all.map { it.id }, settings.portable().appliedDefaults)
+        assertTrue(settings.adoptDefaults().isEmpty())
+
+        settings.removePlugin(clock.identity.id)
+        val restarted = PackageSettings(context, readAsset = readAsset)
+        assertEquals(earlier.map { it.identity }, restarted.imported().map { it.identity })
+        assertEquals(DefaultPackages.all.map { it.id }, restarted.appliedDefaults())
+        assertTrue(restarted.adoptDefaults().isEmpty())
+
+        val portable = restarted.portable()
+        clearPreferences()
+        val elsewhere = PackageSettings(context, readAsset = readAsset)
+        assertTrue(elsewhere.restore(portable).isEmpty())
+        assertEquals(earlier.map { it.identity }, elsewhere.imported().map { it.identity })
+        assertEquals(DefaultPackages.all.map { it.id }, elsewhere.appliedDefaults())
+        assertTrue(elsewhere.adoptDefaults().isEmpty())
+    }
+
+    @Test
     fun `package restore preserves exact bytes stable identity waits and endpoint without pretending credentials transferred`() {
         val instance = "00000000-0000-0000-0000-000000000001"
         val serviceName = "agenda"

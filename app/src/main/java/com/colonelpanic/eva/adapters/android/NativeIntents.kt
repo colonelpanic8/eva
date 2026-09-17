@@ -6,7 +6,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.net.Uri
-import android.provider.AlarmClock
 import android.provider.MediaStore
 import androidx.core.net.toUri
 import com.colonelpanic.eva.capability.ExecutionBackend
@@ -34,18 +33,6 @@ class IntentBackend(
 }
 
 object NativeIntents {
-    fun alarm(arguments: Map<String, String>): Intent =
-        Intent(AlarmClock.ACTION_SET_ALARM)
-            .putExtra(AlarmClock.EXTRA_HOUR, arguments.getValue("hour").toInt())
-            .putExtra(AlarmClock.EXTRA_MINUTES, arguments.getValue("minute").toInt())
-            .apply { arguments["label"]?.let { putExtra(AlarmClock.EXTRA_MESSAGE, it) } }
-
-    fun timer(arguments: Map<String, String>): Intent =
-        Intent(AlarmClock.ACTION_SET_TIMER)
-            .putExtra(AlarmClock.EXTRA_LENGTH, arguments.getValue("seconds").toInt())
-            .putExtra(AlarmClock.EXTRA_SKIP_UI, false)
-            .apply { arguments["label"]?.let { putExtra(AlarmClock.EXTRA_MESSAGE, it) } }
-
     fun dial(arguments: Map<String, String>): Intent = Intent(Intent.ACTION_DIAL, "tel:${Uri.encode(arguments.getValue("number"))}".toUri())
 
     /**

@@ -4,6 +4,10 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Alarms and timers use the Clock catalog extension instead of built-in tools. EVA adopts it once per configuration through the existing shipped-default mechanism; removal and disablement remain portable. Clock actions request the clock UI and report handoff rather than verified creation.
+
 ## [0.21.0] - 2026-09-16
 
 ### Added

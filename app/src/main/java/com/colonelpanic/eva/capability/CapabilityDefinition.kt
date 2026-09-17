@@ -84,34 +84,6 @@ object BundledCapabilities {
                 },
             ),
             CapabilityDefinition(
-                CapabilityRegistry.SET_ALARM,
-                "Set an alarm",
-                "Set a clock alarm at a local wall-clock time on a 24-hour scale. " +
-                    "Use for a specific time of day, not for a countdown.",
-                schema(
-                    """
-                {"type":"object","properties":{
-                "hour":{"type":"integer","minimum":0,"maximum":23,"description":"Local hour on a 24-hour clock"},
-                "minute":{"type":"integer","minimum":0,"maximum":59},
-                "label":{"type":"string","minLength":1,"maxLength":120}},
-                "required":["hour","minute"],"additionalProperties":false}
-            """,
-                ),
-            ),
-            CapabilityDefinition(
-                CapabilityRegistry.SET_TIMER,
-                "Set a timer",
-                "Start a countdown timer for a number of seconds. Use for durations such as ten minutes.",
-                schema(
-                    """
-                {"type":"object","properties":{
-                "seconds":{"type":"integer","minimum":1,"maximum":86400},
-                "label":{"type":"string","minLength":1,"maxLength":120}},
-                "required":["seconds"],"additionalProperties":false}
-            """,
-                ),
-            ),
-            CapabilityDefinition(
                 CapabilityRegistry.DIAL,
                 "Open the dialer",
                 "Open the phone dialer with a number filled in. The user places the call. Does not dial automatically.",
