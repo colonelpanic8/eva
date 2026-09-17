@@ -4,6 +4,8 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-09-17
+
 ### Added
 
 - An extension package can carry its own `description` and `setup` steps, shown above its actions when reviewing an install, so an extension documents itself instead of relying on a separate file. Every catalog extension now carries them; an existing installation keeps the copy it adopted until it is updated through Browse, since a changed contract always needs re-enablement.
