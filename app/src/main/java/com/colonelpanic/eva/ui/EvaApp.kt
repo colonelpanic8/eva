@@ -97,6 +97,7 @@ fun EvaApp(
                     destination = EvaDestination.CONVERSATION
                     scope.launch { drawer.close() }
                 },
+                extensionUpdates = settings.plugins.updates.size,
             )
         },
     ) {

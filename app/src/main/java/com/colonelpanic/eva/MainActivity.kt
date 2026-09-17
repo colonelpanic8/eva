@@ -333,6 +333,7 @@ class MainActivity : ComponentActivity() {
                 onSaveGit = eva.configuration::configureGit,
                 onClearGitToken = eva.configuration::clearGitToken,
                 onRepositoryRefresh = eva.pluginBrowser::refresh,
+                onExtensionUpdateCheck = eva.pluginBrowser::checkForUpdates,
                 onPluginFileImport = { pluginFile.launch(arrayOf("application/json", "text/*", "application/octet-stream")) },
                 onPluginPreview = eva.pluginBrowser::preview,
                 onPluginUrlPreview = eva.pluginBrowser::previewUrl,

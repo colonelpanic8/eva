@@ -73,6 +73,7 @@ data class SettingsActions(
     val onForgetRememberedNumbers: () -> Unit = {},
     val onOpenAppSettings: () -> Unit = {},
     val onRepositoryRefresh: () -> Unit = {},
+    val onExtensionUpdateCheck: () -> Unit = {},
     val onPluginFileImport: () -> Unit = {},
     val onPluginUrlPreview: (String) -> Unit = {},
     val onPluginPreview: (String) -> Unit = {},

@@ -97,6 +97,14 @@ URL/file import, inspect the preview, and install.
 Installed holds enablement and action grants; Settings holds service configuration
 and wait budgets. Refresh alone does not install or authorize anything.
 
+Opening the Extensions tab lists the catalog when the last listing is more than
+fifteen minutes old, and every installed package the catalog carries a higher
+version of is offered at the top of that tab, with the installed and available
+versions and a review that installs from the same preview as any other install.
+The count also rides the drawer's Extensions entry, so a waiting update is visible
+without opening the screen. Nothing installs itself: an update is a changed
+contract, so its actions need enabling again and the conversation reconnected.
+
 Repository matching happens locally using Android package IDs; it does not upload
 the app inventory. Match metadata and icons aid discovery, not trust. Manual imports
 remain useful for apps Android does not make visible and for server-only packages.

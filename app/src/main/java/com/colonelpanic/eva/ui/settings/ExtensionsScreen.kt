@@ -16,6 +16,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -36,6 +37,7 @@ fun ExtensionsScreen(
     onOpenDrawer: () -> Unit,
 ) {
     var selected by rememberSaveable { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) { actions.onExtensionUpdateCheck() }
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
@@ -56,6 +58,7 @@ fun ExtensionsScreen(
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                     when (selected) {
                         0 -> {
+                            ExtensionUpdatesSection(state.plugins, actions)
                             ExtensionsSection(state, actions)
                             ExtensionCatalogSection(state.plugins, actions)
                         }

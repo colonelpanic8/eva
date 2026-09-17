@@ -54,7 +54,7 @@ class PluginInstallations(
         val old = entries.find { it.source == source && it.definition.id == definition.id }
         if (old != null && old.definition.digest != definition.digest) {
             require(
-                newer(definition.version, old.definition.version),
+                PackageVersion.newer(definition.version, old.definition.version),
             ) { "Changed packages must increase their version; downgrades are refused" }
         }
         val installed =
@@ -118,14 +118,5 @@ class PluginInstallations(
             require(encoded.toByteArray(Charsets.UTF_8).size <= MAX_BYTES) { "Installed extensions exceed the storage limit" }
             return encoded
         }
-    }
-
-    private fun newer(
-        next: String,
-        old: String,
-    ): Boolean {
-        val a = next.split('.').map(String::toLong)
-        val b = old.split('.').map(String::toLong)
-        return a.zip(b).firstOrNull { it.first != it.second }?.let { it.first > it.second } ?: false
     }
 }
