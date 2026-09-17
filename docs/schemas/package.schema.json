@@ -218,7 +218,13 @@
             }
           ]
         },
-        "projection": { "type": "object", "minProperties": 1, "maxProperties": 32, "additionalProperties": { "$ref": "#/$defs/scalarType" } },
+        "projection": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 32,
+          "additionalProperties": { "enum": ["string", "integer", "number", "boolean", "json"] },
+          "description": "A json column decodes a JSON text cell into structured data."
+        },
         "selection": {
           "type": "array",
           "maxItems": 16,

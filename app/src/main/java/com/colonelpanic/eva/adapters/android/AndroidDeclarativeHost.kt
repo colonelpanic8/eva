@@ -18,9 +18,11 @@ import com.colonelpanic.eva.adapters.declarative.HttpRequest
 import com.colonelpanic.eva.adapters.declarative.HttpResponse
 import com.colonelpanic.eva.adapters.declarative.IntentRequest
 import com.colonelpanic.eva.adapters.declarative.PackageHttpClient
+import com.colonelpanic.eva.capability.BoundedJson
 import com.colonelpanic.eva.capability.ExecutionOutcome
 import com.colonelpanic.eva.capability.InvocationStatus
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -198,7 +200,7 @@ class AndroidDeclarativeHost(
     private fun Cursor.scalar(
         index: Int,
         type: String,
-    ): JsonPrimitive {
+    ): JsonElement {
         if (isNull(index)) return JsonNull
         return when (type) {
             "string" -> {
@@ -219,6 +221,11 @@ class AndroidDeclarativeHost(
             "boolean" -> {
                 require(getType(index) == Cursor.FIELD_TYPE_INTEGER)
                 JsonPrimitive(getLong(index).also { require(it == 0L || it == 1L) } == 1L)
+            }
+
+            "json" -> {
+                require(getType(index) == Cursor.FIELD_TYPE_STRING)
+                BoundedJson.parse(getString(index), ContentRowBudget.MAX_CELL_BYTES)
             }
 
             else -> {

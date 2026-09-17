@@ -311,7 +311,7 @@ object PackageCodec {
         val projection =
             root.getValue("projection").obj().also { require(it.size in 1..32) }.mapValues { (name, type) ->
                 require(identifier.matches(name))
-                type.string().also { require(it in scalarTypes) }
+                type.string().also { require(it in scalarTypes || it == "json") }
             }
         val selection =
             root["selection"]?.array().orEmpty().also { require(it.size <= 16) }.map {

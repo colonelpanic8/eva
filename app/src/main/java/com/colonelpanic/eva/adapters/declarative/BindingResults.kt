@@ -84,7 +84,10 @@ object BindingResults {
                     binding.projection.mapValues { (column, type) ->
                         require(column in row) { "Content column is missing from the approved projection" }
                         val value = row.getValue(column)
-                        require(value == JsonNull || ToolSchema.error(JsonObject(mapOf("type" to JsonPrimitive(type))), value) == null) {
+                        require(
+                            type == "json" || value == JsonNull ||
+                                ToolSchema.error(JsonObject(mapOf("type" to JsonPrimitive(type))), value) == null,
+                        ) {
                             "Content column type did not match the approved projection"
                         }
                         value
@@ -140,6 +143,11 @@ class ContentRowBudget(
     private val maxRows: Int,
     maxBytes: Int,
 ) {
+    companion object {
+        /** One decoded json cell may not exceed a whole result. */
+        const val MAX_CELL_BYTES = ExtensionProtocol.RESULT_BYTES
+    }
+
     private val rows = mutableListOf<JsonObject>()
     private val limit = minOf(maxBytes, ExtensionProtocol.RESULT_BYTES - "{\"rows\":,\"truncated\":false}".toByteArray().size)
     private var bytes = 2

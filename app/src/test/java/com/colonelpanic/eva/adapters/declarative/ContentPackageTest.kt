@@ -1,5 +1,7 @@
 package com.colonelpanic.eva.adapters.declarative
 
+import com.colonelpanic.eva.capability.InvocationStatus
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -20,6 +22,52 @@ internal fun contentFixture(name: String = "paseo-content"): PackageDefinition =
     )
 
 class ContentPackageTest {
+    @Test
+    fun `Mova template prompts decode as data and feed the create prompts map as extra query parameters`() {
+        val capabilities = contentFixture("mova-content").capabilities.associateBy { it.name }
+        val templates = capabilities.getValue("list_templates")
+        assertEquals("json", (templates.binding as DeclarativeBinding.Content).projection.getValue("prompts_json"))
+        val prompts =
+            Json.parseToJsonElement(
+                """[{"name":"Title","type":"string","required":true},{"name":"Room","type":"string","required":false}]""",
+            )
+        val row =
+            JsonObject(
+                mapOf(
+                    "key" to JsonPrimitive("meeting"),
+                    "name" to JsonPrimitive("Meeting"),
+                    "is_default" to JsonPrimitive(false),
+                    "title_prompt" to JsonPrimitive("Title"),
+                    "prompts_json" to prompts,
+                    "capture_uri" to JsonPrimitive("mova://capture?template=meeting"),
+                ),
+            )
+        val outcome = BindingResults.content(templates.binding as DeclarativeBinding.Content, ContentRows(listOf(row), false))
+        assertEquals(InvocationStatus.COMPLETED, outcome.status)
+        assertEquals(prompts, (outcome.data!!.getValue("rows") as JsonArray).single().jsonObject.getValue("prompts_json"))
+
+        val create = capabilities.getValue("create_todo")
+        val binding = create.binding as DeclarativeBinding.Intent
+        assertEquals("prompts", binding.querySpread)
+        val uri =
+            BindingArguments(
+                create,
+                mapOf("title" to "Sync", "template" to "meeting", "prompts" to """{"Room":"4 & 5","Attendees":"Sam, Kat"}"""),
+            ).intent(binding).uri
+        assertEquals("mova://create?title=Sync&template=meeting&confirm=true&Room=4%20%26%205&Attendees=Sam%2C%20Kat", uri)
+        assertEquals(
+            "mova://create?title=Sync&confirm=true",
+            BindingArguments(create, mapOf("title" to "Sync", "prompts" to "{}")).intent(binding).uri,
+        )
+        assertThrows(Exception::class.java) {
+            BindingArguments(create, mapOf("title" to "Sync", "prompts" to """{"Confirm":"false"}""")).intent(binding)
+        }
+        assertThrows(Exception::class.java) {
+            BindingArguments(create, mapOf("title" to "Sync", "prompts" to """{"template":"other"}""")).intent(binding)
+        }
+        assertThrows(Exception::class.java) { BindingArguments(create, mapOf("title" to "Sync", "prompts" to """{"Room":4}""")) }
+    }
+
     @Test
     fun `Mova discovery defaults and handoffs match the provider and intent contracts`() {
         val capabilities = contentFixture("mova-content").capabilities.associateBy { it.name }

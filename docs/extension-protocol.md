@@ -277,7 +277,8 @@ JavaScript, and data URI schemes are rejected by this binding; use the content
 binding for provider reads.
 
 Content fields: `kind`, `authority`, `uri: {base, query?, path?}`, `projection` (map of column name
-to scalar type), optional `selection`, `maxRows` (1–100), `maxBytes` (1–16,384).
+to scalar type, or `json` for a text cell that decodes into structured data),
+optional `selection`, `maxRows` (1–100), `maxBytes` (1–16,384).
 Selection is a list of `{column, operator, value}` predicates joined with AND;
 operators are `=`, `!=`, `<`, `<=`, `>`, `>=`, and string-only `LIKE`.
 The compiler produces a fixed selection template with bound selection arguments.
@@ -314,7 +315,10 @@ truncation, closing the cursor on success, failure and late completion. Only
 projected columns are accessed even if the provider returns additional columns.
 Nulls remain JSON null. Strings require string cells, integers require integer
 cells within the tool schema's exact-integer range, numbers require finite numeric
-cells, and booleans require integer 0/1. Blobs and coercions are rejected.
+cells, and booleans require integer 0/1. A `json` column requires a string cell
+that parses as JSON within the result budget and places the decoded value in the
+row, so a provider's embedded document reaches the model as data rather than as an
+escaped string. Blobs and coercions are rejected.
 
 `maxBytes` bounds the UTF-8 JSON row array, including JSON escaping and separators.
 Rows are omitted whole at either cap; text and structured

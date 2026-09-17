@@ -1,14 +1,14 @@
 {
   "formatVersion": 1,
   "id": "android.mova",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "title": "Mova",
   "capabilities": [
     {
       "tool": {
         "name": "list_templates",
         "title": "List capture templates",
-        "description": "Read capture templates from Mova's active server. Requires Mova login and Android READ_TODOS access granted in EVA extension settings. Use key as the template argument to create_todo or capture_todo. prompts_json describes template prompts; it does not add arguments to this package. Results are bounded and may omit templates.",
+        "description": "Read capture templates from Mova's active server. Requires Mova login and Android READ_TODOS access granted in EVA extension settings. Use key as the template argument to create_todo or capture_todo. prompts_json lists the template's prompts as objects with name, type (string, date, tags, or body), and required; pass values for prompts other than the title and the universal fields through create_todo's prompts argument, keyed by prompt name. Results are bounded and may omit templates.",
         "inputSchema": {
           "type": "object",
           "properties": {},
@@ -37,7 +37,7 @@
           "name": "string",
           "is_default": "boolean",
           "title_prompt": "string",
-          "prompts_json": "string",
+          "prompts_json": "json",
           "capture_uri": "string"
         },
         "maxRows": 50,
@@ -267,7 +267,7 @@
       "tool": {
         "name": "create_todo",
         "title": "Create todo",
-        "description": "Ask Mova 7.0.1 or later on Android to create a todo through a capture template. Title is required. Template selects a known Mova capture-template key; scheduled, deadline, priority, tags, and state are universal capture values. Body is used only when the chosen template declares a body prompt. This package forces Mova's native confirmation sheet. A successful EVA receipt proves handoff only, not creation.",
+        "description": "Ask Mova 7.0.1 or later on Android to create a todo through a capture template. Title is required. Template selects a known Mova capture-template key; scheduled, deadline, priority, tags, and state are universal capture values. Body is used only when the chosen template declares a body prompt; other template prompts, as listed by list_templates, take their values from prompts. This package forces Mova's native confirmation sheet. A successful EVA receipt proves handoff only, not creation.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -316,6 +316,15 @@
               "type": "string",
               "maxLength": 16000,
               "description": "Body capture value. Mova's server applies it only when the selected template declares a body prompt."
+            },
+            "prompts": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "maxLength": 2000
+              },
+              "maxProperties": 16,
+              "description": "Values for the selected template's other prompts, keyed by prompt name exactly as list_templates reports it. Date prompts take YYYY-MM-DD, tag prompts take comma-separated names, other prompts take text. Mova ignores names the template does not declare and refuses a capture that leaves a required prompt empty."
             }
           },
           "required": [
@@ -379,6 +388,9 @@
               "type": "boolean"
             }
           }
+        },
+        "querySpread": {
+          "argument": "prompts"
         }
       }
     },
