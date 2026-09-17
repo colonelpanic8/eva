@@ -1,0 +1,1 @@
+* Changed: The shipped Clock extension carries its own description and setup step, like every other catalog extension. An installation that already adopted it keeps its copy until it is updated through Browse.

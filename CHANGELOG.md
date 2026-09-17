@@ -4,6 +4,8 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-09-17
+
 ### Changed
 
 - The shipped Clock extension carries its own description and setup step, like every other catalog extension. An installation that already adopted it keeps its copy until it is updated through Browse.
