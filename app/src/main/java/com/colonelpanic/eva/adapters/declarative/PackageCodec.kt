@@ -29,7 +29,10 @@ object PackageCodec {
 
     fun decode(json: String): PackageDefinition {
         val root = (BoundedJson.freeze(BoundedJson.parse(json, MAX_BYTES)) as? JsonObject) ?: error("Expected package object")
-        root.fields(setOf("formatVersion", "id", "version", "title", "capabilities"), setOf("androidPackages"))
+        root.fields(
+            setOf("formatVersion", "id", "version", "title", "capabilities"),
+            setOf("androidPackages", "description", "setup"),
+        )
         require(root.getValue("formatVersion").long() == 1L)
         val id = root.text("id", 128).also { require(packageId.matches(it)) }
         val revision = root.text("version", 40).also { require(version.matches(it)) }
@@ -45,7 +48,22 @@ object PackageCodec {
                 it.string().also { name -> require(name.length <= 200 && packageId.matches(name)) }
             }
         require(apps.distinct().size == apps.size)
-        return PackageDefinition(id, revision, root.text("title", 120), capabilities, BoundedJson.digest(root), root, apps)
+        val description = root["description"]?.let { root.text("description", 2000) }
+        val setup =
+            root["setup"]?.array()?.also { require(it.size in 1..8) }.orEmpty().map {
+                it.string().also { step -> require(step.length in 1..300 && step.none(Char::isISOControl)) }
+            }
+        return PackageDefinition(
+            id,
+            revision,
+            root.text("title", 120),
+            capabilities,
+            BoundedJson.digest(root),
+            root,
+            apps,
+            description,
+            setup,
+        )
     }
 
     private fun capability(root: JsonObject): PackageCapability {

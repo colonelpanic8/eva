@@ -11,6 +11,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -214,6 +215,29 @@ class PackageCodecTest {
             """{"kind":"android.intent","action":"android.intent.action.VIEW","uri":{"base":"content://com.android.calendar/events","query":{"t":{"argument":"title","type":"string"}}}}""",
             """{"kind":"android.intent","action":"android.intent.action.VIEW","uri":{"base":"content://com.android.calendar/{title}","path":{"title":{"argument":"title","type":"string"}}}}""",
         ).forEach { json -> assertThrows("$json should be rejected", Exception::class.java) { PackageCodec.decode(packageWith(json)) } }
+    }
+
+    @Test
+    fun `a package carries its own description and setup steps within the contract`() {
+        val titleField = """"title":"Example","""
+        val described =
+            """"title":"Example","description":"What this is for.","setup":["Install the target app.","Sign in to it."],"""
+        val decoded = PackageCodec.decode(packageJson(intentBinding).replace(titleField, described))
+        assertEquals("What this is for.", decoded.description)
+        assertEquals(listOf("Install the target app.", "Sign in to it."), decoded.setup)
+        val plain = PackageCodec.decode(packageJson(intentBinding))
+        assertNull(plain.description)
+        assertTrue(plain.setup.isEmpty())
+        assertNotEquals(plain.digest, decoded.digest)
+        listOf(
+            """"title":"Example","description":"",""",
+            """"title":"Example","description":"x","setup":[],""",
+            """"title":"Example","setup":["ok",""],""",
+            """"title":"Example","setup":"one step",""",
+            """"title":"Example","description":12,""",
+        ).forEach { field ->
+            assertThrows(field, Exception::class.java) { PackageCodec.decode(packageJson(intentBinding).replace(titleField, field)) }
+        }
     }
 
     @Test

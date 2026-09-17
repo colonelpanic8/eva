@@ -1,8 +1,9 @@
 {
   "formatVersion": 1,
   "id": "android.settings",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "title": "Settings",
+  "description": "Open one of the phone's settings screens. It navigates only: no setting is read or changed, and the screen that opens is one of a fixed list this extension declares.",
   "androidPackages": [],
   "capabilities": [
     {

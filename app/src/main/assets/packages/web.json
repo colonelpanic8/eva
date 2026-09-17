@@ -1,8 +1,9 @@
 {
   "formatVersion": 1,
   "id": "android.web",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "title": "Web",
+  "description": "Search the web and open a web address through Android's standard search and view intents, handled by whichever browser or search app the phone has. Opening an address is the one action here that takes its destination from the request, limited to http and https.",
   "androidPackages": [],
   "capabilities": [
     {

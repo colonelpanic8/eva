@@ -4,6 +4,10 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Added
+
+- An extension package can carry its own `description` and `setup` steps, shown above its actions when reviewing an install, so an extension documents itself instead of relying on a separate file. Every catalog extension now carries them; an existing installation keeps the copy it adopted until it is updated through Browse, since a changed contract always needs re-enablement.
+
 ### Changed
 
 - Alarms and timers use the Clock catalog extension instead of built-in tools. EVA adopts it once per configuration through the existing shipped-default mechanism; removal and disablement remain portable. Clock actions request the clock UI and report handoff rather than verified creation.

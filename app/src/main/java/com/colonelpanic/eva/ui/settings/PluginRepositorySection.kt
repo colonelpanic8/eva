@@ -70,7 +70,12 @@ internal fun ExtensionCatalogSection(
                             else -> "${preview.source} · ${preview.url}"
                         },
                 )
+                preview.definition.description?.let { Text(it) }
                 Text("Targets: ${preview.definition.androidPackages.joinToString().ifEmpty { "See destinations below" }}")
+                if (preview.definition.setup.isNotEmpty()) {
+                    Text("Before these actions work:")
+                    preview.definition.setup.forEach { Text("• $it") }
+                }
                 preview.definition.capabilities.forEach { capability ->
                     Text("${capability.title} · ${capability.effect.name.lowercase()}")
                     Text(capability.description)

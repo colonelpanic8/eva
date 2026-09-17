@@ -1,8 +1,9 @@
 {
   "formatVersion": 1,
   "id": "android.email",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "title": "Email",
+  "description": "Open an addressed email draft through a mailto: link, with an optional subject and body. The user reviews it and sends it from their mail app; this extension never sends mail.",
   "androidPackages": [],
   "capabilities": [
     {

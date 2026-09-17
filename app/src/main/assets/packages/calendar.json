@@ -1,8 +1,9 @@
 {
   "formatVersion": 1,
   "id": "android.calendar",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "title": "Calendar",
+  "description": "Open a prefilled new event in the phone's calendar app. The user reviews and saves it; this extension never writes to a calendar, and supplying no time leaves the app's own default length.",
   "androidPackages": [],
   "capabilities": [
     {

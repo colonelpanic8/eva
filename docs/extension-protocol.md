@@ -142,7 +142,14 @@ is pending.
 
 A package is one self-contained JSON file, without scripts or embedded secrets.
 Its `formatVersion` identifies the codec, `id` is a publisher-chosen descriptive
-name, and `version` is a three-part `MAJOR.MINOR.PATCH` version (no prerelease/build suffix in v1). Each capability embeds the
+name, and `version` is a three-part `MAJOR.MINOR.PATCH` version (no prerelease/build suffix in v1).
+Optional `description` (up to 2,000 characters) states what the package is for and
+optional `setup` is 1–8 strings (up to 300 each) naming what the user must do
+outside EVA first; EVA shows both above the capability list in the install
+preview, and both participate in the canonical digest. A package documents itself
+this way rather than in a separate file: the same capability descriptions the
+model receives are what the user reads before granting. Requirements belong here;
+assurances do not, since a package cannot establish its own trustworthiness. Each capability embeds the
 [shared MCP tool object](#capability); binding metadata and effect declarations
 are separate from that tool definition. Unsupported schema features are rejected,
 not silently dropped.

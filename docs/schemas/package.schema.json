@@ -11,6 +11,14 @@
     "id": { "type": "string", "maxLength": 128, "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+$" },
     "version": { "type": "string", "pattern": "^(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})$" },
     "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "description": { "type": "string", "minLength": 1, "maxLength": 2000, "description": "What the package is for, shown before install." },
+    "setup": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "description": "What the user must do outside EVA before the actions work.",
+      "items": { "type": "string", "minLength": 1, "maxLength": 300 }
+    },
     "androidPackages": { "type": "array", "maxItems": 16, "uniqueItems": true, "items": { "type": "string", "maxLength": 200 } },
     "capabilities": { "type": "array", "minItems": 1, "maxItems": 64, "items": { "$ref": "#/$defs/capability" } }
   },

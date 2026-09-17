@@ -1,8 +1,17 @@
 {
   "formatVersion": 1,
   "id": "android.mova",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "title": "Mova",
+  "description": "Read and act on org-mode todos through the Mova Android app: discover capture templates, search and read todos and the agenda through Mova's read-only provider, and create, complete, update, reschedule, or delete todos through mova:// links. Mova uses the server and credentials already configured in the app. Every mutating action shows Mova's own confirmation sheet, and EVA reports that the request was handed over, not that Mova applied it.",
+  "setup": [
+    "Install Mova 7.0.1 or later and sign in to the server you want EVA to use.",
+    "Expand this extension in Settings and choose Allow provider reads, which grants Mova's READ_TODOS permission on this device; without it the read actions report a setup rejection instead of rows.",
+    "Read rows are as fresh as Mova's active server; they say nothing about whether a later mova:// action succeeded."
+  ],
+  "androidPackages": [
+    "com.colonelpanic.mova"
+  ],
   "capabilities": [
     {
       "tool": {
@@ -1162,8 +1171,5 @@
         }
       }
     }
-  ],
-  "androidPackages": [
-    "com.colonelpanic.mova"
   ]
 }

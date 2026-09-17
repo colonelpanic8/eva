@@ -14,6 +14,10 @@ data class PackageDefinition(
     val digest: String,
     val document: JsonObject,
     val androidPackages: List<String> = emptyList(),
+    /** What the package is for, shown with its actions before the user installs it. */
+    val description: String? = null,
+    /** What the user must do outside EVA before the actions work; claims about the package, never by it. */
+    val setup: List<String> = emptyList(),
 )
 
 enum class PackageEffect { READ, WRITE, HANDOFF, UNKNOWN }
