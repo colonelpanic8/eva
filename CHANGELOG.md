@@ -4,6 +4,8 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-09-17
+
 ### Added
 
 - Extension updates are offered at the top of the Extensions tab, with the installed and available versions, and counted on the drawer's Extensions entry. EVA lists the catalog when the tab opens unless it did so in the last fifteen minutes, so a waiting update is visible without asking for a refresh. Installing one still goes through the same preview, and still requires enabling its actions again.
