@@ -97,6 +97,25 @@ class ExtensionRuntime(
         return adopted
     }
 
+    /** Carries an approved extension's grants onto the version a catalog refresh just installed. */
+    suspend fun carryForward(identity: AdapterIdentity): Boolean {
+        adapter.refresh()
+        withTimeoutOrNull(5_000) {
+            adapter.ready.first { it }
+            adapter.installed.first { installed ->
+                installed.any { it.identity?.instanceId == identity.instanceId && it.descriptor != null }
+            }
+        }
+        var carried = false
+        update {
+            val entry = adapter.installed.value.find { it.identity?.instanceId == identity.instanceId } ?: return@update
+            val descriptor = entry.descriptor ?: return@update
+            carried = grants.rebind(checkNotNull(entry.identity), descriptor)
+        }
+        if (carried) onGrantChanged(identity.instanceId)
+        return carried
+    }
+
     suspend fun restoreGrants(
         restored: Map<String, ExtensionGrant>,
         expectedPackageInstances: Set<String>,

@@ -40,7 +40,7 @@ data class PackageConfigurationEntry(
 )
 
 data class PortablePackageSettings(
-    val repository: String,
+    val repositories: List<String>,
     val installed: List<PortablePackage>,
     val waitMillis: Map<String, Long>,
     /** Version-1 bindings retained only when their package definition is unavailable. */
@@ -49,6 +49,8 @@ data class PortablePackageSettings(
     val serviceBindings: List<PackageServiceBinding> = emptyList(),
     /** Shipped defaults this configuration has already installed once; a later removal stays removed. */
     val appliedDefaults: List<String> = emptyList(),
+    /** Extensions whose auto-enable choice differs from the default; absent means a refresh may enable it. */
+    val autoEnabled: Map<String, Boolean> = emptyMap(),
 )
 
 @Serializable
@@ -75,19 +77,51 @@ class PackageSettings(
 
     fun imported() = imports.all()
 
-    val repositorySource: String get() =
-        prefs.getString("repository", null)?.let(PluginRepository::legacySource)
-            ?: com.colonelpanic.eva.adapters.declarative.DEFAULT_PLUGIN_REPOSITORY
+    /**
+     * Every catalog EVA tracks. A configuration written before repositories were a list keeps its
+     * single source, so an upgrade changes nothing about which catalog a phone follows.
+     */
+    val repositorySources: List<String> get() =
+        prefs
+            .getString(REPOSITORIES, null)
+            ?.let { runCatching { Json.decodeFromString<List<String>>(it) }.getOrNull() }
+            ?: listOf(
+                prefs.getString("repository", null)?.let(PluginRepository::legacySource)
+                    ?: com.colonelpanic.eva.adapters.declarative.DEFAULT_PLUGIN_REPOSITORY,
+            )
 
-    fun saveRepository(source: String) {
-        savePreferences { putString("repository", source) }
+    fun saveRepositories(sources: List<String>) {
+        savePreferences { putString(REPOSITORIES, Json.encodeToString(sources.distinct())) }
+        mutable.value = entries()
         onChanged()
     }
 
-    fun installPlugin(preview: com.colonelpanic.eva.adapters.declarative.PluginPreview) {
-        imports.install(preview)
+    /**
+     * Whether a catalog refresh may turn this extension's actions on by itself. Enabling is the
+     * default for a catalog the user chose to follow; turning an extension or one of its actions
+     * off records the opposite, so a later refresh does not undo the decision.
+     */
+    fun autoEnable(packageId: String): Boolean = prefs.getBoolean("auto:$packageId", true)
+
+    fun setAutoEnable(
+        packageId: String,
+        enabled: Boolean,
+    ) {
+        savePreferences { putBoolean("auto:$packageId", enabled) }
         mutable.value = entries()
         onChanged()
+    }
+
+    fun autoEnabled(): Map<String, Boolean> =
+        prefs.all
+            .mapNotNull { (key, value) -> if (key.startsWith("auto:") && value is Boolean) key.removePrefix("auto:") to value else null }
+            .toMap()
+
+    fun installPlugin(preview: com.colonelpanic.eva.adapters.declarative.PluginPreview): InstalledPlugin {
+        val installed = imports.install(preview)
+        mutable.value = entries()
+        onChanged()
+        return installed
     }
 
     fun removePlugin(instance: String) {
@@ -313,7 +347,7 @@ class PackageSettings(
     fun portable(): PortablePackageSettings {
         val configured = resolvedServiceSettings()
         return PortablePackageSettings(
-            repositorySource,
+            repositorySources,
             imported().map { PortablePackage(it.identity.id, it.source, it.url, it.json) },
             prefs.all
                 .mapNotNull { (key, value) ->
@@ -323,6 +357,7 @@ class PackageSettings(
             configured.http,
             configured.bindings,
             appliedDefaults(),
+            autoEnabled(),
         )
     }
 
@@ -359,10 +394,12 @@ class PackageSettings(
         imports.restore(installed)
         beforePreferences()
         savePreferences {
-            putString("repository", restored.repository)
+            putString(REPOSITORIES, Json.encodeToString(restored.repositories.distinct()))
+            remove("repository")
             prefs.all.keys
-                .filter { it.startsWith("instance:") }
+                .filter { it.startsWith("instance:") || it.startsWith("auto:") }
                 .forEach(::remove)
+            restored.autoEnabled.forEach { (id, value) -> putBoolean("auto:$id", value) }
             prefs.all.keys
                 .filter { it.startsWith("wait:") || it.startsWith("origin:") }
                 .forEach(::remove)
@@ -404,7 +441,7 @@ class PackageSettings(
                 }
             }
         return resolveLegacy(
-            PortablePackageSettings("", emptyList(), emptyMap(), legacy, stored.http, stored.bindings),
+            PortablePackageSettings(emptyList(), emptyList(), emptyMap(), legacy, stored.http, stored.bindings),
             sources,
         )
     }
@@ -505,6 +542,7 @@ class PackageSettings(
     private companion object {
         const val SERVICES = "services:v2"
         const val DEFAULTS = "defaults"
+        const val REPOSITORIES = "repositories"
         val SERVICE_NAME = Regex("[a-z][a-z0-9-]{0,63}")
     }
 }

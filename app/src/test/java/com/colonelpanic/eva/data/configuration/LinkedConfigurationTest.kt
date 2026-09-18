@@ -370,7 +370,7 @@ class LinkedConfigurationTest {
             ),
         packages =
             EvaConfiguration.Packages(
-                repository = "https://plugins.example.test/index.json",
+                repositories = listOf("https://plugins.example.test/index.json"),
                 installed = emptyList(),
                 waitMillis = emptyMap(),
                 services = emptyList(),

@@ -847,20 +847,29 @@ class EvaConfigurationManager(
         }
 
     private fun PortablePackageSettings.configuration() =
-        EvaConfiguration.Packages(repository, installed, waitMillis, services, serviceBindings, appliedDefaults = appliedDefaults)
+        EvaConfiguration.Packages(
+            repositories,
+            installed,
+            waitMillis,
+            services,
+            serviceBindings,
+            appliedDefaults = appliedDefaults,
+            autoEnabled = autoEnabled,
+        )
 
     private fun EvaConfiguration.Packages.portable(
         services: EvaConfiguration.Services = EvaConfiguration.Services(emptyMap()),
     ): PortablePackageSettings {
         val installedInstances = installed.mapTo(mutableSetOf(), PortablePackage::instance)
         return PortablePackageSettings(
-            repository,
+            repositories,
             installed,
             waitMillis.filterKeys { it in setOf("voice", "typed") || it in installedInstances },
             this.services.filter { it.packageInstance in installedInstances },
             services.http,
             serviceBindings.filter { it.packageInstance in installedInstances },
             appliedDefaults,
+            autoEnabled,
         )
     }
 

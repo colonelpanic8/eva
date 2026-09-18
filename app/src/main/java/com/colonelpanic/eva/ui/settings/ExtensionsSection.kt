@@ -65,7 +65,11 @@ internal fun ExtensionsSection(
                 Switch(
                     checked = entry.enabled,
                     enabled = descriptor != null && (entry.enabled || installed.problem == null),
-                    onCheckedChange = { actions.onExtensionEnable(entry.key, it) },
+                    onCheckedChange = { value ->
+                        actions.onExtensionEnable(entry.key, value)
+                        // Turning an extension off also tells the next catalog refresh to leave it off.
+                        repositoryInstallation?.let { actions.onExtensionAutoEnable(it.definition.id, value) }
+                    },
                 )
             }
             if (expanded) {
@@ -113,6 +117,17 @@ internal fun ExtensionsSection(
                         ExtensionConfiguration(configuration, actions, showWait = index == configurations.lastIndex)
                     }
                     if (repositoryInstallation != null) {
+                        val packageDefinitionId = repositoryInstallation.definition.id
+                        SettingsRow(
+                            "Enable automatically",
+                            "Let a repository refresh turn this extension's actions on when it installs it. " +
+                                "Actions you have already chosen are kept either way.",
+                        ) {
+                            Switch(
+                                checked = state.autoEnabled[packageDefinitionId] ?: true,
+                                onCheckedChange = { actions.onExtensionAutoEnable(packageDefinitionId, it) },
+                            )
+                        }
                         TextButton(
                             onClick = { actions.onPluginRemove(repositoryInstallation.identity.id) },
                             enabled = !state.plugins.busy,

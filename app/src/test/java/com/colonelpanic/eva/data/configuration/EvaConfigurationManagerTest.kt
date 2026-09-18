@@ -235,7 +235,7 @@ class EvaConfigurationManagerTest {
                         ),
                     packages =
                         baseline.packages.copy(
-                            repository = "https://plugins.example.test/index.json",
+                            repositories = listOf("https://plugins.example.test/index.json"),
                             installed =
                                 listOf(
                                     PortablePackage(
@@ -393,7 +393,7 @@ class EvaConfigurationManagerTest {
                             source = "https://instructions.example.test/rollback.yaml",
                             components = listOf(PromptComponent("rollback", instruction = "Must not remain.")),
                         ),
-                    packages = baseline.packages.copy(repository = "https://plugins.example.test/rollback.json"),
+                    packages = baseline.packages.copy(repositories = listOf("https://plugins.example.test/rollback.json")),
                     remembered = EvaConfiguration.Remembered(mapOf("4155559999" to 99)),
                 )
             val manager =
@@ -427,7 +427,7 @@ class EvaConfigurationManagerTest {
                 baseline.copy(
                     packages =
                         baseline.packages.copy(
-                            repository = "https://plugins.example.test/transaction.json",
+                            repositories = listOf("https://plugins.example.test/transaction.json"),
                             installed =
                                 listOf(
                                     PortablePackage(
@@ -599,7 +599,7 @@ class EvaConfigurationManagerTest {
         }
 
     private fun com.colonelpanic.eva.data.PortablePackageSettings.configuration() =
-        EvaConfiguration.Packages(repository, installed, waitMillis, services, serviceBindings)
+        EvaConfiguration.Packages(repositories, installed, waitMillis, services, serviceBindings)
 
     private class MemoryDirectory(
         var text: String,

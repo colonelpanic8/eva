@@ -90,20 +90,24 @@ beside the text, and a resumed conversation replays both.
 
 ## Declarative packages
 
-Packages are single JSON files. The catalog is a Git repository, by default
-[eva-extensions](https://github.com/colonelpanic8/eva-extensions), whose `packages/`
-directory holds them. In EVA, use Extensions → Browse for a catalog refresh or
-URL/file import, inspect the preview, and install.
-Installed holds enablement and action grants; Settings holds service configuration
-and wait budgets. Refresh alone does not install or authorize anything.
+Packages are single JSON files. A catalog is a Git repository whose `packages/`
+directory holds them; EVA follows a list of them, by default the one
+[eva-extensions](https://github.com/colonelpanic8/eva-extensions) publishes. Each is
+refreshed on its own from Extensions → Extension repositories, and opening the tab
+refreshes any this run has not listed yet.
 
-Opening the Extensions tab lists the catalog when the last listing is more than
-fifteen minutes old, and every installed package the catalog carries a higher
-version of is offered at the top of that tab, with the installed and available
-versions and a review that installs from the same preview as any other install.
-The count also rides the drawer's Extensions entry, so a waiting update is visible
-without opening the screen. Nothing installs itself: an update is a changed
-contract, so its actions need enabling again and the conversation reconnected.
+**Following a repository is the trust decision.** Refreshing one installs every
+package it publishes and replaces every package whose content changed, with no
+per-package review. A package that is new is enabled outright unless its
+auto-enable switch is off; a package that already existed keeps exactly the actions
+it already had, so an update never asks again and never widens what was approved.
+Turning an extension off is remembered: it also clears auto-enable, and later
+refreshes leave it off. Changed actions reach the model on the next connection.
+Removing a repository stops refreshes; what it installed stays until removed.
+
+A URL or file import belongs to no repository, so nothing refreshes it and it is
+still previewed and installed by hand. Installed holds enablement and action grants;
+Settings holds service configuration and wait budgets.
 
 Repository matching happens locally using Android package IDs; it does not upload
 the app inventory. Match metadata and icons aid discovery, not trust. Manual imports
@@ -186,9 +190,11 @@ installations recorded against one, are read as that repository so they keep
 matching catalog updates. There is no separate index or digest to regenerate:
 the repository's own history is the integrity record.
 
-The preview shows the source, operations, effects, destinations, and data disclosure.
-Source and package ID are retained for explicit update checks. A changed version
-does not retain grants, and a catalog is not publisher authentication. A single
+An import preview shows the source, operations, effects, destinations, and data
+disclosure. Source and package ID are retained so a followed catalog can replace the
+package it installed: the instance ID survives, grants move onto the new content,
+and actions the new content no longer declares are dropped. A catalog is not
+publisher authentication; following one says the publisher is trusted. A single
 package can also be previewed from a raw HTTPS URL of the file itself.
 The Extensions tab also offers Import extension file. The system document picker grants
 temporary read access; EVA bounds the stream to the same package size limit and

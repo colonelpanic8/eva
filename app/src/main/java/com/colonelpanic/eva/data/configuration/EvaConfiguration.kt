@@ -76,7 +76,9 @@ data class EvaConfigurationDocument(
 
 @Serializable
 data class PackagesPatch(
+    /** Version-1 single catalog, read so an older configuration still resolves. */
     val repository: String? = null,
+    val repositories: List<String>? = null,
     @SerialName("bundledInstances") val legacyBundledInstances: Map<String, String>? = null,
     val installed: List<PortablePackage>? = null,
     val waitMillis: Map<String, Long>? = null,
@@ -84,6 +86,7 @@ data class PackagesPatch(
     val services: List<HttpServiceBinding>? = null,
     val serviceBindings: List<PackageServiceBinding>? = null,
     val appliedDefaults: List<String>? = null,
+    val autoEnabled: Map<String, Boolean>? = null,
 )
 
 @Serializable
@@ -200,7 +203,7 @@ data class EvaConfiguration(
     )
 
     data class Packages(
-        val repository: String,
+        val repositories: List<String>,
         val installed: List<PortablePackage>,
         val waitMillis: Map<String, Long>,
         /** Version-1 per-package services that could not yet be migrated. */
@@ -209,6 +212,8 @@ data class EvaConfiguration(
         val legacyBundledInstances: Map<String, String> = emptyMap(),
         /** Shipped default packages already installed once; EVA never reinstalls a default listed here. */
         val appliedDefaults: List<String> = emptyList(),
+        /** Extensions a refresh may not enable on its own, recorded when the user turns one off. */
+        val autoEnabled: Map<String, Boolean> = emptyMap(),
     )
 
     data class Services(
@@ -391,13 +396,15 @@ object EvaConfigurationCodec {
             ).nonEmpty(),
         packages =
             PackagesPatch(
-                current.packages.repository.takeIf { it != base?.packages?.repository },
+                null,
+                current.packages.repositories.takeIf { it != base?.packages?.repositories },
                 null,
                 current.packages.installed.takeIf { it != base?.packages?.installed },
                 current.packages.waitMillis.takeIf { it != base?.packages?.waitMillis },
                 current.packages.services.takeIf { it != base?.packages?.services },
                 current.packages.serviceBindings.takeIf { it != base?.packages?.serviceBindings },
                 current.packages.appliedDefaults.takeIf { it != base?.packages?.appliedDefaults },
+                current.packages.autoEnabled.takeIf { it != base?.packages?.autoEnabled },
             ).nonEmpty(),
         services = ServicesPatch(current.services.http.takeIf { it != base?.services?.http }).nonEmpty(),
         extensions = ExtensionsPatch(current.extensions.grants.takeIf { it != base?.extensions?.grants }).nonEmpty(),
@@ -442,13 +449,16 @@ object EvaConfigurationCodec {
                 ),
             packages =
                 EvaConfiguration.Packages(
-                    requireNotNull(packages?.repository) { "packages.repository is missing." },
+                    requireNotNull(packages?.repositories ?: packages?.repository?.let(::listOf)) {
+                        "packages.repositories is missing."
+                    },
                     requireNotNull(packages?.installed) { "packages.installed is missing." },
                     requireNotNull(packages?.waitMillis) { "packages.waitMillis is missing." },
                     packages?.services.orEmpty(),
                     packages?.serviceBindings.orEmpty(),
                     packages?.legacyBundledInstances.orEmpty(),
                     packages?.appliedDefaults.orEmpty(),
+                    packages?.autoEnabled.orEmpty(),
                 ),
             services = EvaConfiguration.Services(services?.http.orEmpty()),
             extensions =
@@ -473,7 +483,10 @@ object EvaConfigurationCodec {
         messaging.replies.forEach { require(MESSAGING_IDENTITY.matches(it)) { "Invalid messaging reply identity." } }
         prompt.source.https("prompt.source")
         PromptConfig(prompt.components).validated(PromptDefaults.VARIABLES)
-        packages.repository.https("packages.repository")
+        require(packages.repositories.isNotEmpty()) { "packages.repositories must name at least one catalog." }
+        require(packages.repositories.size <= 32) { "At most 32 extension repositories may be configured." }
+        require(packages.repositories.distinct().size == packages.repositories.size) { "Duplicate extension repository." }
+        packages.repositories.forEach { it.https("packages.repositories") }
         packages.legacyBundledInstances.forEach { (name, id) ->
             require(name.matches(Regex("[A-Za-z0-9._-]{1,200}"))) { "Invalid bundled package name." }
             id.uuid("bundled package")
@@ -698,12 +711,14 @@ object EvaConfigurationCodec {
         packages =
             PackagesPatch(
                 override.packages?.repository ?: base.packages?.repository,
+                override.packages?.repositories ?: base.packages?.repositories,
                 override.packages?.legacyBundledInstances ?: base.packages?.legacyBundledInstances,
                 override.packages?.installed ?: base.packages?.installed,
                 override.packages?.waitMillis ?: base.packages?.waitMillis,
                 override.packages?.services ?: base.packages?.services,
                 override.packages?.serviceBindings ?: base.packages?.serviceBindings,
                 override.packages?.appliedDefaults ?: base.packages?.appliedDefaults,
+                override.packages?.autoEnabled ?: base.packages?.autoEnabled,
             ).nonEmpty(),
         services = ServicesPatch(override.services?.http ?: base.services?.http).nonEmpty(),
         extensions = ExtensionsPatch(override.extensions?.grants ?: base.extensions?.grants).nonEmpty(),
@@ -750,8 +765,9 @@ object EvaConfigurationCodec {
 
     private fun PackagesPatch.nonEmpty() =
         takeIf {
-            repository != null || legacyBundledInstances != null || installed != null || waitMillis != null || services != null ||
-                serviceBindings != null || appliedDefaults != null
+            repository != null || repositories != null || legacyBundledInstances != null || installed != null ||
+                waitMillis != null || services != null || serviceBindings != null || appliedDefaults != null ||
+                autoEnabled != null
         }
 
     private fun ServicesPatch.nonEmpty() = takeIf { http != null }

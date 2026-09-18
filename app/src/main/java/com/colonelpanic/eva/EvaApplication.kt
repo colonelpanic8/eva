@@ -341,7 +341,7 @@ class EvaApplication :
                     .RepositoryHttpClient()::fetch,
             ),
             extensionScope,
-            packageSettings.repositorySource,
+            packageSettings::repositorySources,
             packageSettings::imported,
             {
                 packageManager
@@ -351,7 +351,8 @@ class EvaApplication :
                     ).map { it.activityInfo.packageName }
                     .toSet()
             },
-            packageSettings::saveRepository,
+            packageSettings::saveRepositories,
+            catalogSync,
             { preview ->
                 registry.changeAuthorization {
                     packageSettings.installPlugin(preview)
@@ -364,6 +365,24 @@ class EvaApplication :
                     packageAdapter.refresh()
                 }
             },
+        )
+    }
+
+    /** The policy a catalog refresh applies; see [com.colonelpanic.eva.adapters.declarative.PluginSyncPolicy]. */
+    private val catalogSync by lazy {
+        com.colonelpanic.eva.adapters.declarative.PluginSyncPolicy(
+            packageSettings::imported,
+            packageSettings::autoEnable,
+            { preview ->
+                var installed: com.colonelpanic.eva.adapters.declarative.InstalledPlugin? = null
+                registry.changeAuthorization {
+                    installed = packageSettings.installPlugin(preview)
+                    packageAdapter.refresh()
+                }
+                checkNotNull(installed)
+            },
+            { identity -> extensions.adopt(identity) },
+            { identity -> extensions.carryForward(identity) },
         )
     }
 

@@ -74,7 +74,6 @@ internal fun EvaDrawerSheet(
     shownThreadId: String? = null,
     onNewThread: () -> Unit = {},
     onShowThread: (String) -> Unit = {},
-    extensionUpdates: Int = 0,
 ) {
     // The sheet's own insets are dropped so the header's blue runs behind the status bar
     // instead of leaving a bare surface strip above it.
@@ -100,14 +99,7 @@ internal fun EvaDrawerSheet(
         }
         Spacer(Modifier.height(12.dp))
         DrawerDestination("Conversation", Icons.Filled.Home, EvaDestination.CONVERSATION, current, onSelect)
-        DrawerDestination(
-            "Extensions",
-            Icons.AutoMirrored.Filled.List,
-            EvaDestination.EXTENSIONS,
-            current,
-            onSelect,
-            badge = "$extensionUpdates update${if (extensionUpdates == 1) "" else "s"}".takeIf { extensionUpdates > 0 },
-        )
+        DrawerDestination("Extensions", Icons.AutoMirrored.Filled.List, EvaDestination.EXTENSIONS, current, onSelect)
         DrawerDestination("Messaging", Icons.AutoMirrored.Filled.Send, EvaDestination.MESSAGING, current, onSelect)
         DrawerDestination("Instructions", Icons.Filled.Edit, EvaDestination.PROMPT, current, onSelect)
         DrawerDestination("Settings", Icons.Filled.Settings, EvaDestination.SETTINGS, current, onSelect)
@@ -141,12 +133,10 @@ private fun DrawerDestination(
     destination: EvaDestination,
     current: EvaDestination,
     onSelect: (EvaDestination) -> Unit,
-    badge: String? = null,
 ) {
     NavigationDrawerItem(
         label = { Text(label) },
         icon = { Icon(icon, contentDescription = null) },
-        badge = badge?.let { { Text(it, style = MaterialTheme.typography.labelSmall) } },
         selected = destination == current,
         onClick = { onSelect(destination) },
         modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),

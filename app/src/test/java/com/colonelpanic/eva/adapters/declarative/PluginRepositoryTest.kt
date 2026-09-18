@@ -28,6 +28,10 @@ import java.nio.file.Files
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class PluginRepositoryTest {
+    private val messages =
+        requireNotNull(javaClass.getResourceAsStream("/packages/messages.json"))
+            .bufferedReader()
+            .use { it.readText() }
     private val json =
         requireNotNull(javaClass.getResourceAsStream("/packages/caffeine.json"))
             .bufferedReader()
@@ -202,7 +206,7 @@ class PluginRepositoryTest {
     }
 
     @Test
-    fun `catalog addition reaches the registry without an app rebuild and updates revoke grants`() =
+    fun `a followed catalog installs and enables what it publishes and keeps approvals across updates`() =
         runTest {
             var disk: String? = null
             val store = PluginInstallations({ disk }, { disk = it })
@@ -250,14 +254,29 @@ class PluginRepositoryTest {
                     },
                 )
             val runtime = ExtensionRuntime(registry, adapter, grants, backgroundScope)
+            var autoEnable = true
             val browser =
                 PluginBrowser(
                     repository,
                     backgroundScope,
-                    catalog.source,
+                    { listOf(catalog.source) },
                     store::all,
                     { setOf("moe.zhs.caffeine") },
                     {},
+                    PluginSyncPolicy(
+                        store::all,
+                        { autoEnable },
+                        { preview ->
+                            var installed: InstalledPlugin? = null
+                            registry.changeAuthorization {
+                                installed = store.install(preview)
+                                adapter.refresh()
+                            }
+                            checkNotNull(installed)
+                        },
+                        { identity -> runtime.adopt(identity) },
+                        { identity -> runtime.carryForward(identity) },
+                    ),
                     {
                         registry.changeAuthorization {
                             store.install(it)
@@ -274,51 +293,79 @@ class PluginRepositoryTest {
             catalog.publish("README.json.txt", "not a package")
             browser.refresh(catalog.source)
             runCurrent()
-            assertTrue(
-                browser.state.value.listings
-                    .isEmpty(),
-            )
+            assertTrue(store.all().isEmpty())
+
             catalog.publish("caffeine.json", json)
             browser.refresh(catalog.source)
             runCurrent()
-            assertEquals(1, browser.state.value.listings.size)
-            browser.preview("android.caffeine")
-            runCurrent()
-            browser.installPreview()
-            runCurrent()
             assertEquals(catalog.source.trimEnd('/'), store.all().single().source)
-            assertTrue(registry.catalog.isEmpty())
             val entry =
                 runtime.settings.value.entries
                     .single()
-            runtime.enable(entry.key, true)
-            runCurrent()
-            assertTrue(registry.catalog.isEmpty())
-            runtime.mutation(entry.key, "enable", true)
-            runCurrent()
-            val definition = registry.catalog.single()
+            assertTrue("A followed catalog enables what it installs", entry.enabled)
+            assertEquals("Both of Caffeine's actions are approved", 2, registry.catalog.size)
+            val definition = registry.catalog.first { it.id.endsWith(".enable") }
             val dispatcher = CapabilityDispatcher(registry, MemoryInvocationRepository())
             val proposal = ToolProposal("first", definition.id, emptyMap(), "Keep awake", registry.snapshot.revision)
             assertEquals(InvocationStatus.HANDED_OFF, dispatcher.execute(proposal).status)
             assertEquals(1, launches)
+
             catalog.publish("caffeine.json", json.replace("0.1.0", "0.2.0"))
             browser.refresh(catalog.source)
             runCurrent()
-            browser.preview("android.caffeine")
+            assertEquals(
+                "0.2.0",
+                store
+                    .all()
+                    .single()
+                    .definition.version,
+            )
+            val updated =
+                runtime.settings.value.entries
+                    .single()
+            assertTrue("An update keeps the approvals it already had", updated.enabled)
+            assertEquals(entry.installed.identity, updated.installed.identity)
+            assertEquals(
+                InvocationStatus.HANDED_OFF,
+                dispatcher
+                    .execute(
+                        ToolProposal(
+                            "second",
+                            registry.catalog.first { it.id.endsWith(".enable") }.id,
+                            emptyMap(),
+                            "Keep awake",
+                            registry.snapshot.revision,
+                        ),
+                    ).status,
+            )
+
+            // The key carries the live digest, so an update means re-reading it before toggling.
+            runtime.enable(
+                runtime.settings.value.entries
+                    .single()
+                    .key,
+                false,
+            )
             runCurrent()
-            browser.installPreview()
+            catalog.publish("caffeine.json", json.replace("0.1.0", "0.3.0"))
+            browser.refresh(catalog.source)
             runCurrent()
-            assertTrue(registry.catalog.isEmpty())
             assertFalse(
+                "A refresh does not undo turning an extension off",
                 runtime.settings.value.entries
                     .single()
                     .enabled,
             )
-            assertEquals(
-                entry.installed.identity,
+
+            autoEnable = false
+            catalog.publish("messages.json", messages)
+            browser.refresh(catalog.source)
+            runCurrent()
+            assertEquals(2, store.all().size)
+            assertTrue(
+                "Auto-enable off installs without approving",
                 runtime.settings.value.entries
-                    .single()
-                    .installed.identity,
+                    .none { it.enabled },
             )
         }
 }

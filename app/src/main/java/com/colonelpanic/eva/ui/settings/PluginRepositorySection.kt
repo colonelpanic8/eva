@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.ui.settings
 
+import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -9,109 +10,112 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import com.colonelpanic.eva.adapters.declarative.PluginBrowserState
-import com.colonelpanic.eva.adapters.declarative.PluginPreview
-import com.colonelpanic.eva.adapters.declarative.PluginUpdate
 import com.colonelpanic.eva.adapters.declarative.appTargets
 
+/**
+ * The catalogs this phone follows. Refreshing one installs everything it publishes and updates
+ * what changed; there is no per-package review, because following a repository is the decision.
+ */
 @Composable
 internal fun ExtensionCatalogSection(
     state: PluginBrowserState,
     actions: SettingsActions,
 ) {
-    var packageUrl by remember { mutableStateOf("") }
-    SettingsSection("Available extensions") {
+    var repositoryUrl by remember { mutableStateOf("") }
+    SettingsSection("Extension repositories") {
         SettingsBlock {
-            Text(
-                "Review an extension before installing it. Installation does not enable any actions.",
-            )
-            if (state.busy) Text("Loading…")
+            Text("Refreshing a repository installs and updates every extension it publishes. Add only repositories you trust.")
+            if (state.busy) Text("Refreshing…")
             state.error?.let { Text(it) }
             state.notice?.let { Text(it) }
-            Text("App matching happens on this phone. Apps Android does not reveal may still work with a manually selected extension.")
-            TextButton(onClick = actions.onRepositoryRefresh, enabled = !state.busy) {
-                Text("Refresh available extensions")
+            TextButton(onClick = actions.onRepositoryRefresh, enabled = !state.busy) { Text("Refresh all repositories") }
+        }
+        for (repository in state.repositories) {
+            val installedHere = state.installed.count { it.source == repository.source }
+            SettingsRow(
+                repository.source.substringAfterLast('/').removeSuffix(".git"),
+                listOfNotNull(
+                    repository.source,
+                    when {
+                        repository.busy -> "Refreshing…"
+                        repository.error != null -> repository.error
+                        repository.refreshed -> "${repository.listings.size} published · $installedHere installed"
+                        else -> "Not refreshed yet"
+                    },
+                    repository.problems.takeIf { it.isNotEmpty() }?.joinToString("\n") { "Skipped $it" },
+                ).joinToString("\n"),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { actions.onRepositoryRemove(repository.source) }, enabled = !state.busy) { Text("Stop") }
+                    Button(onClick = { actions.onRepositorySync(repository.source) }, enabled = !state.busy) { Text("Refresh") }
+                }
             }
+        }
+        SettingsBlock {
+            OutlinedTextField(
+                value = repositoryUrl,
+                onValueChange = { repositoryUrl = it },
+                label = { Text("Repository URL") },
+                singleLine = true,
+            )
+            TextButton(
+                onClick = {
+                    actions.onRepositoryAdd(repositoryUrl)
+                    repositoryUrl = ""
+                },
+                enabled = !state.busy,
+            ) { Text("Follow repository") }
+        }
+    }
+    ExtensionImportSection(state, actions)
+}
+
+/** One-off packages that belong to no catalog, so nothing refreshes them. These are still reviewed. */
+@Composable
+private fun ExtensionImportSection(
+    state: PluginBrowserState,
+    actions: SettingsActions,
+) {
+    var packageUrl by remember { mutableStateOf("") }
+    SettingsSection("Import a single extension") {
+        SettingsBlock {
+            Text("An imported file or URL is not part of a repository, so EVA never refreshes or updates it. Review it before installing.")
             OutlinedTextField(
                 value = packageUrl,
                 onValueChange = { packageUrl = it },
                 label = { Text("Extension package URL") },
                 singleLine = true,
             )
-            TextButton(onClick = { actions.onPluginUrlPreview(packageUrl) }, enabled = !state.busy) {
-                Text("Preview extension URL")
-            }
+            TextButton(onClick = { actions.onPluginUrlPreview(packageUrl) }, enabled = !state.busy) { Text("Preview extension URL") }
             TextButton(onClick = actions.onPluginFileImport, enabled = !state.busy) { Text("Import extension file") }
         }
-        for (listing in state.listings.sortedByDescending { it.androidPackages.any(state.visibleApps::contains) }) {
-            val match =
-                when {
-                    listing.androidPackages.isEmpty() -> "No Android app required"
-                    listing.androidPackages.any(state.visibleApps::contains) -> "For an app on this phone"
-                    else -> "Target app not detected"
+        state.preview?.let { preview ->
+            SettingsBlock {
+                Text("Review ${preview.definition.title} ${preview.definition.version}")
+                Text(
+                    "Source: " +
+                        when {
+                            preview.source.startsWith("file-import:") -> "Selected file"
+                            preview.url == preview.source -> preview.url
+                            else -> "${preview.source} · ${preview.url}"
+                        },
+                )
+                preview.definition.description?.let { Text(it) }
+                Text("Targets: ${preview.definition.androidPackages.joinToString().ifEmpty { "See destinations below" }}")
+                if (preview.definition.setup.isNotEmpty()) {
+                    Text("Before these actions work:")
+                    preview.definition.setup.forEach { Text("• $it") }
                 }
-            SettingsRow(
-                listing.title,
-                "$match · version ${listing.version}\n${listing.androidPackages.joinToString()}",
-                leading = { InstalledAppIcon(listing.androidPackages) },
-            ) {
-                TextButton(onClick = { actions.onPluginPreview(listing.id) }, enabled = !state.busy) {
-                    Text(if (state.updates.any { it.id == listing.id }) "Review update" else "Preview")
+                preview.definition.capabilities.forEach { capability ->
+                    Text("${capability.title} · ${capability.effect.name.lowercase()}")
+                    Text(capability.description)
+                    Text("Destination/binding: ${bindingDestination(capability.binding)}")
                 }
+                Text("Extension text is supplied by its author. Reads disclose returned data to your configured model.")
+                Button(onClick = actions.onPluginInstall, enabled = !state.busy) { Text("Install reviewed extension") }
             }
-        }
-        // An update under review is shown beside its offer at the top of the screen instead.
-        if (state.reviewedUpdate() == null) state.preview?.let { ExtensionPreviewBlock(it, state, actions, null) }
-    }
-}
-
-/** The update the open preview would install, when the preview came from the catalog. */
-internal fun PluginBrowserState.reviewedUpdate(): PluginUpdate? =
-    preview?.let { open -> updates.find { it.id == open.definition.id && open.source == source } }
-
-/**
- * Everything the user approves before installing: where the bytes came from, what the
- * extension says it is for, and every action with its effect and destination.
- */
-@Composable
-internal fun ExtensionPreviewBlock(
-    preview: PluginPreview,
-    state: PluginBrowserState,
-    actions: SettingsActions,
-    replacing: String?,
-) {
-    SettingsBlock {
-        Text(
-            if (replacing == null) {
-                "Review ${preview.definition.title} ${preview.definition.version}"
-            } else {
-                "Review the update from $replacing to ${preview.definition.version} · ${preview.definition.title}"
-            },
-        )
-        Text(
-            "Source: " +
-                when {
-                    preview.source.startsWith("file-import:") -> "Selected file"
-                    preview.url == preview.source -> preview.url
-                    else -> "${preview.source} · ${preview.url}"
-                },
-        )
-        preview.definition.description?.let { Text(it) }
-        Text("Targets: ${preview.definition.androidPackages.joinToString().ifEmpty { "See destinations below" }}")
-        if (preview.definition.setup.isNotEmpty()) {
-            Text("Before these actions work:")
-            preview.definition.setup.forEach { Text("• $it") }
-        }
-        preview.definition.capabilities.forEach { capability ->
-            Text("${capability.title} · ${capability.effect.name.lowercase()}")
-            Text(capability.description)
-            Text("Destination/binding: ${bindingDestination(capability.binding)}")
-        }
-        Text(
-            "Extension text is supplied by its author. Reads disclose returned data to your configured model. Updates with changed content require enabling actions again.",
-        )
-        Button(onClick = actions.onPluginInstall, enabled = !state.busy) {
-            Text(if (replacing == null) "Install reviewed extension" else "Install reviewed update")
         }
     }
 }

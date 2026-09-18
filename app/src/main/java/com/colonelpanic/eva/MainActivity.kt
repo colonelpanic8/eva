@@ -250,6 +250,7 @@ class MainActivity : ComponentActivity() {
                     packages.flatMap { it.contentAuthorities }.distinct().associateWith { ContentProviderAccess.inspect(this, it) }
                 },
             waitDefaults = waits,
+            autoEnabled = remember(packages) { eva.packageSettings.autoEnabled() },
             extensionOverflow =
                 CatalogAdmission.overflowReasons(
                     eva.registry.catalog.filterNot {
@@ -332,10 +333,13 @@ class MainActivity : ComponentActivity() {
                 onGitEnabled = eva.configuration::setGitEnabled,
                 onSaveGit = eva.configuration::configureGit,
                 onClearGitToken = eva.configuration::clearGitToken,
-                onRepositoryRefresh = eva.pluginBrowser::refresh,
-                onExtensionUpdateCheck = eva.pluginBrowser::checkForUpdates,
+                onRepositoryRefresh = eva.pluginBrowser::refreshAll,
+                onRepositoryRefreshNew = eva.pluginBrowser::refreshNew,
+                onRepositorySync = eva.pluginBrowser::refresh,
+                onRepositoryAdd = eva.pluginBrowser::addRepository,
+                onRepositoryRemove = eva.pluginBrowser::removeRepository,
+                onExtensionAutoEnable = eva.packageSettings::setAutoEnable,
                 onPluginFileImport = { pluginFile.launch(arrayOf("application/json", "text/*", "application/octet-stream")) },
-                onPluginPreview = eva.pluginBrowser::preview,
                 onPluginUrlPreview = eva.pluginBrowser::previewUrl,
                 onPluginInstall = eva.pluginBrowser::installPreview,
                 onPluginRemove = eva.pluginBrowser::remove,

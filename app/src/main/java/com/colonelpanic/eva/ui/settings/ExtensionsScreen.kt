@@ -37,7 +37,7 @@ fun ExtensionsScreen(
     onOpenDrawer: () -> Unit,
 ) {
     var selected by rememberSaveable { mutableIntStateOf(0) }
-    LaunchedEffect(Unit) { actions.onExtensionUpdateCheck() }
+    LaunchedEffect(Unit) { actions.onRepositoryRefreshNew() }
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
@@ -58,7 +58,6 @@ fun ExtensionsScreen(
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                     when (selected) {
                         0 -> {
-                            ExtensionUpdatesSection(state.plugins, actions)
                             ExtensionsSection(state, actions)
                             ExtensionCatalogSection(state.plugins, actions)
                         }

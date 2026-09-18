@@ -350,7 +350,7 @@ class ConfigurationCompositionTest {
                 ),
             packages =
                 EvaConfiguration.Packages(
-                    repository = "https://plugins.example.test/index.json",
+                    repositories = listOf("https://plugins.example.test/index.json"),
                     installed =
                         listOf(
                             PortablePackage(

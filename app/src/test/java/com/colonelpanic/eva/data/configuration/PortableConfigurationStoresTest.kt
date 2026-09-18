@@ -107,7 +107,7 @@ class PortableConfigurationStoresTest {
         val earlier = DefaultPackages.all.filterNot { it.id == clock.id }
         val configured =
             PortablePackageSettings(
-                repository = clock.source,
+                repositories = listOf(clock.source),
                 installed = earlier.map { PortablePackage(it.identity.id, it.source, it.path, readAsset(it.path)) },
                 waitMillis = emptyMap(),
                 services = emptyList(),
@@ -147,7 +147,7 @@ class PortableConfigurationStoresTest {
         val credential = EvaConfigurationCodec.serviceSecretId(serviceName)
         val restored =
             PortablePackageSettings(
-                repository = "https://plugins.example.test/index.json",
+                repositories = listOf("https://plugins.example.test/index.json"),
                 installed =
                     listOf(
                         PortablePackage(
@@ -202,7 +202,7 @@ class PortableConfigurationStoresTest {
         val settings = PackageSettings(context)
         val restored =
             PortablePackageSettings(
-                repository = "https://plugins.example.test/index.json",
+                repositories = listOf("https://plugins.example.test/index.json"),
                 installed =
                     listOf(
                         PortablePackage(first, "index-one", "first", multiOriginDocument),
@@ -267,7 +267,7 @@ class PortableConfigurationStoresTest {
         val settings = PackageSettings(context)
         val restored =
             PortablePackageSettings(
-                repository = "https://plugins.example.test/index.json",
+                repositories = listOf("https://plugins.example.test/index.json"),
                 installed =
                     listOf(
                         PortablePackage(
