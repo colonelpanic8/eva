@@ -1,16 +1,16 @@
 {
   "formatVersion": 1,
   "id": "android.settings",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "title": "Settings",
-  "description": "Open one of the phone's settings screens. It navigates only: no setting is read or changed, and the screen that opens is one of a fixed list this extension declares.",
+  "description": "Reach the phone's own settings screens. Every action navigates only: no setting is read or changed here, and each destination is one of a fixed list this extension declares. The quick panel actions open Android's floating panel, where the user can flip the switch themselves without leaving what they were doing. Screens added after the phone's Android version report that the screen is unavailable rather than opening something else.",
   "androidPackages": [],
   "capabilities": [
     {
       "tool": {
         "name": "open",
         "title": "Open a settings screen",
-        "description": "Open one of the phone's settings screens for the user. It cannot change a setting directly; use the device state actions for that when they are available.",
+        "description": "Open one of the phone's settings screens for the user. It cannot change a setting directly; use the device state actions for that when they are available, and prefer the quick panel for internet, wifi, NFC, or volume because the user can change those without leaving the panel. Older Android versions lack some of these screens and report the screen as unavailable.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -27,7 +27,44 @@
                 "storage",
                 "date",
                 "airplane",
-                "all"
+                "all",
+                "nfc",
+                "vpn",
+                "mobile_network",
+                "data_usage",
+                "wireless",
+                "night_display",
+                "auto_rotate",
+                "screensaver",
+                "cast",
+                "do_not_disturb",
+                "notifications",
+                "notification_access",
+                "do_not_disturb_access",
+                "all_apps",
+                "default_apps",
+                "battery_optimization",
+                "usage_access",
+                "unknown_sources",
+                "all_files_access",
+                "overlay_access",
+                "write_settings_access",
+                "security",
+                "privacy",
+                "biometric_enroll",
+                "about",
+                "system_update",
+                "developer",
+                "accessibility",
+                "captions",
+                "language",
+                "keyboard",
+                "voice_input",
+                "search",
+                "accounts",
+                "add_account",
+                "printing",
+                "home"
               ],
               "description": "Which settings screen to open; all is the top level"
             }
@@ -64,7 +101,178 @@
             "storage": "android.settings.INTERNAL_STORAGE_SETTINGS",
             "date": "android.settings.DATE_SETTINGS",
             "airplane": "android.settings.AIRPLANE_MODE_SETTINGS",
-            "all": "android.settings.SETTINGS"
+            "all": "android.settings.SETTINGS",
+            "nfc": "android.settings.NFC_SETTINGS",
+            "vpn": "android.settings.VPN_SETTINGS",
+            "mobile_network": "android.settings.NETWORK_OPERATOR_SETTINGS",
+            "data_usage": "android.settings.DATA_USAGE_SETTINGS",
+            "wireless": "android.settings.WIRELESS_SETTINGS",
+            "night_display": "android.settings.NIGHT_DISPLAY_SETTINGS",
+            "auto_rotate": "android.settings.AUTO_ROTATE_SETTINGS",
+            "screensaver": "android.settings.DREAM_SETTINGS",
+            "cast": "android.settings.CAST_SETTINGS",
+            "do_not_disturb": "android.settings.ZEN_MODE_PRIORITY_SETTINGS",
+            "notifications": "android.settings.ALL_APPS_NOTIFICATION_SETTINGS",
+            "notification_access": "android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS",
+            "do_not_disturb_access": "android.settings.NOTIFICATION_POLICY_ACCESS_SETTINGS",
+            "all_apps": "android.settings.MANAGE_ALL_APPLICATIONS_SETTINGS",
+            "default_apps": "android.settings.MANAGE_DEFAULT_APPS_SETTINGS",
+            "battery_optimization": "android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS",
+            "usage_access": "android.settings.USAGE_ACCESS_SETTINGS",
+            "unknown_sources": "android.settings.MANAGE_UNKNOWN_APP_SOURCES",
+            "all_files_access": "android.settings.MANAGE_ALL_FILES_ACCESS_PERMISSION",
+            "overlay_access": "android.settings.action.MANAGE_OVERLAY_PERMISSION",
+            "write_settings_access": "android.settings.action.MANAGE_WRITE_SETTINGS",
+            "security": "android.settings.SECURITY_SETTINGS",
+            "privacy": "android.settings.PRIVACY_SETTINGS",
+            "biometric_enroll": "android.settings.BIOMETRIC_ENROLL",
+            "about": "android.settings.DEVICE_INFO_SETTINGS",
+            "system_update": "android.settings.SYSTEM_UPDATE_SETTINGS",
+            "developer": "android.settings.APPLICATION_DEVELOPMENT_SETTINGS",
+            "accessibility": "android.settings.ACCESSIBILITY_SETTINGS",
+            "captions": "android.settings.CAPTIONING_SETTINGS",
+            "language": "android.settings.LOCALE_SETTINGS",
+            "keyboard": "android.settings.INPUT_METHOD_SETTINGS",
+            "voice_input": "android.settings.VOICE_INPUT_SETTINGS",
+            "search": "android.search.action.SEARCH_SETTINGS",
+            "accounts": "android.settings.SYNC_SETTINGS",
+            "add_account": "android.settings.ADD_ACCOUNT_SETTINGS",
+            "printing": "android.settings.ACTION_PRINT_SETTINGS",
+            "home": "android.settings.HOME_SETTINGS"
+          }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "quick_panel",
+        "title": "Open a quick settings panel",
+        "description": "Open Android's floating settings panel over whatever is on screen, so the user can turn internet, wifi, or NFC on or off, or move any of the volume sliders, and stay where they were. Prefer this over opening a full settings screen for those four. The panel is offered, not operated: nothing is toggled unless the user taps it, and the media volume action changes media volume without any panel. Android 10 and later; earlier versions report the panel as unavailable.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "panel": {
+              "type": "string",
+              "enum": [
+                "internet",
+                "wifi",
+                "nfc",
+                "volume"
+              ],
+              "description": "internet covers wifi and mobile data together; volume covers every stream"
+            }
+          },
+          "required": [
+            "panel"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "effects": "external_handoff",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true
+      },
+      "receipts": {
+        "success": "Panel opened. Nothing changes until the user taps it.",
+        "handlerMissing": "This phone's Android version has no such quick panel."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": {
+          "argument": "panel",
+          "type": "string",
+          "required": true,
+          "values": {
+            "internet": "android.settings.panel.action.INTERNET_CONNECTIVITY",
+            "wifi": "android.settings.panel.action.WIFI",
+            "nfc": "android.settings.panel.action.NFC",
+            "volume": "android.settings.panel.action.VOLUME"
+          }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "open_app_settings",
+        "title": "Open one app's settings page",
+        "description": "Open the system settings page for one installed app, where its permissions, storage, battery use, and defaults live. Needs that app's exact Android package name, such as com.spotify.music; a visible app name will not do. A package name that is not installed opens nothing useful, so only use one you are sure of.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "package": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 200,
+              "description": "Exact Android package name of the installed app"
+            }
+          },
+          "required": [
+            "package"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "effects": "external_handoff",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true
+      },
+      "receipts": {
+        "success": "App settings opened.",
+        "handlerMissing": "This phone has no app settings page for that package."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.settings.APPLICATION_DETAILS_SETTINGS",
+        "uri": {
+          "base": "package:",
+          "opaque": {
+            "argument": "package",
+            "type": "string",
+            "required": true
+          }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "open_app_notification_settings",
+        "title": "Open one app's notification settings",
+        "description": "Open the notification settings for one installed app, where its channels can be silenced or turned off. Needs that app's exact Android package name, such as com.spotify.music; a visible app name will not do. Nothing is silenced by opening the screen; the user makes the change.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "package": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 200,
+              "description": "Exact Android package name of the installed app"
+            }
+          },
+          "required": [
+            "package"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "effects": "external_handoff",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true
+      },
+      "receipts": {
+        "success": "App notification settings opened.",
+        "handlerMissing": "This phone has no notification settings screen for that package."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.settings.APP_NOTIFICATION_SETTINGS",
+        "extras": {
+          "android.provider.extra.APP_PACKAGE": {
+            "argument": "package",
+            "type": "string",
+            "required": true
           }
         }
       }

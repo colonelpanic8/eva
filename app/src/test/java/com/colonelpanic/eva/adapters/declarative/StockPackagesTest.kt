@@ -185,19 +185,45 @@ class StockPackagesTest {
         runTest {
             val launched = Launched()
             val (registry, execute) = adopt("android.settings", launched)
-            assertEquals(1, registry.catalog.size)
+            assertEquals(4, registry.catalog.size)
             assertEquals(InvocationStatus.HANDED_OFF, execute("open", mapOf("screen" to "wifi")))
             assertEquals(InvocationStatus.HANDED_OFF, execute("open", mapOf("screen" to "all")))
+            assertEquals(InvocationStatus.HANDED_OFF, execute("open", mapOf("screen" to "notification_access")))
             assertEquals(InvocationStatus.NOT_EXECUTED, execute("open", mapOf("screen" to "camera")))
             assertEquals(InvocationStatus.NOT_EXECUTED, execute("open", mapOf("screen" to "android.settings.WIFI_SETTINGS")))
-            val (wifi, all) = launched.intents
-            assertEquals(2, launched.intents.size)
+            val (wifi, all, access) = launched.intents
+            assertEquals(3, launched.intents.size)
             assertEquals("android.settings.WIFI_SETTINGS", wifi.action)
             assertEquals("android.settings.SETTINGS", all.action)
+            assertEquals("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS", access.action)
             launched.intents.forEach {
                 assertNull(it.data)
                 assertNull(it.extras)
                 assertNull(it.`package`)
             }
+        }
+
+    @Test
+    fun `settings package opens a quick panel and targets one app by package name`() =
+        runTest {
+            val launched = Launched()
+            val (_, execute) = adopt("android.settings", launched)
+            assertEquals(InvocationStatus.HANDED_OFF, execute("quick_panel", mapOf("panel" to "internet")))
+            assertEquals(InvocationStatus.NOT_EXECUTED, execute("quick_panel", mapOf("panel" to "brightness")))
+            assertEquals(InvocationStatus.HANDED_OFF, execute("open_app_settings", mapOf("package" to "com.spotify.music")))
+            assertEquals(
+                InvocationStatus.HANDED_OFF,
+                execute("open_app_notification_settings", mapOf("package" to "com.spotify.music")),
+            )
+            val (panel, details, notifications) = launched.intents
+            assertEquals(3, launched.intents.size)
+            assertEquals("android.settings.panel.action.INTERNET_CONNECTIVITY", panel.action)
+            assertNull(panel.data)
+            assertEquals("android.settings.APPLICATION_DETAILS_SETTINGS", details.action)
+            assertEquals("package:com.spotify.music", details.dataString)
+            assertNull(details.extras)
+            assertEquals("android.settings.APP_NOTIFICATION_SETTINGS", notifications.action)
+            assertEquals("com.spotify.music", notifications.getStringExtra("android.provider.extra.APP_PACKAGE"))
+            assertNull(notifications.data)
         }
 }

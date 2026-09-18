@@ -130,7 +130,7 @@ with a travel mode), [Web](https://github.com/colonelpanic8/eva-extensions/blob/
 (a `mailto:` draft), [Calendar](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/calendar.json)
 (a prefilled event insert),
 [Settings](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/settings.json)
-(open a settings screen), and
+(open a settings screen, a quick panel, or one app's own page), and
 [Clock](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/clock.json)
 (alarms and timers through Android's standard intents). `adapters/declarative/DefaultPackages.kt` lists each default
 with a byte-identical copy of the catalog file under `app/src/main/assets/packages/`
@@ -149,6 +149,23 @@ existing `com.android.alarm.permission.SET_ALARM` manifest permission remains
 required; importing JSON cannot add it. A clock handoff does not verify that an
 alarm was created or a timer started. Physical-device verification of the package
 is pending.
+
+Settings declares four capabilities, all navigation: `open` maps 48 readable screen
+names onto public `Settings.ACTION_*` actions, `quick_panel` opens one of Android's
+four floating `Settings.Panel` actions so the user can flip internet, wifi, NFC, or a
+volume slider without leaving what they were doing, and `open_app_settings` and
+`open_app_notification_settings` reach one installed app by its exact package name,
+through a `package:` opaque slot and the `android.provider.extra.APP_PACKAGE` extra
+respectively. None of them reads or changes a setting: a declarative intent binding
+floors at external handoff, so changing device state remains the Shizuku AppFunctions
+adapter's job (see [Android capabilities](architecture.md#android-capabilities)).
+Screens added after a phone's Android version resolve to no handler and report the
+screen as unavailable. The public `ACTION_VOICE_CONTROL_AIRPLANE_MODE`,
+`ACTION_VOICE_CONTROL_BATTERY_SAVER_MODE`, and `ACTION_VOICE_CONTROL_DO_NOT_DISTURB_MODE`
+actions do change those settings, but Android requires them to be started with
+`startVoiceActivity` from a voice-interaction session, which no declarative binding can
+express; reaching them would be EVA code on top of the existing `assist/` session, and
+it is unverified.
 
 ### Package and repository identity
 
