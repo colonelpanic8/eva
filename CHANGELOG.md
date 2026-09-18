@@ -4,6 +4,8 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-09-17
+
 ### Changed
 
 - EVA follows a list of extension repositories instead of one catalog, and each is refreshed on its own. Following a repository is the trust decision: a refresh installs everything it publishes, replaces what changed, and no longer asks for a per-package review. A new extension arrives enabled; an updated one keeps exactly the actions it already had, so approvals survive updates instead of being revoked by them.
