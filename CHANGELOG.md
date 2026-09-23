@@ -4,6 +4,8 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-09-23
+
 ### Added
 
 - Installed extension providers receive a stable invocation ID derived from EVA's action journal. They can use it to replay a request without repeating it and to answer later status questions. When EVA stops waiting, the unknown result includes the ID so the model can check the provider's own status action.
