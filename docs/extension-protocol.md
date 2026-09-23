@@ -436,8 +436,8 @@ manifest update adding its authority is required; importing JSON cannot extend
 distinguished, so settings explain both possibilities.
 
 A provider must be enabled and exported and its Android read permission must be
-granted. EVA declares Mova's dangerous `READ_TODOS` permission for these reads;
-it is requested only from **Extensions → expand the extension → Allow provider
+granted. EVA declares Mova's dangerous `READ_TODOS` permission for reads from Mova
+before 7.2.1; it is requested only from **Extensions → expand the extension → Allow provider
 reads**, never in the startup permission sweep or by a model tool. The screen
 reports current access and links to Android permission settings for denial or
 revocation. A grant is checked again before every query, and the resolver enforces
@@ -460,7 +460,8 @@ The installed package bytes and existing capability grants remain the portable
 settings. Content dependencies add supported permissions to the existing
 `device.authorizations` list in `eva.yaml` when the installed provider declares
 one. A provider that enforces its caller in code, as Mova 7.2.1 does for EVA,
-adds none. No new device-only enablement switch is introduced. Restoration
+adds none. A saved provider permission is reported as setup still needed only
+while an installed provider declares it. No new device-only enablement switch is introduced. Restoration
 keeps that requirement and the exact package bytes, lists missing providers and
 permissions, and requires local Android authorization on each device. Editing or
 restoring YAML cannot grant a permission. Removing a package does not revoke an
