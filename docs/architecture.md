@@ -211,8 +211,8 @@ than intents. EVA binds the provider's service, which cold-starts its process
 without an Activity. The provider journals the invocation ID before any side
 effect and reports a receipt state: completed, durably accepted (`HANDED_OFF`),
 uncertain (`UNKNOWN`), or a `NOT_EXECUTED` setup need such as unlock or opt-in.
-Mova and Paseo implement this contract on their development branches; it is not
-device-verified. See [durable writes](extension-protocol.md#9-durable-writes-receipt-states-and-locked-devices)
+Mova 7.2.0 implements this contract and Paseo implements it on a development
+branch; neither is device-verified against a real server. See [durable writes](extension-protocol.md#9-durable-writes-receipt-states-and-locked-devices)
 for the states, the device-state matrix, and the one-time opt-in rule. A
 before-first-unlock phone runs neither EVA nor these providers, because none is
 direct-boot aware.

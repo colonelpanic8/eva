@@ -8,7 +8,7 @@ in the app. [Architecture](architecture.md) explains the runtime;
 | Path | Use it for | Current boundary |
 | --- | --- | --- |
 | Declarative JSON packages | Existing app intents, content providers or HTTP APIs | Import, preview, install, grants, intent, HTTP and bounded content-provider reads implemented; content host JVM-tested, device verification pending |
-| Installed Android extension service | Code and structured protocol responses supplied by an app author; background and locked-screen writes | AIDL runtime implemented and JVM-tested; Mova and Paseo providers in development; no real provider device verification |
+| Installed Android extension service | Code and structured protocol responses supplied by an app author; background and locked-screen writes | AIDL runtime implemented and JVM-tested; Mova 7.2.0 provider released, Paseo in development; transport checked on an emulator, no physical-device verification |
 | Native Android adapters | Operations requiring EVA code or platform privileges | Existing adapters include messaging, Settings AppFunctions and Shizuku device control; no universal AppFunctions adapter |
 | Media apps | Any installed player, through the routes it already registers | Discovered, not authored: each player is one extension with per-operation grants (see [Architecture](architecture.md#android-capabilities)); nothing to import or install |
 
