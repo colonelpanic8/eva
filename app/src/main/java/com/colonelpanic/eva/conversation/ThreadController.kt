@@ -49,6 +49,8 @@ import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -75,6 +77,7 @@ class ThreadController(
     private val voiceProviderFactory: (suspend (String, RealtimeMediaSession) -> ConversationProvider)? = null,
     /** The leg a turn continues on once its call has ended; a text provider on the phone's own account. */
     private val backgroundProviderFactory: () -> ConversationProvider = { providerFactory("") },
+    private val awaitCapabilities: suspend () -> Unit = {},
     private val voiceLookupRetries: () -> Int = { 5 },
     /** Silence after a one-request call's action is reported before EVA hangs up; 0 never does. */
     private val quietHangUpMillis: () -> Long = { 5_000L },
@@ -320,6 +323,7 @@ class ThreadController(
                     attachedThreadId = threadId
                     refresh()
                     // Assembled before any provider work so a broken file fails here, with its message.
+                    awaitCapabilities()
                     val assembled = assemble(voice, callMode)
                     // Only a spoken session is something the model can hang up. The catalog is built per
                     // connection because a switched-off capability and the enabled components both decide
@@ -665,6 +669,11 @@ class ThreadController(
         task.interrupt("Stopped.")
     }
 
+    fun voiceUnavailable(reason: String) {
+        end(reason)
+        mutableState.update { it.copy(providerMessage = reason) }
+    }
+
     /** Every running task is interrupted with [reason], for when Android will not let them continue. */
     fun interruptAll(reason: String) {
         tasks.values.filter { it.active }.forEach { it.interrupt(reason) }
@@ -769,7 +778,9 @@ class ThreadController(
         var actionServiced = false
             private set
         private var readOnlyCalls = 0
-        private var sideEffectCall: String? = null
+        private val dispatchLock = Mutex()
+        private val admittedCalls = mutableSetOf<String>()
+        private var mutationUncertain = false
         private var rehomed = false
         var delegated = false
             private set
@@ -805,70 +816,74 @@ class ThreadController(
                 )
             val job =
                 taskScope.launch {
-                    val delegatedPaseoAction = delegated && !context.voice && definition?.id?.startsWith(PASEO_CAPABILITY_PREFIX) == true
-                    val rejection =
-                        when {
-                            event.call.catalogRevision != context.catalog.revision || definition == null ||
-                                context.catalog.tools.none {
-                                    it.capabilityId == event.capabilityId
-                                } -> {
-                                "This action was not offered in this connection. Nothing was executed."
-                            }
+                    dispatchLock.withLock {
+                        if (!active) return@withLock
+                        val rejection =
+                            when {
+                                event.call.catalogRevision != context.catalog.revision || definition == null ||
+                                    context.catalog.tools.none {
+                                        it.capabilityId == event.capabilityId
+                                    } -> {
+                                    "This action was not offered in this connection. Nothing was executed."
+                                }
 
-                            definition.source != null && !definition.readOnly &&
-                                (awaitingFollowUp || readOnlyCalls > 0) && !delegatedPaseoAction -> {
-                                "An extension mutation requires a separate user request after a tool result."
-                            }
+                                !definition.readOnly && mutationUncertain -> {
+                                    "A previous action may have changed external state. " +
+                                        "Verify its outcome before requesting more changes. Nothing was executed."
+                                }
 
-                            definition.readOnly && readOnlyCalls >= READ_ONLY_CALLS_PER_TURN -> {
-                                "Too many lookups for one request."
-                            }
+                                id !in admittedCalls && admittedCalls.size >= CALLS_PER_TURN -> {
+                                    "The action limit for this request was reached. Nothing was executed."
+                                }
 
-                            !definition.readOnly && !claimSideEffect(id) -> {
-                                "One phone action is permitted per request."
-                            }
+                                definition.readOnly && readOnlyCalls >= READ_ONLY_CALLS_PER_TURN -> {
+                                    "Too many lookups for one request."
+                                }
 
-                            else -> {
-                                ToolSchema.error(definition.inputSchema, event.arguments)
+                                else -> {
+                                    ToolSchema.error(definition.inputSchema, event.arguments)
+                                }
                             }
-                        }
-                    if (definition?.readOnly == true && rejection == null) readOnlyCalls++
-                    store.append(
-                        ThreadItem.ActionCall(
-                            UUID.randomUUID().toString(),
-                            threadId,
-                            turnId,
-                            nowMillis(),
-                            id,
-                            event.capabilityId,
-                            definition?.title ?: event.capabilityId,
-                            proposal.arguments,
-                        ),
-                    )
-                    try {
-                        val result = dispatcher.execute(proposal, rejection ?: argumentError)
-                        if (definition?.readOnly == false &&
-                            (result.status == InvocationStatus.COMPLETED || result.status == InvocationStatus.HANDED_OFF)
+                        if (rejection == null && argumentError == null && admittedCalls.add(id) &&
+                            definition?.readOnly == true
                         ) {
-                            actionServiced = true
+                            readOnlyCalls++
                         }
-                        deliver(event.call, result.status.name, result.message, result.provenance, result.data)
-                    } catch (error: ProposalRejectedException) {
-                        deliver(event.call, "NOT_EXECUTED", error.message.orEmpty())
-                    } catch (error: InvocationPersistenceException) {
-                        mutableState.update { it.copy(errorMessage = SessionController.STORAGE_ERROR) }
-                        interrupt("Action history could not be saved.")
-                        end("ended: action history could not be saved")
+                        store.append(
+                            ThreadItem.ActionCall(
+                                UUID.randomUUID().toString(),
+                                threadId,
+                                turnId,
+                                nowMillis(),
+                                id,
+                                event.capabilityId,
+                                definition?.title ?: event.capabilityId,
+                                proposal.arguments,
+                            ),
+                        )
+                        try {
+                            val result = dispatcher.execute(proposal, rejection ?: argumentError)
+                            if (definition?.readOnly == false &&
+                                (result.status == InvocationStatus.COMPLETED || result.status == InvocationStatus.HANDED_OFF)
+                            ) {
+                                actionServiced = true
+                            }
+                            if (definition?.readOnly == false &&
+                                result.status in setOf(InvocationStatus.UNKNOWN, InvocationStatus.FAILED)
+                            ) {
+                                mutationUncertain = true
+                            }
+                            deliver(event.call, result.status.name, result.message, result.provenance, result.data)
+                        } catch (error: ProposalRejectedException) {
+                            deliver(event.call, "NOT_EXECUTED", error.message.orEmpty())
+                        } catch (error: InvocationPersistenceException) {
+                            mutableState.update { it.copy(errorMessage = SessionController.STORAGE_ERROR) }
+                            interrupt("Action history could not be saved.")
+                            end("ended: action history could not be saved")
+                        }
                     }
                 }
             dispatches += job
-        }
-
-        private suspend fun claimSideEffect(callId: String): Boolean {
-            if (sideEffectCall == callId) return true
-            val claimed = store.reserveSideEffect(turnId, callId)
-            if (claimed) sideEffectCall = callId
-            return claimed
         }
 
         private suspend fun deliver(
@@ -1012,6 +1027,7 @@ class ThreadController(
                     ),
                 )
                 val items = store.items(threadId)
+                awaitCapabilities()
                 val assembled = assemble(voice = false)
                 val snapshot = registry.snapshot
                 val catalog = catalogOf(assembled.apply(phoneTools(snapshot, false)), snapshot.revision)
@@ -1090,9 +1106,9 @@ class ThreadController(
 
     companion object {
         const val UNTITLED = "New conversation"
-        const val READ_ONLY_CALLS_PER_TURN = 8
+        const val READ_ONLY_CALLS_PER_TURN = 24
+        const val CALLS_PER_TURN = 32
         private const val VOICE_REQUEST = "Voice request"
-        private const val PASEO_CAPABILITY_PREFIX = "extension.package.android.paseo."
 
         /** Bounds the wait for a goodbye whose end is never reported. */
         private const val END_SPEECH_LIMIT_MILLIS = 10_000L

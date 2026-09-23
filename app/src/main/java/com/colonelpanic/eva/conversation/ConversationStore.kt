@@ -4,8 +4,7 @@ import kotlinx.coroutines.flow.Flow
 
 /**
  * Durable threads, turns, and items. Shares the journal database with the invocation
- * repository so a claim, its turn linkage, and the turn's side-effect reservation commit
- * together. Action outcomes are not stored here; readers join them from the journal.
+ * repository. Action outcomes are joined from the journal by their turn and call identities.
  */
 interface ConversationStore {
     /** Emits the id of a thread whose items or turns changed. */
@@ -41,12 +40,6 @@ interface ConversationStore {
         turnId: String,
         status: TurnStatus,
     )
-
-    /** True if [callId] now holds the turn's single side-effect claim, or already did. */
-    suspend fun reserveSideEffect(
-        turnId: String,
-        callId: String,
-    ): Boolean
 
     suspend fun append(item: ThreadItem)
 

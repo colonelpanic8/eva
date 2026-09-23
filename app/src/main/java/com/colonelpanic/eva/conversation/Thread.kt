@@ -20,8 +20,6 @@ data class Turn(
     val request: String,
     val status: TurnStatus,
     val createdAtMillis: Long,
-    /** The single side-effecting call this turn has claimed; persisted so a fresh leg cannot claim another. */
-    val sideEffectCallId: String? = null,
 )
 
 enum class NoticeKind { SESSION_STARTED, SESSION_ENDED, REHOMED, INTERRUPTED }

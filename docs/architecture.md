@@ -60,12 +60,21 @@ short background turn work when voice is absent. Android can interrupt backgroun
 work, so persistence supports recovery and explicit interrupted outcomes, not a
 promise of uninterrupted execution across process death.
 
-The current turn policy permits at most one side-effecting action and bounded
-read lookups (up to eight). Imported mutations after a tool result are refused,
-except Paseo actions on an explicitly delegated text leg. That leg may discover
-the workspace and agent before its one granted handoff action. Other
-search-then-mutate workflows may require separate requests. These are current
-execution limits, not the long-term product philosophy.
+A turn can run successive native or extension reads and mutations without another
+user message. Calls execute sequentially with a ceiling of 32 admitted calls,
+including at most 24 reads, per turn; the same budget follows a turn onto its
+background leg. Every call retains dispatcher validation, grants, and journaling.
+An unknown or failed mutation blocks further mutations in that turn because partial
+external effects may exist; read-only verification remains available. Process
+recovery marks interrupted work and never automatically repeats it. The legacy
+SQLite side-effect reservation column is retained for database compatibility but
+is no longer used for admission.
+
+Connections wait up to 15 seconds for local configuration, initial extension
+discovery, and grants before capturing their tool catalog. Managed Git startup
+makes the local checkout usable before remote synchronization; a slow network
+must not prevent assistant startup. A readiness timeout reports a connection
+error instead of silently opening with an incomplete catalog.
 
 ## Providers and audio
 
@@ -178,6 +187,32 @@ messages through Paseo's Android provider, and opens or prompts them through
 links. Native Paseo and general MCP adapters remain future work. They should
 register capabilities through the same execution boundary. Routine phone
 actions must not depend on a remote coding agent or on automating Paseo's Android UI.
+
+### Background execution and locked devices
+
+Granted native operations, HTTP requests, content reads, and installed-service
+calls do not require the main Activity. Intent handoffs prefer a resumed Activity,
+then a visible assistant session, then an application-context launch when EVA is
+the selected system assistant. The fallback sets `FLAG_ACTIVITY_NEW_TASK`; it
+relies on Android's assistant launch eligibility and does not grant that privilege
+to extension providers. Android and target-app restrictions still apply. A launch
+receipt is a handoff request, not verified target visibility or completion.
+
+Intent handoffs defer lock-screen launch eligibility to Android instead of
+blanket-blocking every intent while locked. A locked handoff explains that unlock
+may be needed to view or finish in the target app and does not claim completion.
+An explicit Android security rejection returns `NOT_EXECUTED` with unlock guidance;
+the secure hands-free screen offers Android's authentication UI. Unlocking does
+not repeat a previous action. Existing notification-message lock restrictions remain intact.
+A missing permission still requires device-local setup, while already-granted
+execution remains independent of Activity lifetime.
+
+Foreground-service start or promotion rejection reports the restriction rather
+than crashing or silently losing its service observer. Voice rejection ends the
+attachment and permits accepted work to continue in text; rejection of the
+background-work service interrupts the affected work. Voice and background work remain non-sticky; force-stop and process
+death do not trigger action replay. The assistant launch fallback and unlock UI
+require physical-device verification; JVM checks cannot establish OEM behavior.
 
 ## Messaging
 

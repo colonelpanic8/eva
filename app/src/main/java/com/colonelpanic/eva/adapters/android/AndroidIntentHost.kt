@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.adapters.android
 
+import android.app.KeyguardManager
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -7,6 +8,7 @@ import android.content.pm.PackageManager
 import androidx.activity.ComponentActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
+import com.colonelpanic.eva.assist.AssistantRole
 import com.colonelpanic.eva.capability.ExecutionOutcome
 import com.colonelpanic.eva.capability.InvocationStatus
 import kotlinx.coroutines.CancellableContinuation
@@ -27,6 +29,8 @@ fun interface AssistantLauncher {
 
 class AndroidIntentHost(
     private val context: Context,
+    private val backgroundAssistantAvailable: () -> Boolean = { AssistantRole.isEva(context) },
+    private val deviceLocked: () -> Boolean = { context.getSystemService(KeyguardManager::class.java).isDeviceLocked },
 ) {
     private var surface: WeakReference<ComponentActivity>? = null
     private var assistant: AssistantLauncher? = null
@@ -74,7 +78,7 @@ class AndroidIntentHost(
 
     suspend fun unavailableReason(): String? =
         withContext(Dispatchers.Main.immediate) {
-            if (starter() == null) "Open EVA before sending this request." else null
+            if (starter() == null) SURFACE_LOST else null
         }
 
     suspend fun permissionUnavailableReason(permission: String): String? =
@@ -95,7 +99,14 @@ class AndroidIntentHost(
             val start = starter() ?: return@withContext ExecutionOutcome(InvocationStatus.NOT_EXECUTED, SURFACE_LOST)
             try {
                 start(intent)
-                ExecutionOutcome(InvocationStatus.HANDED_OFF, successMessage)
+                ExecutionOutcome(
+                    InvocationStatus.HANDED_OFF,
+                    if (deviceLocked()) {
+                        "$successMessage The phone is locked; unlock to view or finish in the target app. Completion is not verified."
+                    } else {
+                        successMessage
+                    },
+                )
             } catch (_: ActivityNotFoundException) {
                 ExecutionOutcome(
                     if (intent.component !=
@@ -110,7 +121,10 @@ class AndroidIntentHost(
             } catch (_: IllegalStateException) {
                 ExecutionOutcome(InvocationStatus.NOT_EXECUTED, SURFACE_LOST)
             } catch (_: SecurityException) {
-                ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "Android did not allow this request to open.")
+                ExecutionOutcome(
+                    InvocationStatus.NOT_EXECUTED,
+                    if (deviceLocked()) UNLOCK_REQUIRED else "Android did not allow this request to open.",
+                )
             }
         }
 
@@ -119,10 +133,18 @@ class AndroidIntentHost(
     /** EVA's own screen when it has one, the assistant session when it does not. */
     private fun starter(): ((Intent) -> Unit)? {
         resumedSurface()?.let { activity -> return activity::startActivity }
-        return assistant?.let { launcher -> launcher::start }
+        assistant?.let { launcher -> return launcher::start }
+        if (backgroundAssistantAvailable()) {
+            return { intent -> context.startActivity(Intent(intent).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        }
+        return null
     }
 
     companion object {
-        const val SURFACE_LOST = "EVA lost the screen before the app could open. No app was opened. Try again."
+        const val SURFACE_LOST =
+            "This action opens another app. Invoke EVA through the system assistant " +
+                "or select EVA as the default assistant, then try again. Nothing was opened."
+        const val UNLOCK_REQUIRED =
+            "Android refused to open the target app while the phone was locked. Unlock and try again. Nothing was opened."
     }
 }

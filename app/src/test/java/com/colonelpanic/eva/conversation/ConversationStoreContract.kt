@@ -61,43 +61,6 @@ abstract class ConversationStoreContract {
         }
 
     @Test
-    fun `a turn reserves only one side effect and accepts its holder again`() =
-        fixture().use { fixture ->
-            runBlocking {
-                val thread = fixture.store.createThread("Reservation")
-                fixture.store.openTurn(thread.id, "Act", "turn")
-
-                assertTrue(fixture.store.reserveSideEffect("turn", "call-a"))
-                assertTrue(fixture.store.reserveSideEffect("turn", "call-a"))
-                assertFalse(fixture.store.reserveSideEffect("turn", "call-b"))
-                assertEquals(
-                    "call-a",
-                    fixture.store
-                        .turns(thread.id)
-                        .single()
-                        .sideEffectCallId,
-                )
-
-                fixture.store.openTurn(thread.id, "Race", "race")
-                val contenders =
-                    coroutineScope {
-                        listOf("call-x", "call-y")
-                            .map { callId ->
-                                async(Dispatchers.Default) { callId to fixture.store.reserveSideEffect("race", callId) }
-                            }.awaitAll()
-                    }
-                assertEquals(1, contenders.count { it.second })
-                assertEquals(
-                    contenders.single { it.second }.first,
-                    fixture.store
-                        .turns(thread.id)
-                        .last()
-                        .sideEffectCallId,
-                )
-            }
-        }
-
-    @Test
     fun `recovery interrupts only open turns and only once`() =
         fixture().use { fixture ->
             runBlocking {

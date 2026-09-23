@@ -1,0 +1,3 @@
+* Added: EVA can use lookup results and run multiple granted extension actions in one request, up to a bounded limit, while preserving action receipts and stopping further changes after an uncertain result.
+* Added: Assistant-launched intent handoffs can start from the background when Android permits, and actions that require an unlocked or foreground screen explain how to finish them.
+* ...see CHANGELOG.md for the rest.

@@ -51,7 +51,7 @@ class EvaConfigurationManager(
     private val beforeGrantRestore: () -> Unit = {},
     private val beforePackagePreferenceRestore: () -> Unit = {},
     private val beforeRollbackStep: (String) -> Unit = {},
-    private val beforeManagedConnect: () -> Unit = {},
+    private val beforeManagedConnect: suspend () -> Unit = {},
     private val availableMessagingReplies: () -> Set<String> = {
         app.notificationMessages.apps.value
             .map { it.identity }
@@ -72,6 +72,9 @@ class EvaConfigurationManager(
     private var desired: EvaConfiguration? = null
     private var managedGit: ManagedGitRepository? = null
     private var startup: Job? = null
+    private val localReady = kotlinx.coroutines.CompletableDeferred<Unit>()
+
+    suspend fun awaitReady() = localReady.await()
 
     @Volatile private var suppressChanges = false
 
@@ -90,12 +93,21 @@ class EvaConfigurationManager(
     fun start() {
         startup =
             scope.launch {
-                if (gitEnabled()) {
-                    connectGit(enableOnSuccess = false)
-                } else {
-                    prefs.getString(TREE, null)?.let { value -> runAction { linked.attach(SafConfigurationDirectory(app, value.toUri())) } }
+                try {
+                    if (gitEnabled()) {
+                        operations.withLock { connectGitLocked(enableOnSuccess = false, localOnly = true) }
+                    } else {
+                        prefs.getString(TREE, null)?.let { value ->
+                            runAction { linked.attach(SafConfigurationDirectory(app, value.toUri())) }
+                        }
+                    }
+                    adoptDefaults()
+                    localReady.complete(Unit)
+                } catch (failure: Throwable) {
+                    localReady.completeExceptionally(failure)
+                    throw failure
                 }
-                adoptDefaults()
+                if (gitEnabled()) connectGit(enableOnSuccess = false)
             }
     }
 
@@ -303,7 +315,10 @@ class EvaConfigurationManager(
 
     private suspend fun connectGit(enableOnSuccess: Boolean) = operations.withLock { connectGitLocked(enableOnSuccess) }
 
-    private suspend fun connectGitLocked(enableOnSuccess: Boolean): Boolean {
+    private suspend fun connectGitLocked(
+        enableOnSuccess: Boolean,
+        localOnly: Boolean = false,
+    ): Boolean {
         mutableStatus.value = bootstrapStatus(message = "Connecting managed Git checkout…", busy = true)
         val token = secrets.read(GIT_TOKEN)
         val previouslyEnabled = gitEnabled()
@@ -319,6 +334,7 @@ class EvaConfigurationManager(
                 localAttachment = linked.attach(repository.directory)
                 usable = true
             }
+            if (localOnly) return usable
             beforeManagedConnect()
             val gitResult = repository.connect()
             if (gitResult.condition == GitCondition.CONFLICT) {

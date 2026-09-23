@@ -201,6 +201,18 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun requestUnlock() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        getSystemService(KeyguardManager::class.java).requestDismissKeyguard(
+            this,
+            object : KeyguardManager.KeyguardDismissCallback() {
+                override fun onDismissSucceeded() {
+                    if (!isLocked()) surface = Launch.HANDS_FREE
+                }
+            },
+        )
+    }
+
     private fun isLocked(): Boolean = getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
 
     /** Answers the message a rejected value should show, or null once it is stored. */
@@ -430,6 +442,7 @@ class MainActivity : ComponentActivity() {
                 if (surface.locked) {
                     HandsFreeSurface(
                         state = state,
+                        onUnlock = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ::requestUnlock else null,
                         onStop = controller::disconnect,
                         onToggleMicrophone = controller::toggleMicrophone,
                         onTogglePlayback = controller::togglePlayback,

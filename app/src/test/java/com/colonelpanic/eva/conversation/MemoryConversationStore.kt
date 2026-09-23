@@ -85,32 +85,6 @@ class MemoryConversationStore : ConversationStore {
         changes.tryEmit(threadId)
     }
 
-    override suspend fun reserveSideEffect(
-        turnId: String,
-        callId: String,
-    ): Boolean {
-        val result =
-            mutex.withLock {
-                val current = checkNotNull(turnRecords[turnId]) { "Unknown turn: $turnId" }
-                when (current.sideEffectCallId) {
-                    null -> {
-                        turnRecords[turnId] = current.copy(sideEffectCallId = callId)
-                        ReservationResult(true, current.threadId, true)
-                    }
-
-                    callId -> {
-                        ReservationResult(true, current.threadId, false)
-                    }
-
-                    else -> {
-                        ReservationResult(false, current.threadId, false)
-                    }
-                }
-            }
-        if (result.changed) changes.tryEmit(result.threadId)
-        return result.reserved
-    }
-
     override suspend fun append(item: ThreadItem) {
         mutex.withLock {
             check(item.threadId in threadRecords) { "Unknown thread: ${item.threadId}" }
@@ -145,12 +119,6 @@ class MemoryConversationStore : ConversationStore {
             thread.updatedAtMillis + 1,
             threadRecords.values.maxOf(Thread::updatedAtMillis) + 1,
         )
-
-    private data class ReservationResult(
-        val reserved: Boolean,
-        val threadId: String,
-        val changed: Boolean,
-    )
 
     companion object {
         private const val CHANGE_BUFFER_CAPACITY = 64

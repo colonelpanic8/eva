@@ -113,6 +113,7 @@ class ThreadControllerTest {
         voiceKeywords: suspend () -> List<String> = { emptyList() },
         hiddenCapabilities: () -> Set<String> = { emptySet() },
         prompt: suspend () -> PromptConfig = { PromptDefaults.config },
+        awaitCapabilities: suspend () -> Unit = {},
     ) = ThreadController(
         registry = registry,
         dispatcher = CapabilityDispatcher(registry, repository),
@@ -124,6 +125,7 @@ class ThreadControllerTest {
         voiceProviderFactory = { _, _ -> voiceProvider },
         backgroundProviderFactory = { background },
         voiceKeywords = voiceKeywords,
+        awaitCapabilities = awaitCapabilities,
         hiddenCapabilities = hiddenCapabilities,
         prompt = prompt,
         onBackgroundAnswer = { answers += it },
@@ -181,7 +183,7 @@ class ThreadControllerTest {
         }
 
     @Test
-    fun `imported mutation after a lookup is refused without running its backend`() =
+    fun `imported mutations can follow reads and earlier mutations in one request`() =
         runTest {
             val imported = action.copy(source = CapabilitySource("plugin:test", "Test plugin"))
             registry.replace(
@@ -202,14 +204,10 @@ class ThreadControllerTest {
             advanceUntilIdle()
             provider.call("write", imported.id, "place" to "Park")
             advanceUntilIdle()
-            assertEquals(1, executions)
-            assertEquals("NOT_EXECUTED", provider.results.last().status)
-            assertTrue(
-                provider.results
-                    .last()
-                    .message
-                    .contains("separate user request"),
-            )
+            provider.call("write-again", imported.id, "place" to "Beach")
+            advanceUntilIdle()
+            assertEquals(3, executions)
+            assertEquals(listOf("COMPLETED", "COMPLETED", "COMPLETED"), provider.results.map { it.status })
         }
 
     @Test
@@ -257,7 +255,7 @@ class ThreadControllerTest {
         }
 
     @Test
-    fun `a second side-effecting call in a turn is rejected but lookups may repeat`() =
+    fun `multiple side effects and lookups run in one request`() =
         runTest {
             val provider = FakeProvider()
             val controller = controller(provider)
@@ -271,12 +269,134 @@ class ThreadControllerTest {
             provider.call("look-1", lookup.id, "query" to "a")
             provider.call("look-2", lookup.id, "query" to "b")
             advanceUntilIdle()
-            assertEquals(3, executions)
+            assertEquals(4, executions)
             assertEquals(
-                mapOf("first" to "HANDED_OFF", "second" to "NOT_EXECUTED", "look-1" to "COMPLETED", "look-2" to "COMPLETED"),
+                mapOf("first" to "HANDED_OFF", "second" to "HANDED_OFF", "look-1" to "COMPLETED", "look-2" to "COMPLETED"),
                 provider.results.associate { it.call.callId to it.status },
             )
-            assertEquals("One phone action is permitted per request.", provider.results.first { it.call.callId == "second" }.message)
+        }
+
+    @Test
+    fun `uncertain mutations block queued changes but permit verification reads across rehoming`() =
+        runTest {
+            val gate = CompletableDeferred<Unit>()
+            registry.replace(
+                mapOf(
+                    action.id to
+                        object : ExecutionBackend {
+                            override suspend fun unavailableReason(): String? = null
+
+                            override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome {
+                                executions++
+                                gate.await()
+                                return ExecutionOutcome(InvocationStatus.UNKNOWN, "Reply lost")
+                            }
+                        },
+                    lookup.id to backend { ExecutionOutcome(InvocationStatus.COMPLETED, "Checked") },
+                ),
+                listOf(action, lookup),
+            )
+            val provider = FakeProvider()
+            val background = FakeProvider(epoch = "background")
+            val controller = controller(provider, background = background)
+            advanceUntilIdle()
+            controller.connect("test")
+            advanceUntilIdle()
+            controller.submit("Change two things")
+            advanceUntilIdle()
+            val turn = latestTurn(controller)
+            provider.call("first", action.id, "place" to "Park")
+            provider.call("second", action.id, "place" to "Beach")
+            runCurrent()
+            assertEquals(1, executions)
+            gate.complete(Unit)
+            advanceUntilIdle()
+            assertEquals(listOf("UNKNOWN", "NOT_EXECUTED"), provider.results.map { it.status })
+            controller.disconnect()
+            advanceUntilIdle()
+            background.input = ConversationInput(turn, "")
+            background.call("retry", action.id, "place" to "Park")
+            background.call("verify", lookup.id, "query" to "Park")
+            advanceUntilIdle()
+            assertEquals(listOf("NOT_EXECUTED", "COMPLETED"), background.results.map { it.status })
+            assertEquals(2, executions)
+        }
+
+    @Test
+    fun `the total action budget survives rehoming`() =
+        runTest {
+            val provider = FakeProvider()
+            val background = FakeProvider(epoch = "background")
+            val controller = controller(provider, background = background)
+            advanceUntilIdle()
+            controller.connect("test")
+            advanceUntilIdle()
+            controller.submit("Do several things")
+            advanceUntilIdle()
+            val turn = latestTurn(controller)
+            repeat(ThreadController.CALLS_PER_TURN) { provider.call("action-$it", action.id, "place" to "Place $it") }
+            advanceUntilIdle()
+            assertEquals(ThreadController.CALLS_PER_TURN, executions)
+            controller.disconnect()
+            advanceUntilIdle()
+            background.input = ConversationInput(turn, "")
+            background.call("extra", action.id, "place" to "Another")
+            advanceUntilIdle()
+            assertEquals(ThreadController.CALLS_PER_TURN, executions)
+            assertEquals("NOT_EXECUTED", background.results.single().status)
+        }
+
+    @Test
+    fun `connection waits for capabilities before capturing its catalog`() =
+        runTest {
+            val ready = CompletableDeferred<Unit>()
+            val provider = FakeProvider()
+            val controller = controller(provider, awaitCapabilities = { ready.await() })
+            advanceUntilIdle()
+            controller.connect("test")
+            runCurrent()
+            val extra = action.copy(id = "extension.loaded")
+            registry.replace(mapOf(extra.id to backend { ExecutionOutcome(InvocationStatus.COMPLETED, "done") }), listOf(extra))
+            ready.complete(Unit)
+            advanceUntilIdle()
+            assertEquals(
+                listOf(extra.id),
+                provider.request.catalog.tools
+                    .map { it.capabilityId },
+            )
+        }
+
+    @Test
+    fun `voice service rejection preserves accepted work for text continuation`() =
+        runTest {
+            val provider = FakeProvider()
+            val background = FakeProvider(epoch = "background")
+            val controller = controller(provider, background = background)
+            advanceUntilIdle()
+            controller.connect("test")
+            advanceUntilIdle()
+            controller.submit("Do something")
+            advanceUntilIdle()
+            controller.voiceUnavailable("Android refused microphone foreground access")
+            advanceUntilIdle()
+            assertEquals("Android refused microphone foreground access", controller.state.value.providerMessage)
+            assertEquals(ProviderStatus.DISCONNECTED, controller.state.value.providerStatus)
+            assertEquals(TurnStatus.OPEN, store.turns(store.threads().single().id).single().status)
+            assertEquals(listOf(latestTurn(controller)), background.responseRequests)
+            assertEquals(0, executions)
+        }
+
+    @Test
+    fun `readiness failure disconnects with an actionable error`() =
+        runTest {
+            val provider = FakeProvider()
+            val controller = controller(provider, awaitCapabilities = { error("Extensions are still loading") })
+            advanceUntilIdle()
+            controller.connect("test")
+            advanceUntilIdle()
+            assertEquals(ProviderStatus.DISCONNECTED, controller.state.value.providerStatus)
+            assertEquals("Extensions are still loading", controller.state.value.providerMessage)
+            assertEquals(0, executions)
         }
 
     @Test
@@ -472,7 +592,7 @@ class ThreadControllerTest {
         }
 
     @Test
-    fun `the side-effect claim survives re-homing`() =
+    fun `a request can continue acting after re-homing`() =
         runTest {
             val provider = FakeProvider()
             val background = FakeProvider(epoch = "background")
@@ -490,8 +610,8 @@ class ThreadControllerTest {
             background.input = ConversationInput(turn, "")
             background.call("second", action.id, "place" to "Beach")
             advanceUntilIdle()
-            assertEquals(1, executions)
-            assertEquals("One phone action is permitted per request.", background.results.single().message)
+            assertEquals(2, executions)
+            assertEquals("HANDED_OFF", background.results.single().status)
         }
 
     @Test

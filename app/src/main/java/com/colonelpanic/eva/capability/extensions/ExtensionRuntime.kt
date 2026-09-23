@@ -2,6 +2,7 @@ package com.colonelpanic.eva.capability.extensions
 
 import com.colonelpanic.eva.capability.CapabilityRegistry
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,6 +34,7 @@ class ExtensionRuntime(
     private val onChanged: () -> Unit = {},
     private val onGrantChanged: (String) -> Unit = {},
 ) {
+    private val initialized = CompletableDeferred<Unit>()
     private val bundled = registry.snapshot
     private val updates = Mutex()
     private val mutable = MutableStateFlow(ExtensionSettings())
@@ -44,10 +46,13 @@ class ExtensionRuntime(
             adapter.ready.first { it }
             adapter.installed.collect {
                 update { grants.reconcile(adapter.installed.value) }
+                initialized.complete(Unit)
             }
         }
         adapter.refresh()
     }
+
+    suspend fun awaitReady() = initialized.await()
 
     fun refresh() = adapter.refresh()
 

@@ -12,6 +12,7 @@ import com.colonelpanic.eva.capability.InteractionMode
 import com.colonelpanic.eva.capability.extensions.ExtensionGrant
 import com.colonelpanic.eva.capability.extensions.PackageIdentity
 import com.colonelpanic.eva.conversation.prompt.PromptComponent
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
@@ -190,9 +191,20 @@ class EvaConfigurationManagerTest {
                 .putString("git.author.email", "eva@localhost")
                 .putString("git.username", "git")
                 .commit()
-            val manager = EvaConfigurationManager(app, beforeManagedConnect = { error("offline") })
+            val network = CompletableDeferred<Unit>()
+            val manager =
+                EvaConfigurationManager(app, beforeManagedConnect = {
+                    network.await()
+                    error("offline")
+                })
 
             manager.start()
+            try {
+                withTimeout(10_000) { manager.awaitReady() }
+                assertEquals(expected.appearance.dynamicColor, app.appearance.dynamicColor)
+            } finally {
+                network.complete(Unit)
+            }
             val failed = withTimeout(10_000) { manager.status.first { it.isError } }
 
             assertTrue(failed.gitEnabled)

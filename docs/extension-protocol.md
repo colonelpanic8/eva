@@ -485,9 +485,9 @@ it reads one agent or recent messages across a workspace's active agents and
 returns a notice row when the transcript is unavailable. The provider rejects
 SQL filtering and enforces its own EVA package-family caller check. Its debug
 authority `sh.paseo.debug.assistant` is outside this shared package and EVA's
-explicit visibility entries. An explicitly delegated text leg may read Paseo's
-catalog and then perform one granted Paseo handoff in the same turn. Other
-read-then-handoff flows follow the separate-request policy described below.
+explicit visibility entries. Voice and text legs may read Paseo's catalog and
+then perform granted handoffs in the same turn, under the common multi-action
+budget described below.
 This provider and package combination
 has JVM verification; device verification remains pending.
 
@@ -1006,11 +1006,14 @@ then bundled tools, then extensions sorted by fully qualified capability ID.
 Overflow remains discovered and is shown unavailable with an explanation; it
 never silently evicts bundled tools or crashes the conversation.
 
-**Bounded reads, one mutation per request.** `ThreadController` allows bounded
-read chaining, but imported mutations proposed after a tool result are refused.
-Search then complete therefore requires separate user requests in v1. Enabling
-an extension does not authorize autonomous follow-up mutations. No in-turn/spoken
-confirmation or pending approval tokens are implemented.
+**Bounded multi-action requests.** `ThreadController` admits up to 32 calls per
+turn, including at most 24 reads, and executes them sequentially. Reads and
+mutations may follow earlier tool results without another user message. This
+applies to native and imported tools, including background continuation. Existing
+grants and dispatcher authorization still apply separately to every call. Unknown
+or failed mutations block further mutations in the same turn; read-only checks
+remain available. No automatic retry, in-turn grant approval, or persistent
+provider idempotency guarantee is introduced.
 
 Dispatched operations are journaled independently of result delivery, text and
 structured data alike. Removal or conversation close does not undo external work.

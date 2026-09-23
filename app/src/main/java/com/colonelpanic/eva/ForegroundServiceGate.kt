@@ -18,6 +18,25 @@ class ForegroundServiceGate {
         stopWanted = false
     }
 
+    fun requestStart(start: () -> Unit): Boolean {
+        starting()
+        return try {
+            start()
+            true
+        } catch (_: SecurityException) {
+            startRejected()
+            false
+        } catch (_: IllegalStateException) {
+            startRejected()
+            false
+        }
+    }
+
+    @Synchronized
+    fun startRejected() {
+        if (pendingStarts > 0) pendingStarts--
+    }
+
     /** True when `stopService` is safe now; false leaves the stop for [foregrounded] to apply. */
     @Synchronized
     fun stopping(): Boolean {

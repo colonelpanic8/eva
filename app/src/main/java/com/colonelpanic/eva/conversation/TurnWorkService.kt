@@ -46,16 +46,30 @@ class TurnWorkService : Service() {
                 .setContentIntent(WorkNotifications.open(this, null))
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .build()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SHORT_SERVICE)
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SHORT_SERVICE)
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (_: SecurityException) {
+            foregroundRejected()
+            return START_NOT_STICKY
+        } catch (_: IllegalStateException) {
+            foregroundRejected()
+            return START_NOT_STICKY
         }
         if (gate.foregrounded()) {
             ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
         return START_NOT_STICKY
+    }
+
+    private fun foregroundRejected() {
+        gate.startRejected()
+        (application as? TurnWorkHost)?.interruptWork(START_DENIED)
+        stopSelf()
     }
 
     override fun onDestroy() {
@@ -70,12 +84,14 @@ class TurnWorkService : Service() {
     }
 
     companion object {
+        private const val START_DENIED = "Android did not allow EVA to continue this request in the background."
         private const val NOTIFICATION_ID = 42
         private val gate = ForegroundServiceGate()
 
         fun start(context: Context) {
-            gate.starting()
-            ContextCompat.startForegroundService(context, Intent(context, TurnWorkService::class.java))
+            if (!gate.requestStart { ContextCompat.startForegroundService(context, Intent(context, TurnWorkService::class.java)) }) {
+                (context.applicationContext as? TurnWorkHost)?.interruptWork(START_DENIED)
+            }
         }
 
         fun stop(context: Context) {

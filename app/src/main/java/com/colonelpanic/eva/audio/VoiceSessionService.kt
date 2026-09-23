@@ -64,7 +64,15 @@ class VoiceSessionService : Service() {
             }
 
             else -> {
-                startInForeground()
+                try {
+                    startInForeground()
+                } catch (_: SecurityException) {
+                    foregroundRejected()
+                    return START_NOT_STICKY
+                } catch (_: IllegalStateException) {
+                    foregroundRejected()
+                    return START_NOT_STICKY
+                }
                 if (gate.foregrounded()) {
                     ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
                     stopSelf()
@@ -72,6 +80,12 @@ class VoiceSessionService : Service() {
             }
         }
         return START_NOT_STICKY
+    }
+
+    private fun foregroundRejected() {
+        gate.startRejected()
+        host?.voiceUnavailable(START_DENIED)
+        stopSelf()
     }
 
     override fun onDestroy() {
@@ -159,6 +173,7 @@ class VoiceSessionService : Service() {
     }
 
     companion object {
+        private const val START_DENIED = "Android could not keep voice active. Invoke EVA through the system assistant and try again."
         private const val CHANNEL = "eva.voice"
         private const val NOTIFICATION_ID = 41
         private const val ACTION_TOGGLE_MICROPHONE = "com.colonelpanic.eva.audio.TOGGLE_MICROPHONE"
@@ -167,8 +182,9 @@ class VoiceSessionService : Service() {
         private val gate = ForegroundServiceGate()
 
         fun start(context: Context) {
-            gate.starting()
-            ContextCompat.startForegroundService(context, Intent(context, VoiceSessionService::class.java))
+            if (!gate.requestStart { ContextCompat.startForegroundService(context, Intent(context, VoiceSessionService::class.java)) }) {
+                (context.applicationContext as? VoiceSessionHost)?.voiceUnavailable(START_DENIED)
+            }
         }
 
         fun stop(context: Context) {

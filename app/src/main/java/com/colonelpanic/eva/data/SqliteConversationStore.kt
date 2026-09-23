@@ -120,40 +120,6 @@ class SqliteConversationStore(
         changes.tryEmit(threadId)
     }
 
-    override suspend fun reserveSideEffect(
-        turnId: String,
-        callId: String,
-    ): Boolean {
-        val result =
-            withContext(Dispatchers.IO) {
-                transaction { db ->
-                    val current = db.turnReservation(turnId)
-                    when {
-                        current.callId == callId -> {
-                            ReservationResult(true, current.threadId, false)
-                        }
-
-                        current.callId != null -> {
-                            ReservationResult(false, current.threadId, false)
-                        }
-
-                        else -> {
-                            val updated =
-                                db.update(
-                                    "turns",
-                                    ContentValues().apply { put("side_effect_call_id", callId) },
-                                    "id = ? AND side_effect_call_id IS NULL",
-                                    arrayOf(turnId),
-                                )
-                            ReservationResult(updated == 1, current.threadId, updated == 1)
-                        }
-                    }
-                }
-            }
-        if (result.changed) changes.tryEmit(result.threadId)
-        return result.reserved
-    }
-
     override suspend fun append(item: ThreadItem) {
         withContext(Dispatchers.IO) {
             transaction { db ->
@@ -230,7 +196,6 @@ class SqliteConversationStore(
             put("request", request)
             put("status", status.name)
             put("created_at", createdAtMillis)
-            put("side_effect_call_id", sideEffectCallId)
         }
 
     private fun ThreadItem.values() =
@@ -284,7 +249,6 @@ class SqliteConversationStore(
             request = string("request"),
             status = TurnStatus.valueOf(string("status")),
             createdAtMillis = long("created_at"),
-            sideEffectCallId = nullableString("side_effect_call_id"),
         )
 
     private fun Cursor.item(): ThreadItem {
@@ -330,12 +294,6 @@ class SqliteConversationStore(
             cursor.getString(0)
         }
 
-    private fun SQLiteDatabase.turnReservation(turnId: String): TurnReservation =
-        query("turns", arrayOf("thread_id", "side_effect_call_id"), "id = ?", arrayOf(turnId), null, null, null).use { cursor ->
-            check(cursor.moveToFirst()) { "Unknown turn: $turnId" }
-            TurnReservation(cursor.getString(0), if (cursor.isNull(1)) null else cursor.getString(1))
-        }
-
     private fun SQLiteDatabase.latestUpdatedAt() =
         rawQuery("SELECT MAX(updated_at) FROM threads", null).use { cursor ->
             cursor.moveToFirst()
@@ -349,17 +307,6 @@ class SqliteConversationStore(
     private fun Cursor.long(column: String) = getLong(getColumnIndexOrThrow(column))
 
     private fun Cursor.boolean(column: String) = getInt(getColumnIndexOrThrow(column)) != 0
-
-    private data class TurnReservation(
-        val threadId: String,
-        val callId: String?,
-    )
-
-    private data class ReservationResult(
-        val reserved: Boolean,
-        val threadId: String,
-        val changed: Boolean,
-    )
 
     companion object {
         private const val CHANGE_BUFFER_CAPACITY = 64

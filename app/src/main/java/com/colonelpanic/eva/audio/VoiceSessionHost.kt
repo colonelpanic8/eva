@@ -17,6 +17,8 @@ interface VoiceSessionHost {
 
     fun toggleVoiceMicrophone()
 
+    fun voiceUnavailable(reason: String)
+
     fun endVoiceSession()
 }
 

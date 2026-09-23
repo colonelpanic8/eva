@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -30,6 +31,7 @@ fun HandsFreeSurface(
     onToggleMicrophone: () -> Unit,
     onTogglePlayback: () -> Unit,
     modifier: Modifier = Modifier,
+    onUnlock: (() -> Unit)? = null,
 ) {
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
         Column(
@@ -42,6 +44,9 @@ fun HandsFreeSurface(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            onUnlock?.let { unlock ->
+                Button(onClick = unlock) { Text("Unlock phone") }
+            }
             VoiceControls(
                 state = state.mediaState,
                 controls = state.mediaControls,

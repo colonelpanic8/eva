@@ -73,4 +73,21 @@ class ForegroundServiceGateTest {
         gate.starting()
         assertFalse(gate.foregrounded())
     }
+
+    @Test
+    fun `rejected start does not strand a later foreground stop`() {
+        assertFalse(gate.requestStart { throw SecurityException("Permission revoked") })
+        assertFalse(gate.requestStart { throw IllegalStateException("Background start denied") })
+        assertTrue(gate.requestStart {})
+        assertFalse(gate.foregrounded())
+        assertTrue(gate.stopping())
+    }
+
+    @Test
+    fun `rejected overlapping start preserves the accepted start`() {
+        assertTrue(gate.requestStart {})
+        assertFalse(gate.requestStart { throw IllegalStateException("Denied") })
+        assertFalse(gate.stopping())
+        assertTrue(gate.foregrounded())
+    }
 }

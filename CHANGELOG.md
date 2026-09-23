@@ -4,6 +4,18 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-09-23
+
+### Added
+
+- EVA can use lookup results and run multiple granted extension actions in one request, up to a bounded limit, while preserving action receipts and stopping further changes after an uncertain result.
+- Assistant-launched intent handoffs can start from the background when Android permits, and actions that require an unlocked or foreground screen explain how to finish them.
+
+### Fixed
+
+- Local configuration, extension grants, and installed providers finish loading before a background turn offers actions. A denied foreground-service start reports a recoverable result instead of silently losing the turn.
+- Extension guidance no longer tells the model to ask for another turn after a lookup solely because the next action changes something.
+
 ## [0.29.0] - 2026-09-22
 
 ### Added

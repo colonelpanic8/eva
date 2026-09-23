@@ -7,6 +7,7 @@ import com.colonelpanic.eva.capability.ExecutionOutcome
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.MemoryInvocationRepository
 import com.colonelpanic.eva.capability.ToolProposal
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -225,9 +226,12 @@ class ExtensionGrantsTest {
                     ExtensionGrants(MemoryGrantPersistence()),
                     backgroundScope,
                 )
+            val ready = backgroundScope.async { runtime.awaitReady() }
             runCurrent()
+            assertFalse(ready.isCompleted)
             advanceTimeBy(251)
             runCurrent()
+            assertTrue(ready.isCompleted)
             assertTrue(registry.catalog.isEmpty())
             assertFalse(
                 runtime.settings.value.entries

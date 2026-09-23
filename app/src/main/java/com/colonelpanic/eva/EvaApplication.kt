@@ -152,6 +152,8 @@ class EvaApplication :
 
     override fun toggleVoiceMicrophone() = controller.toggleMicrophone()
 
+    override fun voiceUnavailable(reason: String) = controller.voiceUnavailable(reason)
+
     override fun endVoiceSession() = controller.disconnect()
 
     override fun interruptWork(reason: String) = controller.interruptAll(reason)
@@ -529,6 +531,15 @@ class EvaApplication :
             },
             repository = repository,
             scope = scope,
+            awaitCapabilities = {
+                check(
+                    kotlinx.coroutines.withTimeoutOrNull(15_000) {
+                        configuration.awaitReady()
+                        extensions.awaitReady()
+                        true
+                    } == true,
+                ) { "EVA is still loading configuration and extensions. Try connecting again shortly." }
+            },
             voiceLookupRetries = { settings.voiceLookupRetries },
             quietHangUpMillis = { settings.quietHangUpSeconds * 1_000L },
             wording = { prompts.wording.value },
