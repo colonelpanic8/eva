@@ -4,6 +4,8 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.26.1] - 2026-09-22
+
 ### Changed
 
 - A one-request call counts the whole request, including clarifying questions, choices, and confirmations, instead of ending after the first reply that sounds finished. The stock wording is upgraded unless you edited it.
