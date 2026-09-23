@@ -1073,7 +1073,7 @@ only those two fields are required. The envelope status follows the state:
 | `accepted`, `submitted`, `waiting_for_host` | `handed_off` | Durably accepted by the provider or its server; the provider continues it without EVA; completion not yet observed. `pollable: true` names a status read. |
 | `uncertain` | `unknown` | May have run. Never retried; the user checks. |
 | `failed` | `failed` | Definite failure after submission; partial effects are explained. |
-| `not_sent`, `rejected`, `expired`, `request_id_conflict`, `invalid_request` | `not_executed` | Provably nothing took effect: never sent, refused by the server, or invalid; `invalid_arguments`, `deadline_exceeded`, or a null reason. |
+| `not_sent`, `not_started`, `rejected`, `expired`, `request_id_conflict`, `invalid_request`, `unknown_request` | `not_executed` | Provably nothing took effect: never sent, refused before dispatch, expired, or invalid; `invalid_arguments`, `deadline_exceeded`, or a null reason. |
 | `needs_unlock`, `needs_authorization`, `needs_configuration`, `needs_host_update` | `not_executed` / `not_configured` | Nothing started; the message says what the user must do. |
 
 A provider replies no later than about 1.5 seconds before the absolute deadline.
@@ -1099,9 +1099,9 @@ moves credentials into device-protected storage.
 
 | State | Expected behavior | Evidence |
 | --- | --- | --- |
-| Locked after first unlock, provider warm or evicted | Bind cold-starts the provider; reads and writes run; no tap | Source and JVM only |
+| Locked after first unlock, provider warm or evicted | Bind cold-starts the provider; reads and writes run; no tap | API 36 emulator: Mova describe and execute from EVA's UID with the keyguard showing and no Mova process, about 0.5 s to bind (not logged in, so no server write) |
 | Before first unlock after reboot | EVA and providers do not run; credential-encrypted storage is unavailable until first unlock ([Direct Boot](https://developer.android.com/privacy-and-security/direct-boot)) | Platform documentation |
-| Provider force-stopped | Android 15 keeps a stopped app stopped until user action ([stopped state](https://developer.android.com/about/versions/15/behavior-changes-all#stopped-state)); a failed bind is `not_executed`, nothing submitted | Binding behavior unverified |
+| Provider force-stopped or never launched | Android 15 says apps leave the stopped state only through user action ([stopped state](https://developer.android.com/about/versions/15/behavior-changes-all#stopped-state)); a failed bind is `not_executed`, nothing submitted | API 36 emulator: binding a force-stopped and a never-launched Mova succeeded while locked and cleared `stopped`; the caller was an instrumented EVA process, and OEM builds may differ |
 | Offline before submission | `not_executed`, or `handed_off`/`waiting_for_host` if the provider durably continues | Provider tests |
 | Lost reply after submission | `unknown`; a status read may later show the outcome | Provider tests |
 | Keystore key requiring an unlocked device | `not_executed/not_configured` with `needs_unlock` | Neither current provider uses such a key |
