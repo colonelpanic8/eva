@@ -827,7 +827,7 @@ class ThreadController(
                                     "This action was not offered in this connection. Nothing was executed."
                                 }
 
-                                !definition.readOnly && mutationUncertain -> {
+                                !definition.readOnly && !definition.bookkeeping && mutationUncertain -> {
                                     "A previous action may have changed external state. " +
                                         "Verify its outcome before requesting more changes. Nothing was executed."
                                 }
@@ -863,12 +863,13 @@ class ThreadController(
                         )
                         try {
                             val result = dispatcher.execute(proposal, rejection ?: argumentError)
-                            if (definition?.readOnly == false &&
+                            val changesPhone = definition?.readOnly == false && !definition.bookkeeping
+                            if (changesPhone &&
                                 (result.status == InvocationStatus.COMPLETED || result.status == InvocationStatus.HANDED_OFF)
                             ) {
                                 actionServiced = true
                             }
-                            if (definition?.readOnly == false &&
+                            if (changesPhone &&
                                 result.status in setOf(InvocationStatus.UNKNOWN, InvocationStatus.FAILED)
                             ) {
                                 mutationUncertain = true

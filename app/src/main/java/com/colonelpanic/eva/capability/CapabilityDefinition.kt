@@ -21,7 +21,33 @@ data class CapabilityDefinition(
     /** How the source's tools fit together, told to the model while any of them is offered. */
     val guidance: String? = null,
     val validateOperation: (Map<String, String>) -> String? = { null },
+    /**
+     * A write to EVA's own records made without being asked: it does not serve the request, and
+     * failing does not leave the phone's state in doubt.
+     */
+    val bookkeeping: Boolean = false,
 )
+
+/** A tool EVA defines itself; what it says to the model comes from [Wording]. */
+internal fun tool(
+    id: String,
+    title: String,
+    inputSchema: JsonObject,
+    readOnly: Boolean = false,
+    bookkeeping: Boolean = false,
+    validateOperation: (Map<String, String>) -> String? = { null },
+): CapabilityDefinition {
+    val text = Wording.bundled.tools[id]
+    return CapabilityDefinition(
+        id,
+        title,
+        text?.description.orEmpty(),
+        Wording.withParameters(inputSchema, text?.parameters.orEmpty()),
+        readOnly,
+        validateOperation = validateOperation,
+        bookkeeping = bookkeeping,
+    )
+}
 
 object BundledCapabilities {
     private val messageSchema =
@@ -278,26 +304,7 @@ object BundledCapabilities {
                     null
                 }
             },
-        )
-
-    /** A tool EVA defines itself; what it says to the model comes from [Wording]. */
-    private fun tool(
-        id: String,
-        title: String,
-        inputSchema: JsonObject,
-        readOnly: Boolean = false,
-        validateOperation: (Map<String, String>) -> String? = { null },
-    ): CapabilityDefinition {
-        val text = Wording.bundled.tools[id]
-        return CapabilityDefinition(
-            id,
-            title,
-            text?.description.orEmpty(),
-            Wording.withParameters(inputSchema, text?.parameters.orEmpty()),
-            readOnly,
-            validateOperation = validateOperation,
-        )
-    }
+        ) + MemoryCapabilities.definitions
 
     private fun List<String>.quoted() = joinToString(",", "[", "]") { "\"$it\"" }
 

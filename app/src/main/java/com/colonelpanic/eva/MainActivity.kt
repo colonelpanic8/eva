@@ -9,12 +9,14 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.speech.RecognizerIntent
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -215,6 +217,14 @@ class MainActivity : ComponentActivity() {
 
     private fun isLocked(): Boolean = getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
 
+    private fun editMemory(edit: suspend () -> Unit) {
+        lifecycleScope.launch {
+            runCatching { edit() }.onFailure {
+                Toast.makeText(this@MainActivity, it.message ?: "EVA could not update its memory.", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     /** Answers the message a rejected value should show, or null once it is stored. */
     private fun save(action: () -> Unit): String? =
         runCatching(action).exceptionOrNull()?.let {
@@ -239,6 +249,8 @@ class MainActivity : ComponentActivity() {
         val messaging by eva.messagingSettings.state.collectAsStateWithLifecycle()
         val messagingApps by eva.notificationMessages.apps.collectAsStateWithLifecycle()
         val rememberedNumbers by eva.chosenNumbers.count.collectAsStateWithLifecycle()
+        val memories by eva.memories.state.collectAsStateWithLifecycle()
+        LaunchedEffect(Unit) { runCatching { eva.memories.load() } }
         val screenControl by eva.capabilities.screenControlFlow.collectAsStateWithLifecycle()
         val extensions by eva.extensions.settings.collectAsStateWithLifecycle()
         val plugins by eva.pluginBrowser.state.collectAsStateWithLifecycle()
@@ -254,6 +266,7 @@ class MainActivity : ComponentActivity() {
             messagingApps = messagingApps,
             messagingPermissions = messagingPermissions,
             rememberedNumbers = rememberedNumbers,
+            memories = memories,
             plugins = plugins,
             extensions = extensions,
             packages = packages,
@@ -409,6 +422,8 @@ class MainActivity : ComponentActivity() {
                 },
                 onMessagingRefresh = EvaNotificationListener::refreshMessages,
                 onForgetRememberedNumbers = { lifecycleScope.launch { eva.chosenNumbers.forget() } },
+                onKeepMemory = { name -> editMemory { eva.memories.keep(name) } },
+                onForgetMemory = { name -> editMemory { eva.memories.forget(name) } },
                 onOpenAppSettings = ::openAppSettings,
                 onOpenMediaControlSettings = ::openMediaControlSettings,
                 onScreenControlChange = eva.capabilities::saveScreenControl,

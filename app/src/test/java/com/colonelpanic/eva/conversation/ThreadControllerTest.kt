@@ -932,19 +932,30 @@ class ThreadControllerTest {
     @Test
     fun `a one-request call hangs up when the line goes quiet after its action is reported`() =
         runTest {
+            val note = action.copy(id = "test.note", title = "Note", bookkeeping = true)
+            val withNote =
+                CapabilityRegistry(
+                    mapOf(
+                        action.id to backend { ExecutionOutcome(InvocationStatus.HANDED_OFF, "Opened") },
+                        note.id to backend { ExecutionOutcome(InvocationStatus.COMPLETED, "Noted") },
+                    ),
+                    listOf(action, note),
+                )
+
             suspend fun TestScope.actOnce(
                 callMode: VoiceCallMode,
                 userKeepsGoing: Boolean = false,
+                capability: String = action.id,
             ): VoiceMedia {
                 val provider = FakeProvider()
                 val media = VoiceMedia()
-                val controller = controller(provider, media = { media })
+                val controller = controller(provider, registry = withNote, media = { media })
                 advanceUntilIdle()
                 controller.connectVoice("test", callMode = callMode)
                 advanceUntilIdle()
                 provider.input = ConversationInput("voice:turn-1", "")
                 provider.channel.send(ProviderEvent.ResponseStarted("voice:turn-1", "voice:turn-1"))
-                provider.call("first", action.id, "place" to "Park")
+                provider.call("first:$capability", capability, "place" to "Park")
                 advanceUntilIdle()
                 provider.channel.send(ProviderEvent.AssistantSpeaking(true))
                 provider.channel.send(ProviderEvent.AssistantText("voice:turn-1", "Opened the park.", false))
@@ -965,6 +976,8 @@ class ThreadControllerTest {
             // A request can take several exchanges; speaking again keeps the call.
             assertFalse(actOnce(VoiceCallMode.ONE_REQUEST, userKeepsGoing = true).closed)
             assertFalse(actOnce(VoiceCallMode.OPEN_CONVERSATION).closed)
+            // A note EVA made for itself is not the request being served.
+            assertFalse(actOnce(VoiceCallMode.ONE_REQUEST, capability = note.id).closed)
         }
 
     @Test

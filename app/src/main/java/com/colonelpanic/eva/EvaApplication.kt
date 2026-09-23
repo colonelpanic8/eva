@@ -228,9 +228,18 @@ class EvaApplication :
         )
     }
 
+    val memories by lazy {
+        com.colonelpanic.eva.data
+            .MemoryStore(this)
+    }
+
     val registry by lazy {
         CapabilityRegistry(
             buildMap {
+                putAll(
+                    com.colonelpanic.eva.capability.MemoryCapabilities
+                        .backends(memories),
+                )
                 putAll(
                     mapOf(
                         CapabilityRegistry.SMS_COMPOSE to

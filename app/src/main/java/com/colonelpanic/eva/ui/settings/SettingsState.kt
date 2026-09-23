@@ -23,6 +23,9 @@ data class SettingsUiState(
     val messagingApps: List<MessagingApp> = emptyList(),
     val messagingPermissions: List<PermissionStatus> = emptyList(),
     val rememberedNumbers: Int = 0,
+    val memories: com.colonelpanic.eva.data.Memories =
+        com.colonelpanic.eva.data
+            .Memories(),
     val plugins: com.colonelpanic.eva.adapters.declarative.PluginBrowserState =
         com.colonelpanic.eva.adapters.declarative
             .PluginBrowserState(),
@@ -75,6 +78,8 @@ data class SettingsActions(
     val onMessagingReply: (String, Boolean) -> Unit = { _, _ -> },
     val onMessagingRefresh: () -> Unit = {},
     val onForgetRememberedNumbers: () -> Unit = {},
+    val onKeepMemory: (String) -> Unit = {},
+    val onForgetMemory: (String) -> Unit = {},
     val onOpenAppSettings: () -> Unit = {},
     val onRepositoryRefresh: () -> Unit = {},
     val onRepositoryRefreshNew: () -> Unit = {},

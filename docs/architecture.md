@@ -233,6 +233,42 @@ background-work service interrupts the affected work. Voice and background work 
 death do not trigger action replay. The assistant launch fallback and unlock UI
 require physical-device verification; JVM checks cannot establish OEM behavior.
 
+## Memory
+
+EVA exposes bundled `eva.memory.search`, `eva.memory.save`, `eva.memory.learn`, and
+`eva.memory.forget` tools through the capability dispatcher; their model-facing
+wording lives in `eva-wording.yaml` like other native tools.
+
+- **Kept notes** are ones the user asked EVA to remember or correct (`save`), or
+  learned notes the user kept. The same name replaces the entire note.
+- **Learned notes** are ones EVA saved on its own (`learn`) from what the user said.
+  They wait in an inbox on the **Memory** drawer screen, where the user keeps or
+  dismisses each one. Until then they are searchable and marked `reviewed: false`.
+  A learned note never replaces a kept note of the same name; saving a name held in
+  the inbox settles it as kept. Each learned note records its conversation.
+
+Search is a case-insensitive substring match on name and text over both tiers, in
+pages of ten. `forget` removes a note from either tier. `save` and `forget` are
+ordinary mutations. `learn` is marked `bookkeeping`: it is still journaled, but
+completing it does not count as serving the request (so it cannot arm a one-request
+call's quiet hang-up), and its failure does not block later actions as uncertain.
+
+Notes contain a name, text, and last-updated timestamp. They persist across
+threads in private app storage (`memories.json` and `memory-inbox.json`, each
+atomically replaced), separate from shareable configuration. They are not synced
+or restored by the user configuration repository. Kept notes are limited to 200;
+reaching capacity refuses new notes rather than evicting any. The inbox holds 50
+and drops its oldest note when full. Names are limited to 120 characters and bodies
+to 1,000. Storage errors do not silently reset memory.
+
+Tool wording requires explicit user intent for saving, correction, and deletion,
+limits learning to what the user said (not tool results), excludes credentials, and
+treats retrieved notes as data rather than instructions. These are model
+instructions, not a semantic authorization classifier. There is no prompt injection
+of notes, expiry, or semantic search. Forgetting removes the saved note but does
+not erase prior conversation or action history. The implementation has JVM
+coverage; physical-device verification is pending.
+
 ## Messaging
 
 The **Messaging** drawer destination owns phone-permission status, contact-name
