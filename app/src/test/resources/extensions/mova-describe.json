@@ -5,7 +5,7 @@
   "descriptor": {
     "capabilities": [
       {
-        "result": {"maxBytes": 16384},
+        "result": { "maxBytes": 16384 },
         "execution": {
           "mode": "synchronous",
           "maxWaitMillis": 10000,
@@ -29,7 +29,7 @@
         }
       },
       {
-        "result": {"maxBytes": 16384},
+        "result": { "maxBytes": 16384 },
         "execution": {
           "mode": "synchronous",
           "maxWaitMillis": 10000,
@@ -66,7 +66,7 @@
         }
       },
       {
-        "result": {"maxBytes": 16384},
+        "result": { "maxBytes": 16384 },
         "execution": {
           "mode": "synchronous",
           "maxWaitMillis": 10000,
@@ -77,12 +77,14 @@
           "inputSchema": {
             "additionalProperties": false,
             "type": "object",
-            "properties": {"id": {
-              "minLength": 1,
-              "description": "Org id returned by find_todos or read_agenda.",
-              "type": "string",
-              "maxLength": 500
-            }},
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "description": "Org id returned by find_todos or read_agenda.",
+                "type": "string",
+                "maxLength": 500
+              }
+            },
             "required": ["id"]
           },
           "name": "read_todo",
@@ -95,7 +97,7 @@
         }
       },
       {
-        "result": {"maxBytes": 16384},
+        "result": { "maxBytes": 16384 },
         "execution": {
           "mode": "synchronous",
           "maxWaitMillis": 10000,
@@ -126,10 +128,7 @@
                 "description": "day or week. Defaults to day.",
                 "type": "string",
                 "maxLength": 500,
-                "enum": [
-                  "day",
-                  "week"
-                ]
+                "enum": ["day", "week"]
               }
             },
             "required": []
@@ -144,7 +143,7 @@
         }
       },
       {
-        "result": {"maxBytes": 16384},
+        "result": { "maxBytes": 16384 },
         "execution": {
           "mode": "synchronous",
           "maxWaitMillis": 20000,
@@ -232,7 +231,7 @@
         }
       },
       {
-        "result": {"maxBytes": 16384},
+        "result": { "maxBytes": 16384 },
         "execution": {
           "mode": "synchronous",
           "maxWaitMillis": 20000,
@@ -294,7 +293,7 @@
         }
       },
       {
-        "result": {"maxBytes": 16384},
+        "result": { "maxBytes": 16384 },
         "execution": {
           "mode": "synchronous",
           "maxWaitMillis": 20000,
@@ -391,7 +390,7 @@
         }
       },
       {
-        "result": {"maxBytes": 16384},
+        "result": { "maxBytes": 16384 },
         "execution": {
           "mode": "synchronous",
           "maxWaitMillis": 20000,
@@ -402,12 +401,14 @@
           "inputSchema": {
             "additionalProperties": false,
             "type": "object",
-            "properties": {"id": {
-              "minLength": 1,
-              "description": "Org id returned by find_todos or read_agenda.",
-              "type": "string",
-              "maxLength": 500
-            }},
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "description": "Org id returned by find_todos or read_agenda.",
+                "type": "string",
+                "maxLength": 500
+              }
+            },
             "required": ["id"]
           },
           "name": "delete_todo",
@@ -421,7 +422,7 @@
         }
       },
       {
-        "result": {"maxBytes": 16384},
+        "result": { "maxBytes": 16384 },
         "execution": {
           "mode": "synchronous",
           "maxWaitMillis": 10000,
@@ -432,12 +433,14 @@
           "inputSchema": {
             "additionalProperties": false,
             "type": "object",
-            "properties": {"invocationId": {
-              "minLength": 1,
-              "description": "Invocation id of the earlier request.",
-              "type": "string",
-              "maxLength": 256
-            }},
+            "properties": {
+              "invocationId": {
+                "minLength": 1,
+                "description": "Invocation id of the earlier request.",
+                "type": "string",
+                "maxLength": 256
+              }
+            },
             "required": ["invocationId"]
           },
           "name": "invocation_status",
@@ -455,9 +458,11 @@
     "protocolVersion": 1,
     "title": "Mova"
   },
-  "content": [{
-    "text": "",
-    "type": "text"
-  }],
+  "content": [
+    {
+      "text": "",
+      "type": "text"
+    }
+  ],
   "status": "completed"
 }
