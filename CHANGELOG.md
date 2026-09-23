@@ -4,9 +4,15 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-09-23
+
+### Added
+
+- EVA can search, save, and forget notes across conversations. Notes it learns on its own wait on a new Memory screen, where you keep or dismiss them.
+
 ### Changed
 
-- Mova's and Paseo's own EVA extensions are enabled with every action as soon as EVA finds them, so their background and locked-phone actions work without a settings visit. EVA recognizes them by package and production signing certificate. Turning one off, or turning off one action, is remembered and survives account switches, app updates, and configuration restore.
+- Mova's and Paseo's own EVA extensions start enabled with every action, so their locked-phone actions need no setup. EVA pins them by production signer; turning one, or one action, off is remembered.
 - The Paseo package is installed and enabled by default once Paseo is present, for project, agent, and message lookups.
 - EVA lists an app's read permission as a needed device authorization only when that app's provider declares one.
 

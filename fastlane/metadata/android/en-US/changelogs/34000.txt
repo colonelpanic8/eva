@@ -1,0 +1,4 @@
+* Added: EVA can search, save, and forget notes across conversations. Notes it learns on its own wait on a new Memory screen, where you keep or dismiss them.
+* Changed: Mova's and Paseo's own EVA extensions start enabled with every action, so their locked-phone actions need no setup. EVA pins them by production signer; turning one, or one action, off is remembered.
+* Changed: The Paseo package is installed and enabled by default once Paseo is present, for project, agent, and message lookups.
+* ...see CHANGELOG.md for the rest.
