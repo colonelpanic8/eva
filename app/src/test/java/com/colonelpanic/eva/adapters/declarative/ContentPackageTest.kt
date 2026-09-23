@@ -117,6 +117,29 @@ class ContentPackageTest {
             ).content(agents.binding as DeclarativeBinding.Content)
         assertEquals("content://sh.paseo.assistant/agents?workspaceId=ws%2F1&q=name%20%26%20value", request.uri)
         assertTrue(setOf("id", "serverId", "workspaceId", "name").all { it in request.projection })
+        val workspaces = capabilities.getValue("list_workspaces").binding as DeclarativeBinding.Content
+        assertEquals("string", workspaces.projection["repository"])
+        val scoped = BindingArguments(agents, mapOf("workspaceId" to "ws/1", "serverId" to "host 1")).content(agents.binding)
+        assertEquals("content://sh.paseo.assistant/agents?workspaceId=ws%2F1&serverId=host%201", scoped.uri)
+        val workspaceMessages = capabilities.getValue("read_workspace_messages")
+        val workspaceRequest =
+            BindingArguments(workspaceMessages, mapOf("workspaceId" to "ws/1", "serverId" to "host 1", "limit" to "12"))
+                .content(workspaceMessages.binding as DeclarativeBinding.Content)
+        assertEquals(
+            "content://sh.paseo.assistant/messages?workspaceId=ws%2F1&serverId=host%201&limit=12",
+            workspaceRequest.uri,
+        )
+        assertTrue(setOf("agentId", "agentName", "kind", "createdAt", "text").all { it in workspaceRequest.projection })
+        val agentMessages = capabilities.getValue("read_agent_messages")
+        assertEquals(
+            "content://sh.paseo.assistant/messages?agentId=agent%2F1&serverId=host%201",
+            BindingArguments(agentMessages, mapOf("agentId" to "agent/1", "serverId" to "host 1"))
+                .content(agentMessages.binding as DeclarativeBinding.Content)
+                .uri,
+        )
+        assertThrows(Exception::class.java) {
+            BindingArguments(workspaceMessages, mapOf("workspaceId" to "ws/1"))
+        }
         val open = capabilities.getValue("open_agent")
         assertEquals(
             "paseo://agent?agentId=agent%2F1&serverId=host%201",

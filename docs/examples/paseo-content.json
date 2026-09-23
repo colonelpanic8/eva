@@ -1,8 +1,15 @@
 {
   "formatVersion": 1,
   "id": "android.paseo",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "title": "Paseo",
+  "description": "Discover Paseo workspaces and agents by project, repository, branch, and name; read recent agent messages; and open them or draft or send prompts through paseo:// links. Use catalog ids with their serverId. Workspace message reads include several agents. A sent prompt through a link is a handoff, not proof of delivery or completion.",
+  "guidance": "Most Paseo requests take several steps. For a vague workspace description, call list_workspaces with one distinctive project, repository, or branch fragment, then select a row by its metadata; ask which if several fit. Use that row’s id and serverId together. A workspace may contain multiple agents: use read_workspace_messages for a workspace summary, or list_agents and read_agent_messages when one session matters. Before prompting an existing agent, identify it with list_agents and use its id and serverId together. Say which agent you picked and the gist of the prompt. Use send_agent_prompt only when the user asked to send, otherwise draft_agent_prompt. For new work that belongs to no existing agent, use new_agent. Read the relevant transcript before composing a follow-up when its context matters. Never guess an id or reuse one from memory. Catalog rows may be stale until Paseo is opened again; if nothing matches, try a different fragment or offer open_history.",
+  "setup": [
+    "Install Paseo and open it at least once: it publishes the workspace and agent catalog while the app has been in the foreground, so anything created since then is missing until it opens again.",
+    "To let the send action actually send, turn on Settings, General, Send prompts from links in Paseo. With it off Paseo drafts the prompt instead, and EVA cannot tell the two apart.",
+    "This package needs a Paseo build with the repository catalog column and assistant messages provider. Recent-message reads also need the app process running and the target host connected. An unavailable transcript is returned as a notice row."
+  ],
   "androidPackages": [
     "sh.paseo",
     "sh.paseo.assembly"
@@ -12,7 +19,7 @@
       "tool": {
         "name": "list_workspaces",
         "title": "List Paseo workspaces",
-        "description": "List the workspaces Paseo knows across its hosts, most recently active first. Each row has the workspaceId (id) and host (serverId) that open_workspace takes, plus name, project, branch, status, agent count, and last activity. Answers from the catalog Paseo last published while it was open, so a workspace created since then is missing until Paseo is opened again. query is a case-insensitive substring match over the row.",
+        "description": "Find a Paseo workspace before opening or reading it. Never guess a workspaceId. Rows are most recently active first: id, serverId, name, project, repository (Git remote host/path without credentials), branch, status, agentCount, and lastActivityAt. q matches one case-insensitive substring in one column, not a phrase or fuzzy search. Try a distinctive project, repository, or branch fragment; if none matches, try another fragment or list without q at a higher limit. If one row fits, use its id and serverId; if several fit, ask which one using project, repository, name, and branch. Catalog rows may be stale until Paseo opens again and cover at most 100 workspaces.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -20,13 +27,13 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 200,
-              "description": "Case-insensitive text matched against name, project, branch, status, and ids."
+              "description": "One case-insensitive fragment of name, project, repository, branch, status, or an id. Not a phrase search."
             },
             "limit": {
               "type": "integer",
               "minimum": 1,
               "maximum": 100,
-              "description": "Maximum rows to return (Paseo defaults to 25)."
+              "description": "Maximum rows to return, 1 to 100 (Paseo defaults to 25). Raise it when listing without q."
             }
           },
           "required": [],
@@ -64,6 +71,7 @@
           "serverId": "string",
           "name": "string",
           "project": "string",
+          "repository": "string",
           "branch": "string",
           "status": "string",
           "agentCount": "integer",
@@ -77,7 +85,7 @@
       "tool": {
         "name": "list_agents",
         "title": "List Paseo agents",
-        "description": "List Paseo agent sessions, most recently active first. Each row has the agentId (id) and host (serverId) that open_agent, draft_agent_prompt, and send_agent_prompt take, plus workspaceId, name, provider, status, and last activity. Answers from the catalog Paseo last published while it was open. Filter by workspaceId, or with query as a case-insensitive substring match over the row.",
+        "description": "Find a Paseo agent session without guessing its id. Rows are most recently active first: id, serverId, workspaceId, name, provider, status, and lastActivityAt. If the user identifies a workspace, find it with list_workspaces, then pass its id and serverId here. A workspace can have several agents; ask which one when the request needs a specific agent and several fit. q matches one case-insensitive fragment, not a phrase. Catalog rows may be stale until Paseo opens again and cover at most 200 unarchived top-level agents.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -85,19 +93,25 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 500,
-              "description": "Only agents in this workspace."
+              "description": "The id of a list_workspaces row; lists only that workspace's agents. Exact match."
+            },
+            "serverId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Host from the same list_workspaces row; scope the workspace id to this host."
             },
             "q": {
               "type": "string",
               "minLength": 1,
               "maxLength": 200,
-              "description": "Case-insensitive text matched against name, provider, status, and ids."
+              "description": "One word or fragment, matched case-insensitively as a substring of any single column (name, provider, status, or ids). Not a phrase search."
             },
             "limit": {
               "type": "integer",
               "minimum": 1,
               "maximum": 100,
-              "description": "Maximum rows to return (Paseo defaults to 25)."
+              "description": "Maximum rows to return, 1 to 100 (Paseo defaults to 25). Raise it when listing without q."
             }
           },
           "required": [],
@@ -122,6 +136,10 @@
           "query": {
             "workspaceId": {
               "argument": "workspaceId",
+              "type": "string"
+            },
+            "serverId": {
+              "argument": "serverId",
               "type": "string"
             },
             "q": {
@@ -149,9 +167,165 @@
     },
     {
       "tool": {
+        "name": "read_workspace_messages",
+        "title": "Read recent Paseo workspace messages",
+        "description": "Read recent messages across the selected workspace's active top-level agents, newest first. First find the workspace with list_workspaces; use id as workspaceId and its serverId from the same row. Each message names its agent and has kind, time, and clipped text. Paseo reads up to six recently active agents. A kind=notice row means Paseo could not read the transcript; report the notice instead of inventing a summary. Paseo must be running with a connected host. This is a read, not a prompt send.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "workspaceId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "The id of the selected list_workspaces row."
+            },
+            "serverId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "The serverId of that same workspace row."
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "description": "Maximum messages, newest first; defaults to 10."
+            }
+          },
+          "required": [
+            "workspaceId",
+            "serverId"
+          ],
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
+        }
+      },
+      "effects": "read",
+      "execution": {
+        "mode": "synchronous",
+        "requiresForeground": false,
+        "maxWaitMillis": 10000
+      },
+      "binding": {
+        "kind": "android.content",
+        "authority": "sh.paseo.assistant",
+        "uri": {
+          "base": "content://sh.paseo.assistant/messages",
+          "query": {
+            "workspaceId": {
+              "argument": "workspaceId",
+              "type": "string"
+            },
+            "serverId": {
+              "argument": "serverId",
+              "type": "string"
+            },
+            "limit": {
+              "argument": "limit",
+              "type": "integer"
+            }
+          }
+        },
+        "projection": {
+          "id": "string",
+          "serverId": "string",
+          "workspaceId": "string",
+          "agentId": "string",
+          "agentName": "string",
+          "kind": "string",
+          "createdAt": "string",
+          "text": "string"
+        },
+        "maxRows": 50,
+        "maxBytes": 16384
+      }
+    },
+    {
+      "tool": {
+        "name": "read_agent_messages",
+        "title": "Read recent Paseo agent messages",
+        "description": "Read one Paseo agent's recent user, assistant, and tool-summary messages, newest first. Find the agent with list_agents and use its id and serverId from the same row. If a workspace has several plausible agents, ask which one unless the user wants workspace-wide activity; use read_workspace_messages for that. A kind=notice row means Paseo could not read the transcript. Paseo must be running with a connected host. This is a read, not a prompt send.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "agentId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "The id of the selected list_agents row."
+            },
+            "serverId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "The serverId of that same agent row."
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "description": "Maximum messages, newest first; defaults to 10."
+            }
+          },
+          "required": [
+            "agentId",
+            "serverId"
+          ],
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
+        }
+      },
+      "effects": "read",
+      "execution": {
+        "mode": "synchronous",
+        "requiresForeground": false,
+        "maxWaitMillis": 10000
+      },
+      "binding": {
+        "kind": "android.content",
+        "authority": "sh.paseo.assistant",
+        "uri": {
+          "base": "content://sh.paseo.assistant/messages",
+          "query": {
+            "agentId": {
+              "argument": "agentId",
+              "type": "string"
+            },
+            "serverId": {
+              "argument": "serverId",
+              "type": "string"
+            },
+            "limit": {
+              "argument": "limit",
+              "type": "integer"
+            }
+          }
+        },
+        "projection": {
+          "id": "string",
+          "serverId": "string",
+          "workspaceId": "string",
+          "agentId": "string",
+          "agentName": "string",
+          "kind": "string",
+          "createdAt": "string",
+          "text": "string"
+        },
+        "maxRows": 50,
+        "maxBytes": 16384
+      }
+    },
+    {
+      "tool": {
         "name": "new_agent",
         "title": "Start a new agent",
-        "description": "Open Paseo's New workspace screen with the prompt placed in the composer. The user chooses the project, model, and isolation in Paseo and taps Send; nothing is sent by this action. projectId and dir preselect a project or directory Paseo already knows. A successful EVA receipt proves only that Paseo opened.",
+        "description": "Start new work in Paseo: open its New workspace screen with the prompt in the composer. The user chooses the project, model, and isolation and taps Send; nothing is sent by this action. It cannot add work to an existing workspace or agent; for that, find the agent with list_agents and use draft_agent_prompt or send_agent_prompt. Catalog rows carry no projectId or directory, so omit projectId and dir unless the user supplies one. A successful EVA receipt proves only that Paseo opened.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -165,7 +339,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 200,
-              "description": "Paseo host (daemon serverId). Omit to use the host of the last opened workspace, or the only configured host."
+              "description": "Paseo host (daemon serverId), such as the serverId of a list_workspaces row on the host the user wants. Omit to use the host of the last opened workspace, or the only configured host."
             },
             "projectId": {
               "type": "string",
@@ -223,7 +397,7 @@
       "tool": {
         "name": "open_agent",
         "title": "Open an agent",
-        "description": "Open an existing Paseo agent session by ID so the user can read it. Requires the agent ID; the host is resolved by Paseo when omitted. A successful EVA receipt proves only the handoff to Paseo.",
+        "description": "Open an existing Paseo agent session so the user can read it. Take agentId and serverId from the same list_agents row. A successful EVA receipt proves only the handoff; Paseo shows its own error for an unknown agent or host, which EVA does not see.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -231,13 +405,13 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 200,
-              "description": "Paseo agent session ID on that host."
+              "description": "The id of a list_agents row."
             },
             "serverId": {
               "type": "string",
               "minLength": 1,
               "maxLength": 200,
-              "description": "Paseo host (daemon serverId). Omit to use the host of the last opened workspace, or the only configured host."
+              "description": "Host (serverId) from the same list row as the id. When omitted, Paseo uses the host of the last opened workspace or the only configured host, which may be the wrong one when there are several."
             }
           },
           "required": [
@@ -277,7 +451,7 @@
       "tool": {
         "name": "draft_agent_prompt",
         "title": "Draft a follow-up for an agent",
-        "description": "Open a Paseo agent session with the prompt appended to its composer, unsent, so the user can review and tap Send. Use send_agent_prompt to deliver without a tap. A successful EVA receipt proves only that Paseo opened the agent.",
+        "description": "Open a Paseo agent session with the prompt appended to its composer, unsent, so the user can review and tap Send. Take agentId and serverId from the same list_agents row. Use send_agent_prompt to deliver without a tap. A successful EVA receipt proves only that Paseo opened the agent.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -285,7 +459,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 200,
-              "description": "Paseo agent session ID on that host."
+              "description": "The id of a list_agents row."
             },
             "prompt": {
               "type": "string",
@@ -297,7 +471,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 200,
-              "description": "Paseo host (daemon serverId). Omit to use the host of the last opened workspace, or the only configured host."
+              "description": "Host (serverId) from the same list row as the id. When omitted, Paseo uses the host of the last opened workspace or the only configured host, which may be the wrong one when there are several."
             }
           },
           "required": [
@@ -342,7 +516,7 @@
       "tool": {
         "name": "send_agent_prompt",
         "title": "Send a follow-up to an agent",
-        "description": "Open a Paseo agent session and ask Paseo to send the prompt to it immediately. Paseo only sends when its setting “Send prompts from links” is on; otherwise it places the prompt in the composer unsent and tells the user why. EVA cannot tell which happened: a successful receipt proves only the handoff, not delivery or completion of the agent's work.",
+        "description": "Open a Paseo agent session and ask Paseo to send the prompt to it immediately. Take agentId and serverId from the same list_agents row. Paseo only sends when its setting “Send prompts from links” is on; otherwise it places the prompt in the composer unsent and tells the user why. EVA cannot tell which happened: a successful receipt proves only the handoff, not delivery or completion of the agent's work.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -350,7 +524,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 200,
-              "description": "Paseo agent session ID on that host."
+              "description": "The id of a list_agents row."
             },
             "prompt": {
               "type": "string",
@@ -362,7 +536,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 200,
-              "description": "Paseo host (daemon serverId). Omit to use the host of the last opened workspace, or the only configured host."
+              "description": "Host (serverId) from the same list row as the id. When omitted, Paseo uses the host of the last opened workspace or the only configured host, which may be the wrong one when there are several."
             }
           },
           "required": [
@@ -411,7 +585,7 @@
       "tool": {
         "name": "open_workspace",
         "title": "Open a workspace",
-        "description": "Open a Paseo workspace by ID, optionally on a specific agent or terminal tab. A successful EVA receipt proves only the handoff to Paseo.",
+        "description": "Open a Paseo workspace, optionally on one agent or terminal tab. Take workspaceId and serverId from the same list_workspaces row; when the user names a workspace, search for it first rather than guessing an id. A successful EVA receipt proves only the handoff; Paseo shows its own error for an unknown workspace or host, which EVA does not see.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -419,25 +593,25 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 500,
-              "description": "Paseo workspace ID on that host."
+              "description": "The id of a list_workspaces row."
             },
             "serverId": {
               "type": "string",
               "minLength": 1,
               "maxLength": 200,
-              "description": "Paseo host (daemon serverId). Omit to use the host of the last opened workspace, or the only configured host."
+              "description": "Host (serverId) from the same list row as the id. When omitted, Paseo uses the host of the last opened workspace or the only configured host, which may be the wrong one when there are several."
             },
             "agentId": {
               "type": "string",
               "minLength": 1,
               "maxLength": 200,
-              "description": "Agent session tab to focus inside the workspace."
+              "description": "Agent tab to focus: the id of a list_agents row in this workspace."
             },
             "terminalId": {
               "type": "string",
               "minLength": 1,
               "maxLength": 200,
-              "description": "Terminal tab to focus inside the workspace. Ignored when agentId is given."
+              "description": "Terminal tab to focus, only when the user supplies its id. Ignored when agentId is given."
             }
           },
           "required": [
@@ -485,7 +659,7 @@
       "tool": {
         "name": "open_history",
         "title": "Open agent history",
-        "description": "Open Paseo's History screen listing recent agent sessions across hosts. Takes no arguments. A successful EVA receipt proves only the handoff to Paseo.",
+        "description": "Open Paseo's History screen listing recent agent sessions across hosts, for the user to browse. Takes no arguments. To find a specific agent or workspace yourself, use list_agents or list_workspaces. A successful EVA receipt proves only the handoff to Paseo.",
         "inputSchema": {
           "type": "object",
           "properties": {},

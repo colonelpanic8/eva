@@ -19,12 +19,12 @@ object CatalogAdmission {
 
     fun overflowReasons(definitions: List<CapabilityDefinition>): Map<String, String> {
         val typed = select(definitions).overflow.map { it.id }.toSet()
-        return select(definitions, controls = 1).overflow.associate { capability ->
+        return select(definitions, controls = 2).overflow.associate { capability ->
             capability.id to
                 if (capability.id in typed) {
                     "Unavailable: the 64-tool limit is full. Bundled actions have priority; extension IDs are admitted in sorted order."
                 } else {
-                    "Unavailable in voice: its session control uses one of 64 slots. Available in typed conversations."
+                    "Unavailable in voice: session controls use two of 64 slots. Available in typed conversations."
                 }
         }
     }
