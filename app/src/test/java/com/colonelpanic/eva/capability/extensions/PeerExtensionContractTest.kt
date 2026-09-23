@@ -84,4 +84,51 @@ class PeerExtensionContractTest {
             assertEquals(mova.revision, fake.revision)
             assertEquals(Json.parseToJsonElement("""{"id":"abc"}"""), Json.parseToJsonElement(fake.arguments!!).jsonObject)
         }
+
+    @Test
+    fun `Paseo receipts satisfy its declared output schema, and a receipt without identity stays unknown`() =
+        runTest {
+            val paseo = descriptor("paseo")
+            val tools = paseo.capabilities.associateBy { it.name }
+            assertEquals(
+                setOf("create_agent", "send_prompt"),
+                tools.values
+                    .filter { it.effect == Effect.WRITE }
+                    .map { it.name }
+                    .toSet(),
+            )
+            assertTrue(tools.values.filter { it.effect == Effect.WRITE }.all { it.maxWaitMillis == 25_000L })
+            assertEquals(Effect.READ, tools.getValue("request_status").effect)
+            val send = tools.getValue("send_prompt")
+            val fake = FakeExtensionConnector()
+            val backend =
+                ExtensionBackend(
+                    extensionIdentity,
+                    paseo,
+                    send,
+                    ExtensionConnectionManager(fake) { testScheduler.currentTime },
+                    StandardTestDispatcher(testScheduler),
+                )
+            val proposal =
+                ToolProposal(
+                    "provider:s:send",
+                    "extension.example.app.send_prompt",
+                    mapOf("serverId" to "host", "agentId" to "agent", "prompt" to "Run the tests"),
+                    "send it",
+                    "r",
+                )
+            val invocation = ExtensionBackend.invocationId(proposal.callId)
+            val envelope = """"protocolVersion":1,"reasonCode":null,"truncated":false,"content":[{"type":"text","text":"Delivering"}]"""
+            fake.reply =
+                """{$envelope,"status":"handed_off","structuredContent":{"version":1,"invocationId":"$invocation",""" +
+                """"operation":"send_prompt","state":"waiting_for_host","serverId":"host","agentId":"agent",""" +
+                """"error":{"code":"host_unreachable","message":"Host offline"},"updatedAt":"2026-09-23T00:00:00Z","pollable":true}}"""
+            val waiting = backend.execute(proposal)
+            assertEquals(InvocationStatus.HANDED_OFF, waiting.status)
+            assertEquals(JsonPrimitive(true), waiting.data!!["pollable"])
+            fake.reply = """{$envelope,"status":"completed","structuredContent":{"state":"completed","pollable":false}}"""
+            val anonymous = backend.execute(proposal)
+            assertEquals(InvocationStatus.UNKNOWN, anonymous.status)
+            assertEquals(JsonPrimitive(invocation), anonymous.data!!["invocationId"])
+        }
 }
