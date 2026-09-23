@@ -20,11 +20,13 @@ import org.junit.Test
 internal class MemoryGrantPersistence : ExtensionGrantPersistence {
     var json: String? = null
     var fail = false
+    var writes = 0
 
     override suspend fun read() = json
 
     override suspend fun write(json: String) {
         check(!fail)
+        writes++
         this.json = json
     }
 }
@@ -79,6 +81,23 @@ class ExtensionGrantsTest {
             restored.enable(extensionIdentity, all, false)
             restored.enable(extensionIdentity, all, true)
             assertFalse(restored.allowed(extensionIdentity, all, write))
+        }
+
+    @Test
+    fun `enable all saves one grant for reads and every non-read effect`() =
+        runTest {
+            val disk = MemoryGrantPersistence()
+            val grants = ExtensionGrants(disk)
+
+            grants.enableAll(extensionIdentity, all)
+
+            assertEquals(1, disk.writes)
+            assertEquals(setOf("write", "unknown"), grants.grant(extensionIdentity, all)?.mutations)
+            val restored = ExtensionGrants(disk)
+            restored.load()
+            assertTrue(restored.allowed(extensionIdentity, all, extensionCapability))
+            assertTrue(restored.allowed(extensionIdentity, all, write))
+            assertTrue(restored.allowed(extensionIdentity, all, unknown))
         }
 
     @Test

@@ -347,6 +347,7 @@ class MainActivity : ComponentActivity() {
                 onClearPackageServer = eva::clearPackageServer,
                 onSaveWait = eva.packageSettings::saveWait,
                 onExtensionEnable = eva.extensions::enable,
+                onExtensionEnableAll = eva.extensions::enableAll,
                 onExtensionMutation = eva.extensions::mutation,
                 onRefreshExtensions = {
                     contentPermissionRevision++

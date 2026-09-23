@@ -4,6 +4,12 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-09-22
+
+### Added
+
+- Extensions have an "Enable all actions" control. It enables the extension and grants all actions in its current descriptor in one step; individual action switches remain available.
+
 ## [0.28.0] - 2026-09-22
 
 ### Added

@@ -1,0 +1,1 @@
+* Added: Extensions have an "Enable all actions" control. It enables the extension and grants all actions in its current descriptor in one step; individual action switches remain available.

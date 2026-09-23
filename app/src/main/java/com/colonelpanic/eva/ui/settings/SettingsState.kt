@@ -90,6 +90,7 @@ data class SettingsActions(
     val onClearPackageServer: (String, String) -> Unit = { _, _ -> },
     val onSaveWait: (String, String) -> String? = { _, _ -> null },
     val onExtensionEnable: (String, Boolean) -> Unit = { _, _ -> },
+    val onExtensionEnableAll: (String) -> Unit = {},
     val onExtensionMutation: (String, String, Boolean) -> Unit = { _, _, _ -> },
     val onContentPermission: (String) -> Unit = {},
     val onRefreshExtensions: () -> Unit = {},

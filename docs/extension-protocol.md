@@ -969,6 +969,10 @@ contracts require renewed enablement. Removal discards grants; reinstall must no
 inherit removed grants. Temporary outages/missing configuration do not silently
 change grants.
 
+The Extensions screen can enable all actions in one step. This grants claimed
+reads and every write, handoff, or unknown-effect action in the current
+descriptor; individual action switches remain available for later changes.
+
 This trusts the user's provider choice for claimed reads; it cannot prove an app
 harmless. Reads may disclose private data to EVA's configured model; settings
 must explain this. Unknown effects never get read grants. EVA rechecks grants

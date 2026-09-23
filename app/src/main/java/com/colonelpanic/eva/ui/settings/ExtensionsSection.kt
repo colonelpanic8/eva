@@ -74,6 +74,18 @@ internal fun ExtensionsSection(
             }
             if (expanded) {
                 Column(Modifier.padding(start = 32.dp)) {
+                    if (
+                        descriptor != null && descriptor.capabilities.isNotEmpty() &&
+                        (!entry.enabled || descriptor.capabilities.any { it.effect != Effect.READ && it.name !in entry.mutations })
+                    ) {
+                        TextButton(
+                            onClick = {
+                                actions.onExtensionEnableAll(entry.key)
+                                repositoryInstallation?.let { actions.onExtensionAutoEnable(it.definition.id, true) }
+                            },
+                            enabled = installed.problem == null,
+                        ) { Text("Enable all actions") }
+                    }
                     descriptor?.capabilities?.forEach { capability ->
                         val unavailable = state.extensionOverflow["${installed.capabilityPrefix}.${capability.name}"]
                         if (unavailable != null) SettingsRow(capability.title, unavailable)

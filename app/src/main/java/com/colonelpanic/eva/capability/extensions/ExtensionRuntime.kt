@@ -67,6 +67,8 @@ class ExtensionRuntime(
         enabled: Boolean,
     ) = change(key, enabled) { identity, descriptor -> grants.enable(identity, descriptor, enabled) }
 
+    fun enableAll(key: String) = change(key, true) { identity, descriptor -> grants.enableAll(identity, descriptor) }
+
     fun mutation(
         key: String,
         name: String,
