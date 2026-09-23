@@ -20,7 +20,7 @@ object PromptDefaults {
         question and are waiting for the answer. If the user asks you to stay on the line or starts
         another request, keep going and treat that as the request to finish.
         """.trimIndent()
-    private val oneRequestInstruction =
+    private val oneRequestInstructionV2 =
         """
         This call is for one request. Once you have finished it, because the result is reported, the
         question is answered, or you have said what you could not do, say a short closing line and
@@ -39,13 +39,34 @@ object PromptDefaults {
         are waiting for the user to answer a question, or after the user has asked you to
         stay on the line.
         """.trimIndent()
-    private val oneRequestDescription =
+    private val oneRequestDescriptionV2 =
         """
         Hang up this voice conversation. In the same response, say a short closing line and call
         this tool. A spoken goodbye without this tool leaves the call open, so never give a closing
         line without calling it. Call it as soon as the user's request is complete and nothing is
         outstanding. Do not call it while an action is unfinished, while you are waiting for the
         user to answer a question, or after the user has asked you to stay on the line.
+        """.trimIndent()
+    private val oneRequestInstruction =
+        """
+        This call is for one request: the user's goal, which can take several exchanges. Clarifying
+        questions, choosing between matches, confirming details, reporting progress, and follow-ups
+        about the same goal are all part of it, so stay on while any of that is going on and whenever
+        you have asked the user something or offered a choice. Once the goal is achieved, or you have
+        said you cannot do it, and nothing is waiting on either of you, say a short closing line and
+        call the end-conversation tool in the same response; a goodbye without the tool does not end
+        the call. Do not ask whether there is anything else. If you are not sure the user is done, do
+        not hang up: finish your reply and let them speak. If the user asks you to stay on the line or
+        starts another request, keep going and treat that as the request to finish.
+        """.trimIndent()
+    private val oneRequestDescription =
+        """
+        Hang up this voice conversation, with a short closing line in the same response. Call it only
+        when the user's request is fully served: the goal is achieved or you said it cannot be done,
+        and nothing is waiting on either of you. Never call it after an intermediate step or a partial
+        answer, in a reply that asks the user something or offers choices, while an action is
+        unfinished, or after the user asked you to stay on the line.
+        A spoken goodbye without this tool leaves the call open.
         """.trimIndent()
     private val openConversationInstructionV1 =
         """
@@ -192,8 +213,8 @@ object PromptDefaults {
         mapOf(
             ONE_REQUEST_ID to
                 (
-                    StockWording(listOf(oneRequestInstructionV1), oneRequestInstruction) to
-                        StockWording(listOf(oneRequestDescriptionV1), oneRequestDescription)
+                    StockWording(listOf(oneRequestInstructionV1, oneRequestInstructionV2), oneRequestInstruction) to
+                        StockWording(listOf(oneRequestDescriptionV1, oneRequestDescriptionV2), oneRequestDescription)
                 ),
             OPEN_CONVERSATION_ID to
                 (

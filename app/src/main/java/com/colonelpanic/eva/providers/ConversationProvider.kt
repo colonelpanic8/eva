@@ -137,6 +137,9 @@ sealed interface ProviderEvent {
         val speaking: Boolean,
     ) : ProviderEvent
 
+    /** The user started speaking. Only a provider that detects speech itself sends this. */
+    data object UserSpeaking : ProviderEvent
+
     data class Failure(
         val message: String,
     ) : ProviderEvent

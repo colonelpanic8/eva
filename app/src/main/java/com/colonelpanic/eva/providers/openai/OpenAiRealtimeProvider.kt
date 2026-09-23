@@ -224,6 +224,10 @@ private class OpenAiRealtimeSession(
                             }
                         }
 
+                        "input_audio_buffer.speech_started" -> {
+                            send(ProviderEvent.UserSpeaking)
+                        }
+
                         "conversation.item.input_audio_transcription.completed" -> {
                             message.str("transcript")?.takeIf { it.isNotBlank() }?.let {
                                 send(ProviderEvent.Transcript("user", it))

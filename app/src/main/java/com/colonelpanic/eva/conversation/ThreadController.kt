@@ -127,6 +127,10 @@ class ThreadController(
     private val actionResponses = mutableSetOf<String>()
     private var assistantSpeaking = false
 
+    /** A one-request call whose action is reported hangs up if the user stays quiet after it. */
+    private var quietArmed = false
+    private var quietHangUp: Job? = null
+
     /** How each attachment ended, keyed by attempt, for its closing notice. */
     private val endReasons = mutableMapOf<Int, String>()
 
@@ -410,6 +414,7 @@ class ThreadController(
             }
 
             is ProviderEvent.ResponseStarted -> {
+                disarmQuietHangUp()
                 if (taskFor(opened, event.inputId) == null && voice) {
                     // A spoken turn has no typed input; the response is the turn, and its transcript
                     // may still be in flight. Nothing else may own this thread's next answer.
@@ -459,8 +464,15 @@ class ThreadController(
                 }
             }
 
+            is ProviderEvent.UserSpeaking -> {
+                disarmQuietHangUp()
+            }
+
             is ProviderEvent.AssistantSpeaking -> {
                 assistantSpeaking = event.speaking
+                if (quietArmed) {
+                    if (event.speaking) quietHangUp?.cancel() else startQuietTimer()
+                }
                 if (ending && !event.speaking) {
                     val token = endingToken
                     scope.launch {
@@ -481,9 +493,10 @@ class ThreadController(
                 if (voice && hangUpDeferred) {
                     endCall(ENDED_BY_MODEL)
                 } else if (voice && task?.actionServiced == true && connectionTools[opened]?.callMode == VoiceCallMode.ONE_REQUEST) {
-                    // A one-request call is over once its phone action is done and the result has been
-                    // spoken, whether or not the model remembers to hang up.
-                    endCall(ENDED_AFTER_REQUEST)
+                    // The model decides when a request is fully served, but one whose action is done and
+                    // reported does not stay open just because it forgot to hang up: silence ends it.
+                    quietArmed = true
+                    if (!assistantSpeaking) startQuietTimer()
                 }
             }
 
@@ -493,6 +506,25 @@ class ThreadController(
 
             ProviderEvent.Closed -> {}
         }
+    }
+
+    private fun startQuietTimer() {
+        quietHangUp?.cancel()
+        val thisAttempt = attempt
+        quietHangUp =
+            scope.launch {
+                delay(QUIET_LINE_MILLIS)
+                if (thisAttempt == attempt && quietArmed) {
+                    quietArmed = false
+                    endCall(ENDED_AFTER_REQUEST)
+                }
+            }
+    }
+
+    private fun disarmQuietHangUp() {
+        quietArmed = false
+        quietHangUp?.cancel()
+        quietHangUp = null
     }
 
     /** Hangs up once whatever EVA is saying has finished playing. [request] is the model's own call to hang up. */
@@ -543,6 +575,7 @@ class ThreadController(
         ending = false
         endRequest = null
         hangUpDeferred = false
+        disarmQuietHangUp()
         actionResponses.clear()
         assistantSpeaking = false
         connectionJob?.cancel()
@@ -962,7 +995,10 @@ class ThreadController(
         private const val PLAYOUT_TAIL_MILLIS = 500L
         private const val ENDED_BY_USER = "ended by you"
         private const val ENDED_BY_MODEL = "ended by EVA with its end-call tool"
-        private const val ENDED_AFTER_REQUEST = "ended by EVA after finishing the request"
+        private const val ENDED_AFTER_REQUEST = "ended by EVA: the request was done and the line went quiet"
+
+        /** How long the user may stay silent after a one-request call's action is reported. */
+        private const val QUIET_LINE_MILLIS = 5_000L
         private const val ENDED_FOR_NEW_SESSION = "ended for a new session"
         private const val HANG_UP_DEFERRED =
             "The call is still open because an action from this request has not been reported. Tell the user its " +

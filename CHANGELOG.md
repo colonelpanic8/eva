@@ -4,6 +4,11 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- A one-request call counts the whole request, including clarifying questions, choices, and confirmations, instead of ending after the first reply that sounds finished. The stock wording is upgraded unless you edited it.
+- After a one-request call's phone action is reported, EVA waits for the line to go quiet for five seconds before hanging up on its own, so you can still answer or add to the request. The closing note says when this is why the call ended.
+
 ## [0.26.0] - 2026-09-22
 
 ### Added

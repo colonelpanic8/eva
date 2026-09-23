@@ -721,9 +721,12 @@ class ThreadControllerTest {
         }
 
     @Test
-    fun `a one-request call hangs up once its action is reported, and an open call stays up`() =
+    fun `a one-request call hangs up when the line goes quiet after its action is reported`() =
         runTest {
-            suspend fun TestScope.actOnce(callMode: VoiceCallMode): VoiceMedia {
+            suspend fun TestScope.actOnce(
+                callMode: VoiceCallMode,
+                userKeepsGoing: Boolean = false,
+            ): VoiceMedia {
                 val provider = FakeProvider()
                 val media = VoiceMedia()
                 val controller = controller(provider, media = { media })
@@ -734,16 +737,24 @@ class ThreadControllerTest {
                 provider.channel.send(ProviderEvent.ResponseStarted("voice:turn-1", "voice:turn-1"))
                 provider.call("first", action.id, "place" to "Park")
                 advanceUntilIdle()
+                provider.channel.send(ProviderEvent.AssistantSpeaking(true))
                 provider.channel.send(ProviderEvent.AssistantText("voice:turn-1", "Opened the park.", false))
                 provider.channel.send(ProviderEvent.ResponseEnded("voice:turn-1", "completed"))
+                provider.channel.send(ProviderEvent.AssistantSpeaking(false))
+                runCurrent()
+                advanceTimeBy(4_000)
+                assertFalse(media.closed)
+                if (userKeepsGoing) provider.channel.send(ProviderEvent.UserSpeaking)
                 advanceUntilIdle()
                 if (media.closed) {
-                    assertEquals("Call ended by EVA after finishing the request", sessionNotices(controller).last())
+                    assertEquals("Call ended by EVA: the request was done and the line went quiet", sessionNotices(controller).last())
                 }
                 return media
             }
 
             assertTrue(actOnce(VoiceCallMode.ONE_REQUEST).closed)
+            // A request can take several exchanges; speaking again keeps the call.
+            assertFalse(actOnce(VoiceCallMode.ONE_REQUEST, userKeepsGoing = true).closed)
             assertFalse(actOnce(VoiceCallMode.OPEN_CONVERSATION).closed)
         }
 
@@ -867,7 +878,7 @@ class ThreadControllerTest {
             advanceUntilIdle()
 
             assertTrue(provider.request.instructions.contains("This call stays open"))
-            assertFalse(provider.request.instructions.contains("This call is for one request."))
+            assertFalse(provider.request.instructions.contains("This call is for one request"))
         }
 
     @Test

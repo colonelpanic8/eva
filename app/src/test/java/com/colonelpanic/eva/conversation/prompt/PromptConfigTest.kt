@@ -20,11 +20,11 @@ class PromptConfigTest {
         assertEquals("It is noon.", voiceParagraphs.last())
         assertTrue(voice.instructions.contains("This is a spoken conversation."))
         assertTrue(voice.instructions.contains("give only a brief confirmation"))
-        assertTrue(voice.instructions.contains("This call is for one request."))
-        assertTrue(voice.instructions.contains("every closing line must be accompanied by that tool call"))
+        assertTrue(voice.instructions.contains("This call is for one request"))
+        assertTrue(voice.instructions.contains("a goodbye without the tool does not end the call"))
         assertFalse(voice.instructions.contains("This call stays open"))
         assertFalse(typed.instructions.contains("spoken conversation"))
-        assertFalse(typed.instructions.contains("This call is for one request."))
+        assertFalse(typed.instructions.contains("This call is for one request"))
         assertTrue(typed.instructions.contains("Never claim sending a message"))
         assertFalse(
             PromptDefaults.config
@@ -78,7 +78,7 @@ class PromptConfigTest {
     fun `selecting a call mode switches the call slot and is reported by the assembled prompt`() {
         val oneRequest = PromptDefaults.config.selectCallMode(VoiceCallMode.ONE_REQUEST)
         val open = PromptDefaults.config.selectCallMode(VoiceCallMode.OPEN_CONVERSATION)
-        assertTrue(oneRequest.assemble(PromptContext(true, variables)).instructions.contains("This call is for one request."))
+        assertTrue(oneRequest.assemble(PromptContext(true, variables)).instructions.contains("This call is for one request"))
         assertTrue(open.assemble(PromptContext(true, variables)).instructions.contains("This call stays open"))
         assertEquals(VoiceCallMode.OPEN_CONVERSATION, open.assemble(PromptContext(true, variables)).callMode)
         assertNull(open.assemble(PromptContext(false, variables)).callMode)
@@ -176,6 +176,43 @@ class PromptConfigTest {
                     },
             )
         assertEquals(customized, PromptDefaults.upgradeStockCallWording(customized))
+    }
+
+    @Test
+    fun `stock one-request wording counts a multi-exchange request as one`() {
+        val previous =
+            PromptComponent(
+                PromptDefaults.ONE_REQUEST_ID,
+                instruction =
+                    """
+                    This call is for one request. Once you have finished it, because the result is reported, the
+                    question is answered, or you have said what you could not do, say a short closing line and
+                    call the end-conversation tool in the same response. Saying goodbye or otherwise sounding
+                    finished does not end the call by itself; every closing line must be accompanied by that tool
+                    call. Do not ask whether there is anything else. Stay on only while something is genuinely
+                    unfinished: an action is still running, or you asked the user a question and are waiting for
+                    the answer. If the user asks you to stay on the line or starts another request, keep going and
+                    treat that as the request to finish.
+                    """.trimIndent(),
+                describe =
+                    mapOf(
+                        PromptDefaults.END_CONVERSATION_ID to
+                            """
+                            Hang up this voice conversation. In the same response, say a short closing line and call
+                            this tool. A spoken goodbye without this tool leaves the call open, so never give a closing
+                            line without calling it. Call it as soon as the user's request is complete and nothing is
+                            outstanding. Do not call it while an action is unfinished, while you are waiting for the
+                            user to answer a question, or after the user has asked you to stay on the line.
+                            """.trimIndent(),
+                    ),
+            )
+
+        val upgraded = PromptDefaults.upgradeStockCallWording(PromptConfig(listOf(previous))).components.single()
+
+        val stock = PromptDefaults.config.components.first { it.id == PromptDefaults.ONE_REQUEST_ID }
+        assertEquals(stock.instruction, upgraded.instruction)
+        assertEquals(stock.describe, upgraded.describe)
+        assertTrue(upgraded.instruction.contains("several exchanges"))
     }
 
     @Test

@@ -498,9 +498,11 @@ The stock call instructions offer one-request and open-conversation alternatives
 the `call` slot; the Settings switch "End calls after one request" edits that slot,
 and every voice launch follows it. A retired `voice.oneShotExternal: false` is
 migrated into the slot when a configuration file is read. The voice control
-`eva.session.end` ends the attachment, not remote work. In one-request mode EVA
-also hangs up itself once the request's phone action completed or was handed off
-and the response reporting it has finished playing. A hang-up the model proposes
+`eva.session.end` ends the attachment, not remote work. A request may take several
+exchanges, and the model decides when it is fully served. As a backstop in
+one-request mode, once the request's phone action completed or was handed off and
+the response reporting it has finished playing, EVA hangs up if the user does not
+start speaking within five seconds. A hang-up the model proposes
 in the same response as an action, or while an action result is unreported, is
 answered as not executed and happens after the next response instead, so the
 result is spoken on the call rather than re-homed. Each attachment's closing
