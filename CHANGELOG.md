@@ -4,6 +4,15 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Installed extension providers receive a stable invocation ID derived from EVA's action journal. They can use it to replay a request without repeating it and to answer later status questions. When EVA stops waiting, the unknown result includes the ID so the model can check the provider's own status action.
+- The extension protocol documents how installed providers run writes on a locked phone and report receipt states: completed, accepted, uncertain, or needs unlock or setup. Mova and Paseo implement this on their development branches.
+
+### Changed
+
+- The Mova and Paseo catalog packages point at those apps' background extensions, and keep their links as the foreground fallback. Paseo adds project lookup and allows 20 seconds for message reads from a cold app.
+
 ## [0.32.0] - 2026-09-23
 
 ### Changed
