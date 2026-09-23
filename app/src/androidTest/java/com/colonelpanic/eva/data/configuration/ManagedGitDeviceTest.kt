@@ -80,7 +80,7 @@ class ManagedGitDeviceTest {
             prompt = EvaConfiguration.Prompt("https://example.com/prompt.yaml", listOf(PromptComponent("test", instruction = "Test."))),
             packages =
                 EvaConfiguration.Packages(
-                    repository = "https://example.com/packages.json",
+                    repositories = listOf("https://example.com/packages.git"),
                     installed = emptyList(),
                     waitMillis = emptyMap(),
                     services = emptyList(),

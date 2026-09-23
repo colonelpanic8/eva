@@ -162,11 +162,18 @@ class ContentPackageTest {
             assertTrue(definition.contentBindings().isNotEmpty())
             assertTrue(definition.capabilities.filter { it.binding is DeclarativeBinding.Content }.all { it.effect == PackageEffect.READ })
         }
-        val capability = contentFixture().capabilities.first()
+        val capability = contentFixture().capabilities.single { it.name == "list_workspaces" }
         val binding = capability.binding as DeclarativeBinding.Content
         assertEquals(binding.uri, BindingArguments(capability, emptyMap()).content(binding).uri)
         val request = BindingArguments(capability, mapOf("q" to "a b&x=/#😀", "limit" to "7")).content(binding)
         assertEquals("content://sh.paseo.assistant/workspaces?q=a%20b%26x%3D%2F%23%F0%9F%98%80&limit=7", request.uri)
+        val projects = contentFixture().capabilities.single { it.name == "list_projects" }
+        val projectBinding = projects.binding as DeclarativeBinding.Content
+        assertEquals(listOf("id", "serverId", "name", "kind"), projectBinding.projection.keys.toList())
+        assertEquals(
+            "content://sh.paseo.assistant/projects?serverId=host%201&q=api",
+            BindingArguments(projects, mapOf("serverId" to "host 1", "q" to "api")).content(projectBinding).uri,
+        )
         val agenda = contentFixture("mova-content").capabilities.single { it.name == "read_agenda" }
         val query =
             BindingArguments(agenda, mapOf("date" to "2026-09-14", "span" to "week", "include_completed" to "false"))

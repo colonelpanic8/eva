@@ -38,7 +38,8 @@ class ExtensionBackendTest {
                 assertEquals(ExecutionOutcome(status, "evidence"), backend.execute(proposal))
             }
             assertEquals("v1", fake.revision)
-            assertEquals("call-1", fake.id)
+            assertEquals(ExtensionBackend.invocationId("call-1"), fake.id)
+            assertTrue(fake.id.matches(Regex("eva-[0-9a-f]{64}")))
             assertEquals(1000, fake.deadline)
             assertEquals(5, fake.submits)
             assertEquals(extensionIdentity.component, backend.definition.source!!.id)
@@ -74,7 +75,10 @@ class ExtensionBackendTest {
             fake.reply = "{}"
             assertEquals(InvocationStatus.UNKNOWN, backend.execute(proposal).status)
             fake.reply = null
-            assertEquals(InvocationStatus.UNKNOWN, backend.execute(proposal).status)
+            val lost = backend.execute(proposal)
+            assertEquals(InvocationStatus.UNKNOWN, lost.status)
+            assertEquals(JsonPrimitive(ExtensionBackend.invocationId("call-1")), lost.data!!["invocationId"])
+            assertTrue(lost.message.contains(ExtensionBackend.invocationId("call-1")))
             assertEquals(8, fake.submits)
         }
 

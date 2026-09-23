@@ -8,7 +8,7 @@ in the app. [Architecture](architecture.md) explains the runtime;
 | Path | Use it for | Current boundary |
 | --- | --- | --- |
 | Declarative JSON packages | Existing app intents, content providers or HTTP APIs | Import, preview, install, grants, intent, HTTP and bounded content-provider reads implemented; content host JVM-tested, device verification pending |
-| Installed Android extension service | Code and structured protocol responses supplied by an app author | AIDL runtime implemented and JVM-tested; no real provider device verification |
+| Installed Android extension service | Code and structured protocol responses supplied by an app author; background and locked-screen writes | AIDL runtime implemented and JVM-tested; Mova 7.2.0 provider released, Paseo in development; transport checked on an emulator, no physical-device verification |
 | Native Android adapters | Operations requiring EVA code or platform privileges | Existing adapters include messaging, Settings AppFunctions and Shizuku device control; no universal AppFunctions adapter |
 | Media apps | Any installed player, through the routes it already registers | Discovered, not authored: each player is one extension with per-operation grants (see [Architecture](architecture.md#android-capabilities)); nothing to import or install |
 
@@ -477,12 +477,15 @@ query flags. Template `key` feeds capture's `template` slot; todo `id` feeds
 and `title` for those intent actions. Mova uses its active server and credentials;
 its provider ignores SQL selection, so these reads use URI parameters.
 
-Paseo's `android-intents` branch implements `/workspaces`, `/agents`, and live
-`/messages` at `sh.paseo.assistant`. Workspace rows identify the project and a
+Paseo's `android-intents` branch implements `/projects`, `/workspaces`, `/agents`,
+and live `/messages` at `sh.paseo.assistant`. Project rows (`id`, `serverId`,
+`name`, `kind`) supply the project ID that new-agent creation takes. Workspace rows identify the project and a
 credential-free repository host/path, alongside the branch and host. Keep each
 row's `serverId` with its workspace or agent `id` when filtering agents, reading
 messages, or opening an intent. The catalog tables reflect Paseo's last publish
-and can be incomplete. `/messages` needs Paseo running with its host connected;
+and can be incomplete. `/messages` needs the host connected. Paseo's locked-extension branch answers it
+from a cold process by starting its JS runtime headless, so the package allows 20
+seconds;
 it reads one agent or recent messages across a workspace's active agents and
 returns a notice row when the transcript is unavailable. The provider rejects
 SQL filtering and enforces its own EVA package-family caller check. Its debug
@@ -729,8 +732,12 @@ oneway interface IEvaExtensionCallback {
 ```
 
 All arguments are non-null. IDs are opaque EVA-generated ASCII strings, 1–256
-bytes, echoed exactly in the callback. An invocation ID is correlation, not a
-credential or a promise of persistent idempotency. `capability` is the descriptor's
+bytes, echoed exactly in the callback. An execute invocation ID is
+`eva-` followed by the 64 lowercase hex digits of the SHA-256 of EVA's journal
+call ID. The journal claims a call ID once, so the ID is stable for one invocation
+and never names two; it is not a credential. Providers may key persistent
+idempotency on it (see [durable writes](#9-durable-writes-receipt-states-and-locked-devices))
+but must accept any v1-valid ID. `capability` is the descriptor's
 local tool name, not its EVA-qualified ID. Each request receives at most one
 terminal callback. There is no streaming, progress, accepted-job response,
 cancellation method, or callback-initiated execution. EVA ignores duplicate,
@@ -751,7 +758,9 @@ Authenticate and capture identity in each Binder entry point before scheduling
 bounded background work. Binder methods, callbacks, service creation, and
 `onBind` must return promptly. Do not perform network work or wait for execution
 on Binder/main threads. Bound queues and concurrency; reject excess work as
-`busy`. Avoid starting React Native/JS merely to service native extension calls.
+`busy`. Avoid starting React Native/JS merely to service native extension calls;
+a provider whose only transport lives in JS may start it headless from the bound
+service, without an Activity, and must still reply before the deadline.
 
 ### 2. Encoding and bounds
 
@@ -1014,10 +1023,89 @@ mutations may follow earlier tool results without another user message. This
 applies to native and imported tools, including background continuation. Existing
 grants and dispatcher authorization still apply separately to every call. Unknown
 or failed mutations block further mutations in the same turn; read-only checks
-remain available. No automatic retry, in-turn grant approval, or persistent
-provider idempotency guarantee is introduced.
+remain available. No automatic retry or in-turn grant approval is introduced;
+persistent idempotency is the provider's promise under section 9, not EVA's.
 
 Dispatched operations are journaled independently of result delivery, text and
 structured data alike. Removal or conversation close does not undo external work.
 Historical receipts retain original attribution/outcomes. Recovery/reconnect never
 repeats uncertain work.
+
+### 9. Durable writes, receipt states, and locked devices
+
+This section is a convention layered on the unchanged v1 ABI and JSON codec. It
+adds no method, status, or reason code. It lets an installed provider act while
+the phone is locked and report honestly what happened, and it is what the Mova
+and Paseo providers implement.
+
+**Why this transport.** EVA binds the provider's service with `BIND_AUTO_CREATE`.
+That cold-starts the provider process without an Activity. No background-activity
+launch rule or keyguard applies. While EVA holds the binding, the provider runs
+with at least EVA's importance, which comes from its visible assistant session or
+its foreground service. A `mova://` or `paseo://` intent is an Activity launch,
+which Android may defer behind the keyguard or refuse from the background. A
+content-provider `call()` binding would need a new codec, and EVA could not bind
+grants to the provider's signer.
+
+**Provider journal.** A write provider persists a record keyed by caller UID and
+invocation ID. It writes the record in credential-encrypted storage *before* any
+network or other side effect, bound to the capability and a digest of the
+canonical arguments. Replays and conflicts:
+
+- The same ID with the same request returns the recorded (or current) envelope and
+  never re-executes.
+- The same ID with a different request returns `not_executed/invalid_arguments`
+  with state `request_id_conflict`.
+- A record left without a terminal outcome by process death replies `unknown`, or
+  continues only under the provider's own idempotency key downstream.
+- Providers bound the journal (for example, 14 days) and never retry an uncertain
+  submission.
+
+EVA itself never re-executes to repair a lost reply.
+
+**Receipt state.** Write replies carry `structuredContent` with at least
+`invocationId` and `state`. A declared `outputSchema` must admit every state, so
+only those two fields are required. The envelope status follows the state:
+
+| `state` | Envelope status | Meaning |
+| --- | --- | --- |
+| `completed` | `completed` | Operation-specific evidence: server success body, or prompt dispatched to the agent. Not "the agent's task finished". |
+| `accepted`, `submitted`, `waiting_for_host` | `handed_off` | Durably accepted by the provider or its server; the provider continues it without EVA; completion not yet observed. `pollable: true` names a status read. |
+| `uncertain` | `unknown` | May have run. Never retried; the user checks. |
+| `failed` | `failed` | Definite failure after submission; partial effects are explained. |
+| `not_sent`, `not_started`, `rejected`, `expired`, `request_id_conflict`, `invalid_request`, `unknown_request` | `not_executed` | Provably nothing took effect: never sent, refused before dispatch, expired, or invalid; `invalid_arguments`, `deadline_exceeded`, or a null reason. |
+| `needs_unlock`, `needs_authorization`, `needs_configuration`, `needs_host_update` | `not_executed` / `not_configured` | Nothing started; the message says what the user must do. |
+
+A provider replies no later than about 1.5 seconds before the absolute deadline.
+If its own work has not finished by then, it reports the current durable state
+(normally `handed_off`) rather than letting EVA's wait lapse into `unknown`. A
+provider that offers reconciliation exposes an ordinary `read` capability (Mova:
+`invocation_status`, Paseo: `request_status`, both taking `invocationId`). That
+read returns `completed` with the recorded receipt as `structuredContent`; its
+`state` carries the write's progress (Mova adds `in_progress`, `interrupted`, and
+`not_found`; Paseo `unknown_request`). When EVA's own wait lapses, its `unknown`
+receipt carries the same `invocationId` in its data, so the model can ask. EVA
+does not rewrite the original receipt from a later status read.
+
+A provider may require its own one-time opt-in for unattended execution. It
+reports `needs_authorization` until the opt-in is given; the opt-in adds to EVA's
+per-action grants and never replaces them. Providers keep the caller check in
+section 7. The production pin is EVA's release certificate, SHA-256
+`688df17827dd9a002705baf0400c80f8f4650c6e87c3fc91d41f32be287f8b68`, taken from the
+v0.26.0 release APK with `apksigner`.
+
+**Device states.** EVA and these providers are not direct-boot aware, and none
+moves credentials into device-protected storage.
+
+| State | Expected behavior | Evidence |
+| --- | --- | --- |
+| Locked after first unlock, provider warm or evicted | Bind cold-starts the provider; reads and writes run; no tap | API 36 emulator: Mova reads and writes answered from a cold process with the keyguard showing (not logged in, so no server write). Paseo created agents and sent prompts to a throwaway host in 0.9–2.0 s, including headless JS start |
+| Before first unlock after reboot | EVA and providers do not run; credential-encrypted storage is unavailable until first unlock ([Direct Boot](https://developer.android.com/privacy-and-security/direct-boot)) | Platform documentation |
+| Provider force-stopped or never launched | Android 15 says apps leave the stopped state only through user action ([stopped state](https://developer.android.com/about/versions/15/behavior-changes-all#stopped-state)); a failed bind is `not_executed`, nothing submitted | API 36 emulator: binding a force-stopped and a never-launched Mova succeeded while locked and cleared `stopped`; the caller was an instrumented EVA process, and OEM builds may differ |
+| Offline before submission | `not_executed`, or `handed_off`/`waiting_for_host` if the provider durably continues | API 36 emulator: Paseo returned `waiting_for_host` with its host down, and a status read after restart returned `completed` |
+| Lost reply after submission | `unknown`; a status read may later show the outcome | Provider tests |
+| Keystore key requiring an unlocked device | `not_executed/not_configured` with `needs_unlock` | Neither current provider uses such a key |
+
+Intent-backed catalog actions remain as foreground fallbacks: they open the app
+for review or when no provider service is installed.
+

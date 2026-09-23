@@ -191,7 +191,8 @@ for concrete identity, schema, waiting, and authorization rules.
 
 The installable Paseo package discovers workspaces and agents, reads recent
 messages through Paseo's Android provider, and opens or prompts them through
-links. Native Paseo and general MCP adapters remain future work. They should
+links. Paseo's installed extension service (in development, see below) creates
+agents and sends prompts without its UI. General MCP adapters remain future work. They should
 register capabilities through the same execution boundary. Routine phone
 actions must not depend on a remote coding agent or on automating Paseo's Android UI.
 
@@ -204,6 +205,17 @@ the selected system assistant. The fallback sets `FLAG_ACTIVITY_NEW_TASK`; it
 relies on Android's assistant launch eligibility and does not grant that privilege
 to extension providers. Android and target-app restrictions still apply. A launch
 receipt is a handoff request, not verified target visibility or completion.
+
+Writes that must work on a locked phone use installed extension services rather
+than intents. EVA binds the provider's service, which cold-starts its process
+without an Activity. The provider journals the invocation ID before any side
+effect and reports a receipt state: completed, durably accepted (`HANDED_OFF`),
+uncertain (`UNKNOWN`), or a `NOT_EXECUTED` setup need such as unlock or opt-in.
+Mova 7.2.0 implements this contract and Paseo implements it on a development
+branch; neither is device-verified against a real server. See [durable writes](extension-protocol.md#9-durable-writes-receipt-states-and-locked-devices)
+for the states, the device-state matrix, and the one-time opt-in rule. A
+before-first-unlock phone runs neither EVA nor these providers, because none is
+direct-boot aware.
 
 Intent handoffs defer lock-screen launch eligibility to Android instead of
 blanket-blocking every intent while locked. A locked handoff explains that unlock

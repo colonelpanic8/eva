@@ -228,13 +228,35 @@ Recorded checks from 2026-09-14:
 | Direct subscription voice, Pixel | Synthetic speech, expected transcripts, decoded output audio; timer handoff and connection survival | Does not measure acoustic quality, echo, Bluetooth, or natural barge-in |
 | Assistant role, Pixel API 37, signed `0.13.0` candidate | System assist event opened overlay, voice connected, panel/scrim behavior checked | Keyguard, activity handoff, and delegated recognition still need device verification |
 | Shizuku device control, Android 16/API 36 emulator | Observation, Unicode replacement, tap, post-action observation, service restart | Does not establish Android 17 physical-device compatibility |
+| Installed-extension transport, API 36 `google_apis` emulator, 2026-09-23, EVA `locked-extension-eva` debug re-signed with Mova's debug key, Mova `locked-extension-mova` debug | From EVA's UID, `InstalledExtensionDeviceTest` described Mova and executed `find_todos` and `create_todo` (keyguard showing, PIN set, no Mova process), and did the same with Mova force-stopped and never launched. Each bind took about 0.5 s; replies decoded as `not_executed/not_configured` because Mova was not logged in | No server write, no EVA voice or assistant session; before-first-unlock was not rebooted into |
+| Same emulator, Paseo `locked-extension-paseo` release-variant APK signed with the shared React Native debug key, a throwaway daemon with the mock provider | Keyguard showing, Paseo killed or force-stopped: `create_agent` (local and worktree) and `send_prompt` returned `completed` in 0.9–2.0 s including headless React Native cold start. The daemon recorded one agent per marker with the marker as its first user message. With Paseo's toggle off, `needs_authorization`. With the host offline, `handed_off`/`waiting_for_host` after 23.5 s; one `request_status` after restart returned `completed`. Unknown IDs return `unknown_request`. Cold, force-stopped `/messages` reads from EVA's process returned rows in about 1.5 s. A production-configured Paseo refused EVA debug (`unauthorized_caller`, provider `SecurityException`) | Mock provider, emulator, instrumented caller; no physical device or real model provider |
 
 A repeatable extension check starts with an installed target app and enabled EVA
 extension/action grants. Invoke each operation separately, inspect its attributed
 receipt, and independently inspect the target state. Verify missing-handler and
 revoked-grant behavior without inventing success. For Messages compose, leave the
-draft unsent. HTTP fixtures need a compatible configured server; installed-service
-AIDL still needs a provider test vehicle.
+draft unsent. HTTP fixtures need a compatible configured server.
+
+Installed-service providers are checked from EVA's own UID with
+`InstalledExtensionDeviceTest`. A debug provider accepts EVA debug only when both
+share a signer, so re-sign EVA's debug and test APKs with the provider's debug
+key when they differ. Use a disposable emulator or device: Mova's debug and
+release builds share one application ID. The test prints the lock state, bind
+time, status, reason, and receipt `state`. It runs writes only with
+`evaExtensionAllowWrite=true`. Quote the JSON arguments inside the device shell
+string:
+
+```sh
+adb -s "$EVA_TEST_DEVICE" shell locksettings set-pin 1234
+adb -s "$EVA_TEST_DEVICE" shell input keyevent KEYCODE_SLEEP
+adb -s "$EVA_TEST_DEVICE" shell am kill com.colonelpanic.mova
+adb -s "$EVA_TEST_DEVICE" shell "am instrument -w \
+  -e class com.colonelpanic.eva.capability.extensions.InstalledExtensionDeviceTest \
+  -e evaExtensionPackage com.colonelpanic.mova -e evaExtensionCapability find_todos \
+  -e evaExtensionArguments '{\"q\":\"test\"}' \
+  com.colonelpanic.eva.debug.test/androidx.test.runner.AndroidJUnitRunner"
+adb -s "$EVA_TEST_DEVICE" logcat -d -s EvaExtensionDevice:I
+```
 
 ### Messaging setup and verification
 

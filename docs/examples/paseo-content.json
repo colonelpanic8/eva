@@ -1,20 +1,92 @@
 {
   "formatVersion": 1,
   "id": "android.paseo",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "title": "Paseo",
-  "description": "Discover Paseo workspaces and agents by project, repository, branch, and name; read recent agent messages; and open them or draft or send prompts through paseo:// links. Use catalog ids with their serverId. Workspace message reads include several agents. A sent prompt through a link is a handoff, not proof of delivery or completion.",
-  "guidance": "Most Paseo requests take several steps. For a vague workspace description, call list_workspaces with one distinctive project, repository, or branch fragment, then select a row by its metadata; ask which if several fit. Use that row’s id and serverId together. A workspace may contain multiple agents: use read_workspace_messages for a workspace summary, or list_agents and read_agent_messages when one session matters. Before prompting an existing agent, identify it with list_agents and use its id and serverId together. Say which agent you picked and the gist of the prompt. Use send_agent_prompt only when the user asked to send, otherwise draft_agent_prompt. For new work that belongs to no existing agent, use new_agent. Read the relevant transcript before composing a follow-up when its context matters. Never guess an id or reuse one from memory. Catalog rows may be stale until Paseo is opened again; if nothing matches, try a different fragment or offer open_history.",
+  "description": "Discover Paseo projects, workspaces, and agents by project, repository, branch, and name; read recent agent messages; and open them or draft or send prompts through paseo:// links. Use catalog ids with their serverId. Workspace message reads include several agents. Links open Paseo's screen and are handoffs, not proof of delivery. Paseo's own installed EVA extension starts agents and sends prompts in the background, including on a locked phone.",
+  "guidance": "Most Paseo requests take several steps. For a vague workspace description, call list_workspaces with one distinctive project, repository, or branch fragment, then pick a row by its metadata; ask which if several fit. Use a row's id and serverId together. A workspace may hold several agents: read_workspace_messages summarizes it; list_agents and read_agent_messages cover one session. Before prompting an agent, identify it with list_agents, and say which agent you picked and the gist of the prompt. When Paseo's installed extension offers send_prompt and create_agent, use them: they work without opening Paseo, even locked. Their state completed means the prompt reached the agent; accepted, submitted, or waiting_for_host means still delivering, so check with request_status and its invocationId; uncertain means never resend. For create_agent, take projectId and serverId from list_projects. Otherwise use the links: send_agent_prompt only when the user asked to send, else draft_agent_prompt; new_agent for new work. Never guess or reuse an id from memory. Catalog rows may be stale until Paseo opens; if nothing matches, try another fragment or offer open_history.",
   "setup": [
     "Install Paseo and open it at least once: it publishes the workspace and agent catalog while the app has been in the foreground, so anything created since then is missing until it opens again.",
     "To let the send action actually send, turn on Settings, General, Send prompts from links in Paseo. With it off Paseo drafts the prompt instead, and EVA cannot tell the two apart.",
-    "This package needs a Paseo build with the repository catalog column and assistant messages provider. Recent-message reads also need the app process running and the target host connected. An unavailable transcript is returned as a notice row."
+    "Needs a Paseo build with the repository catalog column and assistant messages provider. Message reads need the host connected; Paseo builds with the EVA extension service answer them without the app open. An unavailable transcript is a notice row.",
+    "For background sending and agent creation, enable Paseo under EVA Extensions → Installed, grant its write actions, and turn on unattended EVA execution in Paseo's settings. That extension comes from the Paseo app itself, not this package."
   ],
   "androidPackages": [
     "sh.paseo",
     "sh.paseo.assembly"
   ],
   "capabilities": [
+    {
+      "tool": {
+        "name": "list_projects",
+        "title": "List Paseo projects",
+        "description": "Find the Paseo project to start new work in. Never guess a projectId. Rows are the projects Paseo's hosts have registered: id, serverId, name, and kind. Pass id as projectId and serverId from the same row to create_agent or new_agent. q matches one case-insensitive fragment of the name or an id, not a phrase. If several fit, ask which using name and host. Rows come from the catalog Paseo last published and may be stale.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "serverId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Only projects on this Paseo host."
+            },
+            "q": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "One case-insensitive fragment of the project name or an id. Not a phrase search."
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "Maximum rows to return, 1 to 100 (Paseo defaults to 25)."
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
+        }
+      },
+      "effects": "read",
+      "execution": {
+        "mode": "synchronous",
+        "requiresForeground": false,
+        "maxWaitMillis": 10000
+      },
+      "binding": {
+        "kind": "android.content",
+        "authority": "sh.paseo.assistant",
+        "uri": {
+          "base": "content://sh.paseo.assistant/projects",
+          "query": {
+            "serverId": {
+              "argument": "serverId",
+              "type": "string"
+            },
+            "q": {
+              "argument": "q",
+              "type": "string"
+            },
+            "limit": {
+              "argument": "limit",
+              "type": "integer"
+            }
+          }
+        },
+        "projection": {
+          "id": "string",
+          "serverId": "string",
+          "name": "string",
+          "kind": "string"
+        },
+        "maxRows": 100,
+        "maxBytes": 16384
+      }
+    },
     {
       "tool": {
         "name": "list_workspaces",
@@ -169,7 +241,7 @@
       "tool": {
         "name": "read_workspace_messages",
         "title": "Read recent Paseo workspace messages",
-        "description": "Read recent messages across the selected workspace's active top-level agents, newest first. First find the workspace with list_workspaces; use id as workspaceId and its serverId from the same row. Each message names its agent and has kind, time, and clipped text. Paseo reads up to six recently active agents. A kind=notice row means Paseo could not read the transcript; report the notice instead of inventing a summary. Paseo must be running with a connected host. This is a read, not a prompt send.",
+        "description": "Read recent messages across the selected workspace's active top-level agents, newest first. First find the workspace with list_workspaces; use id as workspaceId and its serverId from the same row. Each message names its agent and has kind, time, and clipped text. Paseo reads up to six recently active agents. A kind=notice row means Paseo could not read the transcript; report the notice instead of inventing a summary. The host must be connected; a cold Paseo can take up to 20 seconds to answer. This is a read, not a prompt send.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -207,7 +279,7 @@
       "execution": {
         "mode": "synchronous",
         "requiresForeground": false,
-        "maxWaitMillis": 10000
+        "maxWaitMillis": 20000
       },
       "binding": {
         "kind": "android.content",
@@ -247,7 +319,7 @@
       "tool": {
         "name": "read_agent_messages",
         "title": "Read recent Paseo agent messages",
-        "description": "Read one Paseo agent's recent user, assistant, and tool-summary messages, newest first. Find the agent with list_agents and use its id and serverId from the same row. If a workspace has several plausible agents, ask which one unless the user wants workspace-wide activity; use read_workspace_messages for that. A kind=notice row means Paseo could not read the transcript. Paseo must be running with a connected host. This is a read, not a prompt send.",
+        "description": "Read one Paseo agent's recent user, assistant, and tool-summary messages, newest first. Find the agent with list_agents and use its id and serverId from the same row. If a workspace has several plausible agents, ask which one unless the user wants workspace-wide activity; use read_workspace_messages for that. A kind=notice row means Paseo could not read the transcript. The host must be connected; a cold Paseo can take up to 20 seconds to answer. This is a read, not a prompt send.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -285,7 +357,7 @@
       "execution": {
         "mode": "synchronous",
         "requiresForeground": false,
-        "maxWaitMillis": 10000
+        "maxWaitMillis": 20000
       },
       "binding": {
         "kind": "android.content",
@@ -325,7 +397,7 @@
       "tool": {
         "name": "new_agent",
         "title": "Start a new agent",
-        "description": "Start new work in Paseo: open its New workspace screen with the prompt in the composer. The user chooses the project, model, and isolation and taps Send; nothing is sent by this action. It cannot add work to an existing workspace or agent; for that, find the agent with list_agents and use draft_agent_prompt or send_agent_prompt. Catalog rows carry no projectId or directory, so omit projectId and dir unless the user supplies one. A successful EVA receipt proves only that Paseo opened.",
+        "description": "Start new work in Paseo: open its New workspace screen with the prompt in the composer. The user chooses the project, model, and isolation and taps Send; nothing is sent by this action. It cannot add work to an existing workspace or agent; for that, find the agent with list_agents and use draft_agent_prompt or send_agent_prompt. Take projectId and serverId from the same list_projects row; omit dir unless the user supplies one. To start the work without the user tapping Send, use the Paseo extension's create_agent instead. A successful EVA receipt proves only that Paseo opened.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -516,7 +588,7 @@
       "tool": {
         "name": "send_agent_prompt",
         "title": "Send a follow-up to an agent",
-        "description": "Open a Paseo agent session and ask Paseo to send the prompt to it immediately. Take agentId and serverId from the same list_agents row. Paseo only sends when its setting “Send prompts from links” is on; otherwise it places the prompt in the composer unsent and tells the user why. EVA cannot tell which happened: a successful receipt proves only the handoff, not delivery or completion of the agent's work.",
+        "description": "Foreground fallback for the Paseo extension's send_prompt: open a Paseo agent session and ask Paseo to send the prompt to it immediately. Take agentId and serverId from the same list_agents row. Paseo only sends when its setting “Send prompts from links” is on; otherwise it places the prompt in the composer unsent and tells the user why. EVA cannot tell which happened: a successful receipt proves only the handoff, not delivery or completion of the agent's work.",
         "inputSchema": {
           "type": "object",
           "properties": {
