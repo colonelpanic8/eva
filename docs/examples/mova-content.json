@@ -1,15 +1,15 @@
 {
   "formatVersion": 1,
   "id": "android.mova",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "title": "Mova",
-  "description": "Read and act on org-mode todos through the Mova Android app: discover capture templates, search and read todos and the agenda through Mova's read-only provider, and create, complete, update, reschedule, or delete todos through mova:// links. Mova uses the server and credentials already configured in the app. Mova 7.1.1 or later runs these link writes without another confirmation, and 7.2.0 or later shows them over the lock screen, but Android may still refuse to start the activity from the background; EVA reports handoff, not verified completion. Mova 7.2.0's own installed EVA extension performs the same writes in the background, including on a locked phone, and reports server-confirmed results.",
+  "description": "Read and act on org-mode todos through the Mova Android app: discover capture templates, search and read todos and the agenda through Mova's read-only provider, and create, complete, update, reschedule, or delete todos through mova:// links. Mova uses the server and credentials already configured in the app. Mova 7.1.1 or later runs these link writes without another confirmation, and 7.2.0 or later shows them over the lock screen, but Android may still refuse to start the activity from the background; EVA reports handoff, not verified completion. Mova's own installed EVA extension (7.2.1 or later recommended) performs the same writes in the background, including on a locked phone, and reports server-confirmed results.",
   "guidance": "Changing an existing todo takes two steps in the same request: find it, then change it. To complete, reschedule, update, delete, or open a todo, first call find_todos with the words the user used, or read_agenda when they mean today's or this week's items, and match their description to one row; if several fit, name them briefly and ask which. Then pass that row's id, or its file and pos when id is null, to the action instead of a paraphrased title. Turn relative dates such as tomorrow or next Friday into YYYY-MM-DD from the current time. To add a todo, use create_todo with a short title; call list_templates first only when the user names a kind of capture or the todo needs template-specific fields. When Mova's installed extension offers create_todo, complete_todo, update_todo, or delete_todo, prefer those: they run without opening Mova, work on a locked phone, and return completed only with the server's confirmation. Pass them the same id, or file and pos. Use the mova:// actions only when those tools are missing or the user wants Mova open. A link receipt means Mova received the request, not that it applied it. An unknown result from either path means check current state with find_todos or read_todo; never simply retry.",
   "setup": [
-    "Install Mova 7.1.1 or later for unattended native writes and sign in to the server you want EVA to use.",
-    "Expand this extension in Settings and choose Allow provider reads, which grants Mova's READ_TODOS permission on this device; without it the read actions report a setup rejection instead of rows.",
+    "Install Mova 7.2.1 or later and sign in to the server you want EVA to use. Earlier versions fail every background update_todo against the production server.",
+    "On Mova 7.2.1 or later, EVA reads without any Android permission; Mova Settings → Other apps → Let EVA use Mova turns that off. On older Mova, expand this extension in Settings and choose Allow provider reads.",
     "Read rows are as fresh as Mova's active server; they say nothing about whether a later mova:// action succeeded.",
-    "Mova 7.2.0 or later carries its own EVA extension for background and locked-phone reads and writes. EVA enables it with every action automatically; turn it or single actions off under EVA Extensions → Installed."
+    "Mova's own EVA extension handles background and locked-phone reads and writes. EVA enables it with every action automatically; turn it or single actions off under EVA Extensions → Installed."
   ],
   "androidPackages": [
     "com.colonelpanic.mova"
@@ -19,7 +19,7 @@
       "tool": {
         "name": "list_templates",
         "title": "List capture templates",
-        "description": "Read capture templates from Mova's active server. Requires Mova login and Android READ_TODOS access granted in EVA extension settings. Use key as the template argument to create_todo or capture_todo. prompts_json lists the template's prompts as objects with name, type (string, date, tags, or body), and required; pass values for prompts other than the title and the universal fields through create_todo's prompts argument, keyed by prompt name. Results are bounded and may omit templates.",
+        "description": "Read capture templates from Mova's active server. Requires Mova login; Mova before 7.2.1 also needs READ_TODOS access granted in EVA extension settings. Use key as the template argument to create_todo or capture_todo. prompts_json lists the template's prompts as objects with name, type (string, date, tags, or body), and required; pass values for prompts other than the title and the universal fields through create_todo's prompts argument, keyed by prompt name. Results are bounded and may omit templates.",
         "inputSchema": {
           "type": "object",
           "properties": {},
@@ -59,7 +59,7 @@
       "tool": {
         "name": "find_todos",
         "title": "Find todos",
-        "description": "Search todos on Mova's active server and return bounded rows. Requires Mova login and Android READ_TODOS access granted in EVA extension settings. Use a returned id in read_todo, open_todo, or a mutation in the same request; if id is null, use file, pos, and title with an intent action. q is passed to Mova's search. Only the requested page is searched; absence does not prove no todo exists.",
+        "description": "Search todos on Mova's active server and return bounded rows. Requires Mova login; Mova before 7.2.1 also needs READ_TODOS access granted in EVA extension settings. Use a returned id in read_todo, open_todo, or a mutation in the same request; if id is null, use file, pos, and title with an intent action. q is passed to Mova's search. Only the requested page is searched; absence does not prove no todo exists.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -127,7 +127,7 @@
       "tool": {
         "name": "read_todo",
         "title": "Read todo by id",
-        "description": "Read a todo with a known nonempty Org id from Mova's active server. Requires Mova login and Android READ_TODOS access granted in EVA extension settings. Use find_todos to discover ids. IDs must be a single path segment; todos without an id can be opened using file, pos, and title through open_todo.",
+        "description": "Read a todo with a known nonempty Org id from Mova's active server. Requires Mova login; Mova before 7.2.1 also needs READ_TODOS access granted in EVA extension settings. Use find_todos to discover ids. IDs must be a single path segment; todos without an id can be opened using file, pos, and title through open_todo.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -190,7 +190,7 @@
       "tool": {
         "name": "read_agenda",
         "title": "Read agenda",
-        "description": "Read a bounded day or week agenda from Mova's active server. Requires Mova login and Android READ_TODOS access granted in EVA extension settings. Defaults are chosen by Mova when omitted. Use returned id, or file/pos/title when id is null, in a later intent action. This reads agenda rows; open_agenda opens Mova's UI.",
+        "description": "Read a bounded day or week agenda from Mova's active server. Requires Mova login; Mova before 7.2.1 also needs READ_TODOS access granted in EVA extension settings. Defaults are chosen by Mova when omitted. Use returned id, or file/pos/title when id is null, in a later intent action. This reads agenda rows; open_agenda opens Mova's UI.",
         "inputSchema": {
           "type": "object",
           "properties": {

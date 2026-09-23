@@ -814,7 +814,12 @@ class EvaConfigurationManager(
                 ContentProviderAccess.inspect(app, authority).problem?.let { add(it) }
             }
             val current = currentAuthorizations(includeRequired = false).toSet()
-            (configuration.device.authorizations - current).forEach { add("Authorize $it on this device.") }
+            val providerPermissions = ContentProviderAccess.supportedPermissions - EvaPermissions.REQUIRED.toSet()
+            val declared = contentAuthorizations().toSet()
+            // A saved provider permission matters only while an installed provider still declares it.
+            (configuration.device.authorizations - current)
+                .filter { it !in providerPermissions || it in declared }
+                .forEach { add("Authorize $it on this device.") }
             if (configuration.messaging.enabled && !MediaControlAccess.isGranted(app)) {
                 add("Authorize android.notification-listener on this device for messaging notifications.")
             }

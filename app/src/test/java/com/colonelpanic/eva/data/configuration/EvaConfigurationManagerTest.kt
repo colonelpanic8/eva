@@ -71,8 +71,20 @@ class EvaConfigurationManagerTest {
             val folder = MemoryDirectory(EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(restored)))
             val manager = EvaConfigurationManager(app)
             val loaded = manager.attachForTest(folder) as LinkedConfigurationResult.Loaded
-            assertTrue(loaded.setupRequired.any { permission in it })
+            // Mova 7.2.1 trusts EVA without the permission, so it is not asked for until a provider declares it.
+            assertTrue(loaded.setupRequired.none { permission in it })
             assertTrue(loaded.setupRequired.any { "com.colonelpanic.mova.provider" in it })
+            shadowOf(app.packageManager).addOrUpdateProvider(
+                android.content.pm.ProviderInfo().apply {
+                    authority = "com.colonelpanic.mova.provider"
+                    packageName = "com.colonelpanic.mova"
+                    name = "com.colonelpanic.mova.TodoProvider"
+                    exported = true
+                    readPermission = permission
+                },
+            )
+            val older = manager.attachForTest(folder) as LinkedConfigurationResult.Loaded
+            assertTrue(older.setupRequired.any { "Authorize $permission" in it })
             assertEquals(
                 listOf("com.colonelpanic.mova.provider"),
                 app.packageSettings.state.value
