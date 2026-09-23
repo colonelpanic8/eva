@@ -1099,10 +1099,10 @@ moves credentials into device-protected storage.
 
 | State | Expected behavior | Evidence |
 | --- | --- | --- |
-| Locked after first unlock, provider warm or evicted | Bind cold-starts the provider; reads and writes run; no tap | API 36 emulator: Mova describe and execute from EVA's UID with the keyguard showing and no Mova process, about 0.5 s to bind (not logged in, so no server write) |
+| Locked after first unlock, provider warm or evicted | Bind cold-starts the provider; reads and writes run; no tap | API 36 emulator: Mova reads and writes answered from a cold process with the keyguard showing (not logged in, so no server write). Paseo created agents and sent prompts to a throwaway host in 0.9–2.0 s, including headless JS start |
 | Before first unlock after reboot | EVA and providers do not run; credential-encrypted storage is unavailable until first unlock ([Direct Boot](https://developer.android.com/privacy-and-security/direct-boot)) | Platform documentation |
 | Provider force-stopped or never launched | Android 15 says apps leave the stopped state only through user action ([stopped state](https://developer.android.com/about/versions/15/behavior-changes-all#stopped-state)); a failed bind is `not_executed`, nothing submitted | API 36 emulator: binding a force-stopped and a never-launched Mova succeeded while locked and cleared `stopped`; the caller was an instrumented EVA process, and OEM builds may differ |
-| Offline before submission | `not_executed`, or `handed_off`/`waiting_for_host` if the provider durably continues | Provider tests |
+| Offline before submission | `not_executed`, or `handed_off`/`waiting_for_host` if the provider durably continues | API 36 emulator: Paseo returned `waiting_for_host` with its host down, and a status read after restart returned `completed` |
 | Lost reply after submission | `unknown`; a status read may later show the outcome | Provider tests |
 | Keystore key requiring an unlocked device | `not_executed/not_configured` with `needs_unlock` | Neither current provider uses such a key |
 
