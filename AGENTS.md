@@ -92,7 +92,7 @@ Do not weaken lint or add tautological tests. Add focused behavior/regression te
 for migrations, lifecycle changes, and execution semantics. Device tests are
 separate; do not claim device verification from a JVM pass.
 
-Baseline: JDK 17, SDK 37, Gradle 9.7.1, AGP 9.4.0, Kotlin 2.4.20.
+Baseline: JDK 17, SDK 37, Gradle 9.7.1, AGP 9.4.1, Kotlin 2.4.20.
 AGP built-in Kotlin replaces `kotlin-android`; update pins together.
 Debug APK: `app/build/outputs/apk/debug/app-debug.apk`, ID
 `com.colonelpanic.eva.debug`; production ID: `com.colonelpanic.eva`.

@@ -1,6 +1,6 @@
 [versions]
 activityCompose = "1.13.0"
-agp = "9.4.0"
+agp = "9.4.1"
 composeBom = "2026.09.00"
 coreKtx = "1.19.0"
 junit = "4.13.2"
@@ -18,7 +18,7 @@ shizuku = "13.1.5"
 kaml = "0.104.0"
 jgit = "6.10.1.202505221210-r"
 desugarJdkLibs = "2.1.5"
-slf4j = "2.0.19"
+slf4j = "2.0.20"
 
 [libraries]
 robolectric = { module = "org.robolectric:robolectric", version = "4.17" }

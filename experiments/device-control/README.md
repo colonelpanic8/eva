@@ -51,7 +51,7 @@ not included in the unattended runner.
 The system image was Google Play x86_64 Android 16/API 36, fingerprint
 `google/sdk_gphone64_x86_64/emu64xa:16/BE2A.250530.026.D1/13818094:user/release-keys`,
 with emulator 37.1.10 and Shizuku app 13.6.0/API library 13.1.5. Builds use EVA's
-Gradle wrapper, AGP 9.4.0, JDK 17 and SDK/build-tools 37. The probe and fixture
+Gradle wrapper, AGP 9.4.1, JDK 17 and SDK/build-tools 37. The probe and fixture
 are Java/AIDL; no Kotlin app implementation is added here.
 
 ## Architecture
