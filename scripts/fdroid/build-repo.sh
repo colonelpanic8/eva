@@ -35,7 +35,7 @@ for variable in FDROID_KEY_ALIAS FDROID_KEYSTORE_PASSWORD FDROID_KEY_PASSWORD; d
     exit 1
   fi
 done
-for tool in fdroid gh python3; do
+for tool in curl fdroid gh python3; do
   command -v "$tool" >/dev/null 2>&1 || { echo "Required tool not found: $tool" >&2; exit 1; }
 done
 
@@ -92,7 +92,9 @@ else
   for tag in "${tags[@]}"; do
     tag_dir="$download_dir/$tag"
     mkdir -p "$tag_dir"
-    if gh release download "$tag" --repo "$github_repository" --pattern eva.apk --dir "$tag_dir" 2>/dev/null; then
+    if curl -fsSL --retry 3 --retry-delay 2 \
+      "https://github.com/$github_repository/releases/download/$tag/eva.apk" \
+      -o "$tag_dir/eva.apk"; then
       source_apks+=("$tag_dir/eva.apk")
       source_labels+=("$tag")
     else
