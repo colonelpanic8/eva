@@ -1,0 +1,1 @@
+* Fixed: Release builds pass lint again after updating androidx.core to 1.19.1. 0.33.0 was tagged but never published because its release build failed on that check.

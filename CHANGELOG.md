@@ -4,6 +4,12 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.33.1] - 2026-09-23
+
+### Fixed
+
+- Release builds pass lint again after updating androidx.core to 1.19.1. 0.33.0 was tagged but never published because its release build failed on that check.
+
 ## [0.33.0] - 2026-09-23
 
 ### Added
