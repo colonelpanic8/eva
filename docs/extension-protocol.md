@@ -475,14 +475,21 @@ query flags. Template `key` feeds capture's `template` slot; todo `id` feeds
 and `title` for those intent actions. Mova uses its active server and credentials;
 its provider ignores SQL selection, so these reads use URI parameters.
 
-Paseo's `android-intents` branch implements `/workspaces` and `/agents` at
-`sh.paseo.assistant` (provider commit `3d9943c7df`). Both return `id` and `name`;
-retain `serverId` when handing an agent or workspace to an intent, since IDs
-belong to a host. Rows reflect Paseo's last foreground catalog publish and can
-be incomplete. The provider rejects SQL filtering and enforces its own EVA
-package-family caller check. Its debug authority `sh.paseo.debug.assistant` is
-outside this shared package and EVA's explicit visibility entries. Read-then-handoff
-still follows the current separate-request policy described below.
+Paseo's `android-intents` branch implements `/workspaces`, `/agents`, and live
+`/messages` at `sh.paseo.assistant`. Workspace rows identify the project and a
+credential-free repository host/path, alongside the branch and host. Keep each
+row's `serverId` with its workspace or agent `id` when filtering agents, reading
+messages, or opening an intent. The catalog tables reflect Paseo's last publish
+and can be incomplete. `/messages` needs Paseo running with its host connected;
+it reads one agent or recent messages across a workspace's active agents and
+returns a notice row when the transcript is unavailable. The provider rejects
+SQL filtering and enforces its own EVA package-family caller check. Its debug
+authority `sh.paseo.debug.assistant` is outside this shared package and EVA's
+explicit visibility entries. An explicitly delegated text leg may read Paseo's
+catalog and then perform one granted Paseo handoff in the same turn. Other
+read-then-handoff flows follow the separate-request policy described below.
+This provider and package combination
+has JVM verification; device verification remains pending.
 
 HTTP fields: `kind`, `origin`, `method`, `path`, `parameters`, `maxResponseBytes`,
 `result`, optional `requestBody` and `credential`. Origins are HTTPS scheme/host

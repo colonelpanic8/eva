@@ -23,13 +23,14 @@ class CatalogAdmissionTest {
     }
 
     @Test
-    fun `voice reserves control slot and settings distinguishes typed and voice overflow`() {
-        val voice = CatalogAdmission.select(bundled + extensions, controls = 1)
-        assertEquals(63, voice.admitted.size)
+    fun `voice reserves two control slots and settings distinguishes typed and voice overflow`() {
+        val voice = CatalogAdmission.select(bundled + extensions, controls = 2)
+        assertEquals(62, voice.admitted.size)
         val reasons = CatalogAdmission.overflowReasons(bundled + extensions)
-        assertEquals(27, reasons.size)
+        assertEquals(28, reasons.size)
+        assertTrue(reasons.getValue(extensions[36].id).contains("Available in typed"))
         assertTrue(reasons.getValue(extensions[37].id).contains("Available in typed"))
         assertTrue(reasons.getValue(extensions[38].id).startsWith("Unavailable:"))
-        assertTrue(CatalogAdmission.overflowReasons((bundled + extensions).take(63)).isEmpty())
+        assertTrue(CatalogAdmission.overflowReasons((bundled + extensions).take(62)).isEmpty())
     }
 }

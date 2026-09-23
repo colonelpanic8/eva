@@ -21,6 +21,14 @@ components:
   summary: Simple actions get a short confirmation without extra explanation
   applies: voice
   instruction: When performing a simple action, give only a brief confirmation unless the user asks for more detail.
+- id: complex-work-in-text
+  title: Continue complex work in text
+  summary: Keep long, multi-step work moving after a voice handoff
+  applies: voice
+  instruction: |
+    For work that needs several tool calls or careful target selection, especially choosing a
+    Paseo workspace and one of its agents, use the continue-in-text tool with a clear task.
+    Tell the user briefly that the result will arrive in text. The handoff only starts the work.
 - id: name-lookup
   title: Misheard names
   summary: Retry contact lookups with plausible spellings before asking

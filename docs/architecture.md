@@ -47,7 +47,10 @@ a **provider leg** performs the model work for a task.
 
 `ThreadController` runs tasks in a thread-owned scope. Ending an attachment with
 unfinished work can continue that turn on a background Responses leg, seeded with
-thread history. Turn IDs belong to the store rather than a provider's session-local
+thread history. Voice can also hand a long request to that leg with its
+continue-in-text session tool. The text leg receives a fresh catalog from the
+same capability registry, including enabled extensions, and retains the turn's
+action claims and receipts. Turn IDs belong to the store rather than a provider's session-local
 counter. The SQLite journal links requests, tool calls, receipts, and responses.
 The UI projects these records into grouped turns and session notices.
 
@@ -58,7 +61,9 @@ work, so persistence supports recovery and explicit interrupted outcomes, not a
 promise of uninterrupted execution across process death.
 
 The current turn policy permits at most one side-effecting action and bounded
-read lookups (up to eight). Imported mutations after a tool result are refused;
+read lookups (up to eight). Imported mutations after a tool result are refused,
+except Paseo actions on an explicitly delegated text leg. That leg may discover
+the workspace and agent before its one granted handoff action. Other
 search-then-mutate workflows may require separate requests. These are current
 execution limits, not the long-term product philosophy.
 
@@ -94,7 +99,7 @@ work, and undoing a remote action are distinct operations.
 ## Capability execution
 
 Adapters contribute capabilities to a registry snapshot. Admission is deterministic
-and bounded to 64 model-facing tools, reserving session controls and bundled tools
+and bounded to 64 model-facing tools, reserving two voice session controls and bundled tools
 before sorted extension tools. Unavailable or excess entries remain explainable
 in the UI. New tools reach the model on the next connection; revocation blocks new
 execution immediately even if the model still sees an older catalog.
@@ -168,9 +173,11 @@ for concrete identity, schema, waiting, and authorization rules.
   locked-device actions still apply. General AppFunctions discovery/execution and broader device
   automation are not implied by those implemented operations.
 
-Paseo and general MCP adapters remain future work. They should register capabilities
-through the same execution boundary. Routine phone actions must not depend on a
-remote coding agent or on automating Paseo's Android UI.
+The installable Paseo package discovers workspaces and agents, reads recent
+messages through Paseo's Android provider, and opens or prompts them through
+links. Native Paseo and general MCP adapters remain future work. They should
+register capabilities through the same execution boundary. Routine phone
+actions must not depend on a remote coding agent or on automating Paseo's Android UI.
 
 ## Messaging
 

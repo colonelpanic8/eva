@@ -80,7 +80,9 @@ packages. Messaging has a shared SMS/MMS and notification-reply interface; direc
 SMS sending is device-verified, while notification replies are JVM-tested.
 Prompt instructions are editable YAML. Device verification varies by feature; implementation is not a promise of universal app or device support.
 
-Paseo and general MCP connectivity remain planned integrations. See
+Paseo workspace discovery, recent-message reads, and link handoffs are available
+through the installable Paseo extension with a compatible Paseo build. Native
+Paseo and general MCP adapters remain planned integrations. See
 [[file:docs/architecture.md][Architecture]] for boundaries and current limitations and
 [[file:docs/operations.md][Operations]] for checks and recorded device evidence.
 

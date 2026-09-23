@@ -339,6 +339,93 @@ class ThreadControllerTest {
     // ---- work outlives the attachment ----
 
     @Test
+    fun `voice can delegate a Paseo workflow while text keeps the extension catalog and turn`() =
+        runTest {
+            val paseoLookup =
+                lookup.copy(
+                    id = "extension.package.android.paseo.read_workspace_messages",
+                    source = CapabilitySource("plugin:paseo", "Paseo"),
+                )
+            val paseoSend =
+                action.copy(
+                    id = "extension.package.android.paseo.send_agent_prompt",
+                    source = CapabilitySource("plugin:paseo", "Paseo"),
+                )
+            registry.replace(
+                mapOf(
+                    paseoLookup.id to backend { ExecutionOutcome(InvocationStatus.COMPLETED, "Recent messages") },
+                    paseoSend.id to backend { ExecutionOutcome(InvocationStatus.HANDED_OFF, "Prompt opened") },
+                ),
+                listOf(paseoLookup, paseoSend),
+            )
+            val voice = FakeProvider()
+            val background = FakeProvider(epoch = "background")
+            val controller = controller(voice, background = background, media = { VoiceMedia() })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            assertTrue(
+                voice.request.catalog.tools
+                    .any { it.capabilityId == ThreadController.DEFER_TO_TEXT.capabilityId },
+            )
+            voice.input = ConversationInput("voice:turn-1", "")
+            voice.channel.send(ProviderEvent.ResponseStarted("voice:turn-1", "voice:turn-1"))
+            voice.channel.send(ProviderEvent.Transcript("user", "What happened in the Paseo workspace for EVA?"))
+            advanceUntilIdle()
+            val turn = latestTurn(controller)
+            voice.call("delegate", ThreadController.DEFER_TO_TEXT.capabilityId, "task" to "Find the EVA workspace and read recent messages")
+            advanceUntilIdle()
+
+            assertEquals("HANDED_OFF", voice.results.single().status)
+            assertEquals(turn, background.request.continuation?.turnId)
+            assertTrue(background.request.instructions.contains("Find the EVA workspace and read recent messages"))
+            assertTrue(
+                background.request.catalog.tools
+                    .any { it.capabilityId == paseoLookup.id },
+            )
+            assertTrue(
+                background.request.catalog.tools
+                    .any { it.capabilityId == paseoSend.id },
+            )
+            assertTrue(background.request.history.any { it is HistoryItem.User && it.text.contains("Paseo workspace") })
+
+            voice.channel.send(voice.endCall("turn-1"))
+            advanceUntilIdle()
+            assertTrue(controller.state.value.working)
+
+            background.input = ConversationInput(turn, "")
+            background.call("read", paseoLookup.id, "query" to "EVA")
+            advanceUntilIdle()
+            assertEquals("Recent messages", background.results.first().message)
+            background.call("send", paseoSend.id, "place" to "agent")
+            advanceUntilIdle()
+            assertEquals("Prompt opened", background.results.last().message)
+            background.channel.send(ProviderEvent.AssistantText(turn, "The agent reported its latest changes.", false))
+            background.channel.send(ProviderEvent.ResponseEnded(turn, "completed"))
+            advanceUntilIdle()
+            assertEquals(TurnStatus.ANSWERED, store.turns(controller.state.value.threadId!!).single().status)
+            assertEquals("The agent reported its latest changes.", answers.single().answer)
+        }
+
+    @Test
+    fun `failed text continuation is reported as a failed handoff`() =
+        runTest {
+            val voice = FakeProvider()
+            val background = FakeProvider(openFailure = IllegalStateException("Text provider unavailable"))
+            val controller = controller(voice, background = background, media = { VoiceMedia() })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            voice.input = ConversationInput("voice:turn-1", "")
+            voice.channel.send(ProviderEvent.ResponseStarted("voice:turn-1", "voice:turn-1"))
+            advanceUntilIdle()
+            voice.call("delegate", ThreadController.DEFER_TO_TEXT.capabilityId, "task" to "Read recent Paseo messages")
+            advanceUntilIdle()
+            assertEquals("NOT_EXECUTED", voice.results.single().status)
+            assertEquals(TurnStatus.FAILED, store.turns(controller.state.value.threadId!!).single().status)
+        }
+
+    @Test
     fun `hanging up leaves the turn running and it finishes on a background leg`() =
         runTest {
             val provider = FakeProvider()
@@ -517,7 +604,7 @@ class ThreadControllerTest {
             controller.connectVoice("test", callMode = VoiceCallMode.OPEN_CONVERSATION)
             advanceUntilIdle()
             assertEquals(
-                listOf("eva.session.end", action.id, lookup.id),
+                listOf("eva.session.end", "eva.session.defer_to_text", action.id, lookup.id),
                 provider.request.catalog.tools
                     .map { it.capabilityId },
             )
@@ -562,7 +649,7 @@ class ThreadControllerTest {
             controller.connectVoice("test")
             advanceUntilIdle()
             assertEquals(
-                listOf("eva.session.end"),
+                listOf("eva.session.end", "eva.session.defer_to_text"),
                 provider.request.catalog.tools
                     .map { it.capabilityId }
                     .filter { it.startsWith("eva.") },
@@ -972,6 +1059,7 @@ class ThreadControllerTest {
     private class FakeProvider(
         val openGate: CompletableDeferred<Unit>? = null,
         epoch: String = "epoch",
+        val openFailure: Exception? = null,
     ) : ConversationProvider,
         ConversationSession {
         override val connectionEpoch = epoch
@@ -989,6 +1077,7 @@ class ThreadControllerTest {
 
         override suspend fun open(request: SessionOpenRequest): ConversationSession {
             this.request = request
+            openFailure?.let { throw it }
             if (channel.isClosedForSend) channel = Channel(Channel.UNLIMITED)
             withContext(NonCancellable) { openGate?.await() }
             channel.send(ProviderEvent.Connected("session", request.catalog.revision))

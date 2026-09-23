@@ -160,7 +160,7 @@ class ThreadController(
             snapshot.catalog.filterNot {
                 it.id in hiddenCapabilities()
             },
-            if (voice) 1 else 0,
+            if (voice) 2 else 0,
         ).admitted
         .map { definition ->
             val tool = ProviderToolDefinition(definition.id, definition.title, definition.modelDescription(), definition.inputSchema)
@@ -328,7 +328,8 @@ class ThreadController(
                     val connectionCatalog =
                         catalogOf(
                             assembled.apply(
-                                (if (voice) listOf(wording().describe(END_CONVERSATION)) else emptyList()) + phoneTools(snapshot, voice),
+                                (if (voice) listOf(wording().describe(END_CONVERSATION), DEFER_TO_TEXT) else emptyList()) +
+                                    phoneTools(snapshot, voice),
                             ),
                             snapshot.revision,
                         )
@@ -451,7 +452,10 @@ class ThreadController(
                 if (taskFor(opened, event.inputId) == null && voice) {
                     // A spoken turn has no typed input; the response is the turn, and its transcript
                     // may still be in flight. Nothing else may own this thread's next answer.
-                    activeTask(threadId)?.let { previous -> if (previous.dispatches.none { it.isActive }) previous.complete() }
+                    activeTask(threadId)?.let { previous ->
+                        if (previous.delegated) return
+                        if (previous.dispatches.none { it.isActive }) previous.complete()
+                    }
                     startTask(threadId, event.inputId, "", opened, spoken = true)
                 }
             }
@@ -491,6 +495,23 @@ class ThreadController(
                     // Nothing runs on the phone and, unless the hang-up is deferred, no result is
                     // returned, so the model is not prompted to speak again. Its goodbye plays out first.
                     endCall(ENDED_BY_MODEL, event.call)
+                } else if (voice && event.capabilityId == DEFER_TO_TEXT.capabilityId) {
+                    val task = taskFor(opened, event.call.inputId)
+                    val instruction = (event.arguments["task"] as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim()
+                    if (task == null ||
+                        connectionTools[opened]?.catalog?.tools?.any { it.capabilityId == DEFER_TO_TEXT.capabilityId } != true ||
+                        event.arguments.size != 1 || instruction.isNullOrEmpty() || instruction.length > 1000
+                    ) {
+                        opened.submitToolResult(
+                            CorrelatedToolResult(
+                                event.call,
+                                "NOT_EXECUTED",
+                                "Provide a task of 1 to 1,000 characters for an active request.",
+                            ),
+                        )
+                    } else {
+                        task.delegateToText(instruction, event.call)
+                    }
                 } else {
                     if (voice) actionResponses += event.call.generationId
                     taskFor(opened, event.call.inputId)?.dispatch(event)
@@ -633,7 +654,7 @@ class ThreadController(
     private fun hangUp(reason: String) {
         val task = attachedThreadId?.let { activeTask(it) }
         // The model chose to end the call, so an answer it has already spoken is complete.
-        if (task != null && task.dispatches.none { it.isActive } && !task.awaitingFollowUp) task.complete()
+        if (task != null && !task.delegated && task.dispatches.none { it.isActive } && !task.awaitingFollowUp) task.complete()
         end(reason)
         mutableHangUps.tryEmit(Unit)
     }
@@ -750,6 +771,8 @@ class ThreadController(
         private var readOnlyCalls = 0
         private var sideEffectCall: String? = null
         private var rehomed = false
+        var delegated = false
+            private set
         private var stranded = false
         private var lastAnswer = ""
         var active = true
@@ -782,6 +805,7 @@ class ThreadController(
                 )
             val job =
                 taskScope.launch {
+                    val delegatedPaseoAction = delegated && !context.voice && definition?.id?.startsWith(PASEO_CAPABILITY_PREFIX) == true
                     val rejection =
                         when {
                             event.call.catalogRevision != context.catalog.revision || definition == null ||
@@ -791,7 +815,8 @@ class ThreadController(
                                 "This action was not offered in this connection. Nothing was executed."
                             }
 
-                            definition.source != null && !definition.readOnly && (awaitingFollowUp || readOnlyCalls > 0) -> {
+                            definition.source != null && !definition.readOnly &&
+                                (awaitingFollowUp || readOnlyCalls > 0) && !delegatedPaseoAction -> {
                                 "An extension mutation requires a separate user request after a tool result."
                             }
 
@@ -938,16 +963,54 @@ class ThreadController(
             }
         }
 
-        private suspend fun rehome() {
+        fun delegateToText(
+            instruction: String,
+            call: CallIdentity,
+        ) {
+            if (!active || rehomed) return
+            val voiceLeg = leg ?: return
+            delegated = true
+            leg = null
+            taskScope.launch {
+                dispatches.joinAll()
+                val started = active && rehome(instruction)
+                try {
+                    voiceLeg.submitToolResult(
+                        CorrelatedToolResult(
+                            call,
+                            if (started) "HANDED_OFF" else "NOT_EXECUTED",
+                            if (started) {
+                                "The request is continuing with EVA's text agent. Tell the user briefly; do not claim it is finished."
+                            } else {
+                                "EVA could not start text continuation. Tell the user the handoff failed."
+                            },
+                        ),
+                    )
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    // The text leg, once started, owns the turn even if the call cannot receive this result.
+                }
+            }
+        }
+
+        private suspend fun rehome(instruction: String? = null): Boolean {
             if (rehomed) {
                 fail("EVA could not continue this request after the call ended.")
-                return
+                return false
             }
             rehomed = true
             stranded = false
             inputId = turnId
-            store.append(notice(threadId, turnId, NoticeKind.REHOMED, "Continuing after the call ended"))
             try {
+                store.append(
+                    notice(
+                        threadId,
+                        turnId,
+                        NoticeKind.REHOMED,
+                        if (instruction == null) "Continuing after the call ended" else "Continuing in text",
+                    ),
+                )
                 val items = store.items(threadId)
                 val assembled = assemble(voice = false)
                 val snapshot = registry.snapshot
@@ -957,7 +1020,10 @@ class ThreadController(
                     backgroundProviderFactory().open(
                         SessionOpenRequest(
                             assembled.instructions + extensionGuidance(snapshot, catalog) + "\n\n" +
-                                wording().message(Wording.CONTINUATION),
+                                (
+                                    instruction?.let { "The voice assistant delegated this request to text. Finish it: $it" }
+                                        ?: wording().message(Wording.CONTINUATION)
+                                ),
                             catalog,
                             history = projectHistory(items, receipts(items)),
                             continuation = Continuation(turnId),
@@ -1005,10 +1071,12 @@ class ThreadController(
                         fail(error.message?.take(300) ?: "EVA could not continue this request.")
                     }
                 }
+                return true
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
                 fail(error.message?.take(300) ?: "EVA could not continue this request.")
+                return false
             }
         }
     }
@@ -1024,6 +1092,7 @@ class ThreadController(
         const val UNTITLED = "New conversation"
         const val READ_ONLY_CALLS_PER_TURN = 8
         private const val VOICE_REQUEST = "Voice request"
+        private const val PASEO_CAPABILITY_PREFIX = "extension.package.android.paseo."
 
         /** Bounds the wait for a goodbye whose end is never reported. */
         private const val END_SPEECH_LIMIT_MILLIS = 10_000L
@@ -1047,6 +1116,21 @@ class ThreadController(
                 ),
             )
         }
+
+        val DEFER_TO_TEXT =
+            ProviderToolDefinition(
+                "eva.session.defer_to_text",
+                "Continue in text",
+                "Hand the current request to EVA's background text agent when it needs several lookups or steps, such as " +
+                    "finding a Paseo workspace, choosing among its agents, and reading their messages. Give the text " +
+                    "agent a self-contained task. It receives EVA's enabled phone and extension tools and the request's " +
+                    "action history. This starts work; it does not mean the task is complete. Tell the user briefly " +
+                    "that the answer will arrive in text.",
+                Json
+                    .parseToJsonElement(
+                        """{"type":"object","properties":{"task":{"type":"string","minLength":1,"maxLength":1000}},"required":["task"],"additionalProperties":false}""",
+                    ).jsonObject,
+            )
 
         fun catalogOf(
             tools: List<ProviderToolDefinition>,
