@@ -246,7 +246,7 @@ class ThreadControllerTest {
             controller.disconnect()
             advanceUntilIdle()
             assertEquals(
-                listOf("Text session", "Session ended"),
+                listOf("Text session", "Session ended by you"),
                 controller.state.value.entries
                     .filter {
                         it.status == EntryStatus.SESSION
@@ -512,7 +512,7 @@ class ThreadControllerTest {
             val media = VoiceMedia()
             val controller = controller(provider, media = { media })
             advanceUntilIdle()
-            controller.connectVoice("test")
+            controller.connectVoice("test", callMode = VoiceCallMode.OPEN_CONVERSATION)
             advanceUntilIdle()
             assertEquals(
                 listOf("eva.session.end", action.id, lookup.id),
@@ -720,6 +720,68 @@ class ThreadControllerTest {
             assertTrue(stuckMedia.closed)
         }
 
+    @Test
+    fun `a one-request call hangs up once its action is reported, and an open call stays up`() =
+        runTest {
+            suspend fun TestScope.actOnce(callMode: VoiceCallMode): VoiceMedia {
+                val provider = FakeProvider()
+                val media = VoiceMedia()
+                val controller = controller(provider, media = { media })
+                advanceUntilIdle()
+                controller.connectVoice("test", callMode = callMode)
+                advanceUntilIdle()
+                provider.input = ConversationInput("voice:turn-1", "")
+                provider.channel.send(ProviderEvent.ResponseStarted("voice:turn-1", "voice:turn-1"))
+                provider.call("first", action.id, "place" to "Park")
+                advanceUntilIdle()
+                provider.channel.send(ProviderEvent.AssistantText("voice:turn-1", "Opened the park.", false))
+                provider.channel.send(ProviderEvent.ResponseEnded("voice:turn-1", "completed"))
+                advanceUntilIdle()
+                if (media.closed) {
+                    assertEquals("Call ended by EVA after finishing the request", sessionNotices(controller).last())
+                }
+                return media
+            }
+
+            assertTrue(actOnce(VoiceCallMode.ONE_REQUEST).closed)
+            assertFalse(actOnce(VoiceCallMode.OPEN_CONVERSATION).closed)
+        }
+
+    @Test
+    fun `a hang-up proposed alongside an action waits until its result is spoken`() =
+        runTest {
+            val provider = FakeProvider()
+            val media = VoiceMedia()
+            val controller = controller(provider, media = { media })
+            advanceUntilIdle()
+            controller.connectVoice("test", callMode = VoiceCallMode.OPEN_CONVERSATION)
+            advanceUntilIdle()
+            provider.input = ConversationInput("voice:turn-1", "")
+            provider.channel.send(ProviderEvent.ResponseStarted("voice:turn-1", "voice:turn-1"))
+            provider.channel.send(ProviderEvent.AssistantSpeaking(true))
+            provider.channel.send(ProviderEvent.AssistantText("voice:turn-1", "Let me check.", false))
+            provider.call("look", lookup.id, "query" to "agents")
+            provider.channel.send(provider.endCall("turn-1"))
+            provider.channel.send(ProviderEvent.AssistantSpeaking(false))
+            advanceUntilIdle()
+
+            assertFalse(media.closed)
+            assertEquals(listOf("COMPLETED", "NOT_EXECUTED"), provider.results.map { it.status })
+
+            provider.channel.send(ProviderEvent.AssistantText("voice:turn-1", "Found agents.", false))
+            provider.channel.send(ProviderEvent.ResponseEnded("voice:turn-1", "completed"))
+            advanceUntilIdle()
+
+            assertTrue(media.closed)
+            assertEquals("Call ended by EVA with its end-call tool", sessionNotices(controller).last())
+            assertEquals(TurnStatus.ANSWERED, store.turns(controller.state.value.threadId!!).single().status)
+        }
+
+    private fun sessionNotices(controller: ThreadController) =
+        controller.state.value.entries
+            .filter { it.status == EntryStatus.SESSION }
+            .map { it.response }
+
     // ---- catalog and prompt, per connection ----
 
     @Test
@@ -804,7 +866,7 @@ class ThreadControllerTest {
             controller.connectVoice("test", callMode = VoiceCallMode.OPEN_CONVERSATION)
             advanceUntilIdle()
 
-            assertTrue(provider.request.instructions.contains("This call stays open."))
+            assertTrue(provider.request.instructions.contains("This call stays open"))
             assertFalse(provider.request.instructions.contains("This call is for one request."))
         }
 

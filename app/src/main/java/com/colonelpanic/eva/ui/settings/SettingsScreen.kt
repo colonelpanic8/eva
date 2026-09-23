@@ -37,6 +37,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.colonelpanic.eva.conversation.prompt.VoiceCallMode
 import com.colonelpanic.eva.providers.openai.OpenAiModels
 import com.colonelpanic.eva.providers.openai.SignInState
 import com.colonelpanic.eva.providers.spotify.SpotifyConnectState
@@ -309,15 +310,15 @@ private fun AssistantSection(
             TextButton(onClick = actions.onOpenAssistantSettings) { Text("Change") }
         }
         SettingsSwitchRow(
-            title = "Use one-and-done conversations for external launches",
+            title = "End calls after one request",
             supporting =
-                if (state.oneShotExternal) {
-                    "After finishing the request, EVA says a short closing line and ends the call."
+                if (state.callMode == VoiceCallMode.ONE_REQUEST) {
+                    "Once a request is done, EVA says a short closing line and hangs up. Applies to every voice call."
                 } else {
-                    "EVA stays on the line for follow-up requests until you say you are done."
+                    "Every voice call stays open until you say goodbye or hang up. Ask once still ends after one request."
                 },
-            checked = state.oneShotExternal,
-            onCheckedChange = actions.onOneShotExternalChange,
+            checked = state.callMode == VoiceCallMode.ONE_REQUEST,
+            onCheckedChange = actions.onEndAfterOneRequestChange,
         )
     }
 }

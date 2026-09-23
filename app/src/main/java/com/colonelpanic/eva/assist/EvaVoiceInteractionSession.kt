@@ -139,7 +139,7 @@ class EvaVoiceInteractionSession(
                     eva.controller.connectVoice(
                         eva.settings.hostLink(),
                         newThread = true,
-                        callMode = VoiceCallMode.external(eva.settings.oneShotExternal, forceOneShot),
+                        callMode = VoiceCallMode.ONE_REQUEST.takeIf { forceOneShot },
                     )
                 }
             }

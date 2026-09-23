@@ -1,6 +1,7 @@
 package com.colonelpanic.eva.ui.settings
 
 import com.colonelpanic.eva.capability.extensions.ExtensionSettings
+import com.colonelpanic.eva.conversation.prompt.VoiceCallMode
 import com.colonelpanic.eva.data.MessagingPreferences
 import com.colonelpanic.eva.data.configuration.ConfigurationStatus
 import com.colonelpanic.eva.messaging.MessagingApp
@@ -43,7 +44,8 @@ data class SettingsUiState(
     val reasoningEffort: String = OpenAiModels.TEXT_REASONING_EFFORT,
     val voiceReasoningEffort: String = OpenAiModels.VOICE_REASONING_EFFORT,
     val voiceLookupRetries: Int = 5,
-    val oneShotExternal: Boolean = true,
+    /** Read from the prompt's call slot, which this switch edits. */
+    val callMode: VoiceCallMode? = VoiceCallMode.ONE_REQUEST,
     val isDeviceAssistant: Boolean = false,
     val canSeeMediaSessions: Boolean = false,
     val canControlScreen: Boolean = false,
@@ -103,7 +105,7 @@ data class SettingsActions(
     val onSelectReasoningEffort: (String) -> Unit = {},
     val onSelectVoiceReasoningEffort: (String) -> Unit = {},
     val onVoiceLookupRetriesChange: (Int) -> Unit = {},
-    val onOneShotExternalChange: (Boolean) -> Unit = {},
+    val onEndAfterOneRequestChange: (Boolean) -> Unit = {},
     val onOpenAssistantSettings: () -> Unit = {},
     val onOpenMediaControlSettings: () -> Unit = {},
     val onScreenControlChange: (Boolean) -> Unit = {},

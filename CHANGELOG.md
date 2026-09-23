@@ -9,10 +9,19 @@ All notable changes to EVA will be documented here.
 - The shipped Settings extension reaches 48 settings screens instead of 11, covering notifications, the special-access screens (notification access, usage access, battery optimization, overlay and write-settings access), VPN, mobile data, accessibility, language, accounts, and the rest.
 - Settings can open one of Android's floating quick panels for internet, wifi, NFC, or volume, where the user changes the setting without leaving what they were doing, and can open one installed app's own settings page or its notification settings by exact package name.
 - An existing installation keeps the `open` action it already had and gets the wider screen list with it; the three new actions arrive switched off, to be enabled under Extensions like any other update.
+- The note at the end of each call says why it ended: you ended it, EVA hung up with its end-call tool, EVA hung up after finishing the request, or the connection failed.
 
 ### Changed
 
+- One setting, "End calls after one request", now decides how every voice call ends. Previously it applied only to assistant and headset launches, and "Start voice" followed the prompt screen instead. An existing choice to keep external launches open carries over.
+- In one-request mode EVA hangs up once the request's phone action is done and its result has been spoken, even if the model forgets to.
+- Open conversations stay up until you say goodbye or ask EVA to hang up; a finished request or a "thanks" no longer ends the call.
 - Typed conversations default to `gpt-6-sol` instead of `gpt-5.6-sol`. GPT-6 Sol and Luna appear in the text model picker whenever the account lists them, and both were verified live on the ChatGPT subscription backend at every text reasoning effort EVA offers. An installation or configuration that already names a text model keeps it; choose the new one under Settings or set `models.text` in the configuration.
+
+### Fixed
+
+- A hang-up proposed together with a lookup or action no longer ends the call before the result is spoken and sends the answer to a background text session.
+
 
 ## [0.25.0] - 2026-09-17
 

@@ -51,6 +51,7 @@ import com.colonelpanic.eva.conversation.ThreadController
 import com.colonelpanic.eva.conversation.TurnWorkHost
 import com.colonelpanic.eva.conversation.TurnWorkService
 import com.colonelpanic.eva.conversation.WorkNotifications
+import com.colonelpanic.eva.conversation.prompt.VoiceCallMode
 import com.colonelpanic.eva.data.AppearanceSettings
 import com.colonelpanic.eva.data.CapabilitySettings
 import com.colonelpanic.eva.data.ChatGptAccountStore
@@ -482,6 +483,9 @@ class EvaApplication :
 
     override fun onCreate() {
         super.onCreate()
+        if (settings.takeLegacyOneShotExternal() == false) {
+            editPrompt { update { it.selectCallMode(VoiceCallMode.OPEN_CONVERSATION) } }
+        }
         try {
             observeExtensionPackages(this, extensions::packageChanged)
             extensions.refresh()

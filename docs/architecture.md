@@ -154,10 +154,8 @@ for concrete identity, schema, waiting, and authorization rules.
 - `assist/` implements the Android voice-interaction service, overlay session, and
   delegated recognition service. Android's keyguard launch callback opens the
   hands-free activity above the lock screen, starts or joins voice, and hides the
-  conversation. The Device assistant setting chooses whether external assist gestures,
-  headset commands, and voice intents end after one completed request or stay open for
-  follow-up requests; the in-app **Ask once** action always uses one-request behavior.
-  This choice is portable as `voice.oneShotExternal`. The keyguard callback is JVM-tested;
+  conversation. Every voice launch follows the prompt's call slot (below); the
+  in-app **Ask once** action always uses one-request behavior. The keyguard callback is JVM-tested;
   locked-device voice verification is
   pending. Assistant selection does not confer unrestricted
   background launch or device access.
@@ -496,8 +494,17 @@ components:
 
 `{{clock}}` and `{{lookup_retries}}` are the supported variables. Unknown keys,
 variables, duplicate IDs, and incompatible enabled slots are errors.
-The stock call instructions offer one-request and open-conversation alternatives.
-The voice control `eva.session.end` ends the attachment, not remote work.
+The stock call instructions offer one-request and open-conversation alternatives in
+the `call` slot; the Settings switch "End calls after one request" edits that slot,
+and every voice launch follows it. A retired `voice.oneShotExternal: false` is
+migrated into the slot when a configuration file is read. The voice control
+`eva.session.end` ends the attachment, not remote work. In one-request mode EVA
+also hangs up itself once the request's phone action completed or was handed off
+and the response reporting it has finished playing. A hang-up the model proposes
+in the same response as an action, or while an action result is unreported, is
+answered as not executed and happens after the next response instead, so the
+result is spoken on the call rather than re-homed. Each attachment's closing
+notice says who or what ended it.
 
 The Instructions screen supports a user-picked YAML file, EVA's own external-files
 copy, and explicit updates from a raw HTTPS source. Source updates preserve enabled

@@ -1,8 +1,13 @@
 package com.colonelpanic.eva.data.configuration
 
 import com.colonelpanic.eva.conversation.prompt.PromptComponent
+import com.colonelpanic.eva.conversation.prompt.PromptConfig
+import com.colonelpanic.eva.conversation.prompt.PromptDefaults
+import com.colonelpanic.eva.conversation.prompt.VoiceCallMode
+import com.colonelpanic.eva.data.PromptRepository
 import com.colonelpanic.eva.providers.openai.OpenAiModels
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -40,14 +45,24 @@ class ConfigurationCompositionTest {
     }
 
     @Test
-    fun `a document written before external conversation mode defaults to one shot`() {
-        val expected = fullConfiguration()
-        val complete = EvaConfigurationCodec.complete(expected)
-        val encoded = EvaConfigurationCodec.encode(complete.copy(voice = complete.voice?.copy(oneShotExternal = null)))
+    fun `a retired open external call mode keeps calls open through the prompt`() {
+        val complete =
+            EvaConfigurationCodec.complete(
+                fullConfiguration().copy(
+                    prompt = EvaConfiguration.Prompt(PromptRepository.DEFAULT_SOURCE, PromptDefaults.config.components),
+                ),
+            )
+        val legacy =
+            EvaConfigurationCodec
+                .encode(
+                    complete,
+                ).replace("  lookupRetries: 2\n", "  lookupRetries: 2\n  oneShotExternal: false\n")
+        assertTrue(legacy.contains("oneShotExternal: false"))
 
-        val resolved = EvaConfigurationCodec.resolve(reader(mapOf(EvaConfigurationCodec.FILE_NAME to encoded))).configuration
+        val resolved = EvaConfigurationCodec.resolve(reader(mapOf(EvaConfigurationCodec.FILE_NAME to legacy))).configuration
 
-        assertEquals(true, resolved.voice.oneShotExternal)
+        assertEquals(VoiceCallMode.OPEN_CONVERSATION, PromptConfig(resolved.prompt.components).callMode)
+        assertFalse(EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(resolved)).contains("oneShotExternal"))
     }
 
     @Test
@@ -332,7 +347,7 @@ class ConfigurationCompositionTest {
     private fun fullConfiguration() =
         EvaConfiguration(
             models = EvaConfiguration.Models("custom-text", "custom-realtime", "high", "medium"),
-            voice = EvaConfiguration.Voice(2, oneShotExternal = false),
+            voice = EvaConfiguration.Voice(2),
             appearance = EvaConfiguration.Appearance(dynamicColor = true),
             capabilities = EvaConfiguration.Capabilities(screenControl = false),
             messaging = EvaConfiguration.Messaging(enabled = true, replies = listOf(MESSAGING_IDENTITY)),

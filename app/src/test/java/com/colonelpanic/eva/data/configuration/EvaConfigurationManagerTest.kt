@@ -224,7 +224,7 @@ class EvaConfigurationManagerTest {
             val target =
                 baseline.copy(
                     models = EvaConfiguration.Models("gpt-portable-text", "gpt-portable-realtime", "high", "medium"),
-                    voice = EvaConfiguration.Voice(8, oneShotExternal = false),
+                    voice = EvaConfiguration.Voice(8),
                     appearance = EvaConfiguration.Appearance(dynamicColor = true),
                     capabilities = EvaConfiguration.Capabilities(screenControl = false),
                     messaging = EvaConfiguration.Messaging(enabled = true, replies = listOf(LIVE_REPLY, CHANGED_SIGNER_REPLY)),
@@ -291,7 +291,6 @@ class EvaConfigurationManagerTest {
             assertEquals("high", app.settings.reasoningEffort)
             assertEquals("medium", app.settings.voiceReasoningEffort)
             assertEquals(8, app.settings.voiceLookupRetries)
-            assertFalse(app.settings.oneShotExternal)
             assertTrue(app.appearance.dynamicColor)
             assertFalse(app.capabilities.screenControlEnabled)
             assertTrue(app.messagingSettings.state.value.enabled)
@@ -375,7 +374,6 @@ class EvaConfigurationManagerTest {
             manager.localChangeForTest()
             val saved = EvaConfigurationCodec.resolve(reader = directory).configuration
             assertFalse(saved.appearance.dynamicColor)
-            assertFalse(saved.voice.oneShotExternal)
             assertEquals(target.messaging, saved.messaging)
         }
 

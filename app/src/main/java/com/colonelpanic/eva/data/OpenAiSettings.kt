@@ -30,7 +30,6 @@ class OpenAiSettings(
                 ?: OpenAiModels.VOICE_REASONING_EFFORT,
         )
     private val mutableVoiceLookupRetries = MutableStateFlow(prefs.getInt(VOICE_LOOKUP_RETRIES, DEFAULT_VOICE_LOOKUP_RETRIES))
-    private val mutableOneShotExternal = MutableStateFlow(prefs.getBoolean(ONE_SHOT_EXTERNAL, true))
     private val mutableHasHostLink = MutableStateFlow(secrets.read(HOST_LINK) != null)
 
     /** Model used for typed turns. Changing it applies to the next connection. */
@@ -39,7 +38,6 @@ class OpenAiSettings(
     val reasoningEffortFlow = mutableReasoningEffort.asStateFlow()
     val voiceReasoningEffortFlow = mutableVoiceReasoningEffort.asStateFlow()
     val voiceLookupRetriesFlow = mutableVoiceLookupRetries.asStateFlow()
-    val oneShotExternalFlow = mutableOneShotExternal.asStateFlow()
 
     /** Whether a paired host link is stored. The link itself is never surfaced again. */
     val hasHostLink = mutableHasHostLink.asStateFlow()
@@ -49,7 +47,6 @@ class OpenAiSettings(
     val reasoningEffort: String get() = mutableReasoningEffort.value
     val voiceReasoningEffort: String get() = mutableVoiceReasoningEffort.value
     val voiceLookupRetries: Int get() = mutableVoiceLookupRetries.value
-    val oneShotExternal: Boolean get() = mutableOneShotExternal.value
 
     fun saveTextModel(value: String) = saveModel(TEXT_MODEL, value, OpenAiModels.TEXT, mutableTextModel)
 
@@ -79,10 +76,12 @@ class OpenAiSettings(
         onChanged()
     }
 
-    fun saveOneShotExternal(value: Boolean) {
-        commit { putBoolean(ONE_SHOT_EXTERNAL, value) }
-        mutableOneShotExternal.value = value
-        onChanged()
+    /** The retired external-launch call mode, removed as it is read; null once migrated. */
+    fun takeLegacyOneShotExternal(): Boolean? {
+        if (!prefs.contains(ONE_SHOT_EXTERNAL)) return null
+        val value = prefs.getBoolean(ONE_SHOT_EXTERNAL, true)
+        commit { remove(ONE_SHOT_EXTERNAL) }
+        return value
     }
 
     /** A blank value restores the built-in default rather than storing an unusable name. */

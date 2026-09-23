@@ -53,7 +53,7 @@ object PromptDefaults {
         wait for the user. End the conversation with its tool only when the user says goodbye, says
         that is all, or asks you to hang up, and say a brief goodbye first.
         """.trimIndent()
-    private val openConversationInstruction =
+    private val openConversationInstructionV2 =
         """
         This call stays open. Finishing a request is not a reason to hang up: say what happened and
         wait for the user. Only when the user says goodbye, says that is all, or asks you to hang up,
@@ -67,12 +67,26 @@ object PromptDefaults {
         a brief spoken goodbye. A finished request is not a reason to call it; the user
         decides when the call ends.
         """.trimIndent()
-    private val openConversationDescription =
+    private val openConversationDescriptionV2 =
         """
         Hang up this voice conversation. When the user says goodbye, says they are done, or asks
         you to hang up, say a brief goodbye and call this tool in the same response. A spoken
         goodbye without this tool leaves the call open. A finished request is not by itself a
         reason to call it; the user decides when the call ends.
+        """.trimIndent()
+    private val openConversationInstruction =
+        """
+        This call stays open until the user ends it. Never hang up on your own judgment: a finished
+        request, thanks, a pause, or silence is not a reason to end the call. Say what happened and
+        wait for the user. Only when the user says goodbye or explicitly asks you to hang up, say a
+        brief goodbye and call the end-conversation tool in the same response.
+        """.trimIndent()
+    private val openConversationDescription =
+        """
+        Hang up this voice conversation. Call it only when the user says goodbye or explicitly asks
+        you to hang up, with a brief goodbye in the same response. Never call it because a request
+        is finished, the user said thanks, or the conversation paused; the user decides when the
+        call ends.
         """.trimIndent()
 
     /** The variables every component may reference. */
@@ -190,14 +204,18 @@ object PromptDefaults {
                         "open-conversation" -> {
                             component.copy(
                                 instruction =
-                                    if (component.instruction == openConversationInstructionV1) {
+                                    if (component.instruction == openConversationInstructionV1 ||
+                                        component.instruction == openConversationInstructionV2
+                                    ) {
                                         openConversationInstruction
                                     } else {
                                         component.instruction
                                     },
                                 describe =
                                     component.describe.mapValues { (id, description) ->
-                                        if (id == END_CONVERSATION_ID && description == openConversationDescriptionV1) {
+                                        if (id == END_CONVERSATION_ID &&
+                                            (description == openConversationDescriptionV1 || description == openConversationDescriptionV2)
+                                        ) {
                                             openConversationDescription
                                         } else {
                                             description

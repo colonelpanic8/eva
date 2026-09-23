@@ -34,6 +34,7 @@ import com.colonelpanic.eva.conversation.ProviderStatus
 import com.colonelpanic.eva.conversation.WorkNotifications
 import com.colonelpanic.eva.conversation.prompt.PromptYaml
 import com.colonelpanic.eva.conversation.prompt.VoiceCallMode
+import com.colonelpanic.eva.data.PromptState
 import com.colonelpanic.eva.providers.openai.ModelKind
 import com.colonelpanic.eva.ui.EvaApp
 import com.colonelpanic.eva.ui.HandsFreeSurface
@@ -131,7 +132,6 @@ class MainActivity : ComponentActivity() {
                 eva.controller.connectVoice(
                     start.link,
                     newThread = surface.startsVoice,
-                    callMode = surface.takeIf { it.startsVoice }?.let { VoiceCallMode.external(eva.settings.oneShotExternal) },
                 )
             }
 
@@ -220,7 +220,7 @@ class MainActivity : ComponentActivity() {
         val reasoningEffort by settings.reasoningEffortFlow.collectAsStateWithLifecycle()
         val voiceReasoningEffort by settings.voiceReasoningEffortFlow.collectAsStateWithLifecycle()
         val voiceLookupRetries by settings.voiceLookupRetriesFlow.collectAsStateWithLifecycle()
-        val oneShotExternal by settings.oneShotExternalFlow.collectAsStateWithLifecycle()
+        val prompt by eva.prompts.state.collectAsStateWithLifecycle()
         val models by eva.availableModels.collectAsStateWithLifecycle()
         val account by eva.chatGpt.account.collectAsStateWithLifecycle()
         val signIn by eva.signIn.state.collectAsStateWithLifecycle()
@@ -268,7 +268,7 @@ class MainActivity : ComponentActivity() {
             reasoningEffort = reasoningEffort,
             voiceReasoningEffort = voiceReasoningEffort,
             voiceLookupRetries = voiceLookupRetries,
-            oneShotExternal = oneShotExternal,
+            callMode = (prompt as? PromptState.Loaded)?.config?.callMode,
             isDeviceAssistant = deviceAssistant,
             canSeeMediaSessions = mediaControlAccess,
             canControlScreen = eva.deviceControlHost != null,
@@ -375,7 +375,11 @@ class MainActivity : ComponentActivity() {
                 onSelectReasoningEffort = { effort -> save { settings.saveReasoningEffort(effort) } },
                 onSelectVoiceReasoningEffort = { effort -> save { settings.saveVoiceReasoningEffort(effort) } },
                 onVoiceLookupRetriesChange = settings::saveVoiceLookupRetries,
-                onOneShotExternalChange = settings::saveOneShotExternal,
+                onEndAfterOneRequestChange = { oneRequest ->
+                    eva.editPrompt {
+                        update { it.selectCallMode(if (oneRequest) VoiceCallMode.ONE_REQUEST else VoiceCallMode.OPEN_CONVERSATION) }
+                    }
+                },
                 onOpenAssistantSettings = ::openAssistantSettings,
                 onMessagingEnable = { enabled ->
                     lifecycleScope.launch {

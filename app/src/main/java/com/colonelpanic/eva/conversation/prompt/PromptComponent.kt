@@ -54,6 +54,8 @@ data class AssembledPrompt(
     val instructions: String,
     val describe: Map<String, String>,
     val hidden: Set<String>,
+    /** How a spoken session ends, when a stock call component is on. */
+    val callMode: VoiceCallMode? = null,
 ) {
     fun apply(tools: List<ProviderToolDefinition>): List<ProviderToolDefinition> =
         tools
@@ -66,14 +68,6 @@ enum class VoiceCallMode(
 ) {
     ONE_REQUEST(PromptDefaults.ONE_REQUEST_ID),
     OPEN_CONVERSATION(PromptDefaults.OPEN_CONVERSATION_ID),
-    ;
-
-    companion object {
-        fun external(
-            oneShot: Boolean,
-            forceOneShot: Boolean = false,
-        ): VoiceCallMode = if (oneShot || forceOneShot) ONE_REQUEST else OPEN_CONVERSATION
-    }
 }
 
 @Serializable
@@ -118,8 +112,13 @@ data class PromptConfig(
             instructions,
             active.fold(emptyMap()) { acc, component -> acc + component.describe },
             active.flatMap { it.hide }.toSet(),
+            if (context.voice) callMode else null,
         )
     }
+
+    /** The call mode whose stock component is enabled, or null when neither is. */
+    val callMode: VoiceCallMode?
+        get() = VoiceCallMode.entries.firstOrNull { mode -> components.any { it.id == mode.componentId && it.enabled } }
 
     fun selectCallMode(mode: VoiceCallMode): PromptConfig {
         val target =

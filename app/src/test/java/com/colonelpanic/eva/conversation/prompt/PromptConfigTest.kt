@@ -22,7 +22,7 @@ class PromptConfigTest {
         assertTrue(voice.instructions.contains("give only a brief confirmation"))
         assertTrue(voice.instructions.contains("This call is for one request."))
         assertTrue(voice.instructions.contains("every closing line must be accompanied by that tool call"))
-        assertFalse(voice.instructions.contains("This call stays open."))
+        assertFalse(voice.instructions.contains("This call stays open"))
         assertFalse(typed.instructions.contains("spoken conversation"))
         assertFalse(typed.instructions.contains("This call is for one request."))
         assertTrue(typed.instructions.contains("Never claim sending a message"))
@@ -59,7 +59,7 @@ class PromptConfigTest {
         assertTrue(open.components.first { it.id == "open-conversation" }.enabled)
         assertFalse(open.components.first { it.id == "one-request" }.enabled)
         assertNull(open.problem(PromptDefaults.VARIABLES))
-        assertTrue(open.assemble(PromptContext(voice = true, variables)).instructions.contains("This call stays open."))
+        assertTrue(open.assemble(PromptContext(voice = true, variables)).instructions.contains("This call stays open"))
 
         val neither = open.toggle("open-conversation", false)
         assertFalse(neither.components.first { it.id == "open-conversation" }.enabled)
@@ -75,15 +75,14 @@ class PromptConfigTest {
     }
 
     @Test
-    fun `external call mode selects one request or an open conversation`() {
-        assertEquals(VoiceCallMode.ONE_REQUEST, VoiceCallMode.external(oneShot = true))
-        assertEquals(VoiceCallMode.OPEN_CONVERSATION, VoiceCallMode.external(oneShot = false))
-        assertEquals(VoiceCallMode.ONE_REQUEST, VoiceCallMode.external(oneShot = false, forceOneShot = true))
-
+    fun `selecting a call mode switches the call slot and is reported by the assembled prompt`() {
         val oneRequest = PromptDefaults.config.selectCallMode(VoiceCallMode.ONE_REQUEST)
         val open = PromptDefaults.config.selectCallMode(VoiceCallMode.OPEN_CONVERSATION)
         assertTrue(oneRequest.assemble(PromptContext(true, variables)).instructions.contains("This call is for one request."))
-        assertTrue(open.assemble(PromptContext(true, variables)).instructions.contains("This call stays open."))
+        assertTrue(open.assemble(PromptContext(true, variables)).instructions.contains("This call stays open"))
+        assertEquals(VoiceCallMode.OPEN_CONVERSATION, open.assemble(PromptContext(true, variables)).callMode)
+        assertNull(open.assemble(PromptContext(false, variables)).callMode)
+        assertNull(open.toggle(PromptDefaults.OPEN_CONVERSATION_ID, false).callMode)
     }
 
     @Test
@@ -177,6 +176,37 @@ class PromptConfigTest {
                     },
             )
         assertEquals(customized, PromptDefaults.upgradeStockCallWording(customized))
+    }
+
+    @Test
+    fun `stock open-conversation wording no longer lets the model hang up on its own judgment`() {
+        val previous =
+            PromptComponent(
+                PromptDefaults.OPEN_CONVERSATION_ID,
+                instruction =
+                    """
+                    This call stays open. Finishing a request is not a reason to hang up: say what happened and
+                    wait for the user. Only when the user says goodbye, says that is all, or asks you to hang up,
+                    say a brief goodbye and call the end-conversation tool in the same response. Saying goodbye
+                    without the tool does not end the call.
+                    """.trimIndent(),
+                describe =
+                    mapOf(
+                        PromptDefaults.END_CONVERSATION_ID to
+                            """
+                            Hang up this voice conversation. When the user says goodbye, says they are done, or asks
+                            you to hang up, say a brief goodbye and call this tool in the same response. A spoken
+                            goodbye without this tool leaves the call open. A finished request is not by itself a
+                            reason to call it; the user decides when the call ends.
+                            """.trimIndent(),
+                    ),
+            )
+
+        val upgraded = PromptDefaults.upgradeStockCallWording(PromptConfig(listOf(previous))).components.single()
+
+        val stock = PromptDefaults.config.components.first { it.id == PromptDefaults.OPEN_CONVERSATION_ID }
+        assertEquals(stock.instruction, upgraded.instruction)
+        assertEquals(stock.describe, upgraded.describe)
     }
 
     @Test

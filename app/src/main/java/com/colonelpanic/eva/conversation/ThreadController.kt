@@ -8,6 +8,7 @@ import com.colonelpanic.eva.capability.InteractionMode
 import com.colonelpanic.eva.capability.InvocationPersistenceException
 import com.colonelpanic.eva.capability.InvocationRecord
 import com.colonelpanic.eva.capability.InvocationRepository
+import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.ProposalRejectedException
 import com.colonelpanic.eva.capability.ToolProposal
 import com.colonelpanic.eva.capability.ToolSchema
@@ -17,6 +18,7 @@ import com.colonelpanic.eva.conversation.prompt.PromptConfig
 import com.colonelpanic.eva.conversation.prompt.PromptContext
 import com.colonelpanic.eva.conversation.prompt.PromptDefaults
 import com.colonelpanic.eva.conversation.prompt.VoiceCallMode
+import com.colonelpanic.eva.providers.CallIdentity
 import com.colonelpanic.eva.providers.Continuation
 import com.colonelpanic.eva.providers.ConversationInput
 import com.colonelpanic.eva.providers.ConversationProvider
@@ -114,12 +116,25 @@ class ThreadController(
     private var attempt = 0
     private var attachedThreadId: String? = null
     private var ending = false
+    private var endingToken = 0
+    private var endReason = ""
+    private var endRequest: CallIdentity? = null
+
+    /** The model asked to hang up with an action still to report; it hangs up once that is said. */
+    private var hangUpDeferred = false
+
+    /** Responses that proposed a phone action, so a hang-up in the same breath waits for its result. */
+    private val actionResponses = mutableSetOf<String>()
     private var assistantSpeaking = false
+
+    /** How each attachment ended, keyed by attempt, for its closing notice. */
+    private val endReasons = mutableMapOf<Int, String>()
 
     private data class ConnectionTools(
         val snapshot: CapabilityRegistry.Snapshot,
         val catalog: ProviderToolCatalog,
         val voice: Boolean,
+        val callMode: VoiceCallMode? = null,
     )
 
     private val connectionTools = mutableMapOf<ConversationSession, ConnectionTools>()
@@ -258,7 +273,7 @@ class ThreadController(
         callMode: VoiceCallMode? = null,
     ) {
         if (state.value.isLoading || state.value.errorMessage != null) return
-        disconnect()
+        end(ENDED_FOR_NEW_SESSION)
         val thisAttempt = attempt
         mutableState.update { it.copy(providerStatus = ProviderStatus.CONNECTING, providerMessage = null, voiceMode = voice) }
         connectionJob =
@@ -297,7 +312,7 @@ class ThreadController(
                                         mutableState.update { it.copy(mediaState = audioState) }
                                         if (audioState is RealtimeMediaState.Failed) {
                                             mutableState.update { it.copy(providerMessage = audioState.reason.message) }
-                                            disconnect()
+                                            end("ended: audio failed (${audioState.reason.message})")
                                         }
                                     }
                                 }
@@ -316,7 +331,7 @@ class ThreadController(
                             ),
                         )
                     openedSession = opened
-                    connectionTools[opened] = ConnectionTools(snapshot, connectionCatalog, voice)
+                    connectionTools[opened] = ConnectionTools(snapshot, connectionCatalog, voice, assembled.callMode)
                     currentCoroutineContext().ensureActive()
                     session = opened
                     opened.events.takeWhile { it != ProviderEvent.Closed }.collect { event ->
@@ -326,13 +341,17 @@ class ThreadController(
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: Exception) {
+                    val message = error.message?.take(300) ?: "Provider connection failed."
+                    endReasons.putIfAbsent(thisAttempt, "ended: $message")
                     if (thisAttempt == attempt) {
-                        mutableState.update { it.copy(providerMessage = error.message?.take(300) ?: "Provider connection failed.") }
+                        mutableState.update { it.copy(providerMessage = message) }
                     }
                 } finally {
                     currentCoroutineContext().cancelChildren()
+                    val reason = endReasons.remove(thisAttempt) ?: "ended: the provider closed the connection"
                     if (openedSession != null && threadId != null) {
-                        withContext(NonCancellable) { store.append(notice(threadId, null, NoticeKind.SESSION_ENDED, "Session ended")) }
+                        val label = "${if (voice) "Call" else "Session"} $reason"
+                        withContext(NonCancellable) { store.append(notice(threadId, null, NoticeKind.SESSION_ENDED, label)) }
                     }
                     if (thisAttempt == attempt) {
                         session = null
@@ -431,14 +450,11 @@ class ThreadController(
             is ProviderEvent.ToolCallReady -> {
                 check(event.call.catalogRevision == connectionTools.getValue(opened).catalog.revision)
                 if (voice && event.capabilityId == END_CONVERSATION.capabilityId) {
-                    // Nothing runs on the phone and no result is returned, so the model is not
-                    // prompted to speak again. Its goodbye plays out first.
-                    ending = true
-                    scope.launch {
-                        if (assistantSpeaking) delay(END_SPEECH_LIMIT_MILLIS)
-                        hangUp()
-                    }
+                    // Nothing runs on the phone and, unless the hang-up is deferred, no result is
+                    // returned, so the model is not prompted to speak again. Its goodbye plays out first.
+                    endCall(ENDED_BY_MODEL, event.call)
                 } else {
+                    if (voice) actionResponses += event.call.generationId
                     taskFor(opened, event.call.inputId)?.dispatch(event)
                 }
             }
@@ -446,10 +462,11 @@ class ThreadController(
             is ProviderEvent.AssistantSpeaking -> {
                 assistantSpeaking = event.speaking
                 if (ending && !event.speaking) {
+                    val token = endingToken
                     scope.launch {
                         // The phone still holds a little audio after the server drains.
                         delay(PLAYOUT_TAIL_MILLIS)
-                        hangUp()
+                        finishEnding(token)
                     }
                 }
             }
@@ -459,7 +476,15 @@ class ThreadController(
             }
 
             is ProviderEvent.ResponseEnded -> {
-                taskFor(opened, event.inputId)?.generationEnded(event.status)
+                val task = taskFor(opened, event.inputId)
+                task?.generationEnded(event.status)
+                if (voice && hangUpDeferred) {
+                    endCall(ENDED_BY_MODEL)
+                } else if (voice && task?.actionServiced == true && connectionTools[opened]?.callMode == VoiceCallMode.ONE_REQUEST) {
+                    // A one-request call is over once its phone action is done and the result has been
+                    // spoken, whether or not the model remembers to hang up.
+                    endCall(ENDED_AFTER_REQUEST)
+                }
             }
 
             is ProviderEvent.Failure -> {
@@ -470,10 +495,55 @@ class ThreadController(
         }
     }
 
+    /** Hangs up once whatever EVA is saying has finished playing. [request] is the model's own call to hang up. */
+    private fun endCall(
+        reason: String,
+        request: CallIdentity? = null,
+    ) {
+        if (ending) return
+        ending = true
+        endReason = reason
+        endRequest = request
+        val token = ++endingToken
+        scope.launch {
+            if (assistantSpeaking) delay(END_SPEECH_LIMIT_MILLIS)
+            finishEnding(token)
+        }
+    }
+
+    /**
+     * A hang-up proposed alongside an action, or while one is still to be reported, would strand
+     * the result: the call ends before it is spoken. The model is told to report it first, and the
+     * call ends after that response instead.
+     */
+    private fun finishEnding(token: Int) {
+        if (!ending || token != endingToken) return
+        val request = endRequest
+        val task = attachedThreadId?.let { activeTask(it) }
+        val unreported = task != null && (task.dispatches.any { it.isActive } || task.awaitingFollowUp)
+        val opened = session
+        if (request != null && opened != null && (unreported || request.generationId in actionResponses)) {
+            ending = false
+            endRequest = null
+            hangUpDeferred = true
+            scope.launch {
+                runCatching { opened.submitToolResult(CorrelatedToolResult(request, "NOT_EXECUTED", HANG_UP_DEFERRED)) }
+            }
+            return
+        }
+        hangUp(endReason)
+    }
+
     /** Ends the attachment only. Whatever the thread was doing keeps going, on another leg if it has to. */
-    fun disconnect() {
+    fun disconnect() = end(ENDED_BY_USER)
+
+    private fun end(reason: String) {
+        if (connectionJob?.isActive == true) endReasons.putIfAbsent(attempt, reason)
         attempt++
         ending = false
+        endRequest = null
+        hangUpDeferred = false
+        actionResponses.clear()
         assistantSpeaking = false
         connectionJob?.cancel()
         media?.close()
@@ -490,11 +560,11 @@ class ThreadController(
         }
     }
 
-    private fun hangUp() {
+    private fun hangUp(reason: String) {
         val task = attachedThreadId?.let { activeTask(it) }
         // The model chose to end the call, so an answer it has already spoken is complete.
         if (task != null && task.dispatches.none { it.isActive } && !task.awaitingFollowUp) task.complete()
-        disconnect()
+        end(reason)
         mutableHangUps.tryEmit(Unit)
     }
 
@@ -539,7 +609,7 @@ class ThreadController(
             } catch (_: Exception) {
                 if (session === opened) {
                     task.interrupt("The request could not be sent.")
-                    disconnect()
+                    end("ended: the request could not be sent")
                     mutableState.update { it.copy(providerMessage = "Could not submit this request. Reconnect to try again.") }
                 }
             }
@@ -603,6 +673,10 @@ class ThreadController(
         var awaitingFollowUp = false
             private set
         val dispatches = mutableListOf<Job>()
+
+        /** This request's phone action completed or was handed off, so the request has been served. */
+        var actionServiced = false
+            private set
         private var readOnlyCalls = 0
         private var sideEffectCall: String? = null
         private var rehomed = false
@@ -678,13 +752,18 @@ class ThreadController(
                     )
                     try {
                         val result = dispatcher.execute(proposal, rejection ?: argumentError)
+                        if (definition?.readOnly == false &&
+                            (result.status == InvocationStatus.COMPLETED || result.status == InvocationStatus.HANDED_OFF)
+                        ) {
+                            actionServiced = true
+                        }
                         deliver(event.call, result.status.name, result.message, result.provenance, result.data)
                     } catch (error: ProposalRejectedException) {
                         deliver(event.call, "NOT_EXECUTED", error.message.orEmpty())
                     } catch (error: InvocationPersistenceException) {
                         mutableState.update { it.copy(errorMessage = SessionController.STORAGE_ERROR) }
                         interrupt("Action history could not be saved.")
-                        disconnect()
+                        end("ended: action history could not be saved")
                     }
                 }
             dispatches += job
@@ -881,6 +960,13 @@ class ThreadController(
         /** Bounds the wait for a goodbye whose end is never reported. */
         private const val END_SPEECH_LIMIT_MILLIS = 10_000L
         private const val PLAYOUT_TAIL_MILLIS = 500L
+        private const val ENDED_BY_USER = "ended by you"
+        private const val ENDED_BY_MODEL = "ended by EVA with its end-call tool"
+        private const val ENDED_AFTER_REQUEST = "ended by EVA after finishing the request"
+        private const val ENDED_FOR_NEW_SESSION = "ended for a new session"
+        private const val HANG_UP_DEFERRED =
+            "The call is still open because an action from this request has not been reported. Tell the user its " +
+                "result now; EVA hangs up after that response."
 
         /**
          * Hangs up rather than acting on the phone, so it bypasses the dispatcher and journal. This

@@ -10,6 +10,7 @@ import com.colonelpanic.eva.adapters.declarative.httpBindings
 import com.colonelpanic.eva.conversation.prompt.PromptComponent
 import com.colonelpanic.eva.conversation.prompt.PromptConfig
 import com.colonelpanic.eva.conversation.prompt.PromptDefaults
+import com.colonelpanic.eva.conversation.prompt.VoiceCallMode
 import com.colonelpanic.eva.providers.openai.OpenAiModels
 import kotlinx.serialization.Required
 import kotlinx.serialization.SerialName
@@ -53,6 +54,7 @@ data class EvaConfigurationDocument(
 
 @Serializable data class VoicePatch(
     val lookupRetries: Int? = null,
+    /** Read only: [EvaConfigurationCodec.decode] moves it into the prompt's call slot. */
     val oneShotExternal: Boolean? = null,
 )
 
@@ -181,7 +183,6 @@ data class EvaConfiguration(
 
     data class Voice(
         val lookupRetries: Int,
-        val oneShotExternal: Boolean = true,
     )
 
     data class Appearance(
@@ -294,7 +295,25 @@ object EvaConfigurationCodec {
         }
         document.include.forEach(::validateInclude)
         require(document.include.distinct().size == document.include.size) { "An include is listed more than once." }
-        return document
+        return document.withCallModeInPrompt()
+    }
+
+    /**
+     * `voice.oneShotExternal: false` kept external launches open; the prompt's call slot now decides
+     * every call, so the same file keeps calls open. A file without prompt components cannot say so.
+     */
+    private fun EvaConfigurationDocument.withCallModeInPrompt(): EvaConfigurationDocument {
+        val oneShot = voice?.oneShotExternal ?: return this
+        val components =
+            prompt?.components?.let { components ->
+                if (oneShot) {
+                    components
+                } else {
+                    runCatching { PromptConfig(components).selectCallMode(VoiceCallMode.OPEN_CONVERSATION).components }
+                        .getOrDefault(components)
+                }
+            }
+        return copy(voice = voice.copy(oneShotExternal = null).nonEmpty(), prompt = prompt?.copy(components = components))
     }
 
     fun resolve(
@@ -378,10 +397,7 @@ object EvaConfigurationCodec {
                 current.models.voiceReasoningEffort.takeIf { it != base?.models?.voiceReasoningEffort },
             ).nonEmpty(),
         voice =
-            VoicePatch(
-                current.voice.lookupRetries.takeIf { it != base?.voice?.lookupRetries },
-                current.voice.oneShotExternal.takeIf { it != base?.voice?.oneShotExternal },
-            ).nonEmpty(),
+            VoicePatch(current.voice.lookupRetries.takeIf { it != base?.voice?.lookupRetries }).nonEmpty(),
         appearance = AppearancePatch(current.appearance.dynamicColor.takeIf { it != base?.appearance?.dynamicColor }).nonEmpty(),
         capabilities = CapabilitiesPatch(current.capabilities.screenControl.takeIf { it != base?.capabilities?.screenControl }).nonEmpty(),
         messaging =
@@ -430,10 +446,7 @@ object EvaConfigurationCodec {
                     models?.voiceReasoningEffort ?: OpenAiModels.VOICE_REASONING_EFFORT,
                 ),
             voice =
-                EvaConfiguration.Voice(
-                    requireNotNull(voice?.lookupRetries) { "voice.lookupRetries is missing." },
-                    voice.oneShotExternal ?: true,
-                ),
+                EvaConfiguration.Voice(requireNotNull(voice?.lookupRetries) { "voice.lookupRetries is missing." }),
             appearance = EvaConfiguration.Appearance(requireNotNull(appearance?.dynamicColor) { "appearance.dynamicColor is missing." }),
             capabilities =
                 EvaConfiguration.Capabilities(requireNotNull(capabilities?.screenControl) { "capabilities.screenControl is missing." }),
@@ -692,10 +705,7 @@ object EvaConfigurationCodec {
                 override.models?.voiceReasoningEffort ?: base.models?.voiceReasoningEffort,
             ).nonEmpty(),
         voice =
-            VoicePatch(
-                override.voice?.lookupRetries ?: base.voice?.lookupRetries,
-                override.voice?.oneShotExternal ?: base.voice?.oneShotExternal,
-            ).nonEmpty(),
+            VoicePatch(override.voice?.lookupRetries ?: base.voice?.lookupRetries).nonEmpty(),
         appearance = AppearancePatch(override.appearance?.dynamicColor ?: base.appearance?.dynamicColor).nonEmpty(),
         capabilities = CapabilitiesPatch(override.capabilities?.screenControl ?: base.capabilities?.screenControl).nonEmpty(),
         messaging =
@@ -753,7 +763,7 @@ object EvaConfigurationCodec {
     private fun ModelsPatch.nonEmpty() =
         takeIf { text != null || realtime != null || reasoningEffort != null || voiceReasoningEffort != null }
 
-    private fun VoicePatch.nonEmpty() = takeIf { lookupRetries != null || oneShotExternal != null }
+    private fun VoicePatch.nonEmpty() = takeIf { lookupRetries != null }
 
     private fun AppearancePatch.nonEmpty() = takeIf { dynamicColor != null }
 
