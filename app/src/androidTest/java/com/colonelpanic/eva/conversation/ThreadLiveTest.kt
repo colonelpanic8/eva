@@ -188,7 +188,7 @@ class ThreadLiveTest {
         }
 
     private companion object {
-        const val MODEL = "gpt-5.6-sol"
+        const val MODEL = "gpt-6-sol"
         const val TIMEOUT_MILLIS = 120_000L
         const val POLL_MILLIS = 250L
     }

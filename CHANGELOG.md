@@ -10,6 +10,10 @@ All notable changes to EVA will be documented here.
 - Settings can open one of Android's floating quick panels for internet, wifi, NFC, or volume, where the user changes the setting without leaving what they were doing, and can open one installed app's own settings page or its notification settings by exact package name.
 - An existing installation keeps the `open` action it already had and gets the wider screen list with it; the three new actions arrive switched off, to be enabled under Extensions like any other update.
 
+### Changed
+
+- Typed conversations default to `gpt-6-sol` instead of `gpt-5.6-sol`. GPT-6 Sol and Luna appear in the text model picker whenever the account lists them, and both were verified live on the ChatGPT subscription backend at every text reasoning effort EVA offers. An installation or configuration that already names a text model keeps it; choose the new one under Settings or set `models.text` in the configuration.
+
 ## [0.25.0] - 2026-09-17
 
 ### Changed
