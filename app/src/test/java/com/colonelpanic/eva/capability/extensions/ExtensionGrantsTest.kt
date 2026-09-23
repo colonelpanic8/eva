@@ -102,6 +102,54 @@ class ExtensionGrantsTest {
         }
 
     @Test
+    fun `catalog rebind approves only newly named actions and requires the previous digest`() =
+        runTest {
+            val grants = ExtensionGrants(MemoryGrantPersistence())
+            val previous = all.copy(digest = "a".repeat(64))
+            val later =
+                all.copy(
+                    digest = "b".repeat(64),
+                    capabilities = all.capabilities + write.copy(name = "new_action"),
+                )
+            grants.enableAll(extensionIdentity, previous)
+            grants.mutation(extensionIdentity, previous, "unknown", false)
+
+            assertFalse(grants.rebind(extensionIdentity, later, "wrong", setOf("write", "unknown"), true))
+            assertEquals(previous.digest, grants.all().getValue(extensionIdentity.instanceId).digest)
+            assertTrue(grants.rebind(extensionIdentity, later, previous.digest, setOf("write", "unknown"), true))
+            assertEquals(setOf("write", "new_action"), grants.grant(extensionIdentity, later)?.mutations)
+
+            val effectChange =
+                later.copy(
+                    digest = "c".repeat(64),
+                    capabilities =
+                        later.capabilities.map {
+                            if (it.name ==
+                                extensionCapability.name
+                            ) {
+                                it.copy(effect = Effect.WRITE)
+                            } else {
+                                it
+                            }
+                        },
+                )
+            assertTrue(
+                grants.rebind(
+                    extensionIdentity,
+                    effectChange,
+                    later.digest,
+                    later.capabilities.map { it.name }.toSet(),
+                    true,
+                ),
+            )
+            assertFalse(
+                "An existing read cannot gain write permission",
+                extensionCapability.name in grants.grant(extensionIdentity, effectChange)!!.mutations,
+            )
+            assertFalse("An explicitly declined action stays off", "unknown" in grants.grant(extensionIdentity, effectChange)!!.mutations)
+        }
+
+    @Test
     fun `all identity boundaries and authorization scope require renewed grants`() =
         runTest {
             val grants = ExtensionGrants(MemoryGrantPersistence())

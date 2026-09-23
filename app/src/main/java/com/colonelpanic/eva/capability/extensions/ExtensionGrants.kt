@@ -98,19 +98,23 @@ class ExtensionGrants(
     }
 
     /**
-     * Moves an existing grant onto a changed contract, keeping the actions the user already
-     * approved and dropping any that the new contract no longer declares. A catalog EVA follows
-     * updates its extensions without asking again; it never widens what was approved.
+     * Moves an existing grant onto a changed catalog contract. Previously declined actions stay
+     * declined; newly named non-read actions are approved when auto-enable is on.
      */
     suspend fun rebind(
         identity: AdapterIdentity,
         descriptor: Descriptor,
+        previousDigest: String,
+        previousActions: Set<String>,
+        enableNewActions: Boolean,
     ): Boolean {
         val current = grants[identity.instanceId]?.takeIf { it.identityKey == identity.key } ?: return false
         if (current.digest == descriptor.digest) return false
+        if (current.digest != previousDigest) return false
         val mutations =
-            current.mutations
-                .filter { name -> descriptor.capabilities.any { it.name == name && it.effect != Effect.READ } }
+            descriptor.capabilities
+                .filter { it.effect != Effect.READ && (it.name in current.mutations || (enableNewActions && it.name !in previousActions)) }
+                .map { it.name }
                 .toSet()
         save(grants + (identity.instanceId to ExtensionGrant(identity.key, descriptor.digest, mutations)))
         return true

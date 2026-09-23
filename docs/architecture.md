@@ -111,7 +111,10 @@ Adapters contribute capabilities to a registry snapshot. Admission is determinis
 and bounded to 64 model-facing tools, reserving two voice session controls and bundled tools
 before sorted extension tools. Unavailable or excess entries remain explainable
 in the UI. New tools reach the model on the next connection; revocation blocks new
-execution immediately even if the model still sees an older catalog.
+execution immediately even if the model still sees an older catalog. For packages
+refreshed from a followed repository, newly named actions are granted when that
+package's auto-enable switch is on; explicitly disabled actions remain disabled.
+Manual imports and installed Android providers do not gain new grants this way.
 
 The dispatcher validates identity, arguments, binding revision, availability, and
 grants, then journals a claim before dispatch. Duplicate call IDs cannot execute

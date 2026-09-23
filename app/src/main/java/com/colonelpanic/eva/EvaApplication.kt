@@ -385,7 +385,7 @@ class EvaApplication :
                 checkNotNull(installed)
             },
             { identity -> extensions.adopt(identity) },
-            { identity -> extensions.carryForward(identity) },
+            { identity, digest, actions, enabled -> extensions.carryForward(identity, digest, actions, enabled) },
         )
     }
 

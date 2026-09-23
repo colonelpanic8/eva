@@ -1,0 +1,1 @@
+* Changed: A followed extension repository can enable newly added actions on package update without another in-app grant. Previously disabled actions stay disabled, and each extension's auto-enable switch can opt out.

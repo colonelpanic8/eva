@@ -13,7 +13,12 @@ import com.colonelpanic.eva.capability.extensions.ExtensionGrants
 import com.colonelpanic.eva.capability.extensions.ExtensionRuntime
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.transport.RefSpec
 import org.eclipse.jgit.transport.URIish
@@ -275,7 +280,7 @@ class PluginRepositoryTest {
                             checkNotNull(installed)
                         },
                         { identity -> runtime.adopt(identity) },
-                        { identity -> runtime.carryForward(identity) },
+                        { identity, digest, actions, enabled -> runtime.carryForward(identity, digest, actions, enabled) },
                     ),
                     {
                         registry.changeAuthorization {
@@ -310,7 +315,28 @@ class PluginRepositoryTest {
             assertEquals(InvocationStatus.HANDED_OFF, dispatcher.execute(proposal).status)
             assertEquals(1, launches)
 
-            catalog.publish("caffeine.json", json.replace("0.1.0", "0.2.0"))
+            runtime.mutation(entry.key, "disable", false)
+            runCurrent()
+
+            fun revision(
+                version: String,
+                addedActions: List<String>,
+            ): String {
+                val root = Json.parseToJsonElement(json).jsonObject
+                val declared = root.getValue("capabilities").jsonArray
+                val template = declared.last().jsonObject
+                val additions =
+                    addedActions.map { name ->
+                        JsonObject(
+                            template + ("tool" to JsonObject(template.getValue("tool").jsonObject + ("name" to JsonPrimitive(name)))),
+                        )
+                    }
+                return JsonObject(
+                    root + ("version" to JsonPrimitive(version)) + ("capabilities" to JsonArray(declared + additions)),
+                ).toString()
+            }
+
+            catalog.publish("caffeine.json", revision("0.2.0", listOf("pause")))
             browser.refresh(catalog.source)
             runCurrent()
             assertEquals(
@@ -324,6 +350,7 @@ class PluginRepositoryTest {
                 runtime.settings.value.entries
                     .single()
             assertTrue("An update keeps the approvals it already had", updated.enabled)
+            assertEquals("A new action is approved but a declined one stays off", setOf("enable", "pause"), updated.mutations)
             assertEquals(entry.installed.identity, updated.installed.identity)
             assertEquals(
                 InvocationStatus.HANDED_OFF,
@@ -337,6 +364,18 @@ class PluginRepositoryTest {
                             registry.snapshot.revision,
                         ),
                     ).status,
+            )
+
+            autoEnable = false
+            catalog.publish("caffeine.json", revision("0.2.1", listOf("pause", "resume")))
+            browser.refresh(catalog.source)
+            runCurrent()
+            assertEquals(
+                "Auto-enable off leaves later new actions off",
+                setOf("enable", "pause"),
+                runtime.settings.value.entries
+                    .single()
+                    .mutations,
             )
 
             // The key carries the live digest, so an update means re-reading it before toggling.

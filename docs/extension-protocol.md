@@ -99,8 +99,9 @@ refreshes any this run has not listed yet.
 **Following a repository is the trust decision.** Refreshing one installs every
 package it publishes and replaces every package whose content changed, with no
 per-package review. A package that is new is enabled outright unless its
-auto-enable switch is off; a package that already existed keeps exactly the actions
-it already had, so an update never asks again and never widens what was approved.
+auto-enable switch is off. An update keeps actions already enabled and automatically
+enables newly named actions when that switch is on; actions explicitly switched off
+stay off. Changing an existing read action to a mutation does not auto-enable it.
 Turning an extension off is remembered: it also clears auto-enable, and later
 refreshes leave it off. Changed actions reach the model on the next connection.
 Removing a repository stops refreshes; what it installed stays until removed.
@@ -138,7 +139,7 @@ and a fixed, name-derived instance ID. After the desired configuration is attach
 at startup, EVA installs each default whose package ID is not yet in
 `packages.appliedDefaults`, records it there, and grants every action; from then on
 it is an ordinary installation with the catalog repository as its source, so a
-later catalog update targets the same instance and needs the usual re-enablement.
+later catalog update targets the same instance and follows the same action grant policy.
 `appliedDefaults` is portable: removing or disabling a default is a configuration
 change that other devices restore, and a removed default is never reinstalled.
 All of them are handoffs, so the model still reports an opened app rather than a
@@ -193,9 +194,10 @@ not silently dropped.
 
 On import EVA assigns an instance ID. The file's ID cannot replace an unrelated
 installation. Grants bind to that instance and the full canonical content digest;
-changed content requires re-enablement. Updates target an existing instance only
-through an explicit preview and install action. Historical receipts retain the
-previous identity and revision.
+manual imports of changed content require re-enablement. Updates target an existing
+instance only through an explicit preview and install action or a followed repository
+refresh. A followed repository carries grants to the new digest under the policy
+above. Historical receipts retain the previous identity and revision.
 
 A catalog needs nothing but a Git repository with one file per package:
 

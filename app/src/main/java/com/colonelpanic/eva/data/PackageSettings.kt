@@ -98,8 +98,8 @@ class PackageSettings(
 
     /**
      * Whether a catalog refresh may turn this extension's actions on by itself. Enabling is the
-     * default for a catalog the user chose to follow; turning an extension or one of its actions
-     * off records the opposite, so a later refresh does not undo the decision.
+     * default for a catalog the user chose to follow. Turning an extension off records the
+     * opposite; turning off one action leaves that action off through later refreshes.
      */
     fun autoEnable(packageId: String): Boolean = prefs.getBoolean("auto:$packageId", true)
 

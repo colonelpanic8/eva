@@ -4,6 +4,12 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-09-23
+
+### Changed
+
+- A followed extension repository can enable newly added actions on package update without another in-app grant. Previously disabled actions stay disabled, and each extension's auto-enable switch can opt out.
+
 ## [0.31.0] - 2026-09-23
 
 ### Changed

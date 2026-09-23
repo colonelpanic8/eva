@@ -132,8 +132,8 @@ internal fun ExtensionsSection(
                         val packageDefinitionId = repositoryInstallation.definition.id
                         SettingsRow(
                             "Enable automatically",
-                            "Let a repository refresh turn this extension's actions on when it installs it. " +
-                                "Actions you have already chosen are kept either way.",
+                            "Enable actions in new extensions and newly added actions in updates from this repository. " +
+                                "Actions you switched off stay off.",
                         ) {
                             Switch(
                                 checked = state.autoEnabled[packageDefinitionId] ?: true,
