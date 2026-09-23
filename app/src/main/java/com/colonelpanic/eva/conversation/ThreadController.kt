@@ -18,6 +18,7 @@ import com.colonelpanic.eva.conversation.prompt.PromptConfig
 import com.colonelpanic.eva.conversation.prompt.PromptContext
 import com.colonelpanic.eva.conversation.prompt.PromptDefaults
 import com.colonelpanic.eva.conversation.prompt.VoiceCallMode
+import com.colonelpanic.eva.conversation.prompt.Wording
 import com.colonelpanic.eva.providers.CallIdentity
 import com.colonelpanic.eva.providers.Continuation
 import com.colonelpanic.eva.providers.ConversationInput
@@ -77,6 +78,8 @@ class ThreadController(
     private val voiceLookupRetries: () -> Int = { 5 },
     /** Silence after a one-request call's action is reported before EVA hangs up; 0 never does. */
     private val quietHangUpMillis: () -> Long = { 5_000L },
+    /** The followed wording of EVA's own tools and notes. */
+    private val wording: () -> Wording = { Wording.bundled },
     private val voiceKeywords: suspend () -> List<String> = { emptyList() },
     /** Capabilities the user has switched off. They are left out of the catalog entirely. */
     private val hiddenCapabilities: () -> Set<String> = { emptySet() },
@@ -159,7 +162,11 @@ class ThreadController(
             },
             if (voice) 1 else 0,
         ).admitted
-        .map { ProviderToolDefinition(it.id, it.title, it.modelDescription(), it.inputSchema) }
+        .map { definition ->
+            val tool = ProviderToolDefinition(definition.id, definition.title, definition.modelDescription(), definition.inputSchema)
+            // An extension's own words are untrusted data; only EVA's tools take followed wording.
+            if (definition.source == null) wording().describe(tool) else tool
+        }
 
     /** The prompt and the catalog are decided together: components rewrite and hide tools. */
     private suspend fun assemble(
@@ -298,7 +305,9 @@ class ThreadController(
                     val snapshot = registry.snapshot
                     val connectionCatalog =
                         catalogOf(
-                            assembled.apply((if (voice) listOf(END_CONVERSATION) else emptyList()) + phoneTools(snapshot, voice)),
+                            assembled.apply(
+                                (if (voice) listOf(wording().describe(END_CONVERSATION)) else emptyList()) + phoneTools(snapshot, voice),
+                            ),
                             snapshot.revision,
                         )
                     val provider =
@@ -561,7 +570,11 @@ class ThreadController(
             endRequest = null
             hangUpDeferred = true
             scope.launch {
-                runCatching { opened.submitToolResult(CorrelatedToolResult(request, "NOT_EXECUTED", HANG_UP_DEFERRED)) }
+                runCatching {
+                    opened.submitToolResult(
+                        CorrelatedToolResult(request, "NOT_EXECUTED", wording().message(Wording.HANG_UP_DEFERRED)),
+                    )
+                }
             }
             return
         }
@@ -921,7 +934,7 @@ class ThreadController(
                 val opened =
                     backgroundProviderFactory().open(
                         SessionOpenRequest(
-                            assembled.instructions + "\n\n" + CONTINUATION_NOTE,
+                            assembled.instructions + "\n\n" + wording().message(Wording.CONTINUATION),
                             catalog,
                             history = projectHistory(items, receipts(items)),
                             continuation = Continuation(turnId),
@@ -988,9 +1001,6 @@ class ThreadController(
         const val UNTITLED = "New conversation"
         const val READ_ONLY_CALLS_PER_TURN = 8
         private const val VOICE_REQUEST = "Voice request"
-        private const val CONTINUATION_NOTE =
-            "The voice call for this request has ended. Finish the request in text using the receipts in the " +
-                "conversation; do not repeat actions that already have a receipt."
 
         /** Bounds the wait for a goodbye whose end is never reported. */
         private const val END_SPEECH_LIMIT_MILLIS = 10_000L
@@ -999,22 +1009,21 @@ class ThreadController(
         private const val ENDED_BY_MODEL = "ended by EVA with its end-call tool"
         private const val ENDED_AFTER_REQUEST = "ended by EVA: the request was done and the line went quiet"
         private const val ENDED_FOR_NEW_SESSION = "ended for a new session"
-        private const val HANG_UP_DEFERRED =
-            "The call is still open because an action from this request has not been reported. Tell the user its " +
-                "result now; EVA hangs up after that response."
 
         /**
-         * Hangs up rather than acting on the phone, so it bypasses the dispatcher and journal. This
-         * wording is what the model sees when no enabled component describes the tool itself.
+         * Hangs up rather than acting on the phone, so it bypasses the dispatcher and journal. Its
+         * wording is [Wording]'s, reworded again by whichever call component is enabled.
          */
-        val END_CONVERSATION =
-            ProviderToolDefinition(
-                PromptDefaults.END_CONVERSATION_ID,
-                "End the conversation",
-                "Hang up this voice conversation after a brief spoken goodbye; the goodbye finishes playing before " +
-                    "the call ends. Do not call it while a request is unfinished or you are waiting for the user to answer.",
-                Json.parseToJsonElement("""{"type":"object","properties":{},"required":[],"additionalProperties":false}""").jsonObject,
+        val END_CONVERSATION by lazy {
+            Wording.bundled.describe(
+                ProviderToolDefinition(
+                    PromptDefaults.END_CONVERSATION_ID,
+                    "End the conversation",
+                    "",
+                    Json.parseToJsonElement("""{"type":"object","properties":{},"required":[],"additionalProperties":false}""").jsonObject,
+                ),
             )
+        }
 
         fun catalogOf(
             tools: List<ProviderToolDefinition>,

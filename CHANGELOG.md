@@ -4,6 +4,10 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- What EVA tells the model about its own tools and parameters, and the notes it sends mid-call, come from `eva-wording.yaml` in the instruction repository and are followed with the instructions, so they can be refined without an app update. The wording is unchanged for now.
+
 ## [0.27.0] - 2026-09-22
 
 ### Changed

@@ -3,6 +3,7 @@ package com.colonelpanic.eva.data
 import com.colonelpanic.eva.conversation.prompt.PromptConfig
 import com.colonelpanic.eva.conversation.prompt.PromptDefaults
 import com.colonelpanic.eva.conversation.prompt.PromptYaml
+import com.colonelpanic.eva.conversation.prompt.Wording
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -25,6 +26,14 @@ class PromptRepository(
         require(bytes.size <= MAX_BYTES) { "Instruction source is too large" }
         val config = PromptYaml.decode(bytes.toString(Charsets.UTF_8)).validated(PromptDefaults.VARIABLES)
         return RepositoryPrompt(normalized, config)
+    }
+
+    /** The tool wording published beside the prompt, as `eva-wording.yaml` in the same directory. */
+    fun loadWording(source: String): Wording {
+        val sibling = checkNotNull(sourceUrl(source).resolve(Wording.FILE_NAME)).toString()
+        val bytes = fetch(sibling, MAX_BYTES)
+        require(bytes.size <= MAX_BYTES) { "Wording source is too large" }
+        return Wording.decode(bytes.toString(Charsets.UTF_8))
     }
 
     companion object {

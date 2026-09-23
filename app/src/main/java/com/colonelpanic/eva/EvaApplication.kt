@@ -531,6 +531,7 @@ class EvaApplication :
             scope = scope,
             voiceLookupRetries = { settings.voiceLookupRetries },
             quietHangUpMillis = { settings.quietHangUpSeconds * 1_000L },
+            wording = { prompts.wording.value },
             voiceKeywords = { contactKeywords.names() },
             hiddenCapabilities = { if (capabilities.screenControlEnabled) emptySet() else CapabilityRegistry.SCREEN_CONTROL },
             prompt = { prompts.load() },

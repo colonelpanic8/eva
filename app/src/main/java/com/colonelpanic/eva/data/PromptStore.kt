@@ -10,6 +10,7 @@ import com.colonelpanic.eva.conversation.prompt.PromptConfig
 import com.colonelpanic.eva.conversation.prompt.PromptConfigException
 import com.colonelpanic.eva.conversation.prompt.PromptDefaults
 import com.colonelpanic.eva.conversation.prompt.PromptYaml
+import com.colonelpanic.eva.conversation.prompt.Wording
 import com.colonelpanic.eva.conversation.prompt.followSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -63,6 +64,14 @@ class PromptStore(
 
     /** What the followed source said when this installation last took from it. */
     private val baselineFile = File(this.context.filesDir, "eva-prompt.source.yaml")
+    private val wordingFile = File(this.context.filesDir, Wording.FILE_NAME)
+    private val mutableWording =
+        MutableStateFlow(
+            runCatching { wordingFile.takeIf { it.exists() }?.readText()?.let(Wording::decode) }.getOrNull() ?: Wording.bundled,
+        )
+
+    /** The followed wording of EVA's own tools and notes; the shipped copy until a source provides one. */
+    val wording = mutableWording.asStateFlow()
     private val prefs = this.context.getSharedPreferences("eva.prompt", Context.MODE_PRIVATE)
     private val ownFile = File(this.context.getExternalFilesDir(null) ?: this.context.filesDir, PromptYaml.FILE_NAME)
     private val mutableState = MutableStateFlow<PromptState>(PromptState.Loading)
@@ -159,6 +168,11 @@ class PromptStore(
             val changed = followed != current
             if (changed) save(followed)
             withContext(ioDispatcher) { baselineFile.writeText(PromptYaml.encode(remote.config)) }
+            // A source that publishes only a prompt leaves the wording as it was.
+            withContext(ioDispatcher) { runCatching { repository.loadWording(source) }.getOrNull() }?.let { followed ->
+                withContext(ioDispatcher) { wordingFile.writeText(Wording.encode(followed)) }
+                mutableWording.value = followed
+            }
             prefs.edit {
                 putString(SOURCE, remote.source)
                 putLong(FOLLOWED_AT, now())

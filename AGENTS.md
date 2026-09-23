@@ -35,7 +35,8 @@ experiment READMEs and third-party notices stay beside their code.
 - Conversation and task ownership outlive a voice attachment. Preserve turn IDs,
   action provenance, and recovery behavior when changing provider or audio lifecycle.
 - Soft content lives in repositories, not Kotlin. Model-facing wording (stock
-  instructions, tool descriptions for declarative packages) belongs in
+  instructions, EVA's own tool and parameter descriptions and notes, declarative
+  package wording) belongs in
   `colonelpanic8/eva-instructions` or `colonelpanic8/eva-extensions`, and tuning belongs
   in the portable configuration, so it can change without a release. Code keeps
   semantics, validation, and safety bounds; a shipped copy of catalog data is
@@ -69,9 +70,10 @@ Paths below are relative to `app/src/main/java/com/colonelpanic/eva/`:
 - Declarative package catalog: `colonelpanic8/eva-extensions`. Shipped defaults are
   byte-identical catalog copies under `app/src/main/assets/packages/`, listed in
   `adapters/declarative/DefaultPackages.kt`; update both repositories together.
-- Instruction catalog: `colonelpanic8/eva-instructions`. The shipped stock prompt is a
-  byte-identical copy at `app/src/main/resources/eva-prompt.yaml`; change wording in the
-  catalog first, then `just prompt-sync`. Installations follow the catalog on their own,
+- Instruction catalog: `colonelpanic8/eva-instructions`. The shipped stock prompt and
+  tool wording are byte-identical copies at `app/src/main/resources/eva-prompt.yaml` and
+  `eva-wording.yaml`; change wording in the catalog first, then `just prompt-sync`.
+  A new native tool adds its description to `eva-wording.yaml`, not to Kotlin. Installations follow the catalog on their own,
   so wording-only changes need no release.
 - Installed-provider ABI: `app/src/main/aidl/com/colonelpanic/eva/extension/`.
 - HTTP/declarative and AIDL wire fixtures: `docs/examples/`; JSON Schemas for the

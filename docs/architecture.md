@@ -520,7 +520,17 @@ kept; a new component never turns on beside an enabled slot member. A background
 failure leaves the file as it is. The stock prompt is a byte-identical copy of the
 catalog file shipped as a resource, so first run and reset work offline; reset
 drops edits and the next follow brings the copy up to date. Trailing line breaks in
-text are not significant. UI writes normalize YAML and remove comments; file-based
+text are not significant.
+
+`eva-wording.yaml`, beside the prompt in the same source directory, holds the
+model-facing wording of EVA's own tools (description and parameter descriptions by
+tool ID) and of the notes EVA sends the model, such as the continuation note for a
+re-homed turn. It is shipped the same way and followed with the prompt; a source
+without one leaves the last wording in place, and a missing note falls back to the
+shipped copy. Code keeps tool identity, schema structure, validation, and the
+refusal messages that state enforced policy. Extension and media-app tools keep
+their own untrusted wording. A prompt component's `describe` still rewords a tool on
+top of this file. UI writes normalize YAML and remove comments; file-based
 editing is preferable if comments must survive.
 
 ## Verification boundaries
