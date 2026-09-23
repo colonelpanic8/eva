@@ -4,6 +4,8 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.34.1] - 2026-09-23
+
 ### Fixed
 
 - EVA no longer asks you to authorize Mova's READ_TODOS permission, carried over from an earlier configuration, when the installed Mova (7.2.1 or later) does not require it.
