@@ -12,6 +12,8 @@ data class DefaultPackage(
     val id: String,
     /** Path inside both the app assets and the catalog, `packages/<name>.json`. */
     val path: String,
+    /** A content authority that must resolve before the default is installed; null installs it everywhere. */
+    val requiresProvider: String? = null,
 ) {
     val source: String get() = PluginRepository.installationSource(DEFAULT_PLUGIN_REPOSITORY)
     val identity: PackageIdentity get() = PackageIdentity(UUID.nameUUIDFromBytes("eva.default:$id".toByteArray()).toString())
@@ -26,5 +28,6 @@ object DefaultPackages {
             DefaultPackage("android.calendar", "packages/calendar.json"),
             DefaultPackage("android.settings", "packages/settings.json"),
             DefaultPackage("android.clock", "packages/clock.json"),
+            DefaultPackage("android.paseo", "packages/paseo.json", requiresProvider = "sh.paseo.assistant"),
         )
 }

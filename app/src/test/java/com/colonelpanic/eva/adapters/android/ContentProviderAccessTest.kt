@@ -53,11 +53,12 @@ class ContentProviderAccessTest {
     fun `permissionless providers require no permission and arbitrary permissions cannot be requested`() {
         register(null)
         assertNull(ContentProviderAccess.inspect(app, authority).problem)
+        assertNull(ContentProviderAccess.requiredPermission(app, authority))
         assertFalse(ContentProviderAccess.inspect(app, authority).canRequest)
         register("private.provider.READ")
         assertFalse(ContentProviderAccess.inspect(app, authority).canRequest)
         assertTrue(ContentProviderAccess.inspect(app, authority).problem!!.contains("cannot request"))
-        assertEquals(permission, ContentProviderAccess.requiredPermission(app, authority))
+        assertNull(ContentProviderAccess.requiredPermission(app, authority))
         assertTrue(ContentProviderAccess.inspect(app, "missing.provider").problem!!.contains("Install or enable"))
     }
 

@@ -114,7 +114,10 @@ in the UI. New tools reach the model on the next connection; revocation blocks n
 execution immediately even if the model still sees an older catalog. For packages
 refreshed from a followed repository, newly named actions are granted when that
 package's auto-enable switch is on; explicitly disabled actions remain disabled.
-Manual imports and installed Android providers do not gain new grants this way.
+Manual imports do not gain new grants this way. Installed Android providers do not
+either, except the pinned default providers (Mova and Paseo): they start enabled
+with every action unless the user turned them off. See
+[default providers](extension-protocol.md#7-identity-grants-and-untrusted-text).
 
 The dispatcher validates identity, arguments, binding revision, availability, and
 grants, then journals a claim before dispatch. Duplicate call IDs cannot execute
@@ -137,7 +140,8 @@ for concrete identity, schema, waiting, and authorization rules.
   Whole rows become attributed text and structured data. Extension settings report
   missing providers and offer supported Android permission requests; requirements
   join portable `device.authorizations`. Mova and Paseo authorities have explicit
-  visibility entries; Mova's dangerous read permission is requested only on demand.
+  visibility entries; Mova's dangerous read permission is requested only on demand,
+  and Mova 7.2.1 no longer requires it from EVA.
   The host is Robolectric-tested; physical-device verification is pending. See the
   [content contract](extension-protocol.md#content-execution-and-results).
 - Native adapters use intents, contacts, messaging, media sessions, media browser
@@ -321,7 +325,8 @@ repository sources, service endpoints, wait budgets, and saved user preferences.
 Configuration import must validate before replacing working settings and preserve
 identity-dependent authorization. Invalid or incompatible input must be visible.
 
-Shipped default packages (Google Maps, Web, Email, Calendar, Settings) are adopted once per
+Shipped default packages (Google Maps, Web, Email, Calendar, Settings, Clock, and Paseo
+once its provider is present) are adopted once per
 configuration: after the desired configuration is attached at startup, EVA
 installs and approves each default not yet listed in `packages.appliedDefaults`
 and records it there. The result is an ordinary installation and grant, so the

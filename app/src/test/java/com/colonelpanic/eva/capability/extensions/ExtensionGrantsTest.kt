@@ -307,4 +307,108 @@ class ExtensionGrantsTest {
             assertEquals(InvocationStatus.NOT_EXECUTED, dispatcher.execute(proposal.copy(callId = "after-removal")).status)
             assertTrue(registry.catalog.isEmpty())
         }
+
+    @Test
+    fun `a default provider gets every action and keeps declined ones across a contract change`() =
+        runTest {
+            val disk = MemoryGrantPersistence()
+            val grants = ExtensionGrants(disk)
+            val installed = listOf(InstalledExtension("example.app", extensionIdentity, all))
+            assertEquals(setOf(extensionIdentity.instanceId), grants.reconcile(installed) { true })
+            assertTrue(grants.allowed(extensionIdentity, all, write))
+            assertTrue(grants.allowed(extensionIdentity, all, unknown))
+            grants.mutation(extensionIdentity, all, "write", false)
+
+            val reloaded = ExtensionGrants(disk).apply { load() }
+            val account = all.copy(revision = "v2", digest = "changed")
+            reloaded.reconcile(listOf(InstalledExtension("example.app", extensionIdentity, account))) { true }
+            assertFalse(reloaded.allowed(extensionIdentity, account, write))
+            assertTrue(reloaded.allowed(extensionIdentity, account, unknown))
+
+            val other = ExtensionGrants(MemoryGrantPersistence())
+            other.enableAll(extensionIdentity, all)
+            assertEquals(
+                emptySet<String>(),
+                other.reconcile(listOf(InstalledExtension("example.app", extensionIdentity, account))) { false },
+            )
+            assertFalse(other.allowed(extensionIdentity, account, extensionCapability))
+        }
+
+    @Test
+    fun `turning a default provider off is remembered and turning it on restores every action`() =
+        runTest {
+            val fake = FakeExtensionConnector().apply { reply = extensionDescription }
+            val connections = ExtensionConnectionManager(fake) { testScheduler.currentTime }
+            val discovery =
+                ExtensionDiscovery({ listOf(ExtensionCandidate(extensionIdentity, true, true, 1)) }, connections, backgroundScope)
+            val registry = CapabilityRegistry(emptyMap())
+            val choices = mutableMapOf<String, Boolean>()
+            val policy =
+                object : DefaultGrantPolicy {
+                    override fun trusts(identity: AdapterIdentity) = identity == extensionIdentity
+
+                    override fun autoEnable(instance: String) = choices[instance] ?: true
+
+                    override fun setAutoEnable(
+                        instance: String,
+                        enabled: Boolean,
+                    ) {
+                        choices[instance] = enabled
+                    }
+                }
+            val runtime =
+                ExtensionRuntime(
+                    registry,
+                    InstalledServiceAdapter(discovery, connections, StandardTestDispatcher(testScheduler)),
+                    ExtensionGrants(MemoryGrantPersistence()),
+                    backgroundScope,
+                    defaults = policy,
+                )
+            advanceTimeBy(251)
+            runCurrent()
+            val entry =
+                runtime.settings.value.entries
+                    .single()
+            assertTrue(entry.enabled)
+            assertEquals(1, registry.catalog.size)
+
+            runtime.enable(entry.key, false)
+            runCurrent()
+            assertEquals(false, choices[extensionIdentity.instanceId])
+            runtime.refresh()
+            advanceTimeBy(251)
+            runCurrent()
+            assertFalse(
+                runtime.settings.value.entries
+                    .single()
+                    .enabled,
+            )
+            assertTrue(registry.catalog.isEmpty())
+
+            runtime.enable(entry.key, true)
+            runCurrent()
+            assertEquals(true, choices[extensionIdentity.instanceId])
+            assertTrue(
+                runtime.settings.value.entries
+                    .single()
+                    .enabled,
+            )
+        }
+
+    @Test
+    fun `only the pinned production signer of a default provider is trusted`() {
+        val mova =
+            ExtensionIdentity(
+                0,
+                "com.colonelpanic.mova",
+                "com.colonelpanic.mova/.eva.EvaExtensionService",
+                "905afc8729daa77fff81b20d99b169f919879379a8e7dbe23546e350ed46ad22",
+                10123,
+                1,
+            )
+        assertTrue(DefaultProviders.trusts(mova))
+        assertFalse(DefaultProviders.trusts(mova.copy(signer = "fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c")))
+        assertFalse(DefaultProviders.trusts(mova.copy(packageName = "com.colonelpanic.mova.debug")))
+        assertFalse(DefaultProviders.trusts(PackageIdentity("00000000-0000-0000-0000-000000000001")))
+    }
 }

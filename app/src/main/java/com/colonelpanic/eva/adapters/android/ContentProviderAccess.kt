@@ -15,14 +15,13 @@ data class ContentProviderAccess(
 ) {
     companion object {
         const val MOVA_READ_TODOS = "com.colonelpanic.mova.permission.READ_TODOS"
-        private val knownPermissions = mapOf("com.colonelpanic.mova.provider" to MOVA_READ_TODOS)
         val supportedPermissions = EvaPermissions.REQUIRED.toSet() + MOVA_READ_TODOS
 
         fun requiredPermission(
             context: Context,
             authority: String,
         ): String? =
-            knownPermissions[authority] ?: context.packageManager
+            context.packageManager
                 .resolveContentProvider(authority, 0)
                 ?.readPermission
                 ?.takeIf { it in supportedPermissions }
