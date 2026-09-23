@@ -1,0 +1,2 @@
+* Changed: Instructions follow their source. When EVA opens, at most every 15 minutes, it takes new wording from the instruction repository (by default `colonelpanic8/eva-instructions`), so the stock prompt improves without an app update. Instructions you edited or added, ones you deleted, and every on/off choice are kept; updating from the Instructions screen no longer overwrites your edits.
+* ...see CHANGELOG.md for the rest.
