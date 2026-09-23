@@ -133,7 +133,11 @@ with a travel mode), [Web](https://github.com/colonelpanic8/eva-extensions/blob/
 [Settings](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/settings.json)
 (open a settings screen, a quick panel, or one app's own page), and
 [Clock](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/clock.json)
-(alarms and timers through Android's standard intents). `adapters/declarative/DefaultPackages.kt` lists each default
+(alarms and timers through Android's standard intents), and
+[Paseo](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/paseo.json)
+(project, workspace, agent, and message lookups plus link fallbacks). Paseo's default is conditional:
+it installs only once the `sh.paseo.assistant` provider resolves, and until then it
+stays out of `appliedDefaults` so a later Paseo install still gets it. `adapters/declarative/DefaultPackages.kt` lists each default
 with a byte-identical copy of the catalog file under `app/src/main/assets/packages/`
 and a fixed, name-derived instance ID. After the desired configuration is attached
 at startup, EVA installs each default whose package ID is not yet in
@@ -454,8 +458,9 @@ and [runtime requests](https://developer.android.com/training/permissions/reques
 
 The installed package bytes and existing capability grants remain the portable
 settings. Content dependencies add supported permissions to the existing
-`device.authorizations` list in `eva.yaml`; Mova's requirement is known even when
-Mova is absent. No new device-only enablement switch is introduced. Restoration
+`device.authorizations` list in `eva.yaml` when the installed provider declares
+one. A provider that enforces its caller in code, as Mova 7.2.1 does for EVA,
+adds none. No new device-only enablement switch is introduced. Restoration
 keeps that requirement and the exact package bytes, lists missing providers and
 permissions, and requires local Android authorization on each device. Editing or
 restoring YAML cannot grant a permission. Removing a package does not revoke an
@@ -979,13 +984,29 @@ exception. Pin distribution is provider build/configuration, not a descriptor
 field; private keys never enter this protocol. Providers may explicitly support
 other trusted clients under their own documented authority policy.
 
-EVA automatically lists extensions disabled. Enabling grants explicitly claimed
+EVA automatically lists extensions disabled, except the default providers below.
+Enabling grants explicitly claimed
 reads; each write, handoff, or unknown capability has its own persistent grant
 switch, off by default. Grants key on Android user, package, component, signer,
 and approved contract digest including authorization scope and `_meta`. Changed
 contracts require renewed enablement. Removal discards grants; reinstall must not
 inherit removed grants. Temporary outages/missing configuration do not silently
 change grants.
+
+**Default providers.** `capability/extensions/DefaultProviders.kt` pins providers
+by package name and production signing certificate SHA-256:
+
+- Mova `com.colonelpanic.mova`: `905afc87…ad22`
+- Paseo assembly `sh.paseo.assembly`: `8d229a78…b8ee`
+- Upstream Paseo `sh.paseo` releases: `421698bd…c647`
+
+A matching provider is enabled with every action when it is discovered, and again
+under each new contract, such as a Mova account switch or an app update. Actions the
+user switched off stay off. Turning the extension off records `false` under its
+instance in the portable `packages.autoEnabled` map, so it stays off on every
+device that restores the configuration, until the user turns it back on. Debug
+builds and same-named apps with another signer get nothing automatically. The
+provider's own caller check (section 9) is unchanged.
 
 The Extensions screen can enable all actions in one step. This grants claimed
 reads and every write, handoff, or unknown-effect action in the current
@@ -1087,8 +1108,9 @@ read returns `completed` with the recorded receipt as `structuredContent`; its
 receipt carries the same `invocationId` in its data, so the model can ask. EVA
 does not rewrite the original receipt from a later status read.
 
-A provider may require its own one-time opt-in for unattended execution. It
-reports `needs_authorization` until the opt-in is given; the opt-in adds to EVA's
+A provider may require its own opt-in for unattended execution. Mova's "Let EVA use
+Mova" and Paseo's "Let EVA run agents" start on and can be turned off. The provider
+reports `needs_authorization` while it is off; the opt-in adds to EVA's
 per-action grants and never replaces them. Providers keep the caller check in
 section 7. The production pin is EVA's release certificate, SHA-256
 `688df17827dd9a002705baf0400c80f8f4650c6e87c3fc91d41f32be287f8b68`, taken from the

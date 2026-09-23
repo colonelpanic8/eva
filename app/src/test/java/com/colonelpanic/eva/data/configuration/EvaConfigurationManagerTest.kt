@@ -94,6 +94,16 @@ class EvaConfigurationManagerTest {
     @Test
     fun `installed content dependencies enter portable authorizations even before a runtime grant`() =
         runBlocking {
+            // A Mova older than 7.2.1 still declares its read permission on the provider.
+            shadowOf(app.packageManager).addOrUpdateProvider(
+                android.content.pm.ProviderInfo().apply {
+                    authority = "com.colonelpanic.mova.provider"
+                    packageName = "com.colonelpanic.mova"
+                    name = "com.colonelpanic.mova.TodoProvider"
+                    exported = true
+                    readPermission = ContentProviderAccess.MOVA_READ_TODOS
+                },
+            )
             val baseline = app.configuration.snapshotForTest()
             val source =
                 contentFixture("mova-content")
@@ -358,7 +368,7 @@ class EvaConfigurationManagerTest {
             assertTrue(result.setupRequired.toString(), result.setupRequired.none { it.contains(identity.instanceId) })
             assertEquals(
                 ExtensionGrant(identity.key, grantedDefinition.digest, setOf(mutation)),
-                app.extensions.portableGrants()[identity.instanceId],
+                app.extensions.portableGrants()[identity.instanceId]?.copy(offered = null),
             )
             assertTrue(
                 app.registry.snapshot.catalog

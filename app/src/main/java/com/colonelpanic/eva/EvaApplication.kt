@@ -485,6 +485,18 @@ class EvaApplication :
             extensionScope,
             configuration::onLocalChange,
             configuration::onGrantChange,
+            object : com.colonelpanic.eva.capability.extensions.DefaultGrantPolicy {
+                override fun trusts(identity: com.colonelpanic.eva.capability.extensions.AdapterIdentity) =
+                    com.colonelpanic.eva.capability.extensions.DefaultProviders
+                        .trusts(identity)
+
+                override fun autoEnable(instance: String) = packageSettings.autoEnable(instance)
+
+                override fun setAutoEnable(
+                    instance: String,
+                    enabled: Boolean,
+                ) = packageSettings.setAutoEnable(instance, enabled)
+            },
         )
     }
 

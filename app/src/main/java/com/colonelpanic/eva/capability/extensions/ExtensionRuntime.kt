@@ -33,6 +33,7 @@ class ExtensionRuntime(
     private val scope: CoroutineScope,
     private val onChanged: () -> Unit = {},
     private val onGrantChanged: (String) -> Unit = {},
+    private val defaults: DefaultGrantPolicy = DefaultGrantPolicy.None,
 ) {
     private val initialized = CompletableDeferred<Unit>()
     private val bundled = registry.snapshot
@@ -45,7 +46,9 @@ class ExtensionRuntime(
             updates.withLock { registry.changeAuthorization { grants.load() } }
             adapter.ready.first { it }
             adapter.installed.collect {
-                update { grants.reconcile(adapter.installed.value) }
+                var granted = emptySet<String>()
+                update { granted = grants.reconcile(adapter.installed.value, ::enabledByDefault) }
+                granted.forEach(onGrantChanged)
                 initialized.complete(Unit)
             }
         }
@@ -67,12 +70,26 @@ class ExtensionRuntime(
         }
     }
 
+    /** Turning a default provider off is remembered so it stays off; turning it back on restores every action. */
     fun enable(
         key: String,
         enabled: Boolean,
-    ) = change(key, enabled) { identity, descriptor -> grants.enable(identity, descriptor, enabled) }
+    ) = change(key, enabled) { identity, descriptor ->
+        if (defaults.trusts(identity)) {
+            defaults.setAutoEnable(identity.instanceId, enabled)
+            if (enabled) grants.enableAll(identity, descriptor) else grants.enable(identity, descriptor, false)
+        } else {
+            grants.enable(identity, descriptor, enabled)
+        }
+    }
 
-    fun enableAll(key: String) = change(key, true) { identity, descriptor -> grants.enableAll(identity, descriptor) }
+    fun enableAll(key: String) =
+        change(key, true) { identity, descriptor ->
+            if (defaults.trusts(identity)) defaults.setAutoEnable(identity.instanceId, true)
+            grants.enableAll(identity, descriptor)
+        }
+
+    private fun enabledByDefault(identity: AdapterIdentity) = defaults.trusts(identity) && defaults.autoEnable(identity.instanceId)
 
     fun mutation(
         key: String,

@@ -67,7 +67,7 @@ class PortableConfigurationStoresTest {
         val readAsset: (String) -> String = { path -> File(assets, path).readText() }
         val maps = DefaultPackages.all.single { it.id == "android.google-maps" }
         var changes = 0
-        val settings = PackageSettings(context, onChanged = { changes++ }, readAsset = readAsset)
+        val settings = PackageSettings(context, onChanged = { changes++ }, readAsset = readAsset, providerPresent = { true })
 
         val adopted = settings.adoptDefaults()
         assertEquals(DefaultPackages.all.map { it.id }, adopted.map { it.definition.id })
@@ -88,12 +88,29 @@ class PortableConfigurationStoresTest {
 
         val restored = settings.portable().copy(appliedDefaults = emptyList())
         assertTrue(PackageSettings(context, readAsset = readAsset).restore(restored).isEmpty())
-        val fresh = PackageSettings(context, readAsset = readAsset)
+        val fresh = PackageSettings(context, readAsset = readAsset, providerPresent = { true })
         assertTrue(fresh.appliedDefaults().isEmpty())
         val readopted = fresh.adoptDefaults()
         assertEquals(DefaultPackages.all.map { it.identity }, readopted.map { it.identity })
         assertEquals(DefaultPackages.all.size, fresh.imported().size)
         assertEquals(readAsset(maps.path), readopted.single { it.identity == maps.identity }.json)
+    }
+
+    @Test
+    fun `an app's default package waits unrecorded until its provider is present`() {
+        val assets =
+            generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }
+                .map { File(it, "app/src/main/assets") }
+                .first { it.isDirectory }
+        val readAsset: (String) -> String = { path -> File(assets, path).readText() }
+        val paseo = DefaultPackages.all.single { it.id == "android.paseo" }
+        var present = false
+        val settings = PackageSettings(context, readAsset = readAsset, providerPresent = { present })
+        assertTrue(settings.adoptDefaults().none { it.definition.id == paseo.id })
+        assertFalse(paseo.id in settings.appliedDefaults())
+        present = true
+        assertEquals(paseo.identity, settings.adoptDefaults().single().identity)
+        assertTrue(paseo.id in settings.appliedDefaults())
     }
 
     @Test
@@ -122,13 +139,13 @@ class PortableConfigurationStoresTest {
         assertEquals(clock.source, adopted.source)
         assertEquals(clock.path, adopted.url)
         assertEquals(readAsset(clock.path), adopted.json)
-        assertEquals(DefaultPackages.all.map { it.id }, settings.portable().appliedDefaults)
+        assertEquals((earlier + clock).map { it.id }, settings.portable().appliedDefaults)
         assertTrue(settings.adoptDefaults().isEmpty())
 
         settings.removePlugin(clock.identity.id)
         val restarted = PackageSettings(context, readAsset = readAsset)
         assertEquals(earlier.map { it.identity }, restarted.imported().map { it.identity })
-        assertEquals(DefaultPackages.all.map { it.id }, restarted.appliedDefaults())
+        assertEquals((earlier + clock).map { it.id }, restarted.appliedDefaults())
         assertTrue(restarted.adoptDefaults().isEmpty())
 
         val portable = restarted.portable()
@@ -136,7 +153,7 @@ class PortableConfigurationStoresTest {
         val elsewhere = PackageSettings(context, readAsset = readAsset)
         assertTrue(elsewhere.restore(portable).isEmpty())
         assertEquals(earlier.map { it.identity }, elsewhere.imported().map { it.identity })
-        assertEquals(DefaultPackages.all.map { it.id }, elsewhere.appliedDefaults())
+        assertEquals((earlier + clock).map { it.id }, elsewhere.appliedDefaults())
         assertTrue(elsewhere.adoptDefaults().isEmpty())
     }
 
