@@ -358,7 +358,7 @@ The schema separates these groups:
 
 | Group | Settings |
 | --- | --- |
-| `models`, `voice` | Text/realtime models, per-leg reasoning effort, lookup retry count |
+| `models`, `voice` | Text/realtime models, per-leg reasoning effort, lookup retry count, quiet hang-up delay |
 | `appearance`, `capabilities` | Dynamic color and optional capability switches |
 | `messaging` | Notification-read opt-in and exact app-installation reply identities |
 | `prompt` | Source URL and complete ordered component list |
@@ -502,18 +502,26 @@ migrated into the slot when a configuration file is read. The voice control
 exchanges, and the model decides when it is fully served. As a backstop in
 one-request mode, once the request's phone action completed or was handed off and
 the response reporting it has finished playing, EVA hangs up if the user does not
-start speaking within five seconds. A hang-up the model proposes
+start speaking within `voice.quietHangUpSeconds` (default 5; 0 disables it). A hang-up the model proposes
 in the same response as an action, or while an action result is unreported, is
 answered as not executed and happens after the next response instead, so the
 result is spoken on the call rather than re-homed. Each attachment's closing
 notice says who or what ended it.
 
-The Instructions screen supports a user-picked YAML file, EVA's own external-files
-copy, and explicit updates from a raw HTTPS source. Source updates preserve enabled
-choices for matching IDs; compiled defaults work offline. The default source is
+The Instructions screen supports a user-picked YAML file or EVA's own external-files
+copy, and a raw HTTPS source the prompt follows. The default source is
 `https://raw.githubusercontent.com/colonelpanic8/eva-instructions/main/eva-prompt.yaml`.
-No background fetch silently changes instructions. UI writes normalize YAML and
-remove comments; file-based editing is preferable if comments must survive.
+Following it is a trust decision like following an extension repository: when EVA
+starts or comes to the foreground, at most every 15 minutes, it fetches the source
+and merges it three ways against what the source said last time (kept locally; the
+shipped copy until the first fetch). Components the user has not edited take the new
+wording; edited and user-added components, deletions, and every on/off switch are
+kept; a new component never turns on beside an enabled slot member. A background
+failure leaves the file as it is. The stock prompt is a byte-identical copy of the
+catalog file shipped as a resource, so first run and reset work offline; reset
+drops edits and the next follow brings the copy up to date. Trailing line breaks in
+text are not significant. UI writes normalize YAML and remove comments; file-based
+editing is preferable if comments must survive.
 
 ## Verification boundaries
 

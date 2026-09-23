@@ -10,6 +10,7 @@ import com.colonelpanic.eva.conversation.prompt.PromptConfig
 import com.colonelpanic.eva.conversation.prompt.PromptConfigException
 import com.colonelpanic.eva.conversation.prompt.PromptDefaults
 import com.colonelpanic.eva.conversation.prompt.PromptYaml
+import com.colonelpanic.eva.conversation.prompt.followSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -56,8 +57,12 @@ class PromptStore(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val repository: PromptRepository = PromptRepository(),
     private val onChanged: () -> Unit = {},
+    private val now: () -> Long = System::currentTimeMillis,
 ) {
     private val context = context.applicationContext
+
+    /** What the followed source said when this installation last took from it. */
+    private val baselineFile = File(this.context.filesDir, "eva-prompt.source.yaml")
     private val prefs = this.context.getSharedPreferences("eva.prompt", Context.MODE_PRIVATE)
     private val ownFile = File(this.context.getExternalFilesDir(null) ?: this.context.filesDir, PromptYaml.FILE_NAME)
     private val mutableState = MutableStateFlow<PromptState>(PromptState.Loading)
@@ -119,30 +124,71 @@ class PromptStore(
             save(change(current))
         }
 
-    suspend fun resetToDefaults() = attempt { save(PromptDefaults.config) }
+    /** Drops every edit; the next follow brings the stock copy up to the source's current wording. */
+    suspend fun resetToDefaults() =
+        attempt {
+            save(PromptDefaults.config)
+            withContext(ioDispatcher) { baselineFile.delete() }
+            prefs.edit { remove(FOLLOWED_AT) }
+        }
 
-    /** Replaces the catalog from a raw HTTPS file while retaining switches for matching ids. */
-    suspend fun refreshFrom(source: String) {
+    /**
+     * Takes the followed source's current wording when EVA comes to the foreground, at most every
+     * [FOLLOW_INTERVAL_MILLIS]. Following the source is the trust decision, as with extension
+     * repositories; what the user edited or added is kept. A failure stays quiet: the file keeps
+     * working as it is, and the next foreground tries again.
+     */
+    suspend fun follow() {
+        if (now() - prefs.getLong(FOLLOWED_AT, 0) < FOLLOW_INTERVAL_MILLIS) return
+        takeFromSource(mutableSource.value, quiet = true)
+    }
+
+    /** Follows [source] from now on and takes its wording at once. */
+    suspend fun refreshFrom(source: String) = takeFromSource(source, quiet = false)
+
+    private suspend fun takeFromSource(
+        source: String,
+        quiet: Boolean,
+    ) {
         if (mutableRefreshing.value) return
         mutableRefreshing.value = true
         try {
             val current = (state.value as? PromptState.Loaded)?.config ?: load()
             val remote = withContext(ioDispatcher) { repository.load(source) }
-            save(mergePromptUpdate(current, remote.config))
-            prefs.edit { putString(SOURCE, remote.source) }
+            val followed = followSource(current, withContext(ioDispatcher) { baseline() }, remote.config)
+            val changed = followed != current
+            if (changed) save(followed)
+            withContext(ioDispatcher) { baselineFile.writeText(PromptYaml.encode(remote.config)) }
+            prefs.edit {
+                putString(SOURCE, remote.source)
+                putLong(FOLLOWED_AT, now())
+            }
             mutableSource.value = remote.source
-            onChanged()
-            mutableNotice.value = "Instructions updated. Changes apply to the next session."
-            mutableNoticeIsError.value = false
+            if (changed || !quiet) {
+                mutableNotice.value =
+                    if (changed) {
+                        "Instructions updated from their source. Changes apply to the next session."
+                    } else {
+                        "Instructions are up to date."
+                    }
+                mutableNoticeIsError.value = false
+            }
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            mutableNotice.value = error.message ?: "The instruction source could not be updated."
-            mutableNoticeIsError.value = true
+            if (!quiet) {
+                mutableNotice.value = error.message ?: "The instruction source could not be updated."
+                mutableNoticeIsError.value = true
+            }
         } finally {
             mutableRefreshing.value = false
         }
     }
+
+    /** The shipped copy until the source has been taken from once. */
+    private fun baseline(): PromptConfig =
+        runCatching { baselineFile.takeIf { it.exists() }?.readText()?.let(PromptYaml::decode) }.getOrNull()
+            ?: PromptDefaults.config
 
     /**
      * Adopts a picked document. A new one receives the current prompt; an existing one has to
@@ -327,20 +373,8 @@ class PromptStore(
         const val DOCUMENT = "prompt.document"
         const val DOCUMENT_NAME = "prompt.documentName"
         const val SOURCE = "prompt.source"
+        const val FOLLOWED_AT = "prompt.followedAt"
+        const val FOLLOW_INTERVAL_MILLIS = 15 * 60 * 1000L
         const val GRANT_FLAGS = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
     }
-}
-
-/** A repository owns its component text and order; the phone owns existing switch choices. */
-internal fun mergePromptUpdate(
-    current: PromptConfig,
-    remote: PromptConfig,
-): PromptConfig {
-    val enabled = current.components.associate { it.id to it.enabled }
-    return remote.copy(
-        components =
-            remote.components.map { component ->
-                enabled[component.id]?.let { component.copy(enabled = it) } ?: component
-            },
-    )
 }

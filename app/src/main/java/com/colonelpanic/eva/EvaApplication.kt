@@ -486,6 +486,8 @@ class EvaApplication :
         if (settings.takeLegacyOneShotExternal() == false) {
             editPrompt { update { it.selectCallMode(VoiceCallMode.OPEN_CONVERSATION) } }
         }
+        // An assistant launch may never open the activity, so the source is followed from here too.
+        editPrompt { follow() }
         try {
             observeExtensionPackages(this, extensions::packageChanged)
             extensions.refresh()
@@ -528,6 +530,7 @@ class EvaApplication :
             repository = repository,
             scope = scope,
             voiceLookupRetries = { settings.voiceLookupRetries },
+            quietHangUpMillis = { settings.quietHangUpSeconds * 1_000L },
             voiceKeywords = { contactKeywords.names() },
             hiddenCapabilities = { if (capabilities.screenControlEnabled) emptySet() else CapabilityRegistry.SCREEN_CONTROL },
             prompt = { prompts.load() },

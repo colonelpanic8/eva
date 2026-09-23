@@ -47,7 +47,7 @@ class PromptYamlTest {
             )
         assertEquals(
             listOf(
-                PromptComponent("identity", instruction = "You are EVA.\nBe brief.\n"),
+                PromptComponent("identity", instruction = "You are EVA.\nBe brief."),
                 PromptComponent(
                     "quiet",
                     title = "Quiet",

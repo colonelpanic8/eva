@@ -40,21 +40,4 @@ class PromptRepositoryTest {
         assertThrows(IllegalArgumentException::class.java) { repository.load("https://user@example.test/prompt.yaml") }
         assertThrows(IllegalArgumentException::class.java) { repository.load("https://example.test/prompt.yaml#old") }
     }
-
-    @Test
-    fun `repository updates keep switches while replacing catalog content`() {
-        val current =
-            PromptConfig(
-                listOf(
-                    PromptComponent("identity", enabled = false, instruction = "Local edit"),
-                    PromptComponent("local-only", enabled = true),
-                ),
-            )
-        val remote = PromptRepository { _, _ -> yaml.toByteArray() }.load("https://example.test/prompt.yaml").config
-        val merged = mergePromptUpdate(current, remote)
-        assertEquals(listOf("identity", "new-default"), merged.components.map { it.id })
-        assertFalse(merged.components.first().enabled)
-        assertEquals("Remote identity", merged.components.first().instruction)
-        assertTrue(merged.components.last().enabled)
-    }
 }

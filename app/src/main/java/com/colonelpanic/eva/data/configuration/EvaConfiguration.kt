@@ -54,6 +54,7 @@ data class EvaConfigurationDocument(
 
 @Serializable data class VoicePatch(
     val lookupRetries: Int? = null,
+    val quietHangUpSeconds: Int? = null,
     /** Read only: [EvaConfigurationCodec.decode] moves it into the prompt's call slot. */
     val oneShotExternal: Boolean? = null,
 )
@@ -183,7 +184,13 @@ data class EvaConfiguration(
 
     data class Voice(
         val lookupRetries: Int,
-    )
+        /** Silence after a one-request call's action is reported before EVA hangs up; 0 never does. */
+        val quietHangUpSeconds: Int = DEFAULT_QUIET_HANG_UP_SECONDS,
+    ) {
+        companion object {
+            const val DEFAULT_QUIET_HANG_UP_SECONDS = 5
+        }
+    }
 
     data class Appearance(
         val dynamicColor: Boolean,
@@ -397,7 +404,10 @@ object EvaConfigurationCodec {
                 current.models.voiceReasoningEffort.takeIf { it != base?.models?.voiceReasoningEffort },
             ).nonEmpty(),
         voice =
-            VoicePatch(current.voice.lookupRetries.takeIf { it != base?.voice?.lookupRetries }).nonEmpty(),
+            VoicePatch(
+                current.voice.lookupRetries.takeIf { it != base?.voice?.lookupRetries },
+                current.voice.quietHangUpSeconds.takeIf { it != base?.voice?.quietHangUpSeconds },
+            ).nonEmpty(),
         appearance = AppearancePatch(current.appearance.dynamicColor.takeIf { it != base?.appearance?.dynamicColor }).nonEmpty(),
         capabilities = CapabilitiesPatch(current.capabilities.screenControl.takeIf { it != base?.capabilities?.screenControl }).nonEmpty(),
         messaging =
@@ -446,7 +456,11 @@ object EvaConfigurationCodec {
                     models?.voiceReasoningEffort ?: OpenAiModels.VOICE_REASONING_EFFORT,
                 ),
             voice =
-                EvaConfiguration.Voice(requireNotNull(voice?.lookupRetries) { "voice.lookupRetries is missing." }),
+                EvaConfiguration.Voice(
+                    requireNotNull(voice?.lookupRetries) { "voice.lookupRetries is missing." },
+                    // Documents written before the quiet-line backstop was configurable still load.
+                    voice.quietHangUpSeconds ?: EvaConfiguration.Voice.DEFAULT_QUIET_HANG_UP_SECONDS,
+                ),
             appearance = EvaConfiguration.Appearance(requireNotNull(appearance?.dynamicColor) { "appearance.dynamicColor is missing." }),
             capabilities =
                 EvaConfiguration.Capabilities(requireNotNull(capabilities?.screenControl) { "capabilities.screenControl is missing." }),
@@ -491,6 +505,7 @@ object EvaConfigurationCodec {
         require(models.reasoningEffort in OpenAiModels.TEXT_REASONING_EFFORTS) { "Unknown text reasoning effort." }
         require(models.voiceReasoningEffort in OpenAiModels.VOICE_REASONING_EFFORTS) { "Unknown voice reasoning effort." }
         require(voice.lookupRetries in 0..10) { "voice.lookupRetries must be between 0 and 10." }
+        require(voice.quietHangUpSeconds in 0..60) { "voice.quietHangUpSeconds must be between 0 and 60." }
         require(messaging.replies.size <= 100) { "At most 100 messaging reply identities may be configured." }
         require(messaging.replies.distinct().size == messaging.replies.size) { "Duplicate messaging reply identity." }
         messaging.replies.forEach { require(MESSAGING_IDENTITY.matches(it)) { "Invalid messaging reply identity." } }
@@ -705,7 +720,10 @@ object EvaConfigurationCodec {
                 override.models?.voiceReasoningEffort ?: base.models?.voiceReasoningEffort,
             ).nonEmpty(),
         voice =
-            VoicePatch(override.voice?.lookupRetries ?: base.voice?.lookupRetries).nonEmpty(),
+            VoicePatch(
+                override.voice?.lookupRetries ?: base.voice?.lookupRetries,
+                override.voice?.quietHangUpSeconds ?: base.voice?.quietHangUpSeconds,
+            ).nonEmpty(),
         appearance = AppearancePatch(override.appearance?.dynamicColor ?: base.appearance?.dynamicColor).nonEmpty(),
         capabilities = CapabilitiesPatch(override.capabilities?.screenControl ?: base.capabilities?.screenControl).nonEmpty(),
         messaging =
@@ -763,7 +781,7 @@ object EvaConfigurationCodec {
     private fun ModelsPatch.nonEmpty() =
         takeIf { text != null || realtime != null || reasoningEffort != null || voiceReasoningEffort != null }
 
-    private fun VoicePatch.nonEmpty() = takeIf { lookupRetries != null }
+    private fun VoicePatch.nonEmpty() = takeIf { lookupRetries != null || quietHangUpSeconds != null }
 
     private fun AppearancePatch.nonEmpty() = takeIf { dynamicColor != null }
 

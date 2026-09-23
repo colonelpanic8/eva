@@ -33,6 +33,10 @@ repository should restore every EVA setting: instructions, models, providers,
 extensions, grants, and preferences. Users should be able to combine, edit,
 track, fork, share, and move their configuration between devices.
 
+Wording and tuning are not code. Instructions, tool descriptions, and behavior
+knobs live in repositories and configuration that EVA follows, so they can be
+refined without rebuilding the app; code keeps what must be enforced.
+
 Configuration screens are convenient editors for that configuration. Adding a
 setting means making it participate in the same persistence and restore model.
 Credentials need protected storage and portable references, not plaintext in a

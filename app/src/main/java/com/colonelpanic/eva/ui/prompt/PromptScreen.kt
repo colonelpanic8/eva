@@ -147,8 +147,8 @@ private fun SourceSection(
         SettingsBlock {
             Text(
                 text =
-                    "Keep eva-prompt.yaml in Git and paste its raw HTTPS URL here. Updating replaces instruction " +
-                        "text and order from the repository while keeping matching on/off choices.",
+                    "EVA follows eva-prompt.yaml at this raw HTTPS URL and takes its new wording whenever it " +
+                        "comes to the foreground. Instructions you edited or added, and your on/off choices, are kept.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -163,7 +163,7 @@ private fun SourceSection(
                 Button(
                     onClick = { actions.onRefreshSource(source) },
                     enabled = source.isNotBlank() && !state.refreshing,
-                ) { Text(if (state.refreshing) "Updating…" else "Update instructions") }
+                ) { Text(if (state.refreshing) "Checking…" else "Follow and update now") }
                 TextButton(
                     onClick = { source = PromptRepository.DEFAULT_SOURCE },
                     enabled = !state.refreshing && source != PromptRepository.DEFAULT_SOURCE,

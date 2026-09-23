@@ -347,7 +347,7 @@ class ConfigurationCompositionTest {
     private fun fullConfiguration() =
         EvaConfiguration(
             models = EvaConfiguration.Models("custom-text", "custom-realtime", "high", "medium"),
-            voice = EvaConfiguration.Voice(2),
+            voice = EvaConfiguration.Voice(2, quietHangUpSeconds = 12),
             appearance = EvaConfiguration.Appearance(dynamicColor = true),
             capabilities = EvaConfiguration.Capabilities(screenControl = false),
             messaging = EvaConfiguration.Messaging(enabled = true, replies = listOf(MESSAGING_IDENTITY)),

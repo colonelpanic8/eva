@@ -4,6 +4,11 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Instructions follow their source. When EVA opens, at most every 15 minutes, it takes new wording from the instruction repository (by default `colonelpanic8/eva-instructions`), so the stock prompt improves without an app update. Instructions you edited or added, ones you deleted, and every on/off choice are kept; updating from the Instructions screen no longer overwrites your edits.
+- The quiet-line delay before a one-request call hangs up on its own is `voice.quietHangUpSeconds` in the configuration (default 5; 0 turns it off).
+
 ## [0.26.1] - 2026-09-22
 
 ### Changed

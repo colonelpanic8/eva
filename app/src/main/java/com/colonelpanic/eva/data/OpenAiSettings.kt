@@ -2,6 +2,7 @@ package com.colonelpanic.eva.data
 
 import android.annotation.SuppressLint
 import android.content.Context
+import com.colonelpanic.eva.data.configuration.EvaConfiguration
 import com.colonelpanic.eva.providers.BrokerEndpoint
 import com.colonelpanic.eva.providers.openai.OpenAiModels
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,6 +31,7 @@ class OpenAiSettings(
                 ?: OpenAiModels.VOICE_REASONING_EFFORT,
         )
     private val mutableVoiceLookupRetries = MutableStateFlow(prefs.getInt(VOICE_LOOKUP_RETRIES, DEFAULT_VOICE_LOOKUP_RETRIES))
+    private var storedQuietHangUpSeconds = prefs.getInt(QUIET_HANG_UP_SECONDS, EvaConfiguration.Voice.DEFAULT_QUIET_HANG_UP_SECONDS)
     private val mutableHasHostLink = MutableStateFlow(secrets.read(HOST_LINK) != null)
 
     /** Model used for typed turns. Changing it applies to the next connection. */
@@ -47,6 +49,7 @@ class OpenAiSettings(
     val reasoningEffort: String get() = mutableReasoningEffort.value
     val voiceReasoningEffort: String get() = mutableVoiceReasoningEffort.value
     val voiceLookupRetries: Int get() = mutableVoiceLookupRetries.value
+    val quietHangUpSeconds: Int get() = storedQuietHangUpSeconds
 
     fun saveTextModel(value: String) = saveModel(TEXT_MODEL, value, OpenAiModels.TEXT, mutableTextModel)
 
@@ -73,6 +76,13 @@ class OpenAiSettings(
         require(value in MIN_VOICE_LOOKUP_RETRIES..MAX_VOICE_LOOKUP_RETRIES) { "Voice lookup retries must be between 0 and 10." }
         commit { putInt(VOICE_LOOKUP_RETRIES, value) }
         mutableVoiceLookupRetries.value = value
+        onChanged()
+    }
+
+    fun saveQuietHangUpSeconds(value: Int) {
+        require(value in 0..60) { "The quiet hang-up delay must be between 0 and 60 seconds." }
+        commit { putInt(QUIET_HANG_UP_SECONDS, value) }
+        storedQuietHangUpSeconds = value
         onChanged()
     }
 
@@ -156,6 +166,7 @@ class OpenAiSettings(
         const val REASONING_EFFORT = "openai.reasoningEffort"
         const val VOICE_REASONING_EFFORT = "openai.voiceReasoningEffort"
         const val VOICE_LOOKUP_RETRIES = "voice.lookupRetries"
+        const val QUIET_HANG_UP_SECONDS = "voice.quietHangUpSeconds"
         const val ONE_SHOT_EXTERNAL = "voice.oneShotExternal"
         const val DEFAULT_VOICE_LOOKUP_RETRIES = 5
         const val MIN_VOICE_LOOKUP_RETRIES = 0

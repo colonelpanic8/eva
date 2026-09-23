@@ -34,6 +34,12 @@ experiment READMEs and third-party notices stay beside their code.
   retry an uncertain mutation merely to repair lost result delivery.
 - Conversation and task ownership outlive a voice attachment. Preserve turn IDs,
   action provenance, and recovery behavior when changing provider or audio lifecycle.
+- Soft content lives in repositories, not Kotlin. Model-facing wording (stock
+  instructions, tool descriptions for declarative packages) belongs in
+  `colonelpanic8/eva-instructions` or `colonelpanic8/eva-extensions`, and tuning belongs
+  in the portable configuration, so it can change without a release. Code keeps
+  semantics, validation, and safety bounds; a shipped copy of catalog data is
+  byte-identical to the catalog and is only the offline baseline.
 - Keep stock Android useful without Shizuku. Do not add permissions, package queries,
   services, or SDKs ahead of the executable feature that needs them.
 
@@ -57,12 +63,16 @@ Paths below are relative to `app/src/main/java/com/colonelpanic/eva/`:
 | Portable configuration, composition, restore | `data/configuration/` |
 | Managed Git checkout, validation, sync | `data/configuration/ManagedGitRepository.kt`, `EvaConfigurationManager.kt` |
 | Persistence, settings, secrets | `data/` |
-| Stock prompt and YAML composition | `conversation/prompt/` |
+| Prompt YAML, composition, following its source | `conversation/prompt/`, `data/PromptStore.kt` |
 | App navigation and settings | `ui/EvaApp.kt`, `ui/settings/`, `ui/prompt/` |
 
 - Declarative package catalog: `colonelpanic8/eva-extensions`. Shipped defaults are
   byte-identical catalog copies under `app/src/main/assets/packages/`, listed in
   `adapters/declarative/DefaultPackages.kt`; update both repositories together.
+- Instruction catalog: `colonelpanic8/eva-instructions`. The shipped stock prompt is a
+  byte-identical copy at `app/src/main/resources/eva-prompt.yaml`; change wording in the
+  catalog first, then `just prompt-sync`. Installations follow the catalog on their own,
+  so wording-only changes need no release.
 - Installed-provider ABI: `app/src/main/aidl/com/colonelpanic/eva/extension/`.
 - HTTP/declarative and AIDL wire fixtures: `docs/examples/`; JSON Schemas for the
   package, tool, descriptor, and result shapes: `docs/schemas/`; canonical branding sources:
@@ -72,8 +82,8 @@ Paths below are relative to `app/src/main/java/com/colonelpanic/eva/`:
 - Voice broker experiment and evidence: `experiments/voice-poc/`.
 - Isolated Shizuku probe/fixture: `experiments/device-control/`.
 - External configuration sources: `colonelpanic8/eva-instructions` and
-  `colonelpanic8/eva-extensions`. Fetching listings/instructions is distinct from
-  installing packages, granting actions, or publishing repository changes.
+  `colonelpanic8/eva-extensions`. Following a source is the user's trust decision;
+  it never grants actions, and publishing to either repository is an operator action.
 
 ## Commands and checks
 

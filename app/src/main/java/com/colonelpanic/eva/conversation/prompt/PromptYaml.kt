@@ -32,8 +32,20 @@ object PromptYaml {
     /** Throws [PromptConfigException] with the parser's own location for anything unreadable. */
     fun decode(text: String): PromptConfig =
         try {
-            yaml.decodeFromString(PromptConfig.serializer(), text)
+            yaml.decodeFromString(PromptConfig.serializer(), text).withoutTrailingBreaks()
         } catch (error: YamlException) {
             throw PromptConfigException("Line ${error.line}, column ${error.column}: ${error.message}", error)
         }
 }
+
+/** A `|` block keeps its final line break and `|-` drops it; either way the text is the same. */
+private fun PromptConfig.withoutTrailingBreaks() =
+    copy(
+        components =
+            components.map { component ->
+                component.copy(
+                    instruction = component.instruction.trimEnd(),
+                    describe = component.describe.mapValues { it.value.trimEnd() },
+                )
+            },
+    )

@@ -489,8 +489,11 @@ class MainActivity : ComponentActivity() {
         EvaNotificationListener
             .refreshMessages()
         if (surface.locked && !isLocked()) surface = Launch.HANDS_FREE
-        // The file may have been edited while EVA was away.
-        eva.editPrompt { reload() }
+        // The file may have been edited while EVA was away, and its source may have moved on.
+        eva.editPrompt {
+            reload()
+            follow()
+        }
         eva.intentHost.attach(this) { permission -> capabilityPermission.launch(permission) }
         if (Build.VERSION.SDK_INT >= 37) eva.shizukuShellHost?.attach(this)
         if (Build.VERSION.SDK_INT >= 30) eva.deviceControlHost?.attach(this)

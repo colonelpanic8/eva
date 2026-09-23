@@ -1,16 +1,30 @@
 package com.colonelpanic.eva.conversation.prompt
 
 /**
- * What a fresh install writes to the prompt file. These are the whole of EVA's stock prompt:
- * the file that results is the source of truth afterwards, and resetting means writing this
- * again. Instructions are wrapped here the way they would be in an editor; wrapped lines join
- * with spaces when the prompt is assembled.
+ * EVA's stock prompt is data, not code: [config] is the shipped copy of the instruction
+ * catalog, `eva-prompt.yaml` in `colonelpanic8/eva-instructions`, kept byte-identical at
+ * `app/src/main/resources/eva-prompt.yaml`. A fresh install writes it, reset restores it, and
+ * it is the baseline an installation follows its source from until the first refresh.
  */
 object PromptDefaults {
     const val END_CONVERSATION_ID = "eva.session.end"
     const val ONE_REQUEST_ID = "one-request"
     const val OPEN_CONVERSATION_ID = "open-conversation"
+    private const val RESOURCE = "/eva-prompt.yaml"
 
+    /** The variables every component may reference. */
+    val VARIABLES = setOf("clock", "lookup_retries")
+
+    val config: PromptConfig by lazy {
+        val text =
+            checkNotNull(
+                PromptDefaults::class.java.getResourceAsStream(RESOURCE),
+            ) { "The stock prompt is missing." }.use { it.readBytes() }
+        PromptYaml.decode(text.toString(Charsets.UTF_8)).validated(VARIABLES)
+    }
+
+    // Stock call wording that files written before the prompt followed its source may still hold.
+    // Frozen: later wording changes arrive from the catalog, not from here.
     private val oneRequestInstructionV1 =
         """
         This call is for one request. Once you have finished it, because the result is reported, the
@@ -47,27 +61,6 @@ object PromptDefaults {
         outstanding. Do not call it while an action is unfinished, while you are waiting for the
         user to answer a question, or after the user has asked you to stay on the line.
         """.trimIndent()
-    private val oneRequestInstruction =
-        """
-        This call is for one request: the user's goal, which can take several exchanges. Clarifying
-        questions, choosing between matches, confirming details, reporting progress, and follow-ups
-        about the same goal are all part of it, so stay on while any of that is going on and whenever
-        you have asked the user something or offered a choice. Once the goal is achieved, or you have
-        said you cannot do it, and nothing is waiting on either of you, say a short closing line and
-        call the end-conversation tool in the same response; a goodbye without the tool does not end
-        the call. Do not ask whether there is anything else. If you are not sure the user is done, do
-        not hang up: finish your reply and let them speak. If the user asks you to stay on the line or
-        starts another request, keep going and treat that as the request to finish.
-        """.trimIndent()
-    private val oneRequestDescription =
-        """
-        Hang up this voice conversation, with a short closing line in the same response. Call it only
-        when the user's request is fully served: the goal is achieved or you said it cannot be done,
-        and nothing is waiting on either of you. Never call it after an intermediate step or a partial
-        answer, in a reply that asks the user something or offers choices, while an action is
-        unfinished, or after the user asked you to stay on the line.
-        A spoken goodbye without this tool leaves the call open.
-        """.trimIndent()
     private val openConversationInstructionV1 =
         """
         This call stays open. Finishing a request is not a reason to hang up: say what happened and
@@ -95,113 +88,8 @@ object PromptDefaults {
         goodbye without this tool leaves the call open. A finished request is not by itself a
         reason to call it; the user decides when the call ends.
         """.trimIndent()
-    private val openConversationInstruction =
-        """
-        This call stays open until the user ends it. Never hang up on your own judgment: a finished
-        request, thanks, a pause, or silence is not a reason to end the call. Say what happened and
-        wait for the user. Only when the user says goodbye or explicitly asks you to hang up, say a
-        brief goodbye and call the end-conversation tool in the same response.
-        """.trimIndent()
-    private val openConversationDescription =
-        """
-        Hang up this voice conversation. Call it only when the user says goodbye or explicitly asks
-        you to hang up, with a brief goodbye in the same response. Never call it because a request
-        is finished, the user said thanks, or the conversation paused; the user decides when the
-        call ends.
-        """.trimIndent()
 
-    /** The variables every component may reference. */
-    val VARIABLES = setOf("clock", "lookup_retries")
-
-    val config =
-        PromptConfig(
-            listOf(
-                PromptComponent(
-                    id = "identity",
-                    title = "Identity",
-                    summary = "Who EVA is and what the tools are for",
-                    instruction =
-                        """
-                        You are EVA, an assistant running on the user's Android phone. Help conversationally and use
-                        the supplied tools for phone actions. Say what the tool result reports.
-                        """.trimIndent(),
-                ),
-                PromptComponent(
-                    id = "honesty",
-                    title = "Honesty about actions",
-                    summary = "Report what actually happened; never invent a person or a send",
-                    instruction =
-                        """
-                        Ask for missing information. Never claim sending a message when only a draft was opened.
-                        Use returned records to identify matches; never invent a person or contact detail.
-                        """.trimIndent(),
-                ),
-                PromptComponent(
-                    id = "spoken-style",
-                    title = "Spoken style",
-                    summary = "Short replies suited to being heard rather than read",
-                    applies = Applies.VOICE,
-                    instruction = "This is a spoken conversation. Keep replies short.",
-                ),
-                PromptComponent(
-                    id = "brief-actions",
-                    title = "Brief action confirmations",
-                    summary = "Simple actions get a short confirmation without extra explanation",
-                    applies = Applies.VOICE,
-                    instruction =
-                        "When performing a simple action, give only a brief confirmation unless the user asks " +
-                            "for more detail.",
-                ),
-                PromptComponent(
-                    id = "name-lookup",
-                    title = "Misheard names",
-                    summary = "Retry contact lookups with plausible spellings before asking",
-                    applies = Applies.VOICE,
-                    instruction =
-                        """
-                        Spoken names may be transcribed with the wrong spelling. For read-only lookups such as
-                        contacts search, first assess how ambiguous the name you heard is. If it could reasonably
-                        have multiple spellings, generate and rank the plausible spellings and phonetic variants,
-                        deduplicate them, and proactively search the most likely variants. After the initial lookup,
-                        make up to {{lookup_retries}} additional lookup queries in total. Use that budget for the
-                        best spelling variants and, when a full name does not find a clear match, the first name or
-                        last name by itself. Do not spend queries on implausible variations. Use only query forms
-                        supported by the tool; do not put several alternatives into one query unless the tool
-                        supports it. Respect spellings explicitly supplied by the user. If different people
-                        plausibly match, ask which one the user means before acting. If these lookups still find
-                        nothing, ask for the spelling or another identifying detail. Apply these retries only to
-                        read-only lookups, never to sending, calling, or opening apps.
-                        """.trimIndent(),
-                ),
-                PromptComponent(
-                    id = ONE_REQUEST_ID,
-                    title = "One request",
-                    summary = "EVA hangs up once it has helped, the way a phone assistant does",
-                    slot = "call",
-                    applies = Applies.VOICE,
-                    instruction = oneRequestInstruction,
-                    describe = mapOf(END_CONVERSATION_ID to oneRequestDescription),
-                ),
-                PromptComponent(
-                    id = OPEN_CONVERSATION_ID,
-                    title = "Open conversation",
-                    summary = "The call keeps going until you stop it or ask EVA to hang up",
-                    enabled = false,
-                    slot = "call",
-                    applies = Applies.VOICE,
-                    instruction = openConversationInstruction,
-                    describe = mapOf(END_CONVERSATION_ID to openConversationDescription),
-                ),
-                PromptComponent(
-                    id = "clock",
-                    title = "Clock",
-                    summary = "Tells the model the current local time",
-                    instruction = "{{clock}}",
-                ),
-            ),
-        )
-
-    /** Earlier stock wording and its replacement. A YAML block may keep a trailing newline. */
+    /** Earlier stock wording and its replacement. */
     private class StockWording(
         val previous: List<String>,
         val current: String,
@@ -209,21 +97,33 @@ object PromptDefaults {
         fun upgrade(text: String) = if (text.trimEnd() in previous) current else text
     }
 
-    private val callWording =
+    private fun stock(id: String) = config.components.first { it.id == id }
+
+    private val callWording by lazy {
         mapOf(
             ONE_REQUEST_ID to
                 (
-                    StockWording(listOf(oneRequestInstructionV1, oneRequestInstructionV2), oneRequestInstruction) to
-                        StockWording(listOf(oneRequestDescriptionV1, oneRequestDescriptionV2), oneRequestDescription)
+                    StockWording(listOf(oneRequestInstructionV1, oneRequestInstructionV2), stock(ONE_REQUEST_ID).instruction) to
+                        StockWording(
+                            listOf(oneRequestDescriptionV1, oneRequestDescriptionV2),
+                            stock(ONE_REQUEST_ID).describe.getValue(END_CONVERSATION_ID),
+                        )
                 ),
             OPEN_CONVERSATION_ID to
                 (
-                    StockWording(listOf(openConversationInstructionV1, openConversationInstructionV2), openConversationInstruction) to
-                        StockWording(listOf(openConversationDescriptionV1, openConversationDescriptionV2), openConversationDescription)
+                    StockWording(
+                        listOf(openConversationInstructionV1, openConversationInstructionV2),
+                        stock(OPEN_CONVERSATION_ID).instruction,
+                    ) to
+                        StockWording(
+                            listOf(openConversationDescriptionV1, openConversationDescriptionV2),
+                            stock(OPEN_CONVERSATION_ID).describe.getValue(END_CONVERSATION_ID),
+                        )
                 ),
         )
+    }
 
-    /** Updates only stock call wording that the user has not edited. */
+    /** Brings unedited call wording from before the catalog was followed up to the stock copy. */
     internal fun upgradeStockCallWording(config: PromptConfig): PromptConfig =
         config.copy(
             components =

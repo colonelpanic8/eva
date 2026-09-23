@@ -47,6 +47,10 @@ version-code version:
 fdroid-changelogs *args:
     ./scripts/fdroid/changelogs.py "$@"
 
+# Replace the shipped prompt with the instruction catalog's current eva-prompt.yaml.
+prompt-sync:
+    curl -fsSL https://raw.githubusercontent.com/colonelpanic8/eva-instructions/main/eva-prompt.yaml -o app/src/main/resources/eva-prompt.yaml
+
 # Build the self-hosted F-Droid repository; see docs/operations.md.
 fdroid-repo:
     ./scripts/fdroid/build-repo.sh

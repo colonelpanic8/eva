@@ -75,6 +75,8 @@ class ThreadController(
     /** The leg a turn continues on once its call has ended; a text provider on the phone's own account. */
     private val backgroundProviderFactory: () -> ConversationProvider = { providerFactory("") },
     private val voiceLookupRetries: () -> Int = { 5 },
+    /** Silence after a one-request call's action is reported before EVA hangs up; 0 never does. */
+    private val quietHangUpMillis: () -> Long = { 5_000L },
     private val voiceKeywords: suspend () -> List<String> = { emptyList() },
     /** Capabilities the user has switched off. They are left out of the catalog entirely. */
     private val hiddenCapabilities: () -> Set<String> = { emptySet() },
@@ -495,8 +497,8 @@ class ThreadController(
                 } else if (voice && task?.actionServiced == true && connectionTools[opened]?.callMode == VoiceCallMode.ONE_REQUEST) {
                     // The model decides when a request is fully served, but one whose action is done and
                     // reported does not stay open just because it forgot to hang up: silence ends it.
-                    quietArmed = true
-                    if (!assistantSpeaking) startQuietTimer()
+                    quietArmed = quietHangUpMillis() > 0
+                    if (quietArmed && !assistantSpeaking) startQuietTimer()
                 }
             }
 
@@ -513,7 +515,7 @@ class ThreadController(
         val thisAttempt = attempt
         quietHangUp =
             scope.launch {
-                delay(QUIET_LINE_MILLIS)
+                delay(quietHangUpMillis())
                 if (thisAttempt == attempt && quietArmed) {
                     quietArmed = false
                     endCall(ENDED_AFTER_REQUEST)
@@ -996,9 +998,6 @@ class ThreadController(
         private const val ENDED_BY_USER = "ended by you"
         private const val ENDED_BY_MODEL = "ended by EVA with its end-call tool"
         private const val ENDED_AFTER_REQUEST = "ended by EVA: the request was done and the line went quiet"
-
-        /** How long the user may stay silent after a one-request call's action is reported. */
-        private const val QUIET_LINE_MILLIS = 5_000L
         private const val ENDED_FOR_NEW_SESSION = "ended for a new session"
         private const val HANG_UP_DEFERRED =
             "The call is still open because an action from this request has not been reported. Tell the user its " +
