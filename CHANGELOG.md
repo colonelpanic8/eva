@@ -4,6 +4,8 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-09-22
+
 ### Added
 
 - The shipped Settings extension reaches 48 settings screens instead of 11, covering notifications, the special-access screens (notification access, usage access, battery optimization, overlay and write-settings access), VPN, mobile data, accessibility, language, accounts, and the rest.
