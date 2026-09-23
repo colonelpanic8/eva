@@ -18,6 +18,8 @@ data class PackageDefinition(
     val description: String? = null,
     /** What the user must do outside EVA before the actions work; claims about the package, never by it. */
     val setup: List<String> = emptyList(),
+    /** How the package's tools fit together, for the model; external data like its tool descriptions. */
+    val guidance: String? = null,
 )
 
 enum class PackageEffect { READ, WRITE, HANDOFF, UNKNOWN }

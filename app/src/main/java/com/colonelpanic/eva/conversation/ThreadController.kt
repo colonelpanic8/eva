@@ -168,6 +168,28 @@ class ThreadController(
             if (definition.source == null) wording().describe(tool) else tool
         }
 
+    /**
+     * What each source offering tools on this connection says about how they fit together. It is
+     * the source's text, so it is quoted as data under EVA's own framing, like tool metadata.
+     */
+    private fun extensionGuidance(
+        snapshot: CapabilityRegistry.Snapshot,
+        catalog: ProviderToolCatalog,
+    ): String {
+        val notes =
+            catalog.tools
+                .mapNotNull { snapshot.definitions[it.capabilityId] }
+                .filter { it.source != null && it.guidance != null }
+                .distinctBy { it.source!!.id }
+                .map { definition ->
+                    JsonObject(
+                        mapOf("source" to JsonPrimitive(definition.source!!.title), "guidance" to JsonPrimitive(definition.guidance)),
+                    )
+                }
+        if (notes.isEmpty()) return ""
+        return "\n\n" + wording().message(Wording.EXTENSION_GUIDANCE) + "\n" + JsonArray(notes)
+    }
+
     /** The prompt and the catalog are decided together: components rewrite and hide tools. */
     private suspend fun assemble(
         voice: Boolean,
@@ -338,7 +360,7 @@ class ThreadController(
                     val opened =
                         provider.open(
                             SessionOpenRequest(
-                                assembled.instructions,
+                                assembled.instructions + extensionGuidance(snapshot, connectionCatalog),
                                 connectionCatalog,
                                 // Captions only; a typed session has no audio to transcribe.
                                 if (voice) voiceKeywords() else emptyList(),
@@ -934,7 +956,8 @@ class ThreadController(
                 val opened =
                     backgroundProviderFactory().open(
                         SessionOpenRequest(
-                            assembled.instructions + "\n\n" + wording().message(Wording.CONTINUATION),
+                            assembled.instructions + extensionGuidance(snapshot, catalog) + "\n\n" +
+                                wording().message(Wording.CONTINUATION),
                             catalog,
                             history = projectHistory(items, receipts(items)),
                             continuation = Continuation(turnId),

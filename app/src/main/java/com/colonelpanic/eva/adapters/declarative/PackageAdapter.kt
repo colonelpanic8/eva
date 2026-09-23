@@ -97,6 +97,7 @@ class PackageAdapter(
                     capability.inputSchema,
                     capability.effect == PackageEffect.READ,
                     CapabilitySource(item.identity.instanceId, item.definition.title),
+                    item.definition.guidance,
                 ),
                 BudgetedBackend(
                     item.identity.instanceId,

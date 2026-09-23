@@ -17,6 +17,7 @@ import com.colonelpanic.eva.conversation.prompt.PromptConfig
 import com.colonelpanic.eva.conversation.prompt.PromptConfigException
 import com.colonelpanic.eva.conversation.prompt.PromptDefaults
 import com.colonelpanic.eva.conversation.prompt.VoiceCallMode
+import com.colonelpanic.eva.conversation.prompt.Wording
 import com.colonelpanic.eva.providers.CallIdentity
 import com.colonelpanic.eva.providers.ConversationInput
 import com.colonelpanic.eva.providers.ConversationProvider
@@ -105,6 +106,7 @@ class ThreadControllerTest {
 
     private fun TestScope.controller(
         provider: FakeProvider,
+        registry: CapabilityRegistry = this@ThreadControllerTest.registry,
         background: FakeProvider = provider,
         media: (() -> RealtimeMediaSession)? = null,
         voiceProvider: FakeProvider = provider,
@@ -794,6 +796,48 @@ class ThreadControllerTest {
             .map { it.response }
 
     // ---- catalog and prompt, per connection ----
+
+    @Test
+    fun `an extension's guidance joins the instructions only while its tools are offered`() =
+        runTest {
+            val listed =
+                CapabilityDefinition(
+                    "extension.package.paseo.list_agents",
+                    "List agents",
+                    "List agent sessions.",
+                    schema("""{"type":"object","properties":{},"required":[],"additionalProperties":false}"""),
+                    readOnly = true,
+                    source = CapabilitySource("paseo-instance", "Paseo"),
+                    guidance = "Find the agent with list_agents, then act on its id.",
+                )
+            val withExtension =
+                CapabilityRegistry(
+                    mapOf(listed.id to backend { ExecutionOutcome(InvocationStatus.COMPLETED, "none") }),
+                    listOf(listed),
+                )
+            val provider = FakeProvider()
+            val offered = controller(provider, registry = withExtension)
+            advanceUntilIdle()
+            offered.connect("unused")
+            advanceUntilIdle()
+
+            assertTrue(provider.request.instructions.contains("Find the agent with list_agents, then act on its id."))
+            assertTrue(provider.request.instructions.contains(Wording.bundled.message(Wording.EXTENSION_GUIDANCE)))
+            assertTrue(
+                provider.request.catalog.tools
+                    .single()
+                    .description
+                    .contains("\"name\":\"list_agents\""),
+            )
+
+            val hidden = FakeProvider()
+            val withheld = controller(hidden, registry = withExtension, hiddenCapabilities = { setOf(listed.id) })
+            advanceUntilIdle()
+            withheld.connect("unused")
+            advanceUntilIdle()
+
+            assertFalse(hidden.request.instructions.contains("list_agents"))
+        }
 
     @Test
     fun `a switched off capability is never offered to the model`() =

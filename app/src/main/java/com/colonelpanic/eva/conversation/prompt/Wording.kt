@@ -51,6 +51,7 @@ data class Wording(
         const val FILE_NAME = "eva-wording.yaml"
         const val CONTINUATION = "continuation"
         const val HANG_UP_DEFERRED = "hang-up-deferred"
+        const val EXTENSION_GUIDANCE = "extension-guidance"
 
         private val yaml = Yaml(configuration = YamlConfiguration(encodeDefaults = false))
 

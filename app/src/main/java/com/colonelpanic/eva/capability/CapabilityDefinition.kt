@@ -18,6 +18,8 @@ data class CapabilityDefinition(
     /** Claims observation without mutation; this does not authorize execution or tool chaining. */
     val readOnly: Boolean = false,
     val source: CapabilitySource? = null,
+    /** How the source's tools fit together, told to the model while any of them is offered. */
+    val guidance: String? = null,
     val validateOperation: (Map<String, String>) -> String? = { null },
 )
 

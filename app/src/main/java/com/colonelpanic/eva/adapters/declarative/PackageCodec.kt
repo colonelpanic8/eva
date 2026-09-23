@@ -17,6 +17,9 @@ import java.net.URI
 /** Decoding validates authority and templates; it performs no I/O or authorization. */
 object PackageCodec {
     const val MAX_BYTES = 262_144
+
+    /** Guidance goes into every session that offers the package, so it stays short. */
+    const val GUIDANCE_CHARS = 1_500
     private val identifier = Regex("[A-Za-z_][A-Za-z0-9_]{0,63}")
     private val packageId = Regex("[a-z][a-z0-9_-]*(?:\\.[a-z][a-z0-9_-]*)+")
     private val version = Regex("(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})")
@@ -31,7 +34,7 @@ object PackageCodec {
         val root = (BoundedJson.freeze(BoundedJson.parse(json, MAX_BYTES)) as? JsonObject) ?: error("Expected package object")
         root.fields(
             setOf("formatVersion", "id", "version", "title", "capabilities"),
-            setOf("androidPackages", "description", "setup"),
+            setOf("androidPackages", "description", "setup", "guidance"),
         )
         require(root.getValue("formatVersion").long() == 1L)
         val id = root.text("id", 128).also { require(packageId.matches(it)) }
@@ -49,6 +52,7 @@ object PackageCodec {
             }
         require(apps.distinct().size == apps.size)
         val description = root["description"]?.let { root.text("description", 2000) }
+        val guidance = root["guidance"]?.let { root.text("guidance", GUIDANCE_CHARS) }
         val setup =
             root["setup"]?.array()?.also { require(it.size in 1..8) }.orEmpty().map {
                 it.string().also { step -> require(step.length in 1..300 && step.none(Char::isISOControl)) }
@@ -63,6 +67,7 @@ object PackageCodec {
             apps,
             description,
             setup,
+            guidance,
         )
     }
 

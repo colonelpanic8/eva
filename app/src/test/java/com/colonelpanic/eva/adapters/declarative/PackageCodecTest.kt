@@ -218,13 +218,15 @@ class PackageCodecTest {
     }
 
     @Test
-    fun `a package carries its own description and setup steps within the contract`() {
+    fun `a package carries its own description, setup steps, and guidance within the contract`() {
         val titleField = """"title":"Example","""
         val described =
-            """"title":"Example","description":"What this is for.","setup":["Install the target app.","Sign in to it."],"""
+            """"title":"Example","description":"What this is for.","setup":["Install the target app.","Sign in to it."],""" +
+                """"guidance":"Look it up, then open it.","""
         val decoded = PackageCodec.decode(packageJson(intentBinding).replace(titleField, described))
         assertEquals("What this is for.", decoded.description)
         assertEquals(listOf("Install the target app.", "Sign in to it."), decoded.setup)
+        assertEquals("Look it up, then open it.", decoded.guidance)
         val plain = PackageCodec.decode(packageJson(intentBinding))
         assertNull(plain.description)
         assertTrue(plain.setup.isEmpty())
@@ -235,6 +237,8 @@ class PackageCodecTest {
             """"title":"Example","setup":["ok",""],""",
             """"title":"Example","setup":"one step",""",
             """"title":"Example","description":12,""",
+            """"title":"Example","guidance":"",""",
+            """"title":"Example","guidance":"${"x".repeat(PackageCodec.GUIDANCE_CHARS + 1)}",""",
         ).forEach { field ->
             assertThrows(field, Exception::class.java) { PackageCodec.decode(packageJson(intentBinding).replace(titleField, field)) }
         }

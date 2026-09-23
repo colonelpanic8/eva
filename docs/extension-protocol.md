@@ -178,7 +178,15 @@ outside EVA first; EVA shows both above the capability list in the install
 preview, and both participate in the canonical digest. A package documents itself
 this way rather than in a separate file: the same capability descriptions the
 model receives are what the user reads before granting. Requirements belong here;
-assurances do not, since a package cannot establish its own trustworthiness. Each capability embeds the
+assurances do not, since a package cannot establish its own trustworthiness.
+Optional `guidance` (up to 1,500 characters) tells the model how the package's
+tools fit together, such as which lookup identifies the target and which action
+takes its identifier. While any of the package's tools is offered, EVA appends
+it to the session instructions as a JSON-quoted entry attributed to the package,
+under EVA's own header from `eva-wording.yaml`; it is external data and cannot
+change instructions, grants, or confirmation rules. Extension tools reach the
+model under opaque function names, so each tool's metadata carries its `name` for
+guidance to refer to. Guidance participates in the digest. Each capability embeds the
 [shared MCP tool object](#capability); binding metadata and effect declarations
 are separate from that tool definition. Unsupported schema features are rejected,
 not silently dropped.

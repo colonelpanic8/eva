@@ -4,6 +4,10 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Extensions can explain how their tools fit together. A package's optional `guidance` is added to a session's instructions while any of its tools is offered, labeled as coming from the extension, and EVA's own header says that an extension action cannot run after another lookup in the same turn, so the model reports what it found and acts on your reply instead of being refused. Paseo, Mova, and Google Maps publish guidance for finding the agent, todo, or destination first.
+
 ### Changed
 
 - What EVA tells the model about its own tools and parameters, and the notes it sends mid-call, come from `eva-wording.yaml` in the instruction repository and are followed with the instructions, so they can be refined without an app update. The wording is unchanged for now.
