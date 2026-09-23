@@ -140,6 +140,10 @@ for concrete identity, schema, waiting, and authorization rules.
 - Native adapters use intents, contacts, messaging, media sessions, media browser
   interfaces, and other implemented Android contracts. Keep native resolution
   where it needs code; pure mappings can be declarative packages.
+- Mova 7.1.1 or later executes its native todo intents without a target-app
+  confirmation sheet. They still launch an Android activity, so Android decides
+  whether that handoff can start from the current assistant and keyguard state.
+  EVA records a successful launch as `HANDED_OFF`, not a verified todo change.
 - Alarms and timers come from the shipped Clock catalog package, not native tool
   definitions. It uses standard Android intents with bounded integer extras and
   optional labels, retaining EVA's existing `SET_ALARM` manifest permission.

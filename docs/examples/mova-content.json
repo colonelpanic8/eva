@@ -1,11 +1,12 @@
 {
   "formatVersion": 1,
   "id": "android.mova",
-  "version": "0.3.0",
+  "version": "0.5.0",
   "title": "Mova",
-  "description": "Read and act on org-mode todos through the Mova Android app: discover capture templates, search and read todos and the agenda through Mova's read-only provider, and create, complete, update, reschedule, or delete todos through mova:// links. Mova uses the server and credentials already configured in the app. Every mutating action shows Mova's own confirmation sheet, and EVA reports that the request was handed over, not that Mova applied it.",
+  "description": "Read and act on org-mode todos through the Mova Android app: discover capture templates, search and read todos and the agenda through Mova's read-only provider, and create, complete, update, reschedule, or delete todos through mova:// links. Mova uses the server and credentials already configured in the app. Mova 7.1.1 or later runs native writes without another confirmation; EVA reports handoff, not verified completion.",
+  "guidance": "Changing an existing todo takes two steps in the same request: find it, then change it. To complete, reschedule, update, delete, or open a todo, first call find_todos with the words the user used, or read_agenda when they mean today's or this week's items, and match their description to one row; if several fit, name them briefly and ask which. Then pass that row's id, or its file and pos when id is null, to the action instead of a paraphrased title. Turn relative dates such as tomorrow or next Friday into YYYY-MM-DD from the current time. To add a todo, use create_todo with a short title; call list_templates first only when the user names a kind of capture or the todo needs template-specific fields. A write receipt means Mova received the request, not that it applied it; check current state before any retry.",
   "setup": [
-    "Install Mova 7.0.1 or later and sign in to the server you want EVA to use.",
+    "Install Mova 7.1.1 or later for unattended native writes and sign in to the server you want EVA to use.",
     "Expand this extension in Settings and choose Allow provider reads, which grants Mova's READ_TODOS permission on this device; without it the read actions report a setup rejection instead of rows.",
     "Read rows are as fresh as Mova's active server; they say nothing about whether a later mova:// action succeeded."
   ],
@@ -57,7 +58,7 @@
       "tool": {
         "name": "find_todos",
         "title": "Find todos",
-        "description": "Search todos on Mova's active server and return bounded rows. Requires Mova login and Android READ_TODOS access granted in EVA extension settings. Use a returned id in read_todo, open_todo, or a separately requested mutation; if id is null, use file, pos, and title with an intent action. q is passed to Mova's search. Only the requested page is searched; absence does not prove no todo exists.",
+        "description": "Search todos on Mova's active server and return bounded rows. Requires Mova login and Android READ_TODOS access granted in EVA extension settings. Use a returned id in read_todo, open_todo, or a mutation in the same request; if id is null, use file, pos, and title with an intent action. q is passed to Mova's search. Only the requested page is searched; absence does not prove no todo exists.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -276,7 +277,7 @@
       "tool": {
         "name": "create_todo",
         "title": "Create todo",
-        "description": "Ask Mova 7.0.1 or later on Android to create a todo through a capture template. Title is required. Template selects a known Mova capture-template key; scheduled, deadline, priority, tags, and state are universal capture values. Body is used only when the chosen template declares a body prompt; other template prompts, as listed by list_templates, take their values from prompts. This package forces Mova's native confirmation sheet. A successful EVA receipt proves handoff only, not creation.",
+        "description": "Ask Mova 7.0.1 or later on Android to create a todo through a capture template. Title is required. Template selects a known Mova capture-template key; scheduled, deadline, priority, tags, and state are universal capture values. Body is used only when the chosen template declares a body prompt; other template prompts, as listed by list_templates, take their values from prompts. Mova 7.1.1 or later runs this native action without a confirmation sheet. A successful EVA receipt proves handoff only, not creation.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -348,7 +349,7 @@
         "requiresForeground": true
       },
       "receipts": {
-        "success": "Todo creation request handed to Mova. Mova will ask for confirmation; creation is not verified by EVA.",
+        "success": "Todo creation request handed to Mova. The change is not verified by EVA.",
         "handlerMissing": "Mova 7.0.1 or later is not installed or cannot handle todo creation."
       },
       "binding": {
@@ -393,7 +394,7 @@
               "type": "string"
             },
             "confirm": {
-              "value": true,
+              "value": false,
               "type": "boolean"
             }
           }
@@ -525,7 +526,7 @@
       "tool": {
         "name": "complete_todo",
         "title": "Complete todo",
-        "description": "Ask Mova 7.0.1 or later on Android to set a todo's state, DONE by default. Identify it by id; otherwise use file and pos, with title as an optional disambiguator; exact title alone is also accepted through the server's fallback lookup. Date backdates completion as YYYY-MM-DD. strict=true forbids server fallback lookups. This package forces Mova's native confirmation sheet. A successful EVA receipt proves handoff only.",
+        "description": "Ask Mova 7.0.1 or later on Android to set a todo's state, DONE by default. Identify it by id; otherwise use file and pos, with title as an optional disambiguator; exact title alone is also accepted through the server's fallback lookup. Date backdates completion as YYYY-MM-DD. strict=true forbids server fallback lookups. Mova 7.1.1 or later runs this native action without a confirmation sheet. A successful EVA receipt proves handoff only.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -580,7 +581,7 @@
         "requiresForeground": true
       },
       "receipts": {
-        "success": "Todo completion request handed to Mova. Mova will ask for confirmation; completion is not verified by EVA.",
+        "success": "Todo completion request handed to Mova. The change is not verified by EVA.",
         "handlerMissing": "Mova 7.0.1 or later is not installed or cannot handle todo completion."
       },
       "binding": {
@@ -620,7 +621,7 @@
               "type": "boolean"
             },
             "confirm": {
-              "value": true,
+              "value": false,
               "type": "boolean"
             }
           }
@@ -631,7 +632,7 @@
       "tool": {
         "name": "update_todo",
         "title": "Update todo",
-        "description": "Ask Mova 7.0.1 or later on Android to update a todo. Identify it by id; otherwise use file and pos, with title as an optional disambiguator; exact title alone is also accepted through the server's fallback lookup. Supply at least one of new_title, scheduled, deadline, priority, tags, state, or body. An empty scheduled, deadline, priority, tags, state, or body value clears that field. strict=true forbids server fallback lookups. This package forces Mova's native confirmation sheet. A successful EVA receipt proves handoff only.",
+        "description": "Ask Mova 7.0.1 or later on Android to update a todo. Identify it by id; otherwise use file and pos, with title as an optional disambiguator; exact title alone is also accepted through the server's fallback lookup. Supply at least one of new_title, scheduled, deadline, priority, tags, state, or body. An empty scheduled, deadline, priority, tags, state, or body value clears that field. strict=true forbids server fallback lookups. Mova 7.1.1 or later runs this native action without a confirmation sheet. A successful EVA receipt proves handoff only.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -710,7 +711,7 @@
         "requiresForeground": true
       },
       "receipts": {
-        "success": "Todo update request handed to Mova. Mova will ask for confirmation; the update is not verified by EVA.",
+        "success": "Todo update request handed to Mova. The change is not verified by EVA.",
         "handlerMissing": "Mova 7.0.1 or later is not installed or cannot handle todo updates."
       },
       "binding": {
@@ -770,7 +771,7 @@
               "type": "boolean"
             },
             "confirm": {
-              "value": true,
+              "value": false,
               "type": "boolean"
             }
           }
@@ -781,7 +782,7 @@
       "tool": {
         "name": "reschedule_todo",
         "title": "Reschedule todo",
-        "description": "Ask Mova 7.0.1 or later on Android to set or clear a todo's scheduled and deadline timestamps through the reschedule alias. Identify it by id; otherwise use file and pos, with title as an optional disambiguator; exact title alone is also accepted through the server's fallback lookup. Supply scheduled, deadline, or both. An empty value clears that timestamp. strict=true forbids server fallback lookups. This package forces Mova's native confirmation sheet. A successful EVA receipt proves handoff only.",
+        "description": "Ask Mova 7.0.1 or later on Android to set or clear a todo's scheduled and deadline timestamps through the reschedule alias. Identify it by id; otherwise use file and pos, with title as an optional disambiguator; exact title alone is also accepted through the server's fallback lookup. Supply scheduled, deadline, or both. An empty value clears that timestamp. strict=true forbids server fallback lookups. Mova 7.1.1 or later runs this native action without a confirmation sheet. A successful EVA receipt proves handoff only.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -834,7 +835,7 @@
         "requiresForeground": true
       },
       "receipts": {
-        "success": "Todo reschedule request handed to Mova. Mova will ask for confirmation; the update is not verified by EVA.",
+        "success": "Todo reschedule request handed to Mova. The change is not verified by EVA.",
         "handlerMissing": "Mova 7.0.1 or later is not installed or cannot handle rescheduling."
       },
       "binding": {
@@ -874,7 +875,7 @@
               "type": "boolean"
             },
             "confirm": {
-              "value": true,
+              "value": false,
               "type": "boolean"
             }
           }
@@ -885,7 +886,7 @@
       "tool": {
         "name": "delete_todo",
         "title": "Delete todo",
-        "description": "Ask Mova 7.0.1 or later on Android to permanently delete a todo and its sub-headings. Identify it by id or by file and pos; title may be included as a disambiguator. Mova always shows a confirmation sheet for deletion, regardless of its headless-write setting. A successful EVA receipt proves handoff only, not deletion.",
+        "description": "Ask Mova 7.0.1 or later on Android to permanently delete a todo and its sub-headings. Identify it by id or by file and pos; title may be included as a disambiguator. Mova 7.1.1 or later runs this native action without a confirmation sheet. A successful EVA receipt proves handoff only, not deletion.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -924,7 +925,7 @@
         "requiresForeground": true
       },
       "receipts": {
-        "success": "Todo deletion request handed to Mova. Mova will always ask for confirmation; deletion is not verified by EVA.",
+        "success": "Todo deletion request handed to Mova. The change is not verified by EVA.",
         "handlerMissing": "Mova 7.0.1 or later is not installed or cannot handle todo deletion."
       },
       "binding": {
@@ -1133,7 +1134,7 @@
       "tool": {
         "name": "refresh",
         "title": "Refresh Mova data",
-        "description": "Ask Mova 7.0.1 or later on Android to drop its query caches and redraw agenda widgets. git=true also asks the active org-agenda server to pull its Org repositories first. Mova never shows its write-confirmation sheet for refresh. EVA observes only the activity handoff and cannot verify cache refresh or git pull completion.",
+        "description": "Ask Mova 7.0.1 or later on Android to drop its query caches and redraw agenda widgets. git=true also asks the active org-agenda server to pull its Org repositories first. Mova runs this native action without a confirmation sheet. EVA observes only the activity handoff and cannot verify cache refresh or git pull completion.",
         "inputSchema": {
           "type": "object",
           "properties": {

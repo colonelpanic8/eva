@@ -1,0 +1,2 @@
+* Changed: Clear, already-granted requests can proceed through message composition, screen taps, and multiple voice tool calls without a separate confirmation turn. EVA still asks when the target or intended result is unclear.
+* Changed: Mova's package now requests native todo actions without a confirmation sheet on Mova 7.1.1 or later. EVA still reports an Android intent as a handoff, not verified completion.

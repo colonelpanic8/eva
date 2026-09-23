@@ -54,9 +54,9 @@ class ContentPackageTest {
                 create,
                 mapOf("title" to "Sync", "template" to "meeting", "prompts" to """{"Room":"4 & 5","Attendees":"Sam, Kat"}"""),
             ).intent(binding).uri
-        assertEquals("mova://create?title=Sync&template=meeting&confirm=true&Room=4%20%26%205&Attendees=Sam%2C%20Kat", uri)
+        assertEquals("mova://create?title=Sync&template=meeting&confirm=false&Room=4%20%26%205&Attendees=Sam%2C%20Kat", uri)
         assertEquals(
-            "mova://create?title=Sync&confirm=true",
+            "mova://create?title=Sync&confirm=false",
             BindingArguments(create, mapOf("title" to "Sync", "prompts" to "{}")).intent(binding).uri,
         )
         assertThrows(Exception::class.java) {
@@ -104,6 +104,10 @@ class ContentPackageTest {
         assertEquals("com.colonelpanic.mova.VoiceQuickCaptureActivity", intentClasses.getValue("capture_todo_voice"))
         assertEquals("com.colonelpanic.mova.MainActivity", intentClasses.getValue("open_todo"))
         assertTrue(intentClasses.values.all { it != null })
+        for (name in listOf("create_todo", "complete_todo", "update_todo", "reschedule_todo")) {
+            val intent = capabilities.getValue(name).binding as DeclarativeBinding.Intent
+            assertEquals(JsonPrimitive(false), (intent.query.getValue("confirm") as ScalarSlot.Literal).value)
+        }
     }
 
     @Test
