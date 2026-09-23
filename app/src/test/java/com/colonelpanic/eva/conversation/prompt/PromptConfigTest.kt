@@ -202,7 +202,9 @@ class PromptConfigTest {
                     ),
             )
 
-        val upgraded = PromptDefaults.upgradeStockCallWording(PromptConfig(listOf(previous))).components.single()
+        // A catalog's YAML block keeps the trailing newline.
+        val fromCatalog = previous.copy(instruction = previous.instruction + "\n")
+        val upgraded = PromptDefaults.upgradeStockCallWording(PromptConfig(listOf(fromCatalog))).components.single()
 
         val stock = PromptDefaults.config.components.first { it.id == PromptDefaults.OPEN_CONVERSATION_ID }
         assertEquals(stock.instruction, upgraded.instruction)

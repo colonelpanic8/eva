@@ -180,54 +180,47 @@ object PromptDefaults {
             ),
         )
 
+    /** Earlier stock wording and its replacement. A YAML block may keep a trailing newline. */
+    private class StockWording(
+        val previous: List<String>,
+        val current: String,
+    ) {
+        fun upgrade(text: String) = if (text.trimEnd() in previous) current else text
+    }
+
+    private val callWording =
+        mapOf(
+            ONE_REQUEST_ID to
+                (
+                    StockWording(listOf(oneRequestInstructionV1), oneRequestInstruction) to
+                        StockWording(listOf(oneRequestDescriptionV1), oneRequestDescription)
+                ),
+            OPEN_CONVERSATION_ID to
+                (
+                    StockWording(listOf(openConversationInstructionV1, openConversationInstructionV2), openConversationInstruction) to
+                        StockWording(listOf(openConversationDescriptionV1, openConversationDescriptionV2), openConversationDescription)
+                ),
+        )
+
     /** Updates only stock call wording that the user has not edited. */
     internal fun upgradeStockCallWording(config: PromptConfig): PromptConfig =
         config.copy(
             components =
                 config.components.map { component ->
-                    when (component.id) {
-                        "one-request" -> {
-                            component.copy(
-                                instruction =
-                                    if (component.instruction == oneRequestInstructionV1) oneRequestInstruction else component.instruction,
-                                describe =
-                                    component.describe.mapValues { (id, description) ->
-                                        if (id == END_CONVERSATION_ID && description == oneRequestDescriptionV1) {
-                                            oneRequestDescription
-                                        } else {
-                                            description
-                                        }
-                                    },
-                            )
-                        }
-
-                        "open-conversation" -> {
-                            component.copy(
-                                instruction =
-                                    if (component.instruction == openConversationInstructionV1 ||
-                                        component.instruction == openConversationInstructionV2
-                                    ) {
-                                        openConversationInstruction
-                                    } else {
-                                        component.instruction
-                                    },
-                                describe =
-                                    component.describe.mapValues { (id, description) ->
-                                        if (id == END_CONVERSATION_ID &&
-                                            (description == openConversationDescriptionV1 || description == openConversationDescriptionV2)
-                                        ) {
-                                            openConversationDescription
-                                        } else {
-                                            description
-                                        }
-                                    },
-                            )
-                        }
-
-                        else -> {
-                            component
-                        }
-                    }
+                    val (instruction, description) = callWording[component.id] ?: return@map component
+                    component.copy(
+                        instruction = instruction.upgrade(component.instruction),
+                        describe =
+                            component.describe.mapValues { (id, text) ->
+                                if (id ==
+                                    END_CONVERSATION_ID
+                                ) {
+                                    description.upgrade(text)
+                                } else {
+                                    text
+                                }
+                            },
+                    )
                 },
         )
 }

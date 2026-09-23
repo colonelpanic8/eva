@@ -21,7 +21,7 @@ All notable changes to EVA will be documented here.
 ### Fixed
 
 - A hang-up proposed together with a lookup or action no longer ends the call before the result is spoken and sends the answer to a background text session.
-
+- Call wording refreshed from the instruction catalog is upgraded like the built-in copy; a trailing newline from the catalog's YAML no longer made it look hand-edited.
 
 ## [0.25.0] - 2026-09-17
 
