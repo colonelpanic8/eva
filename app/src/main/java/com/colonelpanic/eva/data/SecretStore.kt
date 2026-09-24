@@ -18,6 +18,7 @@ import javax.crypto.spec.GCMParameterSpec
  */
 class SecretStore(
     context: Context,
+    private val key: () -> SecretKey = ::keystoreKey,
 ) {
     private val prefs = context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
@@ -48,21 +49,6 @@ class SecretStore(
         prefs.edit { remove(name) }
     }
 
-    private fun key(): SecretKey {
-        val store = KeyStore.getInstance(PROVIDER).apply { load(null) }
-        (store.getKey(ALIAS, null) as? SecretKey)?.let { return it }
-        val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, PROVIDER)
-        generator.init(
-            KeyGenParameterSpec
-                .Builder(ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
-                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                .setKeySize(256)
-                .build(),
-        )
-        return generator.generateKey()
-    }
-
     private companion object {
         const val FILE = "eva.secrets"
         const val ALIAS = "eva.secrets"
@@ -70,5 +56,20 @@ class SecretStore(
         const val TRANSFORMATION = "AES/GCM/NoPadding"
         const val IV_BYTES = 12
         const val TAG_BITS = 128
+
+        fun keystoreKey(): SecretKey {
+            val store = KeyStore.getInstance(PROVIDER).apply { load(null) }
+            (store.getKey(ALIAS, null) as? SecretKey)?.let { return it }
+            val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, PROVIDER)
+            generator.init(
+                KeyGenParameterSpec
+                    .Builder(ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                    .setKeySize(256)
+                    .build(),
+            )
+            return generator.generateKey()
+        }
     }
 }

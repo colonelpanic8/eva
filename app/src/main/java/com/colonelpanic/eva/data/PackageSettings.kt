@@ -68,8 +68,8 @@ class PackageSettings(
     private val onCredentialChanged: (String) -> Unit = {},
     private val readAsset: (String) -> String = { name -> context.assets.open(name).use { it.readBytes().toString(Charsets.UTF_8) } },
     private val providerPresent: (String) -> Boolean = { authority -> context.packageManager.resolveContentProvider(authority, 0) != null },
+    private val secrets: SecretStore = SecretStore(context),
 ) {
-    private val secrets = SecretStore(context)
     private val prefs = context.getSharedPreferences("eva.packages", Context.MODE_PRIVATE)
     private val imports =
         com.colonelpanic.eva.adapters.declarative.PluginInstallations(
@@ -261,7 +261,6 @@ class PackageSettings(
                 }
             val current = resolvedServiceSettings()
             current.http[serviceName]?.let { existing ->
-                require(existing.credential?.substringAfterLast("/") == scheme) { "Service already uses a different credential scheme." }
                 require(existing.origin == saved.origin) { "Service $serviceName already approves ${existing.origin}." }
             }
             val reference =
@@ -276,8 +275,13 @@ class PackageSettings(
                     bindings,
                 )
             validateRuntimeMappings(services, bindings)
+            val replaced = current.http[serviceName]?.credential?.takeIf { it != reference }
             secrets.write(secretKey(reference), saved.encode())
             saveServiceSettings(services, bindings)
+            replaced?.let {
+                secrets.clear(secretKey(it))
+                onCredentialChanged(it)
+            }
             mutable.value = entries()
             onCredentialChanged(reference)
             onChanged()

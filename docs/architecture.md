@@ -553,8 +553,10 @@ only `service/<name>/basic` (`http-basic`) or `service/<name>/bearer`
 (`http-bearer`) and its approved origin; it never stores the credential
 value. The package declares `credentialScheme` (omission retains Basic auth);
 service bindings must match it, and execution rechecks the credential scheme and
-origin. Bearer tokens use the encrypted extension secret store, never the model
-credential namespace. Restores retain references and report missing local secrets.
+origin. If an updated package changes scheme, saving its server settings replaces the
+service's reference and secret unless another bound package still needs the old scheme.
+Bearer tokens use the encrypted extension secret store, never the model credential
+namespace. Restores retain references and report missing local secrets.
 Legacy Basic records and per-package service entries remain readable for migration.
 Changing the approved origin changes the package digest and grant boundary.
 Dawarich is an optional catalog package, not a shipped default, because each user

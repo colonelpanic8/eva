@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "id": "app.dawarich",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "title": "Dawarich",
   "description": "Query your own Dawarich location history: recorded points, detected visits, and saved places. Location results are disclosed to EVA and its configured model. Requires EVA with declarative Bearer credentials and a reachable HTTPS Dawarich server; verified contract: Dawarich 1.14.0.",
   "setup": [
@@ -623,7 +623,7 @@
       "tool": {
         "name": "points_in_area",
         "title": "Recorded points in an area",
-        "description": "Read raw location samples in a bounding box and inclusive time range, up to 20 per page. Use desc for the latest recorded presence when detected visits are absent. This proves a sample near the place, not a confirmed visit or continuous presence. Excludes anomaly points; paginate until a short page.",
+        "description": "Read raw location samples in a bounding box and inclusive time range, up to 20 per page. Use desc for the latest recorded presence when detected visits are absent. This proves a sample near the place, not a confirmed visit or continuous presence. Excludes anomaly points; paginate until a short page. Keep boxes under 180° of longitude and inside ±90 latitude: wider boxes can silently return an empty page, and ±90 errors.",
         "inputSchema": {
           "type": "object",
           "properties": {
