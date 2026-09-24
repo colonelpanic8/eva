@@ -559,7 +559,7 @@ object EvaConfigurationCodec {
         services.http.forEach { (name, service) ->
             require(SERVICE_NAME.matches(name)) { "Invalid HTTP service name." }
             service.origin.httpsOrigin()
-            require(service.credential == null || service.credential == serviceSecretId(name)) {
+            require(service.credential == null || service.credential in setOf(serviceSecretId(name), serviceSecretId(name, "bearer"))) {
                 "HTTP service credential reference is not scoped to its service."
             }
         }
@@ -587,6 +587,15 @@ object EvaConfigurationCodec {
                     require(services.http.getValue(binding.service).credential != null) {
                         "A credential-requiring package origin must use a service with a credential reference."
                     }
+                    require(
+                        definition.httpBindings().filter { it.origin == binding.sourceOrigin && it.credential != null }.all {
+                            it.credentialScheme ==
+                                services.http
+                                    .getValue(binding.service)
+                                    .credential
+                                    ?.substringAfterLast("/")
+                        },
+                    ) { "Service credential scheme does not match the package." }
                 }
             }
         }
@@ -608,7 +617,10 @@ object EvaConfigurationCodec {
         credentials.required.forEach { reference ->
             val expectedKind =
                 PROVIDER_SECRETS[reference.id]
-                    ?: "http-basic".takeIf { SERVICE_SECRET.matches(reference.id) || PACKAGE_SECRET.matches(reference.id) }
+                    ?: ("http-" + reference.id.substringAfterLast("/")).takeIf {
+                        SERVICE_SECRET.matches(reference.id) ||
+                            PACKAGE_SECRET.matches(reference.id)
+                    }
             require(expectedKind != null) { "Unknown or unscoped secret reference." }
             require(reference.kind == expectedKind) { "Secret reference kind does not match its scope." }
             when {
@@ -843,7 +855,7 @@ object EvaConfigurationCodec {
 
     private val SEGMENT = Regex("[A-Za-z0-9][A-Za-z0-9._-]*")
     private val PACKAGE_SECRET = Regex("package/[0-9a-f-]{36}/basic")
-    private val SERVICE_SECRET = Regex("service/[a-z][a-z0-9-]{0,63}/basic")
+    private val SERVICE_SECRET = Regex("service/[a-z][a-z0-9-]{0,63}/(basic|bearer)")
     private val SERVICE_NAME = Regex("[a-z][a-z0-9-]{0,63}")
     private val MESSAGING_IDENTITY =
         Regex("[0-9]+:[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z][A-Za-z0-9_]*)+:[0-9]+:[0-9a-f]{64}(?:,[0-9a-f]{64})*")
@@ -871,7 +883,10 @@ object EvaConfigurationCodec {
 
     fun packageSecretId(instance: String) = "package/$instance/basic"
 
-    fun serviceSecretId(name: String) = "service/$name/basic"
+    fun serviceSecretId(
+        name: String,
+        scheme: String = "basic",
+    ) = "service/$name/$scheme"
 
     private fun com.colonelpanic.eva.adapters.declarative.PackageDefinition.httpOrigins(): Set<String> =
         httpBindings().map { it.origin }.toSet()

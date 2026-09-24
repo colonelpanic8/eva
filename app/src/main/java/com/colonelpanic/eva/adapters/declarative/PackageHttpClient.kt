@@ -1,8 +1,8 @@
 package com.colonelpanic.eva.adapters.declarative
 
+import com.colonelpanic.eva.capability.BoundedJson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.Credentials
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -18,7 +18,7 @@ class BindingNotSubmitted(
 ) : IllegalStateException(message)
 
 class PackageHttpClient(
-    private val credential: (String, String) -> BasicCredential?,
+    private val credential: (String, String) -> HttpCredential?,
     client: OkHttpClient = OkHttpClient(),
 ) {
     private val client =
@@ -46,11 +46,13 @@ class PackageHttpClient(
                 throw BindingNotSubmitted("The request destination is outside the approved origin. Nothing was submitted.")
             }
             val builder = Request.Builder().url(url).tag(AtomicBoolean::class.java, AtomicBoolean(false))
+            var authorization: String? = null
             request.credential?.let { name ->
                 val saved =
-                    credential(request.origin, name)?.takeIf { it.origin == request.origin }
+                    credential(request.origin, name)?.takeIf { it.origin == request.origin && it.scheme == request.credentialScheme }
                         ?: throw BindingNotSubmitted("Configure the package credential for this approved origin. Nothing was submitted.")
-                builder.header("Authorization", Credentials.basic(saved.username, saved.password, Charsets.UTF_8))
+                authorization = saved.authorization()
+                builder.header("Authorization", authorization)
             }
             val body =
                 request.body?.toRequestBody("application/json; charset=utf-8".toMediaType())
@@ -64,7 +66,21 @@ class PackageHttpClient(
                     if (source.read(buffer, minOf(8192L, request.maxResponseBytes + 1L - buffer.size)) == -1L) break
                 }
                 check(buffer.size <= request.maxResponseBytes) { "Response exceeded the approved byte limit" }
-                HttpResponse(response.code, buffer.readUtf8())
+                val text = buffer.readUtf8()
+                val normalized =
+                    if (authorization ==
+                        null
+                    ) {
+                        text
+                    } else {
+                        runCatching { BoundedJson.parse(text, request.maxResponseBytes).toString() }.getOrDefault(text)
+                    }
+                check(
+                    authorization?.let {
+                        text.contains(it.substringAfter(" ")) || normalized.contains(it.substringAfter(" "))
+                    } != true,
+                ) { "Response contained credential material" }
+                HttpResponse(response.code, text)
             }
         }
 }

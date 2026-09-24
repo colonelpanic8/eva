@@ -9,12 +9,27 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
+sealed interface HttpCredential {
+    val origin: String
+    val scheme: String
+
+    fun encode(): String
+
+    fun authorization(): String
+}
+
 data class BasicCredential(
-    val origin: String,
+    override val origin: String,
     val username: String,
     val password: String,
-) {
-    fun encode(): String =
+) : HttpCredential {
+    override val scheme = "basic"
+
+    override fun authorization() = okhttp3.Credentials.basic(username, password, Charsets.UTF_8)
+
+    override fun toString() = "BasicCredential([redacted])"
+
+    override fun encode(): String =
         JsonObject(
             mapOf(
                 "origin" to JsonPrimitive(origin),
@@ -29,17 +44,11 @@ data class BasicCredential(
             username: String,
             password: String,
         ): BasicCredential {
-            val parsed = url.trim().toHttpUrl()
-            require(
-                parsed.isHttps && parsed.username.isEmpty() && parsed.password.isEmpty(),
-            ) { "Use an HTTPS server origin without credentials." }
-            require(parsed.encodedPath == "/" && parsed.query == null && parsed.fragment == null) {
-                "Enter only the server origin, without a path or query."
-            }
+            val origin = credentialOrigin(url)
             require(username.isNotEmpty() && ':' !in username && username.none(Char::isISOControl)) { "Enter a valid basic-auth username." }
             require(password.isNotEmpty() && password.none(Char::isISOControl)) { "Enter a password without control characters." }
             require(username.length <= 1024 && password.length <= 4096) { "Credential is too long." }
-            return BasicCredential(parsed.toString().removeSuffix("/"), username, password)
+            return BasicCredential(origin, username, password)
         }
 
         fun decode(value: String): BasicCredential {
@@ -94,4 +103,46 @@ fun PackageDefinition.httpBindings(): List<DeclarativeBinding.Http> {
             else -> emptyList()
         }
     return capabilities.flatMap { leaves(it.binding) }
+}
+
+class BearerCredential private constructor(
+    override val origin: String,
+    private val token: String,
+) : HttpCredential {
+    override val scheme = "bearer"
+
+    override fun authorization() = "Bearer $token"
+
+    override fun toString() = "BearerCredential([redacted])"
+
+    override fun encode(): String = JsonObject(mapOf("origin" to JsonPrimitive(origin), "token" to JsonPrimitive(token))).toString()
+
+    companion object {
+        fun create(
+            url: String,
+            token: String,
+        ): BearerCredential {
+            val origin = credentialOrigin(url)
+            require(token.length in 1..4096 && Regex("[A-Za-z0-9._~+/-]+=*").matches(token)) {
+                "Enter a valid Bearer token without whitespace."
+            }
+            return BearerCredential(origin, token)
+        }
+
+        fun decode(value: String): BearerCredential {
+            val fields = Json.parseToJsonElement(value).jsonObject
+            return create(fields.getValue("origin").jsonPrimitive.content, fields.getValue("token").jsonPrimitive.content)
+        }
+    }
+}
+
+private fun credentialOrigin(url: String): String {
+    val parsed = url.trim().toHttpUrl()
+    require(parsed.isHttps && parsed.username.isEmpty() && parsed.password.isEmpty()) {
+        "Use an HTTPS server origin without credentials."
+    }
+    require(parsed.encodedPath == "/" && parsed.query == null && parsed.fragment == null) {
+        "Enter only the server origin, without a path or query."
+    }
+    return parsed.toString().removeSuffix("/")
 }

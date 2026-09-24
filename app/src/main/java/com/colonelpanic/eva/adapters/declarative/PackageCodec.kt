@@ -68,7 +68,13 @@ object PackageCodec {
             description,
             setup,
             guidance,
-        )
+        ).also { definition ->
+            require(
+                definition.httpBindings().filter { it.credential != null }.groupBy { it.origin }.values.all { bindings ->
+                    bindings.map { it.credentialScheme }.distinct().size == 1
+                },
+            ) { "An HTTP origin must use one credential scheme." }
+        }
     }
 
     private fun capability(root: JsonObject): PackageCapability {
@@ -373,7 +379,7 @@ object PackageCodec {
     ): DeclarativeBinding.Http {
         root.fields(
             setOf("kind", "origin", "method", "path", "parameters", "maxResponseBytes", "result"),
-            setOf("requestBody", "credential"),
+            setOf("requestBody", "credential", "credentialScheme"),
         )
         val origin = root.text("origin", 2000)
         val parsed = URI(origin)
@@ -398,6 +404,9 @@ object PackageCodec {
         val body = root["requestBody"]?.let { body(it.obj(), properties) as? BodyValue.Fields ?: error("Body must be an object") }
         require(body == null || method !in setOf("GET", "HEAD"))
         val credential = root["credential"]?.string()?.also { require(Regex("[a-z][a-z0-9_-]{0,63}").matches(it)) }
+        val scheme = root["credentialScheme"]?.string() ?: "basic"
+        require(scheme in setOf("basic", "bearer"))
+        require("credentialScheme" !in root || credential != null)
         val result = root.getValue("result").obj()
         result.fields(setOf("maxBytes"), setOf("pointer", "items", "evidence", "notExecutedStatuses"))
         require(("pointer" in result) != ("items" in result))
@@ -441,6 +450,7 @@ object PackageCodec {
                 items,
                 rejectedStatuses,
             ),
+            credentialScheme = scheme,
         )
     }
 

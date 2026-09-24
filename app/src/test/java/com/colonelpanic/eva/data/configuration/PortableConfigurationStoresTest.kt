@@ -50,6 +50,67 @@ class PortableConfigurationStoresTest {
     }
 
     @Test
+    fun `bearer references restore without secrets and reject basic service mappings`() {
+        val instance = "00000000-0000-0000-0000-000000000099"
+        val document =
+            packageJson.replace(
+                "\"credential\": \"org-agenda\"",
+                "\"credential\": \"org-agenda\", \"credentialScheme\": \"bearer\"",
+            )
+        val restored =
+            PortablePackageSettings(
+                repositories = emptyList(),
+                installed =
+                    listOf(
+                        PortablePackage(instance, "https://catalog.example.test", "https://catalog.example.test/package.json", document),
+                    ),
+                waitMillis = emptyMap(),
+                services = emptyList(),
+                httpServices = mapOf("history" to HttpServiceDefinition("https://history.example.test", "service/history/bearer")),
+                serviceBindings = listOf(PackageServiceBinding(instance, "https://agenda.example.org", "history")),
+            )
+        val settings = PackageSettings(context)
+        settings.restore(restored)
+        assertEquals(listOf("service/history/bearer"), settings.missingCredentials(settings.portable()))
+        assertFalse(settings.load().single().configured)
+        assertEquals(
+            "bearer",
+            settings.state.value
+                .single()
+                .credentialScheme,
+        )
+        assertFalse(
+            settings.state.value
+                .single()
+                .credentialAvailable,
+        )
+        assertEquals(
+            document,
+            settings
+                .portable()
+                .installed
+                .single()
+                .document,
+        )
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            settings.restore(
+                restored.copy(
+                    httpServices =
+                        mapOf("history" to HttpServiceDefinition("https://history.example.test", "service/history/basic")),
+                ),
+            )
+        }
+        assertEquals(
+            "service/history/bearer",
+            settings
+                .portable()
+                .httpServices
+                .getValue("history")
+                .credential,
+        )
+    }
+
+    @Test
     fun `fresh package settings have no declarative packages until one is installed`() {
         val settings = PackageSettings(context)
 

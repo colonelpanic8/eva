@@ -547,10 +547,19 @@ packages are defined in the base and declare `https://agenda.example.org`.
 Collections replace inherited collections, so retain other bindings and credential
 references you still need when constructing an override.
 
-Provision the local username/password through the extension's server settings.
+Provision the local username/password or Bearer token through the extension's server settings.
 The **Service name** field identifies the reusable service. The repository stores
-only `service/<name>/basic` and its approved origin; it never stores the credential
-value. Legacy per-package service entries remain readable for migration.
+only `service/<name>/basic` (`http-basic`) or `service/<name>/bearer`
+(`http-bearer`) and its approved origin; it never stores the credential
+value. The package declares `credentialScheme` (omission retains Basic auth);
+service bindings must match it, and execution rechecks the credential scheme and
+origin. Bearer tokens use the encrypted extension secret store, never the model
+credential namespace. Restores retain references and report missing local secrets.
+Legacy Basic records and per-package service entries remain readable for migration.
+Changing the approved origin changes the package digest and grant boundary.
+Dawarich is an optional catalog package, not a shipped default, because each user
+must configure a personal reachable HTTPS origin and API key. Its HTTP and
+configuration paths have JVM coverage; this does not establish phone verification.
 
 ### Restore and edit contract
 

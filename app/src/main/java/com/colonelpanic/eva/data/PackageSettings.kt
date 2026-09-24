@@ -4,7 +4,9 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
 import com.colonelpanic.eva.adapters.declarative.BasicCredential
+import com.colonelpanic.eva.adapters.declarative.BearerCredential
 import com.colonelpanic.eva.adapters.declarative.DefaultPackages
+import com.colonelpanic.eva.adapters.declarative.HttpCredential
 import com.colonelpanic.eva.adapters.declarative.InstalledPlugin
 import com.colonelpanic.eva.adapters.declarative.LoadedPackage
 import com.colonelpanic.eva.adapters.declarative.PackageCodec
@@ -37,6 +39,7 @@ data class PackageConfigurationEntry(
     val waitMillis: Long?,
     val credentialAvailable: Boolean = true,
     val contentAuthorities: List<String> = emptyList(),
+    val credentialScheme: String = "basic",
 )
 
 data class PortablePackageSettings(
@@ -131,7 +134,11 @@ class PackageSettings(
         val serviceSettings = serviceSettings()
         val retainedBindings = serviceSettings.bindings.filterNot { it.packageInstance == instance }
         val retainedServices = retainUsedServices(serviceSettings.http, retainedBindings)
-        (serviceSettings.http.keys - retainedServices.keys).forEach { secrets.clear(serviceSecretKey(it)) }
+        (serviceSettings.http.keys - retainedServices.keys).forEach {
+            secrets.clear(
+                secretKey(serviceSettings.http.getValue(it).credential ?: return@forEach),
+            )
+        }
         savePreferences {
             remove("origin:$instance")
             remove("wait:$instance")
@@ -169,9 +176,12 @@ class PackageSettings(
     private val defaults = MutableStateFlow(modeDefaults())
     val waits = defaults.asStateFlow()
 
-    private fun storedCredential(reference: String): BasicCredential? {
-        val direct = secrets.read(secretKey(reference))?.let { runCatching { BasicCredential.decode(it) }.getOrNull() }
-        if (direct != null || !reference.startsWith("service/package-")) return direct
+    private fun storedCredential(reference: String): HttpCredential? {
+        val direct =
+            secrets.read(secretKey(reference))?.let {
+                runCatching { if (reference.endsWith("/bearer")) BearerCredential.decode(it) else BasicCredential.decode(it) }.getOrNull()
+            }
+        if (direct != null || (!reference.startsWith("service/package-") || !reference.endsWith("/basic"))) return direct
         val instance = reference.removePrefix("service/package-").removeSuffix("/basic")
         return legacyCredential(PackageIdentity(instance))
     }
@@ -183,7 +193,7 @@ class PackageSettings(
         identity: PackageIdentity,
         origin: String,
         name: String,
-    ): BasicCredential? {
+    ): HttpCredential? {
         val source = sources.getValue(identity)
         val settings = resolvedServiceSettings()
         val candidates =
@@ -212,7 +222,8 @@ class PackageSettings(
                 identity,
                 configured,
                 configured.httpBindings().all { binding ->
-                    binding.credential == null || credential(identity, binding.origin, binding.credential) != null
+                    binding.credential == null ||
+                        credential(identity, binding.origin, binding.credential)?.scheme == binding.credentialScheme
                 },
             )
         }
@@ -232,14 +243,30 @@ class PackageSettings(
                 "This package does not declare credentials for that HTTPS origin."
             }
             require(SERVICE_NAME.matches(serviceName)) { "Use a lowercase service name with letters, numbers, and hyphens." }
-            val saved = BasicCredential.create(url, username, password)
+            val scheme =
+                source
+                    .httpBindings()
+                    .filter {
+                        it.origin == sourceOrigin && it.credential != null
+                    }.map { it.credentialScheme }
+                    .distinct()
+                    .single()
+            val saved: HttpCredential =
+                if (scheme ==
+                    "bearer"
+                ) {
+                    BearerCredential.create(url, password)
+                } else {
+                    BasicCredential.create(url, username, password)
+                }
             val current = resolvedServiceSettings()
             current.http[serviceName]?.let { existing ->
+                require(existing.credential?.substringAfterLast("/") == scheme) { "Service already uses a different credential scheme." }
                 require(existing.origin == saved.origin) { "Service $serviceName already approves ${existing.origin}." }
             }
             val reference =
                 com.colonelpanic.eva.data.configuration.EvaConfigurationCodec
-                    .serviceSecretId(serviceName)
+                    .serviceSecretId(serviceName, scheme)
             val bindings =
                 current.bindings.filterNot { it.packageInstance == id && it.sourceOrigin == sourceOrigin } +
                     PackageServiceBinding(id, sourceOrigin, serviceName)
@@ -249,7 +276,7 @@ class PackageSettings(
                     bindings,
                 )
             validateRuntimeMappings(services, bindings)
-            secrets.write(serviceSecretKey(serviceName), saved.encode())
+            secrets.write(secretKey(reference), saved.encode())
             saveServiceSettings(services, bindings)
             mutable.value = entries()
             onCredentialChanged(reference)
@@ -267,7 +294,7 @@ class PackageSettings(
         val services = retainUsedServices(current.http, bindings)
         removed?.service?.takeIf { it !in services }?.let { service ->
             current.http[service]?.credential?.let(onCredentialChanged)
-            secrets.clear(serviceSecretKey(service))
+            current.http[service]?.credential?.let { secrets.clear(secretKey(it)) }
         }
         saveServiceSettings(services, bindings)
         mutable.value = entries()
@@ -327,7 +354,12 @@ class PackageSettings(
                                 .sorted()
                                 .joinToString(),
                             override(identity.id),
-                            service?.credential?.let(::storedCredential)?.origin == service?.origin,
+                            service?.credential?.let(::storedCredential)?.let {
+                                it.origin == service.origin &&
+                                    it.scheme == bindings.first().credentialScheme
+                            } ==
+                                true,
+                            credentialScheme = bindings.first().credentialScheme,
                         )
                     }
             configured
@@ -367,7 +399,13 @@ class PackageSettings(
 
     fun missingCredentials(settings: PortablePackageSettings): List<String> =
         settings.httpServices.values.mapNotNull { service ->
-            service.credential?.takeIf { storedCredential(it)?.origin != service.origin }
+            service.credential?.takeIf {
+                storedCredential(it)?.let { saved ->
+                    saved.origin == service.origin &&
+                        saved.scheme == it.substringAfterLast("/")
+                } !=
+                    true
+            }
         } +
             settings.services.mapNotNull { service ->
                 val identity = PackageIdentity(service.packageInstance)
@@ -492,6 +530,12 @@ class PackageSettings(
                     require(services.getValue(binding.service).credential != null) {
                         "A credential-requiring package origin must use a service with a credential reference."
                     }
+                    require(
+                        definition.httpBindings().filter { it.origin == binding.sourceOrigin && it.credential != null }.all {
+                            it.credentialScheme ==
+                                services.getValue(binding.service).credential?.substringAfterLast("/")
+                        },
+                    ) { "Service credential scheme does not match the package." }
                 }
             }
             definition
@@ -528,11 +572,9 @@ class PackageSettings(
 
     private fun legacyServiceName(instance: String) = "package-$instance"
 
-    private fun serviceSecretKey(name: String) = "service:$name:basic"
-
     private fun secretKey(reference: String): String =
         when {
-            reference.startsWith("service/") -> serviceSecretKey(reference.removePrefix("service/").removeSuffix("/basic"))
+            reference.startsWith("service/") -> reference.replace("/", ":")
             reference.startsWith("package/") -> "package:${reference.removePrefix("package/").removeSuffix("/basic")}:basic"
             else -> error("Unsupported package credential reference.")
         }
