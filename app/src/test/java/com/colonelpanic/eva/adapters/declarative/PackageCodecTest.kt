@@ -46,6 +46,31 @@ internal val httpBinding = """{"kind":"http","origin":"https://agenda.example.or
 
 class PackageCodecTest {
     @Test
+    fun `only an intent may require an unlocked phone, and the flag changes the contract`() {
+        val plain = PackageCodec.decode(packageJson(intentBinding))
+        assertEquals(
+            false,
+            plain.capabilities
+                .single()
+                .execution.requiresUnlock,
+        )
+        val unlocking = packageJson(intentBinding).replace("\"maxWaitMillis\":30000", "\"maxWaitMillis\":30000,\"requiresUnlock\":true")
+        val decoded = PackageCodec.decode(unlocking)
+        assertEquals(
+            true,
+            decoded.capabilities
+                .single()
+                .execution.requiresUnlock,
+        )
+        assertTrue(decoded.digest != plain.digest)
+        assertThrows(Exception::class.java) { PackageCodec.decode(unlocking.replace("true}", "\"yes\"}")) }
+        val content =
+            packageJson(contentBinding, mode = "synchronous", foreground = false)
+                .replace("\"maxWaitMillis\":30000", "\"maxWaitMillis\":30000,\"requiresUnlock\":true")
+        assertThrows(Exception::class.java) { PackageCodec.decode(content) }
+    }
+
+    @Test
     fun `named validators restrict arguments and receipt data is bounded contract content`() {
         val json =
             packageJson(intentBinding).replace(

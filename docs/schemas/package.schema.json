@@ -56,7 +56,8 @@
       "properties": {
         "mode": { "enum": ["synchronous", "handoff"], "description": "Intent bindings require handoff plus requiresForeground true; HTTP and content bindings require synchronous." },
         "requiresForeground": { "type": "boolean" },
-        "maxWaitMillis": { "type": ["integer", "null"], "minimum": 1, "description": "Capability default wait; the common policy clamps the effective wait to 60,000 ms." }
+        "maxWaitMillis": { "type": ["integer", "null"], "minimum": 1, "description": "Capability default wait; the common policy clamps the effective wait to 60,000 ms." },
+        "requiresUnlock": { "type": "boolean", "description": "Intent bindings only. On a locked phone showing EVA's screen, EVA asks for the unlock before opening the target; declining opens nothing." }
       }
     },
     "scalarType": { "enum": ["string", "integer", "number", "boolean"] },

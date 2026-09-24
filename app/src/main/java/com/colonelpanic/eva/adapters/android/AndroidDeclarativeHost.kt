@@ -61,6 +61,7 @@ class AndroidDeclarativeHost(
             } else {
                 request.receipts.handlerMissing ?: "No installed app can handle this request."
             },
+            unlockFirst = request.unlockFirst,
         )
     }
 

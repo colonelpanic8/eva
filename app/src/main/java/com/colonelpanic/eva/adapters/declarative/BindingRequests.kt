@@ -16,6 +16,7 @@ data class IntentRequest(
     val appName: String? = null,
     val receipts: ReceiptText = ReceiptText(),
     val targetClass: String? = null,
+    val unlockFirst: Boolean = false,
 )
 
 data class ContentRequest(

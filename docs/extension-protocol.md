@@ -295,7 +295,12 @@ arrays in a closed object.
 
 Execution has required `mode` (`synchronous` or `handoff`) and `requiresForeground`
 (boolean); `maxWaitMillis` is an optional positive integer or null. Intent bindings require handoff plus foreground; HTTP and content
-bindings require synchronous mode. The common wait policy, rather than the file
+bindings require synchronous mode. An intent capability may set optional `requiresUnlock: true` when its target
+can do nothing while waiting behind the lock screen, as Maps navigation can't. On a locked phone showing
+EVA's own screen, EVA then asks Android to unlock (`requestDismissKeyguard`) and opens the target only
+once that succeeds. A declined unlock is `not_executed` with nothing opened. Without an EVA screen to
+ask from, the launch proceeds and Android decides, as for any other intent. The flag participates in
+the digest, and other binding kinds reject it. The common wait policy, rather than the file
 codec, applies the 60-second clamp.
 
 A typed slot is exactly `{"argument":"title","type":"string"}` or

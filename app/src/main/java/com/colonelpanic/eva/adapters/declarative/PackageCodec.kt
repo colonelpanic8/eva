@@ -131,6 +131,9 @@ object PackageCodec {
         val execution = execution(root.getValue("execution").obj())
         require(alternatives.all { (execution.mode == ExecutionMode.HANDOFF) == (it is DeclarativeBinding.Intent) })
         require(alternatives.none { it is DeclarativeBinding.Intent } || execution.requiresForeground)
+        require(
+            !execution.requiresUnlock || alternatives.all { it is DeclarativeBinding.Intent },
+        ) { "Only intent bindings can require unlock" }
         return PackageCapability(
             name,
             tool.title,
@@ -147,7 +150,7 @@ object PackageCodec {
     }
 
     private fun execution(root: JsonObject): ExecutionSemantics {
-        root.fields(setOf("mode", "requiresForeground"), setOf("maxWaitMillis"))
+        root.fields(setOf("mode", "requiresForeground"), setOf("maxWaitMillis", "requiresUnlock"))
         val mode =
             when (root.text("mode", 30)) {
                 "synchronous" -> ExecutionMode.SYNCHRONOUS
@@ -160,6 +163,11 @@ object PackageCodec {
             mode,
             foreground,
             root["maxWaitMillis"]?.takeUnless { it == JsonNull }?.long(),
+            root["requiresUnlock"]?.let {
+                (it as? JsonPrimitive)?.takeUnless { value -> value.isString }?.booleanOrNull
+                    ?: error("Expected boolean")
+            }
+                ?: false,
         )
     }
 

@@ -97,6 +97,7 @@ class MediaAdapterTest {
         launcher: MediaLauncher = FakeLauncher(PlayDelivery.DELIVERED),
         queue: FakeQueue? = null,
         intent: ExecutionBackend? = null,
+        remote: RemotePlayer? = null,
     ) = MediaAdapter(
         source,
         sessions,
@@ -104,6 +105,7 @@ class MediaAdapterTest {
         queueFor = { app -> queue?.takeIf { app.identity.packageName == "com.spotify.music" || app.library != null } },
         intentFor = { app -> intent?.takeIf { app.handlesSearchIntent } },
         settle = {},
+        remoteFor = { app -> remote?.takeIf { app.identity.packageName == "com.spotify.music" } },
     )
 
     private fun MediaAdapter.entry(app: DiscoveredMediaApp) = installed.value.single { it.identity == app.identity }
@@ -222,6 +224,43 @@ class MediaAdapterTest {
             play.execute(mapOf("query" to "fell on black days"))
             assertEquals(1, launcher.asked.size)
             assertEquals(2, intent.executed)
+        }
+
+    @Test
+    fun `a connected account service plays with no screen and a failure falls back to the other routes`() =
+        runTest {
+            val launcher = FakeLauncher(PlayDelivery.REFUSED)
+            val intent = FakeIntent()
+            var failure: String? = null
+            val remote =
+                object : RemotePlayer {
+                    override fun connected() = true
+
+                    override suspend fun play(query: String): RemotePlay? {
+                        failure?.let { error(it) }
+                        return if (query == "nothing") null else RemotePlay("Black Hole Sun by Soundgarden", "Pixel")
+                    }
+                }
+            val adapter = adapter(FakeSource(listOf(spotify)), launcher = launcher, intent = intent, remote = remote)
+            adapter.refresh()
+            val play = adapter.backend(spotify, "play")
+
+            val started = play.execute(mapOf("query" to "black hole sun"))
+            assertEquals(InvocationStatus.HANDED_OFF, started.status)
+            assertEquals(
+                "Spotify accepted the request to play Black Hole Sun by Soundgarden on Pixel. EVA did not watch it start.",
+                started.message,
+            )
+            assertTrue(launcher.asked.isEmpty())
+            assertEquals(0, intent.executed)
+
+            assertEquals(InvocationStatus.NOT_EXECUTED, play.execute(mapOf("query" to "nothing")).status)
+            assertEquals(0, intent.executed)
+
+            failure = "Spotify Premium is required."
+            val fallback = play.execute(mapOf("query" to "black hole sun"))
+            assertEquals(1, intent.executed)
+            assertEquals(InvocationStatus.HANDED_OFF, fallback.status)
         }
 
     @Test

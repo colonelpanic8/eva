@@ -162,7 +162,13 @@ for concrete identity, schema, waiting, and authorization rules.
   service, or play-from-search intent becomes one installed extension whose
   descriptor lists only the operations it has a route for — control, now-playing,
   and play through its media session, plus queue only where a route exists (Media3
-  library search, or Spotify's own API once the account is connected). The model
+  library search, or Spotify's own API once the account is connected). With the
+  Spotify account connected, play also goes through Spotify's Web API first. EVA
+  starts the best match on the active device, else this phone, else the only
+  device. A stopped Spotify is woken with a media-button press so the phone
+  appears as a device. This needs no screen and works while the phone is locked;
+  it needs Spotify Premium. The receipt is `HANDED_OFF` with the device name, and
+  a failure falls back to the session, browser, and intent routes. The model
   selects the app by choosing its tool; there is no app-name argument and no
   name matching in EVA. Enablement and per-operation grants, settings rows, catalog
   revisions, and stale-proposal refusal come from the extension runtime unchanged.

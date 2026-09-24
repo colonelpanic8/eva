@@ -5,6 +5,7 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.ComponentActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -15,6 +16,7 @@ import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.lang.ref.WeakReference
 import kotlin.coroutines.resume
 
@@ -31,6 +33,7 @@ class AndroidIntentHost(
     private val context: Context,
     private val backgroundAssistantAvailable: () -> Boolean = { AssistantRole.isEva(context) },
     private val deviceLocked: () -> Boolean = { context.getSystemService(KeyguardManager::class.java).isDeviceLocked },
+    private val requestUnlock: suspend (ComponentActivity) -> Boolean? = ::dismissKeyguard,
 ) {
     private var surface: WeakReference<ComponentActivity>? = null
     private var assistant: AssistantLauncher? = null
@@ -90,12 +93,25 @@ class AndroidIntentHost(
             }
         }
 
+    /**
+     * With [unlockFirst], a locked phone showing EVA's own screen is asked to unlock before the app
+     * opens, since the target could only wait behind the lock screen. Declining opens nothing. Without
+     * an EVA screen to ask from, the launch proceeds as usual and Android decides.
+     */
     suspend fun launch(
         intent: Intent,
         successMessage: String,
         missingAppMessage: String,
+        unlockFirst: Boolean = false,
     ): ExecutionOutcome =
         withContext(Dispatchers.Main.immediate) {
+            if (unlockFirst && deviceLocked()) {
+                resumedSurface()?.let { activity ->
+                    if (withTimeoutOrNull(UNLOCK_WAIT_MILLIS) { requestUnlock(activity) } == false) {
+                        return@withContext ExecutionOutcome(InvocationStatus.NOT_EXECUTED, STAYED_LOCKED)
+                    }
+                }
+            }
             val start = starter() ?: return@withContext ExecutionOutcome(InvocationStatus.NOT_EXECUTED, SURFACE_LOST)
             try {
                 start(intent)
@@ -141,6 +157,33 @@ class AndroidIntentHost(
     }
 
     companion object {
+        const val UNLOCK_WAIT_MILLIS = 60_000L
+        const val STAYED_LOCKED = "The phone stayed locked, so the app was not opened. Unlock and ask again."
+
+        /** True once unlocked, false when the user backs out, null when Android cannot ask from here. */
+        private suspend fun dismissKeyguard(activity: ComponentActivity): Boolean? {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return null
+            val keyguard = activity.getSystemService(KeyguardManager::class.java) ?: return null
+            return suspendCancellableCoroutine { continuation ->
+                keyguard.requestDismissKeyguard(
+                    activity,
+                    object : KeyguardManager.KeyguardDismissCallback() {
+                        override fun onDismissSucceeded() {
+                            if (continuation.isActive) continuation.resume(true)
+                        }
+
+                        override fun onDismissCancelled() {
+                            if (continuation.isActive) continuation.resume(false)
+                        }
+
+                        override fun onDismissError() {
+                            if (continuation.isActive) continuation.resume(null)
+                        }
+                    },
+                )
+            }
+        }
+
         const val SURFACE_LOST =
             "This action opens another app. Invoke EVA through the system assistant " +
                 "or select EVA as the default assistant, then try again. Nothing was opened."

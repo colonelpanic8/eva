@@ -116,4 +116,46 @@ class AndroidIntentHostTest {
             assertEquals(InvocationStatus.NOT_EXECUTED, result.status)
             assertEquals(AndroidIntentHost.UNLOCK_REQUIRED, result.message)
         }
+
+    @Test
+    fun `an app that needs an unlocked phone opens only after EVA's screen gets the unlock`() =
+        runBlocking {
+            val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup()
+            var locked = true
+            var answer: Boolean? = true
+            var asked = 0
+            val host =
+                AndroidIntentHost(
+                    RuntimeEnvironment.getApplication(),
+                    deviceLocked = { locked },
+                    requestUnlock = {
+                        asked++
+                        if (answer == true) locked = false
+                        answer
+                    },
+                )
+            host.attach(activity.get())
+
+            val opened = host.launch(Intent("test.navigate"), "Navigating", "Missing", unlockFirst = true)
+            assertEquals(InvocationStatus.HANDED_OFF, opened.status)
+            assertEquals("Navigating", opened.message)
+            assertEquals("test.navigate", shadowOf(activity.get()).nextStartedActivity.action)
+
+            locked = true
+            answer = false
+            val declined = host.launch(Intent("test.navigate"), "Navigating", "Missing", unlockFirst = true)
+            assertEquals(InvocationStatus.NOT_EXECUTED, declined.status)
+            assertEquals(AndroidIntentHost.STAYED_LOCKED, declined.message)
+            assertEquals(null, shadowOf(activity.get()).nextStartedActivity)
+
+            answer = null
+            assertEquals(
+                InvocationStatus.HANDED_OFF,
+                host.launch(Intent("test.navigate"), "Navigating", "Missing", unlockFirst = true).status,
+            )
+            assertEquals(InvocationStatus.HANDED_OFF, host.launch(Intent("test.alarm"), "Set", "Missing").status)
+            assertEquals(3, asked)
+            activity.pause().stop().destroy()
+            Unit
+        }
 }
