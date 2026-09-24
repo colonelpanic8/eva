@@ -4,6 +4,8 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-09-23
+
 ### Changed
 
 - With your Spotify account connected in EVA, asking Spotify to play something starts it through Spotify's own service, with no screen, including on a locked phone. Spotify Premium is required; without it EVA falls back to opening Spotify.
