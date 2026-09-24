@@ -4,6 +4,13 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-09-24
+
+### Added
+
+- Extensions for HTTPS services can sign in with a Bearer token (API key), not only a username and password. The token stays in EVA's encrypted storage; portable configuration keeps only a reference.
+- A Dawarich extension in the catalog lets EVA answer location-history questions from your own Dawarich server: where you were at a time, visits in a date range, and when you last visited a place.
+
 ## [0.36.0] - 2026-09-23
 
 ### Changed
