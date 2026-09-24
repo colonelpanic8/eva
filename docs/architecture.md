@@ -118,6 +118,9 @@ Manual imports do not gain new grants this way. Installed Android providers do n
 either, except the pinned default providers (Mova and Paseo): they start enabled
 with every action unless the user turned them off. See
 [default providers](extension-protocol.md#7-identity-grants-and-untrusted-text).
+An app's own installed extension takes over same-named actions from declarative
+packages that target that app; the package's other actions stay available and are
+listed under the app.
 
 The dispatcher validates identity, arguments, binding revision, availability, and
 grants, then journals a claim before dispatch. Duplicate call IDs cannot execute

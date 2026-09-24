@@ -1034,6 +1034,14 @@ device that restores the configuration, until the user turns it back on. Debug
 builds and same-named apps with another signer get nothing automatically. The
 provider's own caller check (section 9) is unchanged.
 
+**An app's own extension speaks for that app.** When a discovered provider has a
+descriptor, a declarative package that lists the provider's package in
+`androidPackages` (such as the catalog's Mova package) withholds every action whose
+name the provider also offers, and the Extensions screen shows the package's
+remaining actions inside the provider's row instead of as a second extension.
+Grants are unchanged, so the withheld actions return if the provider is removed
+or stops describing itself.
+
 The Extensions screen can enable all actions in one step. This grants claimed
 reads and every write, handoff, or unknown-effect action in the current
 descriptor; individual action switches remain available for later changes.
