@@ -266,7 +266,10 @@ class EvaApplication :
                             ),
                         CapabilityRegistry.DIAL to
                             chosenNumbers.remembering(
-                                intent("Dialer opened.", "No phone app is available.", NativeIntents::dial),
+                                com.colonelpanic.eva.adapters.android.PhoneCallBackend(
+                                    this@EvaApplication,
+                                    intent("Dialer opened with the number.", "No phone app is available.", NativeIntents::dial),
+                                ),
                                 "number",
                             ),
                         CapabilityRegistry.OPEN_APP to

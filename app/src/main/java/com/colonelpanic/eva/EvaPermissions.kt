@@ -19,6 +19,7 @@ object EvaPermissions {
             add(Manifest.permission.READ_CONTACTS)
             add(Manifest.permission.READ_SMS)
             add(Manifest.permission.SEND_SMS)
+            add(Manifest.permission.CALL_PHONE)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
         }
 

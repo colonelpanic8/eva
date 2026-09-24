@@ -40,15 +40,16 @@ tools:
         Opaque active-notification reference from conversation search. Never invent one.
   eva.android.phone.dial:
     description: >-
-      Open the phone dialer with a number filled in. The user places the call. Does not dial
-      automatically.
+      Call a phone number. With the Phone permission, Android places the call right away, also on
+      a locked phone; without it, or for an emergency number, the dialer opens with the number
+      and the user presses call. Look up a named person with contact search first.
   eva.android.app.open:
     description: >-
       Launch an installed app by its visible name, such as Settings or Chrome.
   eva.android.contacts.search:
     description: >-
       Find phone numbers in the user's contacts by name. Use this when the user names a person
-      to text or call, then pass the returned number to the send, message, or dialer action.
+      to text or call, then pass the returned number to the send, message, or call action.
       Returns matches only; it opens nothing. Names match approximately, so pass the whole name
       as heard: a misspelled or misheard name still finds the contact, and a full name ranks the
       right person above others who share one part of it. Choose what to match with field: name

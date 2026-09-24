@@ -4,6 +4,10 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Asking EVA to call a number now places the call, including on a locked phone, once EVA has the Phone permission. EVA asks for it with its other permissions when it opens. Without it, or for emergency numbers, the dialer still opens with the number.
+
 ## [0.34.1] - 2026-09-23
 
 ### Fixed

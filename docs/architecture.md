@@ -171,6 +171,15 @@ for concrete identity, schema, waiting, and authorization rules.
   supports session inspection and result confirmation. Compatibility must be
   tested per app; an app may refuse EVA as a media client, which is remembered so
   the fallback is not delayed by asking again.
+- `eva.android.phone.dial` places the call. With `CALL_PHONE`, which EVA asks for with
+  its other permissions when the app opens, it calls `TelecomManager.placeCall`, so
+  Android's phone service dials without any EVA screen, including over the lock
+  screen. The receipt is `HANDED_OFF`: EVA does not observe whether the call
+  connects. Without the permission, or for an emergency number (only the dialer app
+  may place those), the dialer opens with the number and the user presses call. The
+  call takes audio focus, which pauses EVA's microphone and playback until it ends.
+  An API 36 emulator placed a call from EVA's process with the keyguard showing;
+  physical-device verification is pending.
 - SMS draft handoff and native direct-message sending are distinct capabilities.
   Notification replies share the same authorized messaging boundary. Do not remove
   native behavior merely because a declarative compose example exists. See
