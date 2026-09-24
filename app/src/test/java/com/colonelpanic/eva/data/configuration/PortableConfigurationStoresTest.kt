@@ -5,12 +5,14 @@ import android.content.Context
 import android.net.Uri
 import com.colonelpanic.eva.adapters.declarative.DefaultPackages
 import com.colonelpanic.eva.adapters.declarative.PackageCodec
+import com.colonelpanic.eva.adapters.declarative.PluginPreview
 import com.colonelpanic.eva.adapters.declarative.httpBindings
 import com.colonelpanic.eva.conversation.prompt.PromptComponent
 import com.colonelpanic.eva.conversation.prompt.PromptConfig
 import com.colonelpanic.eva.data.PackageSettings
 import com.colonelpanic.eva.data.PortablePackageSettings
 import com.colonelpanic.eva.data.PromptStore
+import com.colonelpanic.eva.data.SecretStore
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -23,6 +25,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.io.File
+import javax.crypto.KeyGenerator
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], application = Application::class, manifest = Config.NONE)
@@ -108,6 +111,50 @@ class PortableConfigurationStoresTest {
                 .getValue("history")
                 .credential,
         )
+    }
+
+    @Test
+    fun `a package that moves to bearer is reprovisioned through its existing service`() {
+        val instance = "00000000-0000-0000-0000-000000000098"
+        val source = "https://catalog.example.test"
+        val url = "https://catalog.example.test/package.json"
+        val key = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
+        val secrets = SecretStore(context) { key }
+        val settings = PackageSettings(context, secrets = secrets)
+        settings.restore(
+            PortablePackageSettings(
+                repositories = emptyList(),
+                installed = listOf(PortablePackage(instance, source, url, packageJson)),
+                waitMillis = emptyMap(),
+                services = emptyList(),
+                httpServices = mapOf("history" to HttpServiceDefinition("https://history.example.test", "service/history/basic")),
+                serviceBindings = listOf(PackageServiceBinding(instance, "https://agenda.example.org", "history")),
+            ),
+        )
+        assertNull(settings.save(instance, "https://agenda.example.org", "history", "https://history.example.test", "user", "pw"))
+        assertTrue(settings.load().single().configured)
+
+        val bearer =
+            packageJson
+                .replace("\"version\": \"0.2.1\"", "\"version\": \"0.3.0\"")
+                .replace("\"credential\": \"org-agenda\"", "\"credential\": \"org-agenda\", \"credentialScheme\": \"bearer\"")
+        settings.installPlugin(PluginPreview(source, url, bearer, PackageCodec.decode(bearer)))
+        assertFalse(settings.load().single().configured)
+
+        assertNull(settings.save(instance, "https://agenda.example.org", "history", "https://history.example.test", "", "token.1"))
+        val identity = settings.load().single().identity
+        assertTrue(settings.load().single().configured)
+        assertEquals("Bearer token.1", settings.credential(identity, "https://history.example.test", "org-agenda")?.authorization())
+        assertEquals(
+            "service/history/bearer",
+            settings
+                .portable()
+                .httpServices
+                .getValue("history")
+                .credential,
+        )
+        assertTrue(settings.missingCredentials(settings.portable()).isEmpty())
+        assertNull(secrets.read("service:history:basic"))
     }
 
     @Test
