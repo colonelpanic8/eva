@@ -257,6 +257,7 @@
       "type": "object",
       "required": ["kind", "origin", "method", "path", "parameters", "maxResponseBytes", "result"],
       "additionalProperties": false,
+      "dependentRequired": { "credentialScheme": ["credential"] },
       "properties": {
         "kind": { "const": "http" },
         "origin": { "type": "string", "maxLength": 2000, "pattern": "^https://[^/?#@]+$" },
@@ -278,6 +279,7 @@
         },
         "requestBody": { "$ref": "#/$defs/bodyFields" },
         "credential": { "type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$" },
+        "credentialScheme": { "enum": ["basic", "bearer"], "default": "basic" },
         "maxResponseBytes": { "type": "integer", "minimum": 1, "maximum": 1048576 },
         "result": { "$ref": "#/$defs/result" }
       }

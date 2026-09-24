@@ -508,7 +508,7 @@ This provider and package combination
 has JVM verification; device verification remains pending.
 
 HTTP fields: `kind`, `origin`, `method`, `path`, `parameters`, `maxResponseBytes`,
-`result`, optional `requestBody` and `credential`. Origins are HTTPS scheme/host
+`result`, optional `requestBody`, `credential`, and `credentialScheme`. Origins are HTTPS scheme/host
 with optional port and no path, credentials, query, or fragment. Methods are GET,
 HEAD, POST, PUT, PATCH, DELETE. Paths start with `/`; typed `{name}` placeholders
 must have matching `parameters` entries. Each parameter has `in` (`path` or
@@ -517,9 +517,29 @@ must have matching `parameters` entries. Each parameter has `in` (`path` or
 scalar slots, or array argument slots; GET/HEAD have no body. This mirrors OpenAPI operation structure
 without claiming to accept an entire OpenAPI document.
 
-`credential` is a named basic-auth reference such as `org-agenda`, limited to
+`credential` is a named reference such as `org-agenda`, limited to
 lowercase letters, digits, underscores, and hyphens. It is resolved in the
 extension credential namespace, never EVA's model credential namespace.
+`credentialScheme` is `basic` (default, preserving existing packages) or `bearer`;
+when supplied it requires `credential`. Each source origin uses one scheme.
+Bearer tokens are provisioned through the extension's server settings and sent
+only as `Authorization: Bearer <token>`, never in query slots or portable files.
+A missing, wrong-origin, or wrong-scheme credential refuses before submission.
+Redirects and automatic follow-ups are disabled. Responses echoing the literal
+authorization payload (including JSON-escaped strings) are rejected before result
+projection and journaling; arbitrary transformations of a secret by a server
+cannot be detected. Transport exception details are not returned to the model.
+Existing Basic credentials and references keep their storage keys and behavior.
+Bearer references use `service/<name>/bearer`, kind `http-bearer`; Basic uses
+`service/<name>/basic`, kind `http-basic`. Restoring either reference reports local
+provisioning needs. A shared service must match every bound package's scheme.
+
+The optional [Dawarich package example](examples/dawarich.json) is a byte-identical
+catalog fixture, not a shipped default: it requires a personal HTTPS server and
+API key. It uses bounded pages of points, visits, and places from Dawarich 1.14.0.
+Its guidance distinguishes recorded samples, inferred visits, and incomplete
+page-local place searches. HTTP response headers are not projected, so callers
+must paginate explicitly and cannot infer exhaustion from a filtered page.
 `maxResponseBytes` is 1–1,048,576. `result` contains a JSON Pointer `pointer`,
 `maxBytes` (1–16,384), and optional `evidence: {pointer, equals}` for a terminal
 write result. Empty pointer selects the whole JSON response; `equals` is a

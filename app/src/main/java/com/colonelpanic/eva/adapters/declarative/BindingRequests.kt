@@ -35,6 +35,7 @@ data class HttpRequest(
     val body: String?,
     val credential: String?,
     val maxResponseBytes: Int,
+    val credentialScheme: String = "basic",
 )
 
 class BindingArguments(
@@ -170,7 +171,15 @@ class BindingArguments(
         val body = binding.requestBody?.let { body(it).toString() }
         require(url.toByteArray(Charsets.UTF_8).size <= ExtensionProtocol.ARGUMENT_BYTES)
         require(body == null || body.toByteArray(Charsets.UTF_8).size <= ExtensionProtocol.ARGUMENT_BYTES)
-        return HttpRequest(binding.origin, url, binding.method, body, binding.credential, binding.maxResponseBytes)
+        return HttpRequest(
+            binding.origin,
+            url,
+            binding.method,
+            body,
+            binding.credential,
+            binding.maxResponseBytes,
+            binding.credentialScheme,
+        )
     }
 
     private fun body(mapping: BodyValue): JsonElement? =

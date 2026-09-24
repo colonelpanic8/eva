@@ -15,6 +15,35 @@ import org.junit.Test
 
 class ConfigurationCompositionTest {
     @Test
+    fun `bearer reference kind round trips and mismatched kinds are rejected`() {
+        val current = fullConfiguration()
+        val reference = EvaConfigurationCodec.serviceSecretId(SERVICE_NAME, "bearer")
+        val bearer =
+            current.copy(
+                packages =
+                    current.packages.copy(
+                        installed =
+                            current.packages.installed.map {
+                                it.copy(
+                                    document =
+                                        it.document.replace(
+                                            "\"credential\": \"example\"",
+                                            "\"credential\": \"example\", \"credentialScheme\": \"bearer\"",
+                                        ),
+                                )
+                            },
+                    ),
+                services = EvaConfiguration.Services(mapOf(SERVICE_NAME to HttpServiceDefinition(SERVICE_ORIGIN, reference))),
+                credentials = EvaConfiguration.Credentials(listOf(SecretReference(reference, "http-bearer", SERVICE_ORIGIN))),
+            )
+        val encoded = EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(bearer))
+        assertEquals(bearer, EvaConfigurationCodec.resolve(reader(mapOf(EvaConfigurationCodec.FILE_NAME to encoded))).configuration)
+        assertThrows(IllegalArgumentException::class.java) {
+            EvaConfigurationCodec.resolve(reader(mapOf(EvaConfigurationCodec.FILE_NAME to encoded.replace("http-bearer", "http-basic"))))
+        }
+    }
+
+    @Test
     fun `format and version are emitted and required`() {
         val encoded = EvaConfigurationCodec.encode(EvaConfigurationDocument())
 

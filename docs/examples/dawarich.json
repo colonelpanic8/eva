@@ -1,0 +1,837 @@
+{
+  "formatVersion": 1,
+  "id": "app.dawarich",
+  "version": "1.0.0",
+  "title": "Dawarich",
+  "description": "Query your own Dawarich location history: recorded points, detected visits, and saved places. Location results are disclosed to EVA and its configured model. Requires EVA with declarative Bearer credentials and a reachable HTTPS Dawarich server; verified contract: Dawarich 1.14.0.",
+  "setup": [
+    "Use an EVA release that supports HTTP credentialScheme: bearer; older releases reject this package.",
+    "In the installed extension server settings, choose a service name, replace https://dawarich.example.org with your HTTPS origin, and enter the Dawarich API key in Bearer token.",
+    "Enable the extension and reconnect the conversation. Keep Tailscale connected on the phone if your server is tailnet-only."
+  ],
+  "guidance": "Resolve relative dates in the user's timezone and send explicit ISO 8601 offsets. For \"where at time\", compare points just before and after that time and report sample gaps. For a month, use visits across that month, paginate, and distinguish suggested from confirmed visits. Visits may be absent even when imported points exist; fall back to points and report incomplete coverage. For \"last visit to X\", identify X via places, then use a small geographic box with visits_in_area; verify place_id/name and status. Use points_in_area descending if visits are missing. Avoid claiming exact venue identity from coordinates alone. Each request returns at most 20 source records; pagination headers are not available to EVA. Follow pages within the turn budget and state remaining uncertainty. places filters only the fetched page: an empty filtered page is not evidence of absence. No tool writes or triggers geocoding/visit detection.",
+  "capabilities": [
+    {
+      "tool": {
+        "name": "points",
+        "title": "Location points",
+        "description": "Read up to 20 recorded points in an inclusive time range. For location at a time, use a narrow window and compare timestamps; a nearby sample does not prove continuous presence. Coordinates are strings; timestamps are Unix seconds. Excludes points flagged as anomalies. Paginate until a short page; EVA does not expose pagination headers.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "start_at": {
+              "type": "string",
+              "description": "ISO 8601 timestamp with explicit UTC offset; resolve the user's timezone before calling.",
+              "minLength": 20,
+              "maxLength": 35
+            },
+            "end_at": {
+              "type": "string",
+              "description": "ISO 8601 timestamp with explicit UTC offset; resolve the user's timezone before calling.",
+              "minLength": 20,
+              "maxLength": 35
+            },
+            "order": {
+              "type": "string",
+              "description": "asc for earliest points; desc for latest points.",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            },
+            "page": {
+              "type": "integer",
+              "description": "Page number, starting at 1. Request the next page to continue.",
+              "minimum": 1,
+              "maximum": 100000
+            }
+          },
+          "required": [
+            "start_at",
+            "end_at"
+          ],
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": true
+        }
+      },
+      "effects": "read",
+      "execution": {
+        "mode": "synchronous",
+        "requiresForeground": false,
+        "maxWaitMillis": 30000
+      },
+      "binding": {
+        "kind": "http",
+        "origin": "https://dawarich.example.org",
+        "method": "GET",
+        "path": "/api/v1/points",
+        "parameters": [
+          {
+            "name": "start_at",
+            "in": "query",
+            "value": {
+              "argument": "start_at",
+              "type": "string",
+              "required": true
+            }
+          },
+          {
+            "name": "end_at",
+            "in": "query",
+            "value": {
+              "argument": "end_at",
+              "type": "string",
+              "required": true
+            }
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "value": {
+              "argument": "order",
+              "type": "string",
+              "default": "desc"
+            }
+          },
+          {
+            "name": "slim",
+            "in": "query",
+            "value": {
+              "value": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "value": {
+              "argument": "page",
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "value": {
+              "value": 20,
+              "type": "integer"
+            }
+          }
+        ],
+        "credential": "dawarich",
+        "credentialScheme": "bearer",
+        "maxResponseBytes": 262144,
+        "result": {
+          "maxBytes": 15000,
+          "items": {
+            "line": "id={id} timestamp={timestamp} latitude={latitude} longitude={longitude} country_name={country_name}",
+            "fields": {
+              "id": {
+                "pointer": "/id",
+                "type": "integer",
+                "required": true
+              },
+              "timestamp": {
+                "pointer": "/timestamp",
+                "type": "integer"
+              },
+              "latitude": {
+                "pointer": "/latitude",
+                "type": "string"
+              },
+              "longitude": {
+                "pointer": "/longitude",
+                "type": "string"
+              },
+              "country_name": {
+                "pointer": "/country_name",
+                "type": "string"
+              }
+            },
+            "maxItems": 20,
+            "truncationNote": "Output capped. Narrow the range or request another page; this is not an exhaustive history.",
+            "arrayPaths": [
+              ""
+            ]
+          }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "visits",
+        "title": "Visits in a time range",
+        "description": "Read up to 20 visits whose START time is in the inclusive range, oldest first. Visits starting earlier are excluded even if they overlap the range. Suggested visits are inferred, not confirmed. Imported points may have no detected visits. Request successive pages until a short page; this is not a complete list of places from raw points.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "start_at": {
+              "type": "string",
+              "description": "ISO 8601 timestamp with explicit UTC offset; resolve the user's timezone before calling.",
+              "minLength": 20,
+              "maxLength": 35
+            },
+            "end_at": {
+              "type": "string",
+              "description": "ISO 8601 timestamp with explicit UTC offset; resolve the user's timezone before calling.",
+              "minLength": 20,
+              "maxLength": 35
+            },
+            "page": {
+              "type": "integer",
+              "description": "Page number, starting at 1. Request the next page to continue.",
+              "minimum": 1,
+              "maximum": 100000
+            }
+          },
+          "required": [
+            "start_at",
+            "end_at"
+          ],
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": true
+        }
+      },
+      "effects": "read",
+      "execution": {
+        "mode": "synchronous",
+        "requiresForeground": false,
+        "maxWaitMillis": 30000
+      },
+      "binding": {
+        "kind": "http",
+        "origin": "https://dawarich.example.org",
+        "method": "GET",
+        "path": "/api/v1/visits",
+        "parameters": [
+          {
+            "name": "start_at",
+            "in": "query",
+            "value": {
+              "argument": "start_at",
+              "type": "string",
+              "required": true
+            }
+          },
+          {
+            "name": "end_at",
+            "in": "query",
+            "value": {
+              "argument": "end_at",
+              "type": "string",
+              "required": true
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "value": {
+              "argument": "page",
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "value": {
+              "value": 20,
+              "type": "integer"
+            }
+          }
+        ],
+        "credential": "dawarich",
+        "credentialScheme": "bearer",
+        "maxResponseBytes": 262144,
+        "result": {
+          "maxBytes": 15000,
+          "items": {
+            "line": "id={id} name={name} started_at={started_at} ended_at={ended_at} status={status} place_id={place_id} latitude={latitude} longitude={longitude}",
+            "fields": {
+              "id": {
+                "pointer": "/id",
+                "type": "integer",
+                "required": true
+              },
+              "name": {
+                "pointer": "/name",
+                "type": "string"
+              },
+              "started_at": {
+                "pointer": "/started_at",
+                "type": "string"
+              },
+              "ended_at": {
+                "pointer": "/ended_at",
+                "type": "string"
+              },
+              "status": {
+                "pointer": "/status",
+                "type": "string"
+              },
+              "place_id": {
+                "pointer": "/place/id",
+                "type": "integer"
+              },
+              "latitude": {
+                "pointer": "/place/latitude",
+                "type": "number"
+              },
+              "longitude": {
+                "pointer": "/place/longitude",
+                "type": "number"
+              }
+            },
+            "maxItems": 20,
+            "truncationNote": "Output capped. Narrow the range or request another page; this is not an exhaustive history.",
+            "arrayPaths": [
+              ""
+            ]
+          }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "places",
+        "title": "Find saved places",
+        "description": "Read one page of 20 saved places, optionally filtered locally by name. q is not a server-side search: an empty or short filtered result does NOT mean all pages were searched. Omit q to check page size; paginate unfiltered until a short page. Coordinates identify a bounding box for visits_in_area or points_in_area. The API does not promise stable ordering during changes.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "q": {
+              "type": "string",
+              "description": "Optional case-insensitive name substring applied only to this page.",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "page": {
+              "type": "integer",
+              "description": "Page number, starting at 1. Request the next page to continue.",
+              "minimum": 1,
+              "maximum": 100000
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": true
+        }
+      },
+      "effects": "read",
+      "execution": {
+        "mode": "synchronous",
+        "requiresForeground": false,
+        "maxWaitMillis": 30000
+      },
+      "binding": {
+        "kind": "http",
+        "origin": "https://dawarich.example.org",
+        "method": "GET",
+        "path": "/api/v1/places",
+        "parameters": [
+          {
+            "name": "filter",
+            "in": "query",
+            "value": {
+              "value": "all",
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "value": {
+              "argument": "page",
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "value": {
+              "value": 20,
+              "type": "integer"
+            }
+          }
+        ],
+        "credential": "dawarich",
+        "credentialScheme": "bearer",
+        "maxResponseBytes": 262144,
+        "result": {
+          "maxBytes": 15000,
+          "items": {
+            "line": "id={id} name={name} latitude={latitude} longitude={longitude} visits_count={visits_count}",
+            "fields": {
+              "id": {
+                "pointer": "/id",
+                "type": "integer",
+                "required": true
+              },
+              "name": {
+                "pointer": "/name",
+                "type": "string"
+              },
+              "latitude": {
+                "pointer": "/latitude",
+                "type": "number"
+              },
+              "longitude": {
+                "pointer": "/longitude",
+                "type": "number"
+              },
+              "visits_count": {
+                "pointer": "/visits_count",
+                "type": "integer"
+              }
+            },
+            "maxItems": 20,
+            "truncationNote": "Output capped. Narrow the range or request another page; this is not an exhaustive history.",
+            "filter": {
+              "fields": [
+                "/name"
+              ],
+              "argument": "q"
+            },
+            "arrayPaths": [
+              ""
+            ]
+          }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "visits_in_area",
+        "title": "Latest visits in an area",
+        "description": "Read visits in a bounding box, newest first, up to 20 per page. Boundary points are excluded. Identify the target by name/place_id; nearby venues may also be returned. For last visit, use page 1 and inspect status (suggested versus confirmed). Time bounds filter visit START time. An empty result does not prove absence from raw location history.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "sw_lat": {
+              "type": "number",
+              "description": "Bounding box edge in degrees; choose a small box around the identified place.",
+              "minimum": -90,
+              "maximum": 90
+            },
+            "sw_lng": {
+              "type": "number",
+              "description": "Bounding box edge in degrees; choose a small box around the identified place.",
+              "minimum": -180,
+              "maximum": 180
+            },
+            "ne_lat": {
+              "type": "number",
+              "description": "Bounding box edge in degrees; choose a small box around the identified place.",
+              "minimum": -90,
+              "maximum": 90
+            },
+            "ne_lng": {
+              "type": "number",
+              "description": "Bounding box edge in degrees; choose a small box around the identified place.",
+              "minimum": -180,
+              "maximum": 180
+            },
+            "start_at": {
+              "type": "string",
+              "description": "ISO 8601 timestamp with explicit UTC offset; resolve the user's timezone before calling.",
+              "minLength": 20,
+              "maxLength": 35
+            },
+            "end_at": {
+              "type": "string",
+              "description": "ISO 8601 timestamp with explicit UTC offset; resolve the user's timezone before calling.",
+              "minLength": 20,
+              "maxLength": 35
+            },
+            "page": {
+              "type": "integer",
+              "description": "Page number, starting at 1. Request the next page to continue.",
+              "minimum": 1,
+              "maximum": 100000
+            }
+          },
+          "required": [
+            "sw_lat",
+            "sw_lng",
+            "ne_lat",
+            "ne_lng",
+            "start_at",
+            "end_at"
+          ],
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": true
+        }
+      },
+      "effects": "read",
+      "execution": {
+        "mode": "synchronous",
+        "requiresForeground": false,
+        "maxWaitMillis": 30000
+      },
+      "binding": {
+        "kind": "http",
+        "origin": "https://dawarich.example.org",
+        "method": "GET",
+        "path": "/api/v1/visits",
+        "parameters": [
+          {
+            "name": "selection",
+            "in": "query",
+            "value": {
+              "value": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "sw_lat",
+            "in": "query",
+            "value": {
+              "argument": "sw_lat",
+              "type": "number",
+              "required": true
+            }
+          },
+          {
+            "name": "sw_lng",
+            "in": "query",
+            "value": {
+              "argument": "sw_lng",
+              "type": "number",
+              "required": true
+            }
+          },
+          {
+            "name": "ne_lat",
+            "in": "query",
+            "value": {
+              "argument": "ne_lat",
+              "type": "number",
+              "required": true
+            }
+          },
+          {
+            "name": "ne_lng",
+            "in": "query",
+            "value": {
+              "argument": "ne_lng",
+              "type": "number",
+              "required": true
+            }
+          },
+          {
+            "name": "start_at",
+            "in": "query",
+            "value": {
+              "argument": "start_at",
+              "type": "string",
+              "required": true
+            }
+          },
+          {
+            "name": "end_at",
+            "in": "query",
+            "value": {
+              "argument": "end_at",
+              "type": "string",
+              "required": true
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "value": {
+              "argument": "page",
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "value": {
+              "value": 20,
+              "type": "integer"
+            }
+          }
+        ],
+        "credential": "dawarich",
+        "credentialScheme": "bearer",
+        "maxResponseBytes": 262144,
+        "result": {
+          "maxBytes": 15000,
+          "items": {
+            "line": "id={id} name={name} started_at={started_at} ended_at={ended_at} status={status} place_id={place_id} latitude={latitude} longitude={longitude}",
+            "fields": {
+              "id": {
+                "pointer": "/id",
+                "type": "integer",
+                "required": true
+              },
+              "name": {
+                "pointer": "/name",
+                "type": "string"
+              },
+              "started_at": {
+                "pointer": "/started_at",
+                "type": "string"
+              },
+              "ended_at": {
+                "pointer": "/ended_at",
+                "type": "string"
+              },
+              "status": {
+                "pointer": "/status",
+                "type": "string"
+              },
+              "place_id": {
+                "pointer": "/place/id",
+                "type": "integer"
+              },
+              "latitude": {
+                "pointer": "/place/latitude",
+                "type": "number"
+              },
+              "longitude": {
+                "pointer": "/place/longitude",
+                "type": "number"
+              }
+            },
+            "maxItems": 20,
+            "truncationNote": "Output capped. Narrow the range or request another page; this is not an exhaustive history.",
+            "arrayPaths": [
+              ""
+            ]
+          }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "points_in_area",
+        "title": "Recorded points in an area",
+        "description": "Read raw location samples in a bounding box and inclusive time range, up to 20 per page. Use desc for the latest recorded presence when detected visits are absent. This proves a sample near the place, not a confirmed visit or continuous presence. Excludes anomaly points; paginate until a short page.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "start_at": {
+              "type": "string",
+              "description": "ISO 8601 timestamp with explicit UTC offset; resolve the user's timezone before calling.",
+              "minLength": 20,
+              "maxLength": 35
+            },
+            "end_at": {
+              "type": "string",
+              "description": "ISO 8601 timestamp with explicit UTC offset; resolve the user's timezone before calling.",
+              "minLength": 20,
+              "maxLength": 35
+            },
+            "order": {
+              "type": "string",
+              "description": "asc for earliest points; desc for latest points.",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            },
+            "page": {
+              "type": "integer",
+              "description": "Page number, starting at 1. Request the next page to continue.",
+              "minimum": 1,
+              "maximum": 100000
+            },
+            "sw_lat": {
+              "type": "number",
+              "description": "Bounding box edge in degrees; choose a small box around the identified place.",
+              "minimum": -90,
+              "maximum": 90
+            },
+            "sw_lng": {
+              "type": "number",
+              "description": "Bounding box edge in degrees; choose a small box around the identified place.",
+              "minimum": -180,
+              "maximum": 180
+            },
+            "ne_lat": {
+              "type": "number",
+              "description": "Bounding box edge in degrees; choose a small box around the identified place.",
+              "minimum": -90,
+              "maximum": 90
+            },
+            "ne_lng": {
+              "type": "number",
+              "description": "Bounding box edge in degrees; choose a small box around the identified place.",
+              "minimum": -180,
+              "maximum": 180
+            }
+          },
+          "required": [
+            "start_at",
+            "end_at",
+            "sw_lat",
+            "sw_lng",
+            "ne_lat",
+            "ne_lng"
+          ],
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": true
+        }
+      },
+      "effects": "read",
+      "execution": {
+        "mode": "synchronous",
+        "requiresForeground": false,
+        "maxWaitMillis": 30000
+      },
+      "binding": {
+        "kind": "http",
+        "origin": "https://dawarich.example.org",
+        "method": "GET",
+        "path": "/api/v1/points",
+        "parameters": [
+          {
+            "name": "start_at",
+            "in": "query",
+            "value": {
+              "argument": "start_at",
+              "type": "string",
+              "required": true
+            }
+          },
+          {
+            "name": "end_at",
+            "in": "query",
+            "value": {
+              "argument": "end_at",
+              "type": "string",
+              "required": true
+            }
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "value": {
+              "argument": "order",
+              "type": "string",
+              "default": "desc"
+            }
+          },
+          {
+            "name": "slim",
+            "in": "query",
+            "value": {
+              "value": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "value": {
+              "argument": "page",
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "value": {
+              "value": 20,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "min_latitude",
+            "in": "query",
+            "value": {
+              "argument": "sw_lat",
+              "type": "number",
+              "required": true
+            }
+          },
+          {
+            "name": "min_longitude",
+            "in": "query",
+            "value": {
+              "argument": "sw_lng",
+              "type": "number",
+              "required": true
+            }
+          },
+          {
+            "name": "max_latitude",
+            "in": "query",
+            "value": {
+              "argument": "ne_lat",
+              "type": "number",
+              "required": true
+            }
+          },
+          {
+            "name": "max_longitude",
+            "in": "query",
+            "value": {
+              "argument": "ne_lng",
+              "type": "number",
+              "required": true
+            }
+          }
+        ],
+        "credential": "dawarich",
+        "credentialScheme": "bearer",
+        "maxResponseBytes": 262144,
+        "result": {
+          "maxBytes": 15000,
+          "items": {
+            "line": "id={id} timestamp={timestamp} latitude={latitude} longitude={longitude} country_name={country_name}",
+            "fields": {
+              "id": {
+                "pointer": "/id",
+                "type": "integer",
+                "required": true
+              },
+              "timestamp": {
+                "pointer": "/timestamp",
+                "type": "integer"
+              },
+              "latitude": {
+                "pointer": "/latitude",
+                "type": "string"
+              },
+              "longitude": {
+                "pointer": "/longitude",
+                "type": "string"
+              },
+              "country_name": {
+                "pointer": "/country_name",
+                "type": "string"
+              }
+            },
+            "maxItems": 20,
+            "truncationNote": "Output capped. Narrow the range or request another page; this is not an exhaustive history.",
+            "arrayPaths": [
+              ""
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

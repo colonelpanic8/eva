@@ -586,7 +586,7 @@ class EvaConfigurationManager(
                 }
                 if (app.spotify.account.value != null) add(SecretReference(SPOTIFY_REF, "spotify-account"))
                 packages.httpServices.values.forEach { service ->
-                    service.credential?.let { add(SecretReference(it, "http-basic", service.origin)) }
+                    service.credential?.let { add(SecretReference(it, "http-" + it.substringAfterLast("/"), service.origin)) }
                 }
                 packages.services.forEach { service -> add(SecretReference(service.credential, "http-basic", service.origin)) }
             }

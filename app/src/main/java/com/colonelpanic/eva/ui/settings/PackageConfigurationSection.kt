@@ -63,11 +63,13 @@ internal fun ExtensionConfiguration(
                 singleLine = true,
             )
             OutlinedTextField(url, { url = it }, label = { Text("HTTPS server URL (origin only)") }, singleLine = true)
-            OutlinedTextField(username, { username = it }, label = { Text("Username") }, singleLine = true)
+            if (entry.credentialScheme == "basic") {
+                OutlinedTextField(username, { username = it }, label = { Text("Username") }, singleLine = true)
+            }
             OutlinedTextField(
                 password,
                 { password = it },
-                label = { Text("Password") },
+                label = { Text(if (entry.credentialScheme == "bearer") "Bearer token" else "Password") },
                 visualTransformation = PasswordVisualTransformation(),
                 singleLine = true,
             )
@@ -80,7 +82,7 @@ internal fun ExtensionConfiguration(
                 }
             }) { Text("Save server and credentials") }
             if (entry.origin != null) {
-                Text("Credentials saved. Values are never read back into these fields.")
+                if (entry.credentialAvailable) Text("Credentials saved. Values are never read back into these fields.")
                 TextButton(onClick = { actions.onClearPackageServer(entry.id, entry.sourceOrigin) }) {
                     Text("Remove service binding")
                 }

@@ -143,6 +143,7 @@ sealed interface DeclarativeBinding {
         val credential: String?,
         val maxResponseBytes: Int,
         val result: ResultProjection,
+        val credentialScheme: String = "basic",
     ) : DeclarativeBinding
 }
 
