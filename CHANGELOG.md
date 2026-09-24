@@ -4,6 +4,8 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.37.1] - 2026-09-24
+
 ### Fixed
 
 - Mova no longer appears twice under Extensions when both Mova's own extension and the catalog's Mova package are installed. Mova's extension handles the actions both offer, so the model sees each once; the package's remaining link actions are listed inside Mova's row.
