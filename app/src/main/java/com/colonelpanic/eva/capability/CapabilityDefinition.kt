@@ -100,7 +100,7 @@ object BundledCapabilities {
             ),
             tool(
                 CapabilityRegistry.DIAL,
-                "Open the dialer",
+                "Call a phone number",
                 schema(
                     """
                 {"type":"object","properties":{"number":{"type":"string","minLength":3,"maxLength":26}},
