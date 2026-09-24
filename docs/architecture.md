@@ -39,6 +39,11 @@ Providers propose tool calls; EVA owns execution authority. UI and provider code
 should not bypass the dispatcher to execute model-selected actions. Core contracts
 avoid Android/vendor SDK types where practical so focused JVM tests can exercise them.
 
+The main activity follows the system orientation on phone-sized displays. On
+tablet-sized displays (smallest width at least 600 dp), it uses the orientation
+sensor even when system auto-rotate is off. Its launch surface and voice permission
+flow survive the activity recreation caused by rotation.
+
 ## Threads, turns, and connections
 
 A **thread** is persistent conversation history. A **turn task** owns an accepted

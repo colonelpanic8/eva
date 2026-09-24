@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.KeyguardManager
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -54,7 +55,11 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val voice: VoiceAccessModel by viewModels()
-    private var surface by mutableStateOf(Launch.MANUAL)
+    private var surface: Launch
+        get() = voice.surface
+        set(value) {
+            voice.surface = value
+        }
     private var deviceAssistant by mutableStateOf(false)
     private var mediaControlAccess by mutableStateOf(false)
     private var messagingPermissions by mutableStateOf(emptyList<PermissionStatus>())
@@ -445,6 +450,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        requestedOrientation =
+            if (resources.configuration.smallestScreenWidthDp >= 600) {
+                ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+            } else {
+                ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            }
         enableEdgeToEdge()
         eva.refreshModels()
         val controller = eva.controller

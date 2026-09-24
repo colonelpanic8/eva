@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
+import com.colonelpanic.eva.Launch
 
 sealed interface VoiceStart {
     data class Connect(
@@ -76,6 +77,8 @@ class VoiceAccess {
 /** Activity-retained, never saved: survives rotation, not process death. */
 class VoiceAccessModel : ViewModel() {
     val access = VoiceAccess()
+
+    var surface by mutableStateOf(Launch.MANUAL)
 
     /** Retained so a rotation does not reopen the microphone for a launch already answered. */
     var launchHandled = false
