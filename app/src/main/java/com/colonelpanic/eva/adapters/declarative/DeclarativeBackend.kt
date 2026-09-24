@@ -63,7 +63,7 @@ class DeclarativeBackend(
                     }
 
                     is DeclarativeBinding.Intent -> {
-                        host.launch(request as IntentRequest)
+                        host.launch((request as IntentRequest).copy(unlockFirst = capability.execution.requiresUnlock))
                     }
 
                     is DeclarativeBinding.Content -> {

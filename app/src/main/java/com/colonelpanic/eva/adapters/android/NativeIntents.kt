@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.net.Uri
 import android.provider.MediaStore
+import android.view.KeyEvent
 import androidx.core.net.toUri
 import com.colonelpanic.eva.capability.ExecutionBackend
 import com.colonelpanic.eva.capability.ExecutionOutcome
@@ -85,6 +86,23 @@ object NativeIntents {
                     .lowercase()
                     .contains(requested)
             }
+    }
+
+    /**
+     * Presses play for one app without a screen. Its media-button receiver starts its playback
+     * service, which is how an account service such as Spotify's sees this phone as a device.
+     */
+    fun wakePlayer(
+        context: Context,
+        packageName: String,
+    ) {
+        for (action in listOf(KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP)) {
+            context.sendBroadcast(
+                Intent(Intent.ACTION_MEDIA_BUTTON)
+                    .setPackage(packageName)
+                    .putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(action, KeyEvent.KEYCODE_MEDIA_PLAY)),
+            )
+        }
     }
 
     /** What the platform calls a search the app has to interpret, rather than a named artist or album. */

@@ -479,6 +479,22 @@ class EvaApplication :
                                     }
                                 }
                             },
+                            remoteFor = { app ->
+                                if (app.identity.packageName != SpotifyQueueProvider.PACKAGE) {
+                                    null
+                                } else {
+                                    com.colonelpanic.eva.adapters.android.SpotifyPlayer(
+                                        spotifyApi,
+                                        { spotify.account.value != null && spotify.clientId.value != null },
+                                        {
+                                            android.provider.Settings.Global
+                                                .getString(contentResolver, "device_name")
+                                                ?: android.os.Build.MODEL
+                                        },
+                                        { NativeIntents.wakePlayer(this, SpotifyQueueProvider.PACKAGE) },
+                                    )
+                                }
+                            },
                         )
                     },
                 ),

@@ -4,6 +4,11 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- With your Spotify account connected in EVA, asking Spotify to play something starts it through Spotify's own service, with no screen, including on a locked phone. Spotify Premium is required; without it EVA falls back to opening Spotify.
+- Navigation and map searches on a locked phone now ask for the unlock first and open Maps once you unlock, instead of leaving Maps waiting behind the lock screen. Declining opens nothing.
+
 ## [0.35.0] - 2026-09-23
 
 ### Changed

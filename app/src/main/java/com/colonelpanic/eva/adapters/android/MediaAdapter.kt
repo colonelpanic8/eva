@@ -13,6 +13,7 @@ import com.colonelpanic.eva.capability.extensions.CapabilityBinding
 import com.colonelpanic.eva.capability.extensions.Descriptor
 import com.colonelpanic.eva.capability.extensions.Effect
 import com.colonelpanic.eva.capability.extensions.InstalledExtension
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -76,6 +77,7 @@ class MediaAdapter(
     private val queueFor: (DiscoveredMediaApp) -> QueueProvider?,
     private val intentFor: (DiscoveredMediaApp) -> ExecutionBackend?,
     private val settle: suspend () -> Unit = { delay(MediaPlayBackend.SETTLE_MILLIS) },
+    private val remoteFor: (DiscoveredMediaApp) -> RemotePlayer? = { null },
 ) : CapabilityAdapter {
     /** Apps that turned EVA away as a media client; asking again every time only slows the fallback. */
     private val refusals: MutableSet<String> = Collections.synchronizedSet(mutableSetOf())
@@ -205,7 +207,7 @@ class MediaAdapter(
         when (capability.name) {
             CONTROL -> MediaAppControlBackend(app.identity.packageName, app.label, sessions, settle)
             NOW_PLAYING -> MediaAppNowPlayingBackend(app.identity.packageName, app.label, sessions)
-            PLAY -> MediaAppPlayBackend(app, sessions, launcher, intentFor(app), refusals, settle)
+            PLAY -> MediaAppPlayBackend(app, sessions, launcher, intentFor(app), refusals, settle, remoteFor(app))
             QUEUE -> MediaAppQueueBackend(app.label, checkNotNull(queueFor(app)))
             else -> error("No media backend for ${capability.name}")
         }
@@ -286,8 +288,9 @@ internal class MediaAppNowPlayingBackend(
 }
 
 /**
- * The same ladder as the unnamed play action, pinned to one app: its live session first, then
- * its browser service unless it has refused EVA before, then the intent if it registers for one.
+ * The same ladder as the unnamed play action, pinned to one app: its account service when one is
+ * connected, then its live session, then its browser service unless it has refused EVA before,
+ * then the intent if it registers for one.
  */
 internal class MediaAppPlayBackend(
     private val app: DiscoveredMediaApp,
@@ -296,6 +299,7 @@ internal class MediaAppPlayBackend(
     private val intent: ExecutionBackend?,
     private val refusals: MutableSet<String>,
     private val settle: suspend () -> Unit,
+    private val remote: RemotePlayer? = null,
 ) : ExecutionBackend {
     private val packageName get() = app.identity.packageName
     private val label get() = app.label
@@ -305,11 +309,29 @@ internal class MediaAppPlayBackend(
 
     override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome {
         val query = arguments.getValue("query")
+        val notes = mutableListOf<String>()
+        if (remote?.connected() == true) {
+            try {
+                val started =
+                    remote.play(query)
+                        ?: return ExecutionOutcome(
+                            InvocationStatus.NOT_EXECUTED,
+                            "$label found nothing for \"$query\". Nothing was played.",
+                        )
+                return ExecutionOutcome(
+                    InvocationStatus.HANDED_OFF,
+                    "$label accepted the request to play ${started.title} on ${started.device}. EVA did not watch it start.",
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                notes += error.message ?: "$label's account service did not take the request."
+            }
+        }
         val before = observed()
         if (before?.canPlayFromSearch == true && withContext(Dispatchers.IO) { sessions.playFromSearch(packageName, query) }) {
             return confirm(query, before)
         }
-        val notes = mutableListOf<String>()
         val browser = app.browser
         if (browser != null && packageName !in refusals) {
             when (launcher.playOn(browser, query)) {

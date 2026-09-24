@@ -8,6 +8,8 @@ data class ExecutionSemantics(
     val mode: ExecutionMode,
     val requiresForeground: Boolean,
     val maxWaitMillis: Long? = null,
+    /** An intent whose target cannot work behind the lock screen: EVA asks for unlock before opening it. */
+    val requiresUnlock: Boolean = false,
 ) {
     init {
         require(maxWaitMillis == null || maxWaitMillis > 0)

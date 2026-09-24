@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "id": "android.google-maps",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "title": "Google Maps",
   "description": "Search the map and start turn-by-turn navigation using Android's standard geo: and google.navigation: links. Neither action pins an app, so whichever map or navigation app the phone has handles it, and both report that the app opened rather than that the user arrived.",
   "guidance": "Navigation takes two steps: settle the destination, then start it. When the destination is an exact address or a place with one plausible match, call navigate directly. When it is a chain, a common name, or a category such as a gas station, pin it down first with one short question, or pass a specific query such as the business name with its street or neighborhood. Use an address the user or another tool already gave. Use search instead when the user wants to see options rather than leave now. Pass travelmode only when the user says how they are traveling. navigate hands off to the map app: say navigation was started there, not that the route or arrival is confirmed.",
@@ -13,7 +13,7 @@
       "tool": {
         "name": "search",
         "title": "Search maps",
-        "description": "Open a map search for a place, business, or address in the phone's map app (Google Maps when it is installed). Reports handoff to the map app, not arrival.",
+        "description": "Open a map search for a place, business, or address in the phone's map app (Google Maps when it is installed). Reports handoff to the map app, not arrival. A map app opened on a locked phone would wait behind the lock screen, so EVA asks for the unlock first and opens it once that succeeds.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -33,7 +33,8 @@
       "effects": "external_handoff",
       "execution": {
         "mode": "handoff",
-        "requiresForeground": true
+        "requiresForeground": true,
+        "requiresUnlock": true
       },
       "receipts": {
         "success": "Map search opened.",
@@ -58,7 +59,7 @@
       "tool": {
         "name": "navigate",
         "title": "Start navigation",
-        "description": "Start turn-by-turn navigation to a destination from the phone's current location in Google Maps (or another navigation app that handles google.navigation links). Choose travelmode for driving, bicycling, walking, or two-wheeler directions; driving is the default. Transit is not available for navigation. Reports handoff, not arrival.",
+        "description": "Start turn-by-turn navigation to a destination from the phone's current location in Google Maps (or another navigation app that handles google.navigation links). Choose travelmode for driving, bicycling, walking, or two-wheeler directions; driving is the default. Transit is not available for navigation. Reports handoff, not arrival. A map app opened on a locked phone would wait behind the lock screen, so EVA asks for the unlock first and opens it once that succeeds.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -88,7 +89,8 @@
       "effects": "external_handoff",
       "execution": {
         "mode": "handoff",
-        "requiresForeground": true
+        "requiresForeground": true,
+        "requiresUnlock": true
       },
       "receipts": {
         "success": "Navigation requested.",
