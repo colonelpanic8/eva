@@ -4,6 +4,8 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-09-25
+
 ### Added
 
 - Placing a phone call or starting music now ends the voice call, so the call or song gets the phone's audio. EVA says its closing line first, and if the action fails the call stays open so you hear why.
