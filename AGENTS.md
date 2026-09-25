@@ -41,6 +41,11 @@ experiment READMEs and third-party notices stay beside their code.
   in the portable configuration, so it can change without a release. Code keeps
   semantics, validation, and safety bounds; a shipped copy of catalog data is
   byte-identical to the catalog and is only the offline baseline.
+- Work on a locked phone wherever Android allows. Prefer routes that need no
+  Activity (platform APIs from EVA's process, installed extension services) over
+  intent handoffs, and name the locked-device limits honestly. See
+  [background execution and locked devices](docs/architecture.md#background-execution-and-locked-devices)
+  for the order of routes, why locked actions fail, and what helps.
 - Keep stock Android useful without Shizuku. Do not add permissions, package queries,
   services, or SDKs ahead of the executable feature that needs them.
 

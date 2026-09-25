@@ -18,6 +18,13 @@ require little interaction. Opening another app for manual completion is a
 fallback. Remember grants and preferences, and ask a short question when the
 intended action or target is genuinely ambiguous.
 
+** Work without unlocking
+
+EVA is often summoned when the phone is locked: in a pocket, on a car mount, or
+across the room. Routine actions should complete from the lock screen wherever
+Android allows it. Where Android doesn't, EVA should say that an unlock is
+needed rather than leave the action stranded behind the keyguard.
+
 ** Use the apps you already have
 
 Prefer existing Android interfaces and app capabilities. Useful integration

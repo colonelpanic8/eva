@@ -350,6 +350,37 @@ and remaining verification limits.
 
 ### Background execution and locked devices
 
+EVA should do as much as possible while the phone is locked and in a pocket, a
+car mount, or across the room: a hands-free assistant that needs an unlock for
+routine actions is failing at its main job. When adding or changing a capability,
+pick the route that works locked, in this order:
+
+1. A platform API called from EVA's process with no Activity: `TelecomManager.placeCall`,
+   media sessions, SMS, `ContentResolver` reads, HTTP, Spotify's Web API.
+2. The target app's installed extension service
+   ([durable writes](extension-protocol.md#9-durable-writes-receipt-states-and-locked-devices)).
+   If an app we control lacks one, adding it there beats working around it here.
+3. An intent handoff, as a fallback or when the user wants the app open. Mark
+   targets that are useless behind the keyguard `requiresUnlock`, and report the
+   result as a handoff.
+
+Why a locked action can still fail, and what helps:
+
+| Cause | Remedy |
+| --- | --- |
+| Activity launches are deferred behind the keyguard or refused from the background | Use a route above that needs no Activity; otherwise `requiresUnlock` or a handoff message that says to unlock |
+| A permission dialog can't appear over the keyguard or from a background voice session | Request permissions when EVA's app opens, not on first use |
+| Before first unlock after reboot, credential-encrypted storage is unavailable and neither EVA nor the providers run | None today; direct-boot support would mean keeping credentials in device-protected storage, which we don't do |
+| EVA refuses locked-device notification reads and replies on purpose | Unlock. Keep this refusal unless the security model changes |
+| A provider's keystore key requires an unlocked device | The provider reports `needs_unlock`; avoid unlock-bound keys for background writes |
+| Foreground-service start or promotion is rejected | Reported, not crashed (below); start voice from a visible assistant session |
+| Shizuku UI observation and taps can't reach UI behind the keyguard | Prefer AppFunctions or a service route |
+| Target app or OEM restrictions | Test on devices, and record the result in [device verification](operations.md#device-verification) |
+
+Verify locked behavior with the keyguard showing and a PIN set, and say which
+states were covered (emulator or physical device, warm or force-stopped provider).
+JVM tests don't show that anything works on a locked phone.
+
 Granted native operations, HTTP requests, content reads, and installed-service
 calls do not require the main Activity. Intent handoffs prefer a resumed Activity,
 then a visible assistant session, then an application-context launch when EVA is
