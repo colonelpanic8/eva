@@ -119,6 +119,16 @@ object BundledCapabilities {
                 ),
             ) { args -> if (args.getValue("app").isBlank()) "Name the app to open." else null },
             tool(
+                CapabilityRegistry.LOCATION_CURRENT,
+                "Current location",
+                schema(
+                    """
+                {"type":"object","properties":{},"required":[],"additionalProperties":false}
+            """,
+                ),
+                readOnly = true,
+            ),
+            tool(
                 CapabilityRegistry.CONTACTS_SEARCH,
                 "Search contacts",
                 schema(

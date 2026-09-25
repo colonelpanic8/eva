@@ -272,6 +272,9 @@ class EvaApplication :
                                 ),
                                 "number",
                             ),
+                        CapabilityRegistry.LOCATION_CURRENT to
+                            com.colonelpanic.eva.adapters.android
+                                .CurrentLocationBackend(this@EvaApplication),
                         CapabilityRegistry.OPEN_APP to
                             intent("App opened.", "No installed app matches that name.") {
                                 NativeIntents.launchApp(this@EvaApplication, it)

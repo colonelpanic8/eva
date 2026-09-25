@@ -125,7 +125,9 @@ Some catalog packages are useful enough on stock Android that EVA installs and
 approves them without a browse step. The current defaults are
 [Google Maps](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/google-maps.json)
 (map search through `geo:`, turn-by-turn navigation through `google.navigation:`
-with a travel mode), [Web](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/web.json)
+with a travel mode), [OpenStreetMap places](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/openstreetmap-places.json)
+(nearby places from the public Nominatim search, kept separate so it can be
+turned off without losing Maps), [Web](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/web.json)
 (web search, open an http/https page),
 [Email](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/email.json)
 (a `mailto:` draft), [Calendar](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/calendar.json)

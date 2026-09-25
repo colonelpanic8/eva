@@ -874,6 +874,8 @@ object EvaConfigurationCodec {
             "android.permission.READ_SMS",
             "android.permission.SEND_SMS",
             "android.permission.CALL_PHONE",
+            "android.permission.ACCESS_COARSE_LOCATION",
+            "android.permission.ACCESS_FINE_LOCATION",
             "android.permission.POST_NOTIFICATIONS",
             "android.role.ASSISTANT",
             "android.notification-listener",

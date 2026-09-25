@@ -189,6 +189,17 @@ for concrete identity, schema, waiting, and authorization rules.
   call takes audio focus, which pauses EVA's microphone and playback until it ends.
   An API 36 emulator placed a call from EVA's process with the keyguard showing;
   physical-device verification is pending.
+- `eva.android.location.current` reads the phone's location from `LocationManager`
+  (fused provider where present), falling back to the newest cached fix, and adds
+  the nearest address from the platform `Geocoder`. It needs `ACCESS_COARSE_LOCATION`
+  or `ACCESS_FINE_LOCATION`, requested with EVA's other permissions; with only
+  approximate access the result says so. A voice session adds the `location`
+  foreground-service type when the grant exists, so the tool answers while another
+  app has the screen; outside a session in the background Android withholds the fix.
+  The OpenStreetMap places package's `nearby` search takes a bounding box around them. Declarative
+  HTTP requests identify themselves as EVA, since public services such as Nominatim
+  refuse anonymous library clients. JVM-tested under Robolectric; device verification
+  is pending.
 - SMS draft handoff and native direct-message sending are distinct capabilities.
   Notification replies share the same authorized messaging boundary. Do not remove
   native behavior merely because a declarative compose example exists. See
@@ -379,7 +390,7 @@ repository sources, service endpoints, wait budgets, and saved user preferences.
 Configuration import must validate before replacing working settings and preserve
 identity-dependent authorization. Invalid or incompatible input must be visible.
 
-Shipped default packages (Google Maps, Web, Email, Calendar, Settings, Clock, and Paseo
+Shipped default packages (Google Maps, OpenStreetMap places, Web, Email, Calendar, Settings, Clock, and Paseo
 once its provider is present) are adopted once per
 configuration: after the desired configuration is attached at startup, EVA
 installs and approves each default not yet listed in `packages.appliedDefaults`

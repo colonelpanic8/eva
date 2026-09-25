@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
   "id": "android.google-maps",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "title": "Google Maps",
   "description": "Search the map and start turn-by-turn navigation using Android's standard geo: and google.navigation: links. Neither action pins an app, so whichever map or navigation app the phone has handles it, and both report that the app opened rather than that the user arrived.",
-  "guidance": "Navigation takes two steps: settle the destination, then start it. When the destination is an exact address or a place with one plausible match, call navigate directly. When it is a chain, a common name, or a category such as a gas station, pin it down first with one short question, or pass a specific query such as the business name with its street or neighborhood. Use an address the user or another tool already gave. Use search instead when the user wants to see options rather than leave now. Pass travelmode only when the user says how they are traveling. navigate hands off to the map app: say navigation was started there, not that the route or arrival is confirmed.",
+  "guidance": "Navigation takes two steps: settle the destination, then start it. When the destination is an exact address or a place with one plausible match, call navigate directly. When it is a chain, a common name, or a category such as a gas station, pin it down first with one short question, or pass a specific query such as the business name with its street or neighborhood. When the user wants something near them and a nearby place search is offered, read the current location and use it to see real candidates before asking or choosing. Use an address the user or another tool already gave. Use search instead when the user wants to see options rather than leave now. Pass travelmode only when the user says how they are traveling. navigate hands off to the map app: say navigation was started there, not that the route or arrival is confirmed.",
   "androidPackages": [
     "com.google.android.apps.maps"
   ],

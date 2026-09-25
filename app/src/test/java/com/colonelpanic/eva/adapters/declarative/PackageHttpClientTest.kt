@@ -21,6 +21,7 @@ class PackageHttpClientTest {
                     .addInterceptor { chain ->
                         calls++
                         assertEquals("Basic dXNlcjpwYXNz", chain.request().header("Authorization"))
+                        assertEquals(PackageHttpClient.USER_AGENT, chain.request().header("User-Agent"))
                         Response
                             .Builder()
                             .request(chain.request())
