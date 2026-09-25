@@ -4,6 +4,13 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-09-24
+
+### Added
+
+- Ask "where am I?" and EVA answers with the phone's location and nearest address. It asks for the Location permission when the app opens.
+- A new OpenStreetMap places extension, on by default, finds places near you with addresses and hours, and hands the one you pick to Google Maps. It sends your area to OpenStreetMap; turn it off to stop.
+
 ## [0.37.1] - 2026-09-24
 
 ### Fixed

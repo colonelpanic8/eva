@@ -1,0 +1,2 @@
+* Added: Ask "where am I?" and EVA answers with the phone's location and nearest address. It asks for the Location permission when the app opens.
+* Added: A new OpenStreetMap places extension, on by default, finds places near you with addresses and hours, and hands the one you pick to Google Maps. It sends your area to OpenStreetMap; turn it off to stop.
