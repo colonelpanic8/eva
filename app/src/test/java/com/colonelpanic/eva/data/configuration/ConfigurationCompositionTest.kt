@@ -276,6 +276,7 @@ class ConfigurationCompositionTest {
         val inherited = EvaConfigurationCodec.resolve(reader(files))
         val cleared =
             inherited.configuration.copy(
+                voice = inherited.configuration.voice.copy(endCallAfter = emptyMap()),
                 prompt = inherited.configuration.prompt.copy(components = emptyList()),
                 messaging = inherited.configuration.messaging.copy(replies = emptyList()),
                 packages =
@@ -293,6 +294,7 @@ class ConfigurationCompositionTest {
             )
         val override = EvaConfigurationCodec.overrides(cleared, inherited.included, inherited.root.include)
 
+        assertEquals(emptyMap<String, String>(), override.voice?.endCallAfter)
         assertEquals(emptyList<PromptComponent>(), override.prompt?.components)
         assertEquals(emptyList<String>(), override.messaging?.replies)
         assertEquals(emptyList<PortablePackage>(), override.packages?.installed)
@@ -376,7 +378,16 @@ class ConfigurationCompositionTest {
     private fun fullConfiguration() =
         EvaConfiguration(
             models = EvaConfiguration.Models("custom-text", "custom-realtime", "high", "medium"),
-            voice = EvaConfiguration.Voice(2, quietHangUpSeconds = 12),
+            voice =
+                EvaConfiguration.Voice(
+                    2,
+                    quietHangUpSeconds = 12,
+                    endCallAfter =
+                        mapOf(
+                            "eva.android.phone.dial" to "never",
+                            "extension.package.$INSTALLED_INSTANCE.open" to "after_reply",
+                        ),
+                ),
             appearance = EvaConfiguration.Appearance(dynamicColor = true),
             capabilities = EvaConfiguration.Capabilities(screenControl = false),
             messaging = EvaConfiguration.Messaging(enabled = true, replies = listOf(MESSAGING_IDENTITY)),

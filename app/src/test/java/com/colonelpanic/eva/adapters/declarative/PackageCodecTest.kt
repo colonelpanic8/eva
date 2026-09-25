@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.adapters.declarative
 
+import com.colonelpanic.eva.capability.CallEnding
 import com.colonelpanic.eva.capability.ExecutionMode
 import com.colonelpanic.eva.capability.ExecutionSemantics
 import com.colonelpanic.eva.capability.InteractionMode
@@ -68,6 +69,30 @@ class PackageCodecTest {
             packageJson(contentBinding, mode = "synchronous", foreground = false)
                 .replace("\"maxWaitMillis\":30000", "\"maxWaitMillis\":30000,\"requiresUnlock\":true")
         assertThrows(Exception::class.java) { PackageCodec.decode(content) }
+    }
+
+    @Test
+    fun `a capability may declare that its success ends a voice call`() {
+        val plain = PackageCodec.decode(packageJson(intentBinding))
+        assertEquals(
+            CallEnding.NEVER,
+            plain.capabilities
+                .single()
+                .execution.endsVoiceCall,
+        )
+        val ending =
+            packageJson(
+                intentBinding,
+            ).replace("\"maxWaitMillis\":30000", "\"maxWaitMillis\":30000,\"endsVoiceCall\":\"immediately\"")
+        val decoded = PackageCodec.decode(ending)
+        assertEquals(
+            CallEnding.IMMEDIATELY,
+            decoded.capabilities
+                .single()
+                .execution.endsVoiceCall,
+        )
+        assertTrue(decoded.digest != plain.digest)
+        assertThrows(Exception::class.java) { PackageCodec.decode(ending.replace("\"immediately\"", "true")) }
     }
 
     @Test

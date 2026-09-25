@@ -26,6 +26,8 @@ data class CapabilityDefinition(
      * failing does not leave the phone's state in doubt.
      */
     val bookkeeping: Boolean = false,
+    /** The declared default; the user's configuration may override it per action. */
+    val endsVoiceCall: CallEnding = CallEnding.NEVER,
 )
 
 /** A tool EVA defines itself; what it says to the model comes from [Wording]. */
@@ -35,6 +37,7 @@ internal fun tool(
     inputSchema: JsonObject,
     readOnly: Boolean = false,
     bookkeeping: Boolean = false,
+    endsVoiceCall: CallEnding = CallEnding.NEVER,
     validateOperation: (Map<String, String>) -> String? = { null },
 ): CapabilityDefinition {
     val text = Wording.bundled.tools[id]
@@ -46,6 +49,7 @@ internal fun tool(
         readOnly,
         validateOperation = validateOperation,
         bookkeeping = bookkeeping,
+        endsVoiceCall = endsVoiceCall,
     )
 }
 
@@ -107,6 +111,8 @@ object BundledCapabilities {
                 "required":["number"],"additionalProperties":false}
             """,
                 ),
+                // The phone call takes the audio, so there is nothing left for the voice call to do.
+                endsVoiceCall = CallEnding.IMMEDIATELY,
             ) { args -> if (phone.matches(args.getValue("number"))) null else "Enter one valid phone number." },
             tool(
                 CapabilityRegistry.OPEN_APP,
@@ -208,6 +214,7 @@ object BundledCapabilities {
             """,
                 ),
                 readOnly = true,
+                endsVoiceCall = CallEnding.IMMEDIATELY,
             ) { args ->
                 if (args.getValue("query").isBlank() || args.getValue("query").any(Char::isISOControl)) {
                     "Say what to play on one line."

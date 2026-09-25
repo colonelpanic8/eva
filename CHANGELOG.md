@@ -4,6 +4,12 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Placing a phone call or starting music now ends the voice call, so the call or song gets the phone's audio. EVA says its closing line first, and if the action fails the call stays open so you hear why.
+- Under Settings → Device assistant, and beside each extension action, you can choose whether a voice call stays open, ends after EVA confirms, or ends right away once that action succeeds. The choice is saved in your configuration (`voice.endCallAfter`).
+- Extensions can declare `endsVoiceCall` for actions that hand the phone to another app. Google Maps navigation and Google Translate's listening screens now use it.
+
 ## [0.38.0] - 2026-09-24
 
 ### Added

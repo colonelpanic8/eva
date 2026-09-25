@@ -30,6 +30,7 @@ import com.colonelpanic.eva.adapters.android.MediaControlAccess
 import com.colonelpanic.eva.assist.AssistantRole
 import com.colonelpanic.eva.assist.EvaVoiceInteractionService
 import com.colonelpanic.eva.audio.MicrophonePermission
+import com.colonelpanic.eva.capability.CallEnding
 import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.capability.CatalogAdmission
 import com.colonelpanic.eva.conversation.ProviderStatus
@@ -45,6 +46,7 @@ import com.colonelpanic.eva.ui.VoiceStart
 import com.colonelpanic.eva.ui.about.AboutInfo
 import com.colonelpanic.eva.ui.prompt.PromptActions
 import com.colonelpanic.eva.ui.prompt.PromptUiState
+import com.colonelpanic.eva.ui.settings.NativeCallEnding
 import com.colonelpanic.eva.ui.settings.PermissionStatus
 import com.colonelpanic.eva.ui.settings.SettingsActions
 import com.colonelpanic.eva.ui.settings.SettingsUiState
@@ -242,6 +244,7 @@ class MainActivity : ComponentActivity() {
         val reasoningEffort by settings.reasoningEffortFlow.collectAsStateWithLifecycle()
         val voiceReasoningEffort by settings.voiceReasoningEffortFlow.collectAsStateWithLifecycle()
         val voiceLookupRetries by settings.voiceLookupRetriesFlow.collectAsStateWithLifecycle()
+        val callEndings by settings.callEndings.collectAsStateWithLifecycle()
         val prompt by eva.prompts.state.collectAsStateWithLifecycle()
         val models by eva.availableModels.collectAsStateWithLifecycle()
         val account by eva.chatGpt.account.collectAsStateWithLifecycle()
@@ -293,6 +296,11 @@ class MainActivity : ComponentActivity() {
             reasoningEffort = reasoningEffort,
             voiceReasoningEffort = voiceReasoningEffort,
             voiceLookupRetries = voiceLookupRetries,
+            callEndings = callEndings,
+            nativeCallEndings =
+                eva.registry.catalog
+                    .filter { it.source == null && (it.endsVoiceCall != CallEnding.NEVER || it.id in callEndings) }
+                    .map { NativeCallEnding(it.id, it.title, it.endsVoiceCall) },
             callMode = (prompt as? PromptState.Loaded)?.config?.callMode,
             isDeviceAssistant = deviceAssistant,
             canSeeMediaSessions = mediaControlAccess,
@@ -401,6 +409,7 @@ class MainActivity : ComponentActivity() {
                 onSelectReasoningEffort = { effort -> save { settings.saveReasoningEffort(effort) } },
                 onSelectVoiceReasoningEffort = { effort -> save { settings.saveVoiceReasoningEffort(effort) } },
                 onVoiceLookupRetriesChange = settings::saveVoiceLookupRetries,
+                onCallEnding = { id, ending -> save { settings.saveCallEnding(id, ending) } },
                 onEndAfterOneRequestChange = { oneRequest ->
                     eva.editPrompt {
                         update { it.selectCallMode(if (oneRequest) VoiceCallMode.ONE_REQUEST else VoiceCallMode.OPEN_CONVERSATION) }

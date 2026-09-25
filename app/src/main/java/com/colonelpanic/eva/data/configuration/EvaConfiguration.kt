@@ -7,6 +7,7 @@ import com.charleskorn.kaml.YamlConfiguration
 import com.charleskorn.kaml.YamlException
 import com.colonelpanic.eva.adapters.declarative.PackageCodec
 import com.colonelpanic.eva.adapters.declarative.httpBindings
+import com.colonelpanic.eva.capability.CallEnding
 import com.colonelpanic.eva.conversation.prompt.PromptComponent
 import com.colonelpanic.eva.conversation.prompt.PromptConfig
 import com.colonelpanic.eva.conversation.prompt.PromptDefaults
@@ -57,6 +58,8 @@ data class EvaConfigurationDocument(
     val quietHangUpSeconds: Int? = null,
     /** Read only: [EvaConfigurationCodec.decode] moves it into the prompt's call slot. */
     val oneShotExternal: Boolean? = null,
+    /** Action id to `never`, `after_reply`, or `immediately`, overriding what the action declares. */
+    val endCallAfter: Map<String, String>? = null,
 )
 
 @Serializable data class AppearancePatch(
@@ -186,6 +189,8 @@ data class EvaConfiguration(
         val lookupRetries: Int,
         /** Silence after a one-request call's action is reported before EVA hangs up; 0 never does. */
         val quietHangUpSeconds: Int = DEFAULT_QUIET_HANG_UP_SECONDS,
+        /** Per-action overrides of whether a successful action ends the voice call. */
+        val endCallAfter: Map<String, String> = emptyMap(),
     ) {
         companion object {
             const val DEFAULT_QUIET_HANG_UP_SECONDS = 5
@@ -407,6 +412,7 @@ object EvaConfigurationCodec {
             VoicePatch(
                 current.voice.lookupRetries.takeIf { it != base?.voice?.lookupRetries },
                 current.voice.quietHangUpSeconds.takeIf { it != base?.voice?.quietHangUpSeconds },
+                endCallAfter = current.voice.endCallAfter.takeIf { it != base?.voice?.endCallAfter.orEmpty() },
             ).nonEmpty(),
         appearance = AppearancePatch(current.appearance.dynamicColor.takeIf { it != base?.appearance?.dynamicColor }).nonEmpty(),
         capabilities = CapabilitiesPatch(current.capabilities.screenControl.takeIf { it != base?.capabilities?.screenControl }).nonEmpty(),
@@ -460,6 +466,7 @@ object EvaConfigurationCodec {
                     requireNotNull(voice?.lookupRetries) { "voice.lookupRetries is missing." },
                     // Documents written before the quiet-line backstop was configurable still load.
                     voice.quietHangUpSeconds ?: EvaConfiguration.Voice.DEFAULT_QUIET_HANG_UP_SECONDS,
+                    voice.endCallAfter.orEmpty(),
                 ),
             appearance = EvaConfiguration.Appearance(requireNotNull(appearance?.dynamicColor) { "appearance.dynamicColor is missing." }),
             capabilities =
@@ -506,6 +513,10 @@ object EvaConfigurationCodec {
         require(models.voiceReasoningEffort in OpenAiModels.VOICE_REASONING_EFFORTS) { "Unknown voice reasoning effort." }
         require(voice.lookupRetries in 0..10) { "voice.lookupRetries must be between 0 and 10." }
         require(voice.quietHangUpSeconds in 0..60) { "voice.quietHangUpSeconds must be between 0 and 60." }
+        CallEnding.checkOverrides(voice.endCallAfter.keys)
+        require(voice.endCallAfter.values.all { CallEnding.of(it) != null }) {
+            "voice.endCallAfter values must be never, after_reply, or immediately."
+        }
         require(messaging.replies.size <= 100) { "At most 100 messaging reply identities may be configured." }
         require(messaging.replies.distinct().size == messaging.replies.size) { "Duplicate messaging reply identity." }
         messaging.replies.forEach { require(MESSAGING_IDENTITY.matches(it)) { "Invalid messaging reply identity." } }
@@ -673,6 +684,7 @@ object EvaConfigurationCodec {
         require(device.authorizations.all { it in DEVICE_AUTHORIZATIONS }) { "Unknown device authorization." }
         require(device.authorizations.distinct().size == device.authorizations.size) { "Duplicate device authorization." }
         return copy(
+            voice = voice.copy(endCallAfter = voice.endCallAfter.toSortedMap()),
             packages =
                 packages.copy(
                     installed = packages.installed.sortedBy { it.instance },
@@ -696,6 +708,7 @@ object EvaConfigurationCodec {
 
     private fun canonical(document: EvaConfigurationDocument) =
         document.copy(
+            voice = document.voice?.copy(endCallAfter = document.voice.endCallAfter?.toSortedMap()),
             packages =
                 document.packages?.copy(
                     legacyBundledInstances = document.packages.legacyBundledInstances?.toSortedMap(),
@@ -735,6 +748,7 @@ object EvaConfigurationCodec {
             VoicePatch(
                 override.voice?.lookupRetries ?: base.voice?.lookupRetries,
                 override.voice?.quietHangUpSeconds ?: base.voice?.quietHangUpSeconds,
+                endCallAfter = override.voice?.endCallAfter ?: base.voice?.endCallAfter,
             ).nonEmpty(),
         appearance = AppearancePatch(override.appearance?.dynamicColor ?: base.appearance?.dynamicColor).nonEmpty(),
         capabilities = CapabilitiesPatch(override.capabilities?.screenControl ?: base.capabilities?.screenControl).nonEmpty(),
@@ -793,7 +807,7 @@ object EvaConfigurationCodec {
     private fun ModelsPatch.nonEmpty() =
         takeIf { text != null || realtime != null || reasoningEffort != null || voiceReasoningEffort != null }
 
-    private fun VoicePatch.nonEmpty() = takeIf { lookupRetries != null || quietHangUpSeconds != null }
+    private fun VoicePatch.nonEmpty() = takeIf { lookupRetries != null || quietHangUpSeconds != null || endCallAfter != null }
 
     private fun AppearancePatch.nonEmpty() = takeIf { dynamicColor != null }
 

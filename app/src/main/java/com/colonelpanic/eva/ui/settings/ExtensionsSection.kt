@@ -18,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.colonelpanic.eva.capability.CallEnding
 import com.colonelpanic.eva.capability.extensions.Effect
 import com.colonelpanic.eva.capability.extensions.ExtensionSettingsEntry
 
@@ -103,7 +104,8 @@ private fun ExtensionEntry(
                 ) { Text("Enable all actions") }
             }
             capabilities.forEach { capability ->
-                val unavailable = state.extensionOverflow["${installed.capabilityPrefix}.${capability.name}"]
+                val capabilityId = "${installed.capabilityPrefix}.${capability.name}"
+                val unavailable = state.extensionOverflow[capabilityId]
                 if (unavailable != null) SettingsRow(capability.title, unavailable)
                 if (capability.effect == Effect.READ) {
                     SettingsRow(capability.title, "Provider claims read-only. ${capability.description}")
@@ -121,6 +123,13 @@ private fun ExtensionEntry(
                             enabled = entry.enabled && (installed.problem == null || capability.name in entry.mutations),
                             onCheckedChange = { actions.onExtensionMutation(entry.key, capability.name, it) },
                         )
+                    }
+                }
+                if (capability.effect != Effect.READ || capability.endsVoiceCall != CallEnding.NEVER || capabilityId in state.callEndings) {
+                    Row(Modifier.padding(start = 8.dp)) {
+                        CallEndingPicker(capability.endsVoiceCall, state.callEndings[capabilityId]) {
+                            actions.onCallEnding(capabilityId, it)
+                        }
                     }
                 }
             }

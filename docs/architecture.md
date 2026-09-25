@@ -489,7 +489,7 @@ The schema separates these groups:
 
 | Group | Settings |
 | --- | --- |
-| `models`, `voice` | Text/realtime models, per-leg reasoning effort, lookup retry count, quiet hang-up delay |
+| `models`, `voice` | Text/realtime models, per-leg reasoning effort, lookup retry count, quiet hang-up delay, per-action call endings |
 | `appearance`, `capabilities` | Dynamic color and optional capability switches |
 | `messaging` | Notification-read opt-in and exact app-installation reply identities |
 | `prompt` | Source URL and complete ordered component list |
@@ -647,6 +647,21 @@ in the same response as an action, or while an action result is unreported, is
 answered as not executed and happens after the next response instead, so the
 result is spoken on the call rather than re-homed. Each attachment's closing
 notice says who or what ended it.
+
+Some actions hand the phone to something that needs its audio or screen, so a
+successful one ends the call in either call mode. A capability declares
+`endsVoiceCall` (`never`, `after_reply`, or `immediately`); placing a phone call
+and playing media declare `immediately`. `voice.endCallAfter` maps capability IDs
+to the same values and overrides the declaration; the settings pickers beside each
+extension action and under Device assistant edit that map. The effective choice is
+fixed when a voice call opens, and EVA appends a note from `eva-wording.yaml` to that
+tool's description so the model says its closing line first. With `immediately`,
+EVA withholds the result from the model (the receipt is still journaled), completes
+the turn, and hangs up once current speech has played. If other actions were
+proposed in the same response, their results must still be spoken, so all results
+are delivered and EVA hangs up after the reply instead. `after_reply` delivers the result
+and hangs up when the response answering it ends. User speech before then cancels
+the pending hang-up. A refused, failed, or uncertain action never ends the call.
 
 The Instructions screen supports a user-picked YAML file or EVA's own external-files
 copy, and a raw HTTPS source the prompt follows. The default source is

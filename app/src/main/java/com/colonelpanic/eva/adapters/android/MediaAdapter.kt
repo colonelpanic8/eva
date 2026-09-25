@@ -1,6 +1,7 @@
 package com.colonelpanic.eva.adapters.android
 
 import com.colonelpanic.eva.capability.BoundedJson
+import com.colonelpanic.eva.capability.CallEnding
 import com.colonelpanic.eva.capability.CapabilityDefinition
 import com.colonelpanic.eva.capability.CapabilitySource
 import com.colonelpanic.eva.capability.ExecutionBackend
@@ -118,6 +119,7 @@ class MediaAdapter(
                     inputSchema = capability.inputSchema,
                     readOnly = capability.effect == Effect.READ,
                     source = CapabilitySource(app.identity.instanceId, app.label),
+                    endsVoiceCall = capability.endsVoiceCall,
                 ),
                 backend(app, capability),
                 "${app.identity.key}:${descriptor.digest}",
@@ -183,6 +185,8 @@ class MediaAdapter(
                 Effect.WRITE,
                 MAX_WAIT_MILLIS,
                 MAX_RESULT_BYTES,
+                // Music cannot have the audio while the call holds it.
+                endsVoiceCall = CallEnding.IMMEDIATELY,
             ),
             queueFor(app)?.let {
                 Capability(

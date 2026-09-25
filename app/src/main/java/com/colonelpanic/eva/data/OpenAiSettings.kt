@@ -2,11 +2,17 @@ package com.colonelpanic.eva.data
 
 import android.annotation.SuppressLint
 import android.content.Context
+import com.colonelpanic.eva.capability.CallEnding
 import com.colonelpanic.eva.data.configuration.EvaConfiguration
 import com.colonelpanic.eva.providers.BrokerEndpoint
 import com.colonelpanic.eva.providers.openai.OpenAiModels
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /** The phone's own provider credentials. Nothing here touches a workstation. */
 class OpenAiSettings(
@@ -33,6 +39,7 @@ class OpenAiSettings(
     private val mutableVoiceLookupRetries = MutableStateFlow(prefs.getInt(VOICE_LOOKUP_RETRIES, DEFAULT_VOICE_LOOKUP_RETRIES))
     private var storedQuietHangUpSeconds = prefs.getInt(QUIET_HANG_UP_SECONDS, EvaConfiguration.Voice.DEFAULT_QUIET_HANG_UP_SECONDS)
     private val mutableHasHostLink = MutableStateFlow(secrets.read(HOST_LINK) != null)
+    private val mutableCallEndings = MutableStateFlow(readCallEndings())
 
     /** Model used for typed turns. Changing it applies to the next connection. */
     val textModelFlow = mutableTextModel.asStateFlow()
@@ -40,6 +47,9 @@ class OpenAiSettings(
     val reasoningEffortFlow = mutableReasoningEffort.asStateFlow()
     val voiceReasoningEffortFlow = mutableVoiceReasoningEffort.asStateFlow()
     val voiceLookupRetriesFlow = mutableVoiceLookupRetries.asStateFlow()
+
+    /** The user's per-action choices of whether a voice call ends after it succeeds; absent means the action's own default. */
+    val callEndings = mutableCallEndings.asStateFlow()
 
     /** Whether a paired host link is stored. The link itself is never surfaced again. */
     val hasHostLink = mutableHasHostLink.asStateFlow()
@@ -85,6 +95,32 @@ class OpenAiSettings(
         storedQuietHangUpSeconds = value
         onChanged()
     }
+
+    /** Null goes back to the action's declared default. */
+    fun saveCallEnding(
+        capabilityId: String,
+        ending: CallEnding?,
+    ) = saveCallEndings(if (ending == null) callEndings.value - capabilityId else callEndings.value + (capabilityId to ending))
+
+    fun saveCallEndings(value: Map<String, CallEnding>) {
+        CallEnding.checkOverrides(value.keys)
+        val encoded = JsonObject(value.toSortedMap().mapValues { JsonPrimitive(it.value.wire) }).toString()
+        commit { if (value.isEmpty()) remove(CALL_ENDINGS) else putString(CALL_ENDINGS, encoded) }
+        mutableCallEndings.value = value
+        onChanged()
+    }
+
+    private fun readCallEndings(): Map<String, CallEnding> =
+        runCatching {
+            prefs.getString(CALL_ENDINGS, null)?.let { text ->
+                Json
+                    .parseToJsonElement(text)
+                    .jsonObject
+                    .mapNotNull { (id, value) ->
+                        CallEnding.of(value.jsonPrimitive.content)?.let { id to it }
+                    }.toMap()
+            }
+        }.getOrNull().orEmpty()
 
     /** The retired external-launch call mode, removed as it is read; null once migrated. */
     fun takeLegacyOneShotExternal(): Boolean? {
@@ -168,6 +204,7 @@ class OpenAiSettings(
         const val VOICE_LOOKUP_RETRIES = "voice.lookupRetries"
         const val QUIET_HANG_UP_SECONDS = "voice.quietHangUpSeconds"
         const val ONE_SHOT_EXTERNAL = "voice.oneShotExternal"
+        const val CALL_ENDINGS = "voice.endCallAfter"
         const val DEFAULT_VOICE_LOOKUP_RETRIES = 5
         const val MIN_VOICE_LOOKUP_RETRIES = 0
         const val MAX_VOICE_LOOKUP_RETRIES = 10

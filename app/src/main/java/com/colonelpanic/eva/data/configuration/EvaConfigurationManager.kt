@@ -11,6 +11,7 @@ import com.colonelpanic.eva.EvaPermissions
 import com.colonelpanic.eva.adapters.android.ContentProviderAccess
 import com.colonelpanic.eva.adapters.android.MediaControlAccess
 import com.colonelpanic.eva.assist.AssistantRole
+import com.colonelpanic.eva.capability.CallEnding
 import com.colonelpanic.eva.capability.extensions.ExtensionGrant
 import com.colonelpanic.eva.conversation.prompt.PromptConfig
 import com.colonelpanic.eva.data.MessagingPreferences
@@ -624,7 +625,13 @@ class EvaConfigurationManager(
                     app.settings.reasoningEffort,
                     app.settings.voiceReasoningEffort,
                 ),
-            voice = EvaConfiguration.Voice(app.settings.voiceLookupRetries, app.settings.quietHangUpSeconds),
+            voice =
+                EvaConfiguration.Voice(
+                    app.settings.voiceLookupRetries,
+                    app.settings.quietHangUpSeconds,
+                    app.settings.callEndings.value
+                        .mapValues { it.value.wire },
+                ),
             appearance = EvaConfiguration.Appearance(app.appearance.dynamicColor),
             capabilities = EvaConfiguration.Capabilities(app.capabilities.screenControlEnabled),
             messaging = EvaConfiguration.Messaging(messaging.enabled, replies),
@@ -759,6 +766,7 @@ class EvaConfigurationManager(
         app.settings.saveVoiceReasoningEffort(configuration.models.voiceReasoningEffort)
         app.settings.saveVoiceLookupRetries(configuration.voice.lookupRetries)
         app.settings.saveQuietHangUpSeconds(configuration.voice.quietHangUpSeconds)
+        app.settings.saveCallEndings(configuration.voice.callEndings())
         app.appearance.saveDynamicColor(configuration.appearance.dynamicColor)
         app.capabilities.saveScreenControl(configuration.capabilities.screenControl)
         app.spotify.saveClientId(configuration.spotify.clientId.orEmpty())
@@ -919,6 +927,7 @@ class EvaConfigurationManager(
         attempt("voice reasoning effort") { app.settings.saveVoiceReasoningEffort(before.models.voiceReasoningEffort) }
         attempt("voice lookup retries") { app.settings.saveVoiceLookupRetries(before.voice.lookupRetries) }
         attempt("quiet hang-up") { app.settings.saveQuietHangUpSeconds(before.voice.quietHangUpSeconds) }
+        attempt("voice call endings") { app.settings.saveCallEndings(before.voice.callEndings()) }
         attempt("appearance") { app.appearance.saveDynamicColor(before.appearance.dynamicColor) }
         attempt("capabilities") { app.capabilities.saveScreenControl(before.capabilities.screenControl) }
         attempt("Spotify client") { app.spotify.saveClientId(before.spotify.clientId.orEmpty()) }
@@ -958,3 +967,5 @@ class EvaConfigurationManager(
         const val SPOTIFY_REF = "provider/spotify-account"
     }
 }
+
+private fun EvaConfiguration.Voice.callEndings() = endCallAfter.mapValues { CallEnding.of(it.value) ?: CallEnding.NEVER }

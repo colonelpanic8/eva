@@ -1,6 +1,7 @@
 package com.colonelpanic.eva.capability.extensions
 
 import com.colonelpanic.eva.capability.BoundedJson
+import com.colonelpanic.eva.capability.CallEnding
 import com.colonelpanic.eva.capability.ExecutionOutcome
 import com.colonelpanic.eva.capability.InvocationStatus
 import kotlinx.serialization.json.Json
@@ -93,18 +94,28 @@ class ExtensionProtocolTest {
     }
 
     @Test
-    fun `execution accepts only mode foreground and wait while contradictions are rejected`() {
+    fun `execution accepts only mode foreground wait and call ending while contradictions are rejected`() {
         val minimal = capability.replace(",\"maxWaitMillis\":30000", "")
-        assertEquals(
-            ExtensionProtocol.DEFAULT_WAIT_MILLIS,
+        val parsed =
             ExtensionProtocol
                 .describe(describe(minimal))
                 .descriptor!!
                 .capabilities
                 .single()
-                .maxWaitMillis,
+        assertEquals(ExtensionProtocol.DEFAULT_WAIT_MILLIS, parsed.maxWaitMillis)
+        assertEquals(CallEnding.NEVER, parsed.endsVoiceCall)
+        val ending = capability.replace("\"maxWaitMillis\":30000", "\"maxWaitMillis\":30000,\"endsVoiceCall\":\"after_reply\"")
+        assertEquals(
+            CallEnding.AFTER_REPLY,
+            ExtensionProtocol
+                .describe(describe(ending))
+                .descriptor!!
+                .capabilities
+                .single()
+                .endsVoiceCall,
         )
         listOf(
+            describe(ending.replace("after_reply", "later")),
             describe(capability.replace("\"maxWaitMillis\":30000", "\"maxWaitMillis\":30000,\"cancellation\":\"none\"")),
             describe(capability.replace("\"effects\"", "\"title\":\"Legacy\",\"effects\"")),
             describe().replace("\"protocolVersion\":1", "\"protocolVersion\":2"),

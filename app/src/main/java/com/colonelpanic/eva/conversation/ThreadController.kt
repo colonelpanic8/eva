@@ -2,6 +2,7 @@ package com.colonelpanic.eva.conversation
 
 import com.colonelpanic.eva.audio.RealtimeMediaSession
 import com.colonelpanic.eva.audio.RealtimeMediaState
+import com.colonelpanic.eva.capability.CallEnding
 import com.colonelpanic.eva.capability.CapabilityDispatcher
 import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.capability.InteractionMode
@@ -84,6 +85,8 @@ class ThreadController(
     /** The followed wording of EVA's own tools and notes. */
     private val wording: () -> Wording = { Wording.bundled },
     private val voiceKeywords: suspend () -> List<String> = { emptyList() },
+    /** The user's per-action overrides of whether a successful action ends the voice call. */
+    private val callEndings: () -> Map<String, CallEnding> = { emptyMap() },
     /** Capabilities the user has switched off. They are left out of the catalog entirely. */
     private val hiddenCapabilities: () -> Set<String> = { emptySet() },
     /** Read at every connection, so an edit to the prompt file applies to the next session. */
@@ -135,6 +138,15 @@ class ThreadController(
     private val actionResponses = mutableSetOf<String>()
     private var assistantSpeaking = false
 
+    /**
+     * An action that ends the call after the model's reply succeeded. A response ends only once no
+     * action is left to report, so the next end is that reply's, whatever else it proposed first.
+     */
+    private var replyHangUp = false
+
+    /** A turn served by an action that ends the call, whose held result the model will not answer. */
+    private var servedByAction: TurnTask? = null
+
     /** A one-request call whose action is reported hangs up if the user stays quiet after it. */
     private var quietArmed = false
     private var quietHangUp: Job? = null
@@ -147,6 +159,8 @@ class ThreadController(
         val catalog: ProviderToolCatalog,
         val voice: Boolean,
         val callMode: VoiceCallMode? = null,
+        /** Actions whose success ends this call, as decided when it opened; never on a text leg. */
+        val endings: Map<String, CallEnding> = emptyMap(),
     )
 
     private val connectionTools = mutableMapOf<ConversationSession, ConnectionTools>()
@@ -191,6 +205,27 @@ class ThreadController(
                 }
         if (notes.isEmpty()) return ""
         return "\n\n" + wording().message(Wording.EXTENSION_GUIDANCE) + "\n" + JsonArray(notes)
+    }
+
+    private fun callEndings(snapshot: CapabilityRegistry.Snapshot): Map<String, CallEnding> {
+        val overrides = callEndings()
+        return snapshot.catalog
+            .associate { it.id to (overrides[it.id] ?: it.endsVoiceCall) }
+            .filterValues { it != CallEnding.NEVER }
+    }
+
+    /** EVA's own note, outside any extension's quoted metadata, so the model words its reply for the hang-up. */
+    private fun endingNote(
+        tool: ProviderToolDefinition,
+        ending: CallEnding?,
+    ): ProviderToolDefinition {
+        val key =
+            when (ending) {
+                CallEnding.IMMEDIATELY -> Wording.ENDS_CALL_IMMEDIATELY
+                CallEnding.AFTER_REPLY -> Wording.ENDS_CALL_AFTER_REPLY
+                CallEnding.NEVER, null -> return tool
+            }
+        return tool.copy(description = tool.description + "\n\n" + wording().message(key))
     }
 
     /** The prompt and the catalog are decided together: components rewrite and hide tools. */
@@ -329,12 +364,14 @@ class ThreadController(
                     // connection because a switched-off capability and the enabled components both decide
                     // which tools are offered and what they say.
                     val snapshot = registry.snapshot
+                    val endings = if (voice) callEndings(snapshot) else emptyMap()
                     val connectionCatalog =
                         catalogOf(
-                            assembled.apply(
-                                (if (voice) listOf(wording().describe(END_CONVERSATION), DEFER_TO_TEXT) else emptyList()) +
-                                    phoneTools(snapshot, voice),
-                            ),
+                            assembled
+                                .apply(
+                                    (if (voice) listOf(wording().describe(END_CONVERSATION), DEFER_TO_TEXT) else emptyList()) +
+                                        phoneTools(snapshot, voice),
+                                ).map { tool -> endingNote(tool, endings[tool.capabilityId]) },
                             snapshot.revision,
                         )
                     val provider =
@@ -373,7 +410,7 @@ class ThreadController(
                             ),
                         )
                     openedSession = opened
-                    connectionTools[opened] = ConnectionTools(snapshot, connectionCatalog, voice, assembled.callMode)
+                    connectionTools[opened] = ConnectionTools(snapshot, connectionCatalog, voice, assembled.callMode, endings)
                     currentCoroutineContext().ensureActive()
                     session = opened
                     opened.events.takeWhile { it != ProviderEvent.Closed }.collect { event ->
@@ -524,6 +561,8 @@ class ThreadController(
 
             is ProviderEvent.UserSpeaking -> {
                 disarmQuietHangUp()
+                // The user took the floor, so the call is no longer finished.
+                replyHangUp = false
             }
 
             is ProviderEvent.AssistantSpeaking -> {
@@ -550,6 +589,8 @@ class ThreadController(
                 task?.generationEnded(event.status)
                 if (voice && hangUpDeferred) {
                     endCall(ENDED_BY_MODEL)
+                } else if (voice && replyHangUp) {
+                    endCall(ENDED_AFTER_ACTION)
                 } else if (voice && task?.actionServiced == true && connectionTools[opened]?.callMode == VoiceCallMode.ONE_REQUEST) {
                     // The model decides when a request is fully served, but one whose action is done and
                     // reported does not stay open just because it forgot to hang up: silence ends it.
@@ -637,6 +678,8 @@ class ThreadController(
         ending = false
         endRequest = null
         hangUpDeferred = false
+        replyHangUp = false
+        servedByAction = null
         disarmQuietHangUp()
         actionResponses.clear()
         assistantSpeaking = false
@@ -657,10 +700,31 @@ class ThreadController(
 
     private fun hangUp(reason: String) {
         val task = attachedThreadId?.let { activeTask(it) }
-        // The model chose to end the call, so an answer it has already spoken is complete.
-        if (task != null && !task.delegated && task.dispatches.none { it.isActive } && !task.awaitingFollowUp) task.complete()
+        // The model chose to end the call, so an answer it has already spoken is complete. So is a
+        // turn whose action ended the call: its result is held back from the model on purpose.
+        if (task != null && !task.delegated && task.dispatches.none { it.isActive } &&
+            (!task.awaitingFollowUp || task === servedByAction)
+        ) {
+            task.complete()
+        }
         end(reason)
         mutableHangUps.tryEmit(Unit)
+    }
+
+    /** An action that ends the call once the model has replied to its result succeeded on [leg]. */
+    private fun hangUpAfterReply(leg: ConversationSession) {
+        if (session === leg) replyHangUp = true
+    }
+
+    /** An action that ends the call right away succeeded on [leg], serving [task]. */
+    private fun hangUpAfterAction(
+        leg: ConversationSession,
+        task: TurnTask,
+    ): Boolean {
+        if (session !== leg || ending) return false
+        servedByAction = task
+        endCall(ENDED_AFTER_ACTION)
+        return true
     }
 
     /** Cancels the shown thread's turn task. Distinct from ending the call, which leaves it running. */
@@ -780,6 +844,9 @@ class ThreadController(
         private var readOnlyCalls = 0
         private val dispatchLock = Mutex()
         private val admittedCalls = mutableSetOf<String>()
+
+        /** Every call proposed for this turn, so an ending action can tell whether it was proposed alone. */
+        private val proposedCalls = mutableListOf<CallIdentity>()
         private var mutationUncertain = false
         private var rehomed = false
         var delegated = false
@@ -802,6 +869,7 @@ class ThreadController(
                     }
                 }
             val argumentError = if (arguments.values.any { it == null }) "This action binding requires scalar or list arguments." else null
+            proposedCalls += event.call
             val proposal =
                 ToolProposal(
                     id,
@@ -874,7 +942,25 @@ class ThreadController(
                             ) {
                                 mutationUncertain = true
                             }
-                            deliver(event.call, result.status.name, result.message, result.provenance, result.data)
+                            val succeeded = result.status == InvocationStatus.COMPLETED || result.status == InvocationStatus.HANDED_OFF
+                            val ending = context.endings[event.capabilityId].takeIf { succeeded }
+                            val delivered: suspend () -> Unit = {
+                                deliver(event.call, result.status.name, result.message, result.provenance, result.data)
+                            }
+                            when (ending) {
+                                CallEnding.IMMEDIATELY -> {
+                                    endWith(event.call, delivered)
+                                }
+
+                                CallEnding.AFTER_REPLY -> {
+                                    delivered()
+                                    leg?.let(::hangUpAfterReply)
+                                }
+
+                                else -> {
+                                    delivered()
+                                }
+                            }
                         } catch (error: ProposalRejectedException) {
                             deliver(event.call, "NOT_EXECUTED", error.message.orEmpty())
                         } catch (error: InvocationPersistenceException) {
@@ -885,6 +971,26 @@ class ThreadController(
                     }
                 }
             dispatches += job
+        }
+
+        /**
+         * Holds the result of an action that ends the call right away, so the model is not prompted
+         * to speak over what the action started. Proposed alongside other actions, whose results the
+         * model does have to report, it is delivered after all and the call ends after that reply.
+         */
+        private fun endWith(
+            call: CallIdentity,
+            deliverResult: suspend () -> Unit,
+        ) {
+            val voiceLeg = leg
+            taskScope.launch {
+                dispatches.toList().joinAll()
+                val alone = proposedCalls.none { it != call && it.generationId == call.generationId }
+                if (!alone || voiceLeg == null || !active || leg !== voiceLeg || !hangUpAfterAction(voiceLeg, this@TurnTask)) {
+                    deliverResult()
+                    if (!alone && voiceLeg != null) hangUpAfterReply(voiceLeg)
+                }
+            }
         }
 
         private suspend fun deliver(
@@ -1117,6 +1223,7 @@ class ThreadController(
         private const val ENDED_BY_USER = "ended by you"
         private const val ENDED_BY_MODEL = "ended by EVA with its end-call tool"
         private const val ENDED_AFTER_REQUEST = "ended by EVA: the request was done and the line went quiet"
+        private const val ENDED_AFTER_ACTION = "ended by EVA after an action that hands the phone to something else"
         private const val ENDED_FOR_NEW_SESSION = "ended for a new session"
 
         /**

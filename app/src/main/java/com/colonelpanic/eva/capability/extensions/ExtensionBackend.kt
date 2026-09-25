@@ -29,6 +29,7 @@ class ExtensionBackend(
             inputSchema = capability.inputSchema,
             readOnly = capability.effect == Effect.READ,
             source = CapabilitySource(identity.component, descriptor.title),
+            endsVoiceCall = capability.endsVoiceCall,
         )
 
     override suspend fun unavailableReason(): String? = null

@@ -320,6 +320,14 @@ private fun AssistantSection(
             checked = state.callMode == VoiceCallMode.ONE_REQUEST,
             onCheckedChange = actions.onEndAfterOneRequestChange,
         )
+        state.nativeCallEndings.forEach { action ->
+            SettingsRow(
+                title = action.title,
+                supporting = "Whether a voice call ends once this succeeds. It stays open if the action fails.",
+            ) {
+                CallEndingPicker(action.declared, state.callEndings[action.id]) { actions.onCallEnding(action.id, it) }
+            }
+        }
     }
 }
 

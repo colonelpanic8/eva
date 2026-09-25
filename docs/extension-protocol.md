@@ -296,7 +296,11 @@ Each capability contains `tool`, `execution`, `binding`, and optionally
 arrays in a closed object.
 
 Execution has required `mode` (`synchronous` or `handoff`) and `requiresForeground`
-(boolean); `maxWaitMillis` is an optional positive integer or null. Intent bindings require handoff plus foreground; HTTP and content
+(boolean); `maxWaitMillis` is an optional positive integer or null. Optional `endsVoiceCall`
+(`never`, the default; `after_reply`; or `immediately`) says whether a successful call of this
+action ends a voice call, as for an action that hands the phone's audio or screen to another app;
+the user's configuration can override it per action, and it grants nothing. Installed-provider
+descriptors accept the same field. Intent bindings require handoff plus foreground; HTTP and content
 bindings require synchronous mode. An intent capability may set optional `requiresUnlock: true` when its target
 can do nothing while waiting behind the lock screen, as Maps navigation can't. On a locked phone showing
 EVA's own screen, EVA then asks Android to unlock (`requestDismissKeyguard`) and opens the target only

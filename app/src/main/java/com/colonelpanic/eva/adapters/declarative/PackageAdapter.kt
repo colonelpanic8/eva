@@ -58,6 +58,7 @@ class PackageAdapter(
                                 ExtensionProtocol.RESULT_BYTES,
                                 capability.outputSchema,
                                 capability.annotations,
+                                capability.execution.endsVoiceCall,
                             )
                         },
                         definition.digest,
@@ -98,6 +99,7 @@ class PackageAdapter(
                     capability.effect == PackageEffect.READ,
                     CapabilitySource(item.identity.instanceId, item.definition.title),
                     item.definition.guidance,
+                    endsVoiceCall = capability.execution.endsVoiceCall,
                 ),
                 BudgetedBackend(
                     item.identity.instanceId,

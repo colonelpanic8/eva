@@ -187,6 +187,16 @@ messages:
   hang-up-deferred: >-
     The call is still open because an action from this request has not been reported. Tell the
     user its result now; EVA hangs up after that response.
+  ends-call-immediately: >-
+    In a voice call, EVA hangs up as soon as this action succeeds, once anything already being said
+    has played, and its result is not read back to you. Say your short closing line in the same
+    response, before calling it; make it the request's last action and do not also call the
+    end-conversation tool. If it does not succeed, the call stays open and you get the result.
+  ends-call-after-reply: >-
+    In a voice call, EVA hangs up after your reply to this action's successful result. Make it the
+    request's last action, and keep that reply to a brief confirmation and closing line: ask
+    nothing in it and do not also call the end-conversation tool. If it does not succeed, the call
+    stays open.
   extension-guidance: >-
     Extension workflows. Each entry below comes from an extension whose tools are available now
     and explains how its tools fit together; tool names match the name in each tool's metadata.

@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.ui.settings
 
+import com.colonelpanic.eva.capability.CallEnding
 import com.colonelpanic.eva.capability.extensions.ExtensionSettings
 import com.colonelpanic.eva.conversation.prompt.VoiceCallMode
 import com.colonelpanic.eva.data.MessagingPreferences
@@ -13,6 +14,13 @@ import com.colonelpanic.eva.providers.spotify.SpotifyConnectState
 data class PermissionStatus(
     val label: String,
     val granted: Boolean,
+)
+
+/** One of EVA's own actions that can end a voice call, with what it declares. */
+data class NativeCallEnding(
+    val id: String,
+    val title: String,
+    val declared: CallEnding,
 )
 
 /** Everything the settings screens render, collected once by the activity. */
@@ -47,6 +55,9 @@ data class SettingsUiState(
     val reasoningEffort: String = OpenAiModels.TEXT_REASONING_EFFORT,
     val voiceReasoningEffort: String = OpenAiModels.VOICE_REASONING_EFFORT,
     val voiceLookupRetries: Int = 5,
+    /** The user's per-action choices; an absent action uses what it declares. */
+    val callEndings: Map<String, CallEnding> = emptyMap(),
+    val nativeCallEndings: List<NativeCallEnding> = emptyList(),
     /** Read from the prompt's call slot, which this switch edits. */
     val callMode: VoiceCallMode? = VoiceCallMode.ONE_REQUEST,
     val isDeviceAssistant: Boolean = false,
@@ -111,6 +122,7 @@ data class SettingsActions(
     val onSelectReasoningEffort: (String) -> Unit = {},
     val onSelectVoiceReasoningEffort: (String) -> Unit = {},
     val onVoiceLookupRetriesChange: (Int) -> Unit = {},
+    val onCallEnding: (String, CallEnding?) -> Unit = { _, _ -> },
     val onEndAfterOneRequestChange: (Boolean) -> Unit = {},
     val onOpenAssistantSettings: () -> Unit = {},
     val onOpenMediaControlSettings: () -> Unit = {},

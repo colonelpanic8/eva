@@ -4,6 +4,7 @@ import com.colonelpanic.eva.audio.MediaControls
 import com.colonelpanic.eva.audio.MediaTimeline
 import com.colonelpanic.eva.audio.RealtimeMediaSession
 import com.colonelpanic.eva.audio.RealtimeMediaState
+import com.colonelpanic.eva.capability.CallEnding
 import com.colonelpanic.eva.capability.CapabilityDefinition
 import com.colonelpanic.eva.capability.CapabilityDispatcher
 import com.colonelpanic.eva.capability.CapabilityRegistry
@@ -114,6 +115,7 @@ class ThreadControllerTest {
         hiddenCapabilities: () -> Set<String> = { emptySet() },
         prompt: suspend () -> PromptConfig = { PromptDefaults.config },
         awaitCapabilities: suspend () -> Unit = {},
+        callEndings: () -> Map<String, CallEnding> = { emptyMap() },
     ) = ThreadController(
         registry = registry,
         dispatcher = CapabilityDispatcher(registry, repository),
@@ -127,6 +129,7 @@ class ThreadControllerTest {
         voiceKeywords = voiceKeywords,
         awaitCapabilities = awaitCapabilities,
         hiddenCapabilities = hiddenCapabilities,
+        callEndings = callEndings,
         prompt = prompt,
         onBackgroundAnswer = { answers += it },
     )
@@ -1008,6 +1011,130 @@ class ThreadControllerTest {
             assertTrue(media.closed)
             assertEquals("Call ended by EVA with its end-call tool", sessionNotices(controller).last())
             assertEquals(TurnStatus.ANSWERED, store.turns(controller.state.value.threadId!!).single().status)
+        }
+
+    @Test
+    fun `an action that ends the call hangs up once it succeeds without reading its result back`() =
+        runTest {
+            val dial = action.copy(id = "test.dial", title = "Call", endsVoiceCall = CallEnding.IMMEDIATELY)
+            var outcome = ExecutionOutcome(InvocationStatus.HANDED_OFF, "Calling")
+            var calls = 0
+            val withDial =
+                CapabilityRegistry(
+                    mapOf(dial.id to backend { outcome }, lookup.id to backend { ExecutionOutcome(InvocationStatus.COMPLETED, "Found") }),
+                    listOf(dial, lookup),
+                )
+
+            suspend fun TestScope.callOnce(alongsideLookup: Boolean = false): Triple<FakeProvider, VoiceMedia, ThreadController> {
+                val provider = FakeProvider()
+                val media = VoiceMedia()
+                val controller = controller(provider, registry = withDial, media = { media })
+                advanceUntilIdle()
+                // Not the model's judgment: the call ends even when it stays open until the user hangs up.
+                controller.connectVoice("test", callMode = VoiceCallMode.OPEN_CONVERSATION)
+                advanceUntilIdle()
+                provider.input = ConversationInput("voice:turn-1", "")
+                provider.channel.send(ProviderEvent.ResponseStarted("voice:turn-1", "voice:turn-1"))
+                provider.channel.send(ProviderEvent.AssistantSpeaking(true))
+                provider.channel.send(ProviderEvent.AssistantText("voice:turn-1", "Calling Ana.", false))
+                if (alongsideLookup) provider.call("look:${++calls}", lookup.id, "query" to "Ana")
+                provider.call("dial:${++calls}", dial.id, "place" to "Ana")
+                runCurrent()
+                return Triple(provider, media, controller)
+            }
+
+            val (provider, media, controller) = callOnce()
+            assertTrue(
+                provider.request.catalog.tools
+                    .single { it.capabilityId == dial.id }
+                    .description
+                    .endsWith(Wording.bundled.message(Wording.ENDS_CALL_IMMEDIATELY)),
+            )
+            assertFalse(media.closed)
+            provider.channel.send(ProviderEvent.AssistantSpeaking(false))
+            advanceTimeBy(1_000)
+            assertTrue(media.closed)
+            // Answering would prompt the model to talk over the call it just started.
+            assertEquals(emptyList<CorrelatedToolResult>(), provider.results)
+            advanceUntilIdle()
+            assertEquals("Call ended by EVA after an action that hands the phone to something else", sessionNotices(controller).last())
+            assertEquals(TurnStatus.ANSWERED, store.turns(controller.state.value.threadId!!).single().status)
+
+            // Proposed with a lookup, the lookup still has to be reported, so the call ends after that reply.
+            val (withLookup, lookupMedia) = callOnce(alongsideLookup = true)
+            withLookup.channel.send(ProviderEvent.AssistantSpeaking(false))
+            advanceUntilIdle()
+            assertFalse(lookupMedia.closed)
+            assertEquals(listOf("COMPLETED", "HANDED_OFF"), withLookup.results.map { it.status })
+            withLookup.channel.send(ProviderEvent.ResponseEnded("voice:turn-1", "completed"))
+            advanceUntilIdle()
+            assertTrue(lookupMedia.closed)
+
+            // A refused action leaves the call open so the model can say why.
+            outcome = ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "No phone service")
+            val (refused, refusedMedia) = callOnce()
+            refused.channel.send(ProviderEvent.AssistantSpeaking(false))
+            advanceUntilIdle()
+            assertFalse(refusedMedia.closed)
+            assertEquals(listOf("NOT_EXECUTED"), refused.results.map { it.status })
+        }
+
+    @Test
+    fun `the user can make an action end the call after its reply or never`() =
+        runTest {
+            val dial = action.copy(id = "test.dial", title = "Call", endsVoiceCall = CallEnding.IMMEDIATELY)
+            val withDial =
+                CapabilityRegistry(
+                    mapOf(
+                        dial.id to backend { ExecutionOutcome(InvocationStatus.HANDED_OFF, "Calling") },
+                        action.id to backend { ExecutionOutcome(InvocationStatus.HANDED_OFF, "Opened") },
+                    ),
+                    listOf(dial, action),
+                )
+            var calls = 0
+
+            suspend fun TestScope.actOnce(
+                capability: String,
+                overrides: Map<String, CallEnding>,
+                userKeepsGoing: Boolean = false,
+            ): Pair<FakeProvider, VoiceMedia> {
+                val provider = FakeProvider()
+                val media = VoiceMedia()
+                val controller = controller(provider, registry = withDial, media = { media }, callEndings = { overrides })
+                advanceUntilIdle()
+                controller.connectVoice("test", callMode = VoiceCallMode.OPEN_CONVERSATION)
+                advanceUntilIdle()
+                provider.input = ConversationInput("voice:turn-1", "")
+                provider.channel.send(ProviderEvent.ResponseStarted("voice:turn-1", "voice:turn-1"))
+                // Call ids are journal keys, and the journal outlives each controller here.
+                provider.call("act:${++calls}", capability, "place" to "Park")
+                advanceUntilIdle()
+                assertFalse(media.closed)
+                assertEquals(listOf("HANDED_OFF"), provider.results.map { it.status })
+                if (userKeepsGoing) provider.channel.send(ProviderEvent.UserSpeaking)
+                provider.channel.send(ProviderEvent.AssistantText("voice:turn-1", "Opened the park. Bye!", false))
+                provider.channel.send(ProviderEvent.ResponseEnded("voice:turn-1", "completed"))
+                advanceUntilIdle()
+                return provider to media
+            }
+
+            val (afterReply, closedMedia) = actOnce(action.id, mapOf(action.id to CallEnding.AFTER_REPLY))
+            assertTrue(closedMedia.closed)
+            assertTrue(
+                afterReply.request.catalog.tools
+                    .single { it.capabilityId == action.id }
+                    .description
+                    .endsWith(Wording.bundled.message(Wording.ENDS_CALL_AFTER_REPLY)),
+            )
+            assertFalse(actOnce(action.id, mapOf(action.id to CallEnding.AFTER_REPLY), userKeepsGoing = true).second.closed)
+            val (kept, keptMedia) = actOnce(dial.id, mapOf(dial.id to CallEnding.NEVER))
+            assertFalse(keptMedia.closed)
+            assertFalse(
+                kept.request.catalog.tools
+                    .single { it.capabilityId == dial.id }
+                    .description
+                    .contains(Wording.bundled.message(Wording.ENDS_CALL_IMMEDIATELY)),
+            )
         }
 
     private fun sessionNotices(controller: ThreadController) =
