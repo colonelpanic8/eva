@@ -20,6 +20,8 @@ object EvaPermissions {
             add(Manifest.permission.READ_SMS)
             add(Manifest.permission.SEND_SMS)
             add(Manifest.permission.CALL_PHONE)
+            add(Manifest.permission.ACCESS_COARSE_LOCATION)
+            add(Manifest.permission.ACCESS_FINE_LOCATION)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
         }
 

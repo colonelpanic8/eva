@@ -1,0 +1,160 @@
+{
+  "formatVersion": 1,
+  "id": "openstreetmap.places",
+  "version": "0.1.0",
+  "title": "OpenStreetMap places",
+  "description": "Find shops, restaurants, services, and other places near a location from OpenStreetMap, through the public Nominatim search service. Each search sends the search words and a box around the location, usually the user's, to Nominatim and returns the places to EVA. Data © OpenStreetMap contributors.",
+  "guidance": "For something near the user, such as the closest gas station or a chain store, read the current location first, then call nearby with a box around it, and choose or ask among the real candidates instead of guessing. Results are OpenStreetMap places, not Google listings: to open one in a map app, pass the place's name with its house number, street, and city taken from the result's address, such as \"CVS Pharmacy, 499 Haight Street, San Francisco\", so the map app finds its own listing for that business; use the result's coordinates only when it has no street address. Results are not sorted by distance: compare their coordinates with the user's before calling one the closest, and give distances only approximately.",
+  "capabilities": [
+    {
+      "tool": {
+        "name": "nearby",
+        "title": "Find places nearby",
+        "description": "Find up to 10 places inside a box around a location, such as the user's current location, from OpenStreetMap. Returns each place's name, kind, full address, coordinates, and, where mapped, opening hours and phone number. Matches place names and category words: use a category word such as cafe, restaurant, pharmacy, gas station, supermarket, or hardware store, or a name such as Safeway; a descriptive phrase such as coffee may match nothing. When nothing matches, widen the box or try another category word before saying there is none. Coverage of small businesses, hours, and phone numbers varies by area. Opens nothing.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Category word or place name to find, such as pharmacy or Trader Joe's."
+            },
+            "viewbox": {
+              "type": "string",
+              "minLength": 7,
+              "maxLength": 100,
+              "description": "Box to search, as west,south,east,north in decimal degrees: min longitude, min latitude, max longitude, max latitude. Latitude ± 0.02 and longitude ± 0.025 around a point covers about 2 km each way; double the margins to widen."
+            }
+          },
+          "required": [
+            "query",
+            "viewbox"
+          ],
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": true
+        }
+      },
+      "effects": "read",
+      "execution": {
+        "mode": "synchronous",
+        "requiresForeground": false,
+        "maxWaitMillis": 15000
+      },
+      "binding": {
+        "kind": "http",
+        "origin": "https://nominatim.openstreetmap.org",
+        "method": "GET",
+        "path": "/search",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "value": {
+              "argument": "query",
+              "type": "string",
+              "required": true
+            }
+          },
+          {
+            "name": "viewbox",
+            "in": "query",
+            "value": {
+              "argument": "viewbox",
+              "type": "string",
+              "required": true
+            }
+          },
+          {
+            "name": "bounded",
+            "in": "query",
+            "value": {
+              "value": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "layer",
+            "in": "query",
+            "value": {
+              "value": "poi",
+              "type": "string"
+            }
+          },
+          {
+            "name": "extratags",
+            "in": "query",
+            "value": {
+              "value": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "value": {
+              "value": 10,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "value": {
+              "value": "jsonv2",
+              "type": "string"
+            }
+          }
+        ],
+        "maxResponseBytes": 262144,
+        "result": {
+          "maxBytes": 12000,
+          "items": {
+            "line": "name={name} kind={kind} address={address} latitude={latitude} longitude={longitude} opening_hours={opening_hours} phone={phone}",
+            "fields": {
+              "name": {
+                "pointer": "/name",
+                "type": "string"
+              },
+              "kind": {
+                "pointer": "/type",
+                "type": "string"
+              },
+              "address": {
+                "pointer": "/display_name",
+                "type": "string",
+                "required": true
+              },
+              "latitude": {
+                "pointer": "/lat",
+                "type": "string",
+                "required": true
+              },
+              "longitude": {
+                "pointer": "/lon",
+                "type": "string",
+                "required": true
+              },
+              "opening_hours": {
+                "pointer": "/extratags/opening_hours",
+                "type": "string"
+              },
+              "phone": {
+                "pointer": "/extratags/phone",
+                "type": "string"
+              }
+            },
+            "maxItems": 10,
+            "truncationNote": "Output capped. Narrow the box or the search words; these are not all the places in the area.",
+            "arrayPaths": [
+              ""
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

@@ -23,6 +23,7 @@ object DefaultPackages {
     val all =
         listOf(
             DefaultPackage("android.google-maps", "packages/google-maps.json"),
+            DefaultPackage("openstreetmap.places", "packages/openstreetmap-places.json"),
             DefaultPackage("android.web", "packages/web.json"),
             DefaultPackage("android.email", "packages/email.json"),
             DefaultPackage("android.calendar", "packages/calendar.json"),
