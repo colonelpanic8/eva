@@ -4,6 +4,8 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.40.0] - 2026-09-25
+
 ### Changed
 
 - EVA finds an existing text conversation more reliably. Conversation search takes the phone numbers of everyone in it and returns the thread with exactly those people, even an older one, ahead of group chats that also include others. A name search accepts several people separated by commas, puts a one-to-one chat ahead of groups, and shows each person's number.
