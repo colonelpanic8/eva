@@ -3,7 +3,8 @@ package com.colonelpanic.eva.data
 import android.annotation.SuppressLint
 import android.content.Context
 import androidx.core.content.edit
-import com.colonelpanic.eva.adapters.android.ContactHistory
+import com.colonelpanic.eva.adapters.android.PhoneNumberKey
+import com.colonelpanic.eva.adapters.android.PlatformPhoneNumberKey
 import com.colonelpanic.eva.adapters.android.RemembersNumbers
 import com.colonelpanic.eva.capability.ExecutionBackend
 import kotlinx.coroutines.Dispatchers
@@ -12,7 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 
 /**
- * The phone numbers EVA last texted or dialed, keyed the way [ContactHistory] compares numbers.
+ * The phone numbers EVA last texted or dialed, in E.164 as [PlatformPhoneNumberKey] writes them.
  * Only the number and a time are kept, never who it belongs to or what was said.
  */
 class ChosenNumbers(
@@ -20,7 +21,14 @@ class ChosenNumbers(
     private val clock: () -> Long = System::currentTimeMillis,
     private val onChanged: () -> Unit = {},
 ) {
-    private val prefs = context.applicationContext.getSharedPreferences("eva.chosenNumbers", Context.MODE_PRIVATE)
+    private val app = context.applicationContext
+    private val prefs = app.getSharedPreferences("eva.chosenNumbers", Context.MODE_PRIVATE)
+
+    init {
+        val stale = prefs.all.keys.filterNot(PhoneNumberKey.E164::matches)
+        if (stale.isNotEmpty()) prefs.edit { stale.forEach(::remove) }
+    }
+
     private val mutableCount = MutableStateFlow(prefs.all.size)
 
     /** How many numbers are held, so the messaging screen can offer to forget them. */
@@ -40,7 +48,8 @@ class ChosenNumbers(
     suspend fun record(numbers: List<String>) =
         withContext(Dispatchers.IO) {
             val now = clock()
-            val keys = numbers.map(ContactHistory::key).filter { it.length == ContactHistory.MATCH_DIGITS }
+            val key = PlatformPhoneNumberKey(app)
+            val keys = numbers.map(key::of).filter(PhoneNumberKey.E164::matches)
             if (keys.isEmpty()) return@withContext
             val kept = all() + keys.associateWith { now }
             val stale =

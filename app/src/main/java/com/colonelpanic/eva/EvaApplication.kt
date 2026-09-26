@@ -116,7 +116,8 @@ class EvaApplication :
     val configuration by lazy { EvaConfigurationManager(this) }
     val chosenNumbers by lazy { ChosenNumbers(this, onChanged = configuration::onLocalChange) }
 
-    private suspend fun contactHistory() = ContactHistory(messagingStore.lastMessaged(), chosenNumbers.all())
+    private suspend fun contactHistory() =
+        ContactHistory(messagingStore.lastMessaged(), chosenNumbers.all(), messagingStore.phoneNumberKey())
 
     private val mediaFactory by lazy { WebRtcMediaSessionFactory(this) }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)

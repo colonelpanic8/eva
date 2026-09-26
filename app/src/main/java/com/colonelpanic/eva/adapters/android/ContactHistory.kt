@@ -12,9 +12,10 @@ import com.colonelpanic.eva.capability.InvocationStatus
 class ContactHistory(
     private val messaged: Map<String, Long> = emptyMap(),
     private val chosen: Map<String, Long> = emptyMap(),
+    private val key: PhoneNumberKey = PhoneNumberKey(MessageRecipients::normalize),
 ) {
     fun lastUsed(number: String): Long? {
-        val key = key(number)
+        val key = key.of(number)
         return listOfNotNull(messaged[key], chosen[key]).maxOrNull()
     }
 
@@ -22,11 +23,6 @@ class ContactHistory(
 
     companion object {
         val NONE = ContactHistory()
-
-        /** Android's own loose number comparison: the trailing digits survive every country-code and trunk-prefix variation. */
-        const val MATCH_DIGITS = 7
-
-        fun key(number: String) = number.filter(Char::isDigit).takeLast(MATCH_DIGITS)
     }
 }
 

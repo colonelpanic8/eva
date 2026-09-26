@@ -5,6 +5,7 @@ import com.charleskorn.kaml.SingleLineStringStyle
 import com.charleskorn.kaml.Yaml
 import com.charleskorn.kaml.YamlConfiguration
 import com.charleskorn.kaml.YamlException
+import com.colonelpanic.eva.adapters.android.PhoneNumberKey
 import com.colonelpanic.eva.adapters.declarative.PackageCodec
 import com.colonelpanic.eva.adapters.declarative.httpBindings
 import com.colonelpanic.eva.capability.CallEnding
@@ -678,9 +679,7 @@ object EvaConfigurationCodec {
             require(reference.id in declaredCredentials) { "HTTP credential requirement does not belong to a declared service." }
         }
         require(remembered.chosenNumbers.size <= 500)
-        remembered.chosenNumbers.forEach { (number, time) ->
-            require(number.matches(Regex("[0-9]{7,15}")) && time >= 0) { "Invalid remembered number choice." }
-        }
+        require(remembered.chosenNumbers.values.all { it >= 0 }) { "Invalid remembered number choice." }
         require(device.authorizations.all { it in DEVICE_AUTHORIZATIONS }) { "Unknown device authorization." }
         require(device.authorizations.distinct().size == device.authorizations.size) { "Duplicate device authorization." }
         return copy(
@@ -701,7 +700,8 @@ object EvaConfigurationCodec {
                 ),
             messaging = messaging.copy(replies = messaging.replies.sorted()),
             credentials = credentials.copy(required = credentials.required.sortedBy { it.id }),
-            remembered = remembered.copy(chosenNumbers = remembered.chosenNumbers.toSortedMap()),
+            // Numbers remembered before they were kept whole cannot be recovered, so they are dropped.
+            remembered = remembered.copy(chosenNumbers = remembered.chosenNumbers.filterKeys(PhoneNumberKey.E164::matches).toSortedMap()),
             device = device.copy(authorizations = device.authorizations.sorted()),
         )
     }

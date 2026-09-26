@@ -4,6 +4,10 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Contacts search and conversation search compare whole phone numbers instead of their last seven digits, so a number abroad that happens to end the same way no longer counts as someone you text. Numbers remembered before this change are forgotten once.
+
 ## [0.40.0] - 2026-09-25
 
 ### Changed

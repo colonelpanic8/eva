@@ -87,7 +87,7 @@ class ContactMatchesTest {
                 ContactMatch("Sarah Chen", listOf(ContactPhone("2025550101", "mobile"))),
                 ContactMatch("Sarah Kim", listOf(ContactPhone("2025550102", "mobile"))),
             )
-        val history = ContactHistory(messaged = mapOf(ContactHistory.key("+1 202-555-0102") to NOW - 3 * DAY))
+        val history = ContactHistory(messaged = mapOf("+12025550102" to NOW - 3 * DAY), key = usPhoneNumbers)
         assertEquals(
             "Best match for \"Sarah\": Sarah Kim (last in touch 3 days ago): mobile 2025550102. " +
                 "Other matches: Sarah Chen: mobile 2025550101. " + ContactMatches.PICK_RECENT,
@@ -102,7 +102,7 @@ class ContactMatchesTest {
                 ContactMatch("Sarah Chen", listOf(ContactPhone("2025550101", "mobile"))),
                 ContactMatch("Sarah Kim", listOf(ContactPhone("2025550102", "mobile"))),
             )
-        val history = ContactHistory(messaged = mapOf("5550101" to NOW - 40 * DAY, "5550102" to NOW - DAY))
+        val history = ContactHistory(messaged = mapOf("+12025550101" to NOW - 40 * DAY, "+12025550102" to NOW - DAY), key = usPhoneNumbers)
         assertEquals(listOf("Sarah Kim", "Sarah Chen"), ContactMatches.rank("Sarah", matches, history = history).map { it.name })
         assertTrue(ContactMatches.describe("Sarah", matches, history = history, nowMillis = NOW).endsWith(ContactMatches.AMBIGUOUS))
     }
@@ -111,7 +111,7 @@ class ContactMatchesTest {
     fun `the number last used for a person leads over their mobile`() {
         val matches =
             listOf(ContactMatch("Dana Mark", listOf(ContactPhone("2025550101", "mobile"), ContactPhone("2025550199", "work"))))
-        val history = ContactHistory(chosen = mapOf(ContactHistory.key("2025550199") to NOW))
+        val history = ContactHistory(chosen = mapOf("+12025550199" to NOW), key = usPhoneNumbers)
         assertTrue(
             ContactMatches
                 .describe("Dana Mark", matches, history = history, nowMillis = NOW)
@@ -157,7 +157,7 @@ class ContactMatchesTest {
             )
         assertEquals(2, ContactMatches.rank("Alex Mallison", matches).size)
         assertTrue(ContactMatches.describe("Alex Mallison", matches).endsWith(ContactMatches.AMBIGUOUS))
-        val history = ContactHistory(messaged = mapOf("5550102" to NOW))
+        val history = ContactHistory(messaged = mapOf("+12025550102" to NOW), key = usPhoneNumbers)
         assertEquals(
             "2025550102",
             ContactMatches

@@ -61,7 +61,7 @@ class MessagingStore(
         }
 
     /**
-     * When each number's one-to-one thread last had a message, keyed by [ContactHistory.key]. Group
+     * When each number's one-to-one thread last had a message, keyed by [phoneNumberKey]. Group
      * threads are left out: being in a group chat says little about who "text Sarah" means. Silent,
      * like caption keywords: a contacts search never asks for SMS access just to rank its results.
      */
@@ -77,10 +77,11 @@ class MessagingStore(
                     .distinct()
                     .chunked(ContactLookups.MAX_CONTACT_IDS)
                     .fold(emptyMap<Long, String>()) { found, chunk -> found + addressesById(chunk) }
+            val key = phoneNumberKey()
             buildMap {
                 // Threads arrive newest first, so the first time a number appears is its latest.
                 for (thread in direct) {
-                    val key = numbers[thread.recipientIds.single()]?.let(ContactHistory::key) ?: continue
+                    val key = numbers[thread.recipientIds.single()]?.let(key::of) ?: continue
                     if (key.isNotEmpty() && key !in this) put(key, thread.dateMillis)
                 }
             }

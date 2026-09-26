@@ -312,7 +312,7 @@ class EvaConfigurationManagerTest {
                                 SecretReference(credential, "http-basic", "https://agenda.example.test"),
                             ),
                         ),
-                    remembered = EvaConfiguration.Remembered(mapOf("4155551212" to 1_700_000_000_000)),
+                    remembered = EvaConfiguration.Remembered(mapOf("+14155551212" to 1_700_000_000_000)),
                     device = EvaConfiguration.Device(listOf("android.role.ASSISTANT", "android.notification-listener")),
                 )
             val directory = MemoryDirectory(EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(target)))

@@ -95,6 +95,19 @@ class ConfigurationCompositionTest {
     }
 
     @Test
+    fun `numbers remembered as trailing digits are dropped when the configuration loads`() {
+        val legacy =
+            fullConfiguration().copy(
+                remembered = EvaConfiguration.Remembered(mapOf("+14155551212" to 1L, "5551212" to 2L)),
+            )
+        val encoded = EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(legacy))
+
+        val resolved = EvaConfigurationCodec.resolve(reader(mapOf(EvaConfigurationCodec.FILE_NAME to encoded))).configuration
+
+        assertEquals(mapOf("+14155551212" to 1L), resolved.remembered.chosenNumbers)
+    }
+
+    @Test
     fun `full nondefault configuration encodes and resolves deterministically`() {
         val expected = fullConfiguration()
         val encoded = EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(expected))
@@ -466,7 +479,7 @@ class ConfigurationCompositionTest {
                             ),
                         ),
                 ),
-            remembered = EvaConfiguration.Remembered(chosenNumbers = mapOf("4155551212" to 1_700_000_000_000)),
+            remembered = EvaConfiguration.Remembered(chosenNumbers = mapOf("+14155551212" to 1_700_000_000_000)),
             device =
                 EvaConfiguration.Device(
                     authorizations =

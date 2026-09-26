@@ -308,6 +308,9 @@ The **Messaging** drawer destination owns phone-permission status, contact-name
 lookup retries, notification-message access/reply grants, and remembered-number
 management. Moving these controls does not rename their portable fields:
 `voice.lookupRetries`, `messaging`, and `remembered.chosenNumbers` remain stable.
+Phone numbers compare in E.164, reading a number without a country code as one
+from the SIM's country (`PlatformPhoneNumberKey`); `remembered.chosenNumbers` keys
+are E.164, and keys in any other form are dropped when the configuration loads.
 
 EVA exposes one search/read/send tool family with two execution paths:
 

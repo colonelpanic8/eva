@@ -33,7 +33,7 @@ class ChosenNumbersTest {
 
             // A restore replaces what is held without reporting a change back to the file it came from.
             val restored = changes
-            numbers.replace(mapOf("5550103" to 1L))
+            numbers.replace(mapOf("+14155550103" to 1L))
             assertEquals(1, numbers.count.value)
             assertEquals(restored, changes)
 
