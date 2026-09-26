@@ -24,18 +24,29 @@ class MessagingStore(
     private val resolver = app.contentResolver
 
     suspend fun conversations(
-        query: String?,
+        query: ConversationQuery,
         limit: Int,
     ): List<Conversation> =
         withContext(Dispatchers.IO) {
             val names = NameCache()
-            // Lazily, because naming a thread's participants costs a query per thread and most are not wanted.
-            readThreads(null)
-                .asSequence()
-                .map { thread -> thread.toConversation(names) }
-                .filter { matches(it, query) }
-                .take(limit)
-                .toList()
+            if (query.isEmpty) {
+                return@withContext readThreads(null).take(limit).map { it.toConversation(names) }
+            }
+            // Numbers are matched before naming anyone, so a number search can afford a deeper scan.
+            val threads = readThreads(null, if (query.names.isEmpty()) MAX_SEARCHED_THREADS else MAX_SCANNED_THREADS)
+            val numbers =
+                threads
+                    .flatMap(Thread::recipientIds)
+                    .distinct()
+                    .chunked(ContactLookups.MAX_CONTACT_IDS)
+                    .fold(emptyMap<Long, String>()) { found, chunk -> found + addressesById(chunk) }
+            val conversations =
+                threads.mapNotNull { thread ->
+                    val addresses = thread.recipientIds.mapNotNull(numbers::get)
+                    if (!query.includesNumbers(addresses)) return@mapNotNull null
+                    Conversation(thread.id, addresses.map(names::participant), thread.dateMillis, thread.snippet)
+                }
+            query.rank(conversations).take(limit)
         }
 
     suspend fun conversation(id: Long): Conversation? =
@@ -94,27 +105,17 @@ class MessagingStore(
     private fun Thread.toConversation(names: NameCache) =
         Conversation(id, addresses(recipientIds).map { names.participant(it) }, dateMillis, snippet)
 
-    private fun matches(
-        conversation: Conversation,
-        query: String?,
-    ): Boolean {
-        val needle = query?.trim()?.lowercase().orEmpty()
-        if (needle.isEmpty()) return true
-        val digits = needle.filter(Char::isDigit)
-        return conversation.participants.any { participant ->
-            participant.name?.lowercase()?.contains(needle) == true ||
-                (digits.length >= MIN_NUMBER_MATCH && participant.number.filter(Char::isDigit).contains(digits))
-        }
-    }
-
-    private fun readThreads(selection: Pair<String, Array<String>>?): List<Thread> {
+    private fun readThreads(
+        selection: Pair<String, Array<String>>?,
+        cap: Int = MAX_SCANNED_THREADS,
+    ): List<Thread> {
         val cursor =
             runCatching {
                 resolver.query(THREADS, THREAD_COLUMNS, selection?.first, selection?.second, "${Telephony.Threads.DATE} DESC")
             }.getOrNull() ?: return emptyList()
         return cursor.use {
             buildList {
-                while (it.moveToNext() && size < MAX_SCANNED_THREADS) {
+                while (it.moveToNext() && size < cap) {
                     val recipients =
                         it
                             .getString(1)
@@ -280,9 +281,9 @@ class MessagingStore(
 
     companion object {
         const val MAX_SCANNED_THREADS = 200
+        const val MAX_SEARCHED_THREADS = 1000
         const val MAX_TEXT_PARTS = 4
         const val MAX_PART_CHARS = 4000
-        const val MIN_NUMBER_MATCH = 4
 
         /** `PduHeaders.FROM`, which is not public API. */
         const val FROM_ADDRESS = 137

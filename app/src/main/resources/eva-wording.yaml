@@ -24,8 +24,11 @@ tools:
       user names an app; never substitute SMS for an app message. For app replies search that
       service first, disambiguate the conversation, then pass its exact reference and the user's
       message. Notifications expose only recent conversations; starting a new app chat is not
-      supported. An app reply reports handoff, not confirmed delivery. For SMS contact names,
-      look up the phone number first. When the recipient and intent are clear, compose suitable
+      supported. An app reply reports handoff, not confirmed delivery. For SMS, look up each
+      named person's number first. To text several people, find their conversation by
+      participants and pass its conversationId, or pass all their numbers as recipient: the
+      same set of numbers continues the text thread with exactly those people, or starts one.
+      When the recipient and intent are clear, compose suitable
       wording if the user did not dictate it and send without asking for another confirmation.
       Ask only when the recipient, channel, or meaning is genuinely unclear.
     parameters:
@@ -74,10 +77,21 @@ tools:
     description: >-
       Find SMS/MMS threads (service sms, default), or active messaging notifications for a named
       app. Use service notifications to discover available apps, or an exact app package/visible
-      app name. query matches a conversation title or SMS participant. SMS returns
-      conversationId; apps return opaque conversationRef, service and replyAvailable. App
-      results are partial notification views, not full history. Never infer that no result means
-      no chat exists. Reads may disclose private data.
+      app name. For SMS, pass participants, the numbers of the people the user named from
+      contacts search, to find the thread with exactly those people, even an old one; query
+      instead matches names or number fragments, and for apps a conversation title. SMS results
+      list threads with only the asked-for people first, then threads that also include others.
+      Use the exact thread for those people; use a wider one only when the user described that
+      group. SMS returns conversationId; apps return opaque conversationRef, service and
+      replyAvailable. App results are partial notification views, not full history. Never infer
+      that no result means no chat exists. Reads may disclose private data.
+    parameters:
+      query: >-
+        Part of a participant's name or number, or of an app conversation's title; separate
+        several people with commas to require all of them
+      participants: >-
+        SMS only: phone numbers of everyone in the conversation besides the user, separated by
+        commas
   eva.android.messages.history:
     description: >-
       Read recent SMS/MMS messages by conversationId, or a partial app notification excerpt by

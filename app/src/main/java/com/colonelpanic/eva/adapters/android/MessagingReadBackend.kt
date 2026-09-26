@@ -34,11 +34,22 @@ class MessagingReadBackend(
     }
 
     private suspend fun conversations(arguments: Map<String, String>): ExecutionOutcome {
-        val query = arguments["query"]?.trim()?.takeIf(String::isNotBlank)
+        val text = arguments["query"]?.trim()?.takeIf(String::isNotBlank)
+        val numbers =
+            arguments["participants"]
+                ?.let { value ->
+                    MessageRecipients.parse(value) ?: return ExecutionOutcome(InvocationStatus.NOT_EXECUTED, INVALID_PARTICIPANTS)
+                }.orEmpty()
+        val query = ConversationQuery.of(text, numbers)
+        val asked =
+            listOfNotNull(
+                text?.let { "\"$it\"" },
+                numbers.takeIf(List<String>::isNotEmpty)?.joinToString(", "),
+            ).joinToString(" and ")
         val limit = limit(arguments, ConversationSummaries.MAX_CONVERSATIONS)
         return ExecutionOutcome(
             InvocationStatus.COMPLETED,
-            ConversationSummaries.describeConversations(query, store.conversations(query, limit), clock()),
+            ConversationSummaries.describeConversations(asked, query, store.conversations(query, limit), clock()),
         )
     }
 
@@ -65,6 +76,7 @@ class MessagingReadBackend(
         const val PERMISSION_DENIED =
             "Permission to read text messages was not granted. Allow it in EVA's app settings, " +
                 "or name the person to text instead of a conversation."
+        const val INVALID_PARTICIPANTS = "Enter participants as phone numbers separated by commas; look names up in contacts first."
         const val NEEDS_ID = "Give the conversationId returned by the conversation search."
     }
 }

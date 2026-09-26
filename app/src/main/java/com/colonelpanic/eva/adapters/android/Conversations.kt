@@ -5,6 +5,9 @@ data class ConversationParticipant(
     val name: String? = null,
 ) {
     val label: String get() = name?.takeIf(String::isNotBlank) ?: number
+
+    /** Named participants also show their number, so a listing can be checked against a contacts result. */
+    val listed: String get() = name?.takeIf(String::isNotBlank)?.let { "$it ($number)" } ?: number
 }
 
 data class Conversation(
@@ -24,6 +27,64 @@ data class ConversationMessage(
 )
 
 /**
+ * What a conversation search asks for: name fragments, each of which must match a participant, and
+ * phone numbers, each of which must be a participant. A conversation holding nobody else is exact.
+ */
+data class ConversationQuery(
+    val names: List<String> = emptyList(),
+    val numbers: List<String> = emptyList(),
+) {
+    val isEmpty: Boolean get() = names.isEmpty() && numbers.isEmpty()
+
+    private val keys = numbers.map(ContactHistory::key).filter(String::isNotEmpty).distinct()
+
+    fun includesNumbers(numbers: List<String>): Boolean {
+        val present = numbers.map(ContactHistory::key).toSet()
+        return keys.all(present::contains)
+    }
+
+    fun includes(conversation: Conversation): Boolean =
+        names.all { name -> conversation.participants.any { it.matchesName(name) } } &&
+            includesNumbers(conversation.participants.map(ConversationParticipant::number))
+
+    fun isExact(conversation: Conversation): Boolean =
+        includes(conversation) &&
+            conversation.participants.isNotEmpty() &&
+            conversation.participants.all { participant ->
+                ContactHistory.key(participant.number) in keys || names.any { participant.matchesName(it) }
+            }
+
+    /** Exact conversations first, then those with the fewest other people, newest first within each. */
+    fun rank(conversations: List<Conversation>): List<Conversation> =
+        conversations
+            .filter(::includes)
+            .sortedWith(compareBy<Conversation>({ !isExact(it) }, { it.participants.size }).thenByDescending { it.lastMessageMillis })
+
+    private fun ConversationParticipant.matchesName(fragment: String): Boolean {
+        val digits = fragment.filter(Char::isDigit)
+        return name?.lowercase()?.contains(fragment) == true ||
+            (digits.length >= MIN_NUMBER_MATCH && number.filter(Char::isDigit).contains(digits))
+    }
+
+    companion object {
+        const val MIN_NUMBER_MATCH = 4
+
+        /** Commas separate people, so "Sarah, Mike" finds the chats that include both. */
+        fun of(
+            query: String?,
+            numbers: List<String> = emptyList(),
+        ) = ConversationQuery(
+            query
+                ?.split(',')
+                ?.map { it.trim().lowercase() }
+                ?.filter(String::isNotEmpty)
+                .orEmpty(),
+            numbers,
+        )
+    }
+}
+
+/**
  * Renders threads and their recent messages as the lines the model reads. Conversation IDs are
  * included because they are how a reply reaches an existing thread: a group is addressed by its
  * whole participant set, which the model cannot reliably retype from a transcript.
@@ -33,6 +94,10 @@ object ConversationSummaries {
     const val MAX_MESSAGES = 25
     const val MAX_BODY = 240
     const val USE_THE_ID = "Pass conversationId to the read, send, or draft actions to act on one of these."
+    const val STARTS_ONE =
+        "Sending to their numbers starts one, or continues it if it exists; " +
+            "a chat the messaging app carries over RCS is not visible here."
+    const val NO_EXACT = "No text conversation has only those people. $STARTS_ONE"
 
     /**
      * The messaging app keeps RCS in its own store, so a chat that has moved to RCS reads back only its
@@ -44,23 +109,34 @@ object ConversationSummaries {
             "because the messaging app keeps those messages rather than the phone's text message store."
 
     fun describeConversations(
-        query: String?,
+        asked: String,
+        query: ConversationQuery,
         conversations: List<Conversation>,
         now: Long,
     ): String {
-        val asked = query?.trim().orEmpty()
-        if (conversations.isEmpty()) {
-            return if (asked.isEmpty()) "No text conversations are on this phone." else "No conversation matches \"$asked\"."
+        if (query.isEmpty) {
+            if (conversations.isEmpty()) return "No text conversations are on this phone."
+            return "Recent conversations: ${lines(conversations, now)}. $USE_THE_ID"
         }
+        if (conversations.isEmpty()) return "No text conversation matches $asked. $STARTS_ONE"
         val shown = conversations.take(MAX_CONVERSATIONS)
+        val (exact, wider) = shown.partition(query::isExact)
         return buildString {
-            append(if (asked.isEmpty()) "Recent conversations" else "Conversations matching \"$asked\"")
-            append(": ")
-            append(shown.joinToString("; ") { line(it, now) })
-            append(". ")
+            if (exact.isEmpty()) {
+                append(NO_EXACT)
+            } else {
+                append("Conversations with only $asked: ${lines(exact, now)}.")
+            }
+            if (wider.isNotEmpty()) append(" Conversations that also include others: ${lines(wider, now)}.")
+            append(" ")
             append(USE_THE_ID)
         }
     }
+
+    private fun lines(
+        conversations: List<Conversation>,
+        now: Long,
+    ) = conversations.take(MAX_CONVERSATIONS).joinToString("; ") { line(it, now) }
 
     fun describeMessages(
         conversation: Conversation,
@@ -98,7 +174,8 @@ object ConversationSummaries {
         now: Long,
     ): String =
         buildString {
-            append("${conversation.id} — ${participants(conversation)}")
+            append("${conversation.id} — ")
+            append(conversation.participants.joinToString(", ") { it.listed }.ifEmpty { "an unknown number" })
             if (conversation.isGroup) append(" (group of ${conversation.participants.size})")
             append(" — ${ago(conversation.lastMessageMillis, now)}")
             conversation.snippet?.takeIf(String::isNotBlank)?.let { append(" — \"${body(it)}\"") }

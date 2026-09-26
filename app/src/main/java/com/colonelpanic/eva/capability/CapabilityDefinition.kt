@@ -4,6 +4,7 @@ import com.colonelpanic.eva.adapters.android.ContactField
 import com.colonelpanic.eva.adapters.android.ConversationSummaries
 import com.colonelpanic.eva.adapters.android.MediaCommand
 import com.colonelpanic.eva.adapters.android.MessageRecipients
+import com.colonelpanic.eva.adapters.android.MessagingReadBackend
 import com.colonelpanic.eva.adapters.android.VolumeAction
 import com.colonelpanic.eva.conversation.prompt.Wording
 import kotlinx.serialization.json.Json
@@ -157,12 +158,25 @@ object BundledCapabilities {
                     """{"type":"object","properties":{
                     "service":{"type":"string","minLength":1,"maxLength":200},
                     "query":{"type":"string","minLength":1,"maxLength":100},
+                    "participants":{"type":"string","minLength":3,"maxLength":300},
                     "limit":{"type":"integer","minimum":1,"maximum":${ConversationSummaries.MAX_CONVERSATIONS}}},
                     "required":[],"additionalProperties":false}""",
                 ),
                 readOnly = true,
                 validateOperation = { args ->
-                    if (args["query"].orEmpty().any(Char::isISOControl)) "Enter part of a name or number." else null
+                    when {
+                        args["query"].orEmpty().any(Char::isISOControl) -> {
+                            "Enter part of a name or number."
+                        }
+
+                        args["participants"]?.let(MessageRecipients::parse) == null && "participants" in args -> {
+                            MessagingReadBackend.INVALID_PARTICIPANTS
+                        }
+
+                        else -> {
+                            null
+                        }
+                    }
                 },
             ),
             tool(

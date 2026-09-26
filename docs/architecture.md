@@ -322,7 +322,7 @@ Existing capability IDs remain stable:
 
 | Tool | SMS/MMS | Notification-backed app |
 | --- | --- | --- |
-| eva.android.messages.conversations | Omit service or use sms; optional participant query | service is notifications for discovery, exact package name, or unique visible app label; query matches conversation title |
+| eva.android.messages.conversations | Omit service or use sms; optional name query (commas require every person) or participants phone numbers; threads with only the asked-for people rank first | service is notifications for discovery, exact package name, or unique visible app label; query matches conversation title |
 | eva.android.messages.history | Use the returned integer conversationId | Use the returned opaque conversationRef; result is only a notification excerpt |
 | eva.android.messages.send | Explicit recipient number(s) or conversationId, plus message | conversationRef and message; optional service must match |
 

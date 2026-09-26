@@ -28,6 +28,9 @@ class MessagingBackend(
         val reference = arguments["conversationRef"]
         val targetApp = reference != null || (service != null && !service.equals("sms", true))
         if (!targetApp) return sms.unavailableReason()?.let { refused(it) } ?: sms.execute(arguments - "service")
+        if (operation == Operation.SEARCH && arguments.containsKey("participants")) {
+            return refused("Phone numbers find text conversations only. Search an app's conversations by name with query.")
+        }
         if (arguments.containsKey("recipient") || arguments.containsKey("conversationId")) {
             return refused(
                 "App messages require a conversationRef from conversation search. Phone numbers and SMS thread IDs cannot address app replies.",
