@@ -49,6 +49,8 @@ class MessagingStore(
             query.rank(conversations).take(limit)
         }
 
+    fun phoneNumberKey(): PhoneNumberKey = PlatformPhoneNumberKey(app)
+
     suspend fun conversation(id: Long): Conversation? =
         withContext(Dispatchers.IO) {
             val names = NameCache()

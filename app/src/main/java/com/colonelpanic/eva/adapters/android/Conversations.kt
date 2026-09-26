@@ -30,16 +30,17 @@ data class ConversationMessage(
  * What a conversation search asks for: name fragments, each of which must match a participant, and
  * phone numbers, each of which must be a participant. A conversation holding nobody else is exact.
  */
-data class ConversationQuery(
-    val names: List<String> = emptyList(),
-    val numbers: List<String> = emptyList(),
+class ConversationQuery(
+    val names: List<String>,
+    numbers: List<String>,
+    private val key: PhoneNumberKey,
 ) {
-    val isEmpty: Boolean get() = names.isEmpty() && numbers.isEmpty()
+    private val keys = numbers.map(key::of).filter(String::isNotEmpty).distinct()
 
-    private val keys = numbers.map(ContactHistory::key).filter(String::isNotEmpty).distinct()
+    val isEmpty: Boolean get() = names.isEmpty() && keys.isEmpty()
 
     fun includesNumbers(numbers: List<String>): Boolean {
-        val present = numbers.map(ContactHistory::key).toSet()
+        val present = numbers.map(key::of).toSet()
         return keys.all(present::contains)
     }
 
@@ -51,7 +52,7 @@ data class ConversationQuery(
         includes(conversation) &&
             conversation.participants.isNotEmpty() &&
             conversation.participants.all { participant ->
-                ContactHistory.key(participant.number) in keys || names.any { participant.matchesName(it) }
+                key.of(participant.number) in keys || names.any { participant.matchesName(it) }
             }
 
     /** Exact conversations first, then those with the fewest other people, newest first within each. */
@@ -72,7 +73,8 @@ data class ConversationQuery(
         /** Commas separate people, so "Sarah, Mike" finds the chats that include both. */
         fun of(
             query: String?,
-            numbers: List<String> = emptyList(),
+            numbers: List<String>,
+            key: PhoneNumberKey,
         ) = ConversationQuery(
             query
                 ?.split(',')
@@ -80,6 +82,7 @@ data class ConversationQuery(
                 ?.filter(String::isNotEmpty)
                 .orEmpty(),
             numbers,
+            key,
         )
     }
 }

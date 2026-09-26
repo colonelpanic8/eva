@@ -40,7 +40,7 @@ class MessagingReadBackend(
                 ?.let { value ->
                     MessageRecipients.parse(value) ?: return ExecutionOutcome(InvocationStatus.NOT_EXECUTED, INVALID_PARTICIPANTS)
                 }.orEmpty()
-        val query = ConversationQuery.of(text, numbers)
+        val query = ConversationQuery.of(text, numbers, store.phoneNumberKey())
         val asked =
             listOfNotNull(
                 text?.let { "\"$it\"" },
