@@ -135,11 +135,15 @@ turned off without losing Maps), [Web](https://github.com/colonelpanic8/eva-exte
 [Settings](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/settings.json)
 (open a settings screen, a quick panel, or one app's own page), and
 [Clock](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/clock.json)
-(alarms and timers through Android's standard intents), and
+(alarms and timers through Android's standard intents),
+[Waze](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/waze.json)
+(driving navigation through `waze.com/ul` links pinned to Waze, to coordinates, a
+search, or the Home or Work saved in Waze), and
 [Paseo](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/paseo.json)
-(project, workspace, agent, and message lookups plus link fallbacks). Paseo's default is conditional:
-it installs only once the `sh.paseo.assistant` provider resolves, and until then it
-stays out of `appliedDefaults` so a later Paseo install still gets it. `adapters/declarative/DefaultPackages.kt` lists each default
+(project, workspace, agent, and message lookups plus link fallbacks). The Waze and
+Paseo defaults are conditional: Waze installs only once the `com.waze` app is
+installed, and Paseo only once the `sh.paseo.assistant` provider resolves. Until
+then each stays out of `appliedDefaults`, so a later install still gets it. `adapters/declarative/DefaultPackages.kt` lists each default
 with a byte-identical copy of the catalog file under `app/src/main/assets/packages/`
 and a fixed, name-derived instance ID. After the desired configuration is attached
 at startup, EVA installs each default whose package ID is not yet in

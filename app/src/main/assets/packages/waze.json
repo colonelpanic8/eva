@@ -1,0 +1,172 @@
+{
+  "formatVersion": 1,
+  "id": "android.waze",
+  "version": "0.1.0",
+  "title": "Waze",
+  "description": "Start driving navigation in Waze using its public waze.com/ul links: to exact coordinates, to a name or address, or to the Home or Work saved in Waze. Each action reports that Waze was asked to navigate, not that the route started or the user arrived.",
+  "guidance": "Use Waze when the user asks for Waze or has said they drive with it; otherwise use the map app's navigation. Waze starts navigating right away only for coordinates or a saved Home or Work. Given just a name or address it searches first and may wait for the user to pick a result, so when a place search has already returned the destination's latitude and longitude, pass them as coordinates along with the destination's name. For home or work, use navigate_saved rather than an address. Settle an ambiguous destination with one short question before navigating. Pass the avoid options only when the user asks. Say navigation was requested in Waze, not that the route or arrival is confirmed.",
+  "androidPackages": [
+    "com.waze"
+  ],
+  "capabilities": [
+    {
+      "tool": {
+        "name": "navigate",
+        "title": "Navigate with Waze",
+        "description": "Start driving navigation in Waze from the phone's current location. With coordinates, Waze navigates to that exact point; without them, it searches for the destination and may show results for the user to pick. Reports handoff, not arrival. Waze opened on a locked phone would wait behind the lock screen, so EVA asks for the unlock first and opens it once that succeeds.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "destination": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Place name, business, or address to drive to. Waze searches for it when coordinates are omitted."
+            },
+            "coordinates": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 40,
+              "description": "The destination's latitude and longitude in decimal degrees as latitude,longitude, such as 37.7955,-122.3937, taken from a place search result. Never guess them."
+            },
+            "avoid_tolls": {
+              "type": "boolean",
+              "description": "Avoid toll roads."
+            },
+            "avoid_freeways": {
+              "type": "boolean",
+              "description": "Avoid freeways and highways."
+            }
+          },
+          "required": [
+            "destination"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "effects": "external_handoff",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true,
+        "requiresUnlock": true,
+        "endsVoiceCall": "immediately"
+      },
+      "receipts": {
+        "success": "Navigation requested in Waze.",
+        "handlerMissing": "Waze is not installed. Install Waze or use the map app instead."
+      },
+      "binding": {
+        "kind": "select",
+        "argument": "coordinates",
+        "present": {
+          "kind": "android.intent",
+          "action": "android.intent.action.VIEW",
+          "package": "com.waze",
+          "uri": {
+            "base": "https://waze.com/ul",
+            "query": {
+              "ll": {
+                "argument": "coordinates",
+                "type": "string",
+                "required": true
+              },
+              "navigate": {
+                "value": "yes",
+                "type": "string"
+              },
+              "avoid_tolls": {
+                "argument": "avoid_tolls",
+                "type": "boolean"
+              },
+              "avoid_freeways": {
+                "argument": "avoid_freeways",
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "absent": {
+          "kind": "android.intent",
+          "action": "android.intent.action.VIEW",
+          "package": "com.waze",
+          "uri": {
+            "base": "https://waze.com/ul",
+            "query": {
+              "q": {
+                "argument": "destination",
+                "type": "string",
+                "required": true
+              },
+              "navigate": {
+                "value": "yes",
+                "type": "string"
+              },
+              "avoid_tolls": {
+                "argument": "avoid_tolls",
+                "type": "boolean"
+              },
+              "avoid_freeways": {
+                "argument": "avoid_freeways",
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "navigate_saved",
+        "title": "Navigate home or to work with Waze",
+        "description": "Start driving navigation in Waze to the Home or Work address saved in Waze. Waze asks the user to set it if it is not saved yet. Reports handoff, not arrival. Waze opened on a locked phone would wait behind the lock screen, so EVA asks for the unlock first and opens it once that succeeds.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "place": {
+              "type": "string",
+              "enum": [
+                "home",
+                "work"
+              ],
+              "description": "Which saved Waze place to drive to."
+            }
+          },
+          "required": [
+            "place"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "effects": "external_handoff",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true,
+        "requiresUnlock": true,
+        "endsVoiceCall": "immediately"
+      },
+      "receipts": {
+        "success": "Navigation requested in Waze.",
+        "handlerMissing": "Waze is not installed. Install Waze or use the map app instead."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.intent.action.VIEW",
+        "package": "com.waze",
+        "uri": {
+          "base": "https://waze.com/ul",
+          "query": {
+            "favorite": {
+              "argument": "place",
+              "type": "string",
+              "required": true
+            },
+            "navigate": {
+              "value": "yes",
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

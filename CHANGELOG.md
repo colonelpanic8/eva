@@ -4,6 +4,10 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Waze navigation, installed automatically once Waze is on the phone. EVA asks Waze to drive to a place's exact coordinates when a place search found them, so Waze starts the route instead of showing search results, and can drive to the Home or Work saved in Waze. It can also avoid tolls or freeways when asked. Like Google Maps, it asks for the unlock first on a locked phone.
+
 ## [0.40.1] - 2026-09-25
 
 ### Changed

@@ -14,6 +14,8 @@ data class DefaultPackage(
     val path: String,
     /** A content authority that must resolve before the default is installed; null installs it everywhere. */
     val requiresProvider: String? = null,
+    /** An Android package that must be installed before the default is installed; null installs it everywhere. */
+    val requiresApp: String? = null,
 ) {
     val source: String get() = PluginRepository.installationSource(DEFAULT_PLUGIN_REPOSITORY)
     val identity: PackageIdentity get() = PackageIdentity(UUID.nameUUIDFromBytes("eva.default:$id".toByteArray()).toString())
@@ -24,6 +26,7 @@ object DefaultPackages {
         listOf(
             DefaultPackage("android.google-maps", "packages/google-maps.json"),
             DefaultPackage("openstreetmap.places", "packages/openstreetmap-places.json"),
+            DefaultPackage("android.waze", "packages/waze.json", requiresApp = "com.waze"),
             DefaultPackage("android.web", "packages/web.json"),
             DefaultPackage("android.email", "packages/email.json"),
             DefaultPackage("android.calendar", "packages/calendar.json"),

@@ -393,8 +393,8 @@ repository sources, service endpoints, wait budgets, and saved user preferences.
 Configuration import must validate before replacing working settings and preserve
 identity-dependent authorization. Invalid or incompatible input must be visible.
 
-Shipped default packages (Google Maps, OpenStreetMap places, Web, Email, Calendar, Settings, Clock, and Paseo
-once its provider is present) are adopted once per
+Shipped default packages (Google Maps, OpenStreetMap places, Web, Email, Calendar, Settings, Clock, Waze
+once Waze is installed, and Paseo once its provider is present) are adopted once per
 configuration: after the desired configuration is attached at startup, EVA
 installs and approves each default not yet listed in `packages.appliedDefaults`
 and records it there. The result is an ordinary installation and grant, so the

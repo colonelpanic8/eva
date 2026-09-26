@@ -68,6 +68,7 @@ class PackageSettings(
     private val onCredentialChanged: (String) -> Unit = {},
     private val readAsset: (String) -> String = { name -> context.assets.open(name).use { it.readBytes().toString(Charsets.UTF_8) } },
     private val providerPresent: (String) -> Boolean = { authority -> context.packageManager.resolveContentProvider(authority, 0) != null },
+    private val appInstalled: (String) -> Boolean = { name -> runCatching { context.packageManager.getPackageInfo(name, 0) }.isSuccess },
 ) {
     private val secrets = SecretStore(context)
     private val prefs = context.getSharedPreferences("eva.packages", Context.MODE_PRIVATE)
@@ -152,11 +153,14 @@ class PackageSettings(
 
     /**
      * Installs each shipped default once per configuration and returns the installations still needing
-     * grants. A default for an app's provider waits, unrecorded, until that provider is present.
+     * grants. A default for an app or its provider waits, unrecorded, until that app or provider is present.
      */
     fun adoptDefaults(): List<InstalledPlugin> {
         val applied = appliedDefaults()
-        val pending = DefaultPackages.all.filter { it.id !in applied && (it.requiresProvider?.let(providerPresent) ?: true) }
+        val pending =
+            DefaultPackages.all.filter {
+                it.id !in applied && (it.requiresProvider?.let(providerPresent) ?: true) && (it.requiresApp?.let(appInstalled) ?: true)
+            }
         if (pending.isEmpty()) return emptyList()
         val adopted =
             pending.map { default ->
