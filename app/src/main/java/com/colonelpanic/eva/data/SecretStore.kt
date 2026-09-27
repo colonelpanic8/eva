@@ -16,12 +16,12 @@ import javax.crypto.spec.GCMParameterSpec
  * preferences file is excluded from backup and device transfer; a restored copy
  * would be undecryptable anyway because the key never leaves this device.
  */
-class SecretStore(
+open class SecretStore(
     context: Context,
 ) {
     private val prefs = context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
-    fun read(name: String): String? {
+    open fun read(name: String): String? {
         val stored = prefs.getString(name, null) ?: return null
         return try {
             val bytes = Base64.decode(stored, Base64.NO_WRAP)
@@ -33,7 +33,7 @@ class SecretStore(
         }
     }
 
-    fun write(
+    open fun write(
         name: String,
         value: String,
     ) {
@@ -44,7 +44,7 @@ class SecretStore(
         prefs.edit { putString(name, stored) }
     }
 
-    fun clear(name: String) {
+    open fun clear(name: String) {
         prefs.edit { remove(name) }
     }
 

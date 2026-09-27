@@ -337,6 +337,73 @@ class ConfigurationCompositionTest {
     }
 
     @Test
+    fun `messaging bridges round-trip with their token reference and never a token`() {
+        val bridges = mapOf("whatsapp" to MessagingBridgeDefinition("WhatsApp", "https://bridge.example.ts.net"))
+        val reference = SecretReference("messaging/whatsapp/bearer", "http-bearer", "https://bridge.example.ts.net")
+        val base = fullConfiguration()
+        val configuration =
+            base.copy(
+                messaging = base.messaging.copy(bridges = bridges),
+                credentials = EvaConfiguration.Credentials(base.credentials.required + reference),
+            )
+        val encoded = EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(configuration))
+        assertTrue(
+            encoded,
+            encoded.contains("  bridges:\n    whatsapp:\n      label: WhatsApp\n      origin: https://bridge.example.ts.net\n"),
+        )
+        assertFalse(encoded.contains("token"))
+        val resolved = EvaConfigurationCodec.resolve(reader(mapOf(EvaConfigurationCodec.FILE_NAME to encoded))).configuration
+        assertEquals(bridges, resolved.messaging.bridges)
+        assertTrue(reference in resolved.credentials.required)
+        assertEquals(encoded, EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(resolved)))
+
+        // An override replaces the whole bridge collection, so an empty map clears inherited bridges.
+        val override =
+            EvaConfigurationCodec.encode(
+                EvaConfigurationDocument(
+                    include = listOf("shared/base.yaml"),
+                    messaging = MessagingPatch(bridges = emptyMap()),
+                    credentials = CredentialsPatch(base.credentials.required),
+                ),
+            )
+        val composed =
+            EvaConfigurationCodec
+                .resolve(reader(mapOf(EvaConfigurationCodec.FILE_NAME to override, "shared/base.yaml" to encoded)))
+                .configuration
+        assertTrue(composed.messaging.bridges.isEmpty())
+        assertTrue(composed.messaging.enabled)
+    }
+
+    @Test
+    fun `messaging bridges need a matching credential requirement and an unreserved https identity`() {
+        val base = fullConfiguration()
+        val origin = "https://bridge.example.ts.net"
+
+        fun failure(
+            bridges: Map<String, MessagingBridgeDefinition>,
+            credentials: List<SecretReference> = base.credentials.required,
+        ): String {
+            val document =
+                EvaConfigurationCodec.complete(
+                    base.copy(messaging = base.messaging.copy(bridges = bridges), credentials = EvaConfiguration.Credentials(credentials)),
+                )
+            return assertThrows(IllegalArgumentException::class.java) {
+                EvaConfigurationCodec.resolve(reader(mapOf(EvaConfigurationCodec.FILE_NAME to EvaConfigurationCodec.encode(document))))
+            }.message.orEmpty()
+        }
+        val valid = SecretReference("messaging/whatsapp/bearer", "http-bearer", origin)
+        val bridge = mapOf("whatsapp" to MessagingBridgeDefinition("WhatsApp", origin))
+        assertTrue(failure(bridge).contains("credential requirement is missing"))
+        assertTrue(failure(bridge, base.credentials.required + valid.copy(endpoint = "https://other.example")).contains("different origin"))
+        assertTrue(failure(bridge, base.credentials.required + valid.copy(kind = "http-basic")).contains("kind does not match"))
+        assertTrue(failure(mapOf("sms" to MessagingBridgeDefinition("Texts", origin))).contains("service name"))
+        assertTrue(failure(mapOf("WhatsApp" to MessagingBridgeDefinition("WhatsApp", origin))).contains("service name"))
+        assertTrue(failure(mapOf("whatsapp" to MessagingBridgeDefinition("WhatsApp", "http://bridge.example"))).contains("HTTPS origin"))
+        assertTrue(failure(mapOf("whatsapp" to MessagingBridgeDefinition("WhatsApp", "$origin/api"))).contains("HTTPS origin"))
+        assertTrue(failure(emptyMap(), base.credentials.required + valid).contains("does not belong to a configured bridge"))
+    }
+
+    @Test
     fun `include cycles and paths escaping the selected tree are rejected`() {
         val cycle =
             mapOf(
