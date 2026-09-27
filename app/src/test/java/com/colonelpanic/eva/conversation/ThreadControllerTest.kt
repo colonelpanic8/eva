@@ -4,6 +4,7 @@ import com.colonelpanic.eva.audio.MediaControls
 import com.colonelpanic.eva.audio.MediaTimeline
 import com.colonelpanic.eva.audio.RealtimeMediaSession
 import com.colonelpanic.eva.audio.RealtimeMediaState
+import com.colonelpanic.eva.capability.BundledCapabilities
 import com.colonelpanic.eva.capability.CallEnding
 import com.colonelpanic.eva.capability.CapabilityDefinition
 import com.colonelpanic.eva.capability.CapabilityDispatcher
@@ -116,6 +117,7 @@ class ThreadControllerTest {
         prompt: suspend () -> PromptConfig = { PromptDefaults.config },
         awaitCapabilities: suspend () -> Unit = {},
         callEndings: () -> Map<String, CallEnding> = { emptyMap() },
+        messagingBridges: () -> Map<String, String> = { emptyMap() },
     ) = ThreadController(
         registry = registry,
         dispatcher = CapabilityDispatcher(registry, repository),
@@ -130,9 +132,55 @@ class ThreadControllerTest {
         awaitCapabilities = awaitCapabilities,
         hiddenCapabilities = hiddenCapabilities,
         callEndings = callEndings,
+        messagingBridges = messagingBridges,
         prompt = prompt,
         onBackgroundAnswer = { answers += it },
     )
+
+    @Test
+    fun `configured messaging bridges are named on the shared messaging tools only`() =
+        runTest {
+            val send = BundledCapabilities.definitions.single { it.id == CapabilityRegistry.SMS_SEND }
+            val withMessaging =
+                CapabilityRegistry(
+                    mapOf(
+                        send.id to backend { ExecutionOutcome(InvocationStatus.COMPLETED, "sent") },
+                        lookup.id to backend { ExecutionOutcome(InvocationStatus.COMPLETED, "found") },
+                    ),
+                    listOf(send, lookup),
+                )
+            val provider = FakeProvider()
+            val controller = controller(provider, registry = withMessaging, messagingBridges = { mapOf("whatsapp" to "WhatsApp") })
+            advanceUntilIdle()
+            controller.connect("test")
+            advanceUntilIdle()
+            val note = Wording.bundled.message(Wording.MESSAGING_BRIDGES).replace("{services}", "whatsapp")
+            assertTrue(
+                provider.request.catalog.tools
+                    .single { it.capabilityId == send.id }
+                    .description
+                    .endsWith(note),
+            )
+            assertFalse(
+                provider.request.catalog.tools
+                    .single { it.capabilityId == lookup.id }
+                    .description
+                    .contains("whatsapp"),
+            )
+
+            val plain = FakeProvider()
+            controller(plain, registry = withMessaging).also {
+                advanceUntilIdle()
+                it.connect("test")
+            }
+            advanceUntilIdle()
+            assertFalse(
+                plain.request.catalog.tools
+                    .single { it.capabilityId == send.id }
+                    .description
+                    .contains("Configured messaging services"),
+            )
+        }
 
     /**
      * The controller watches the store for as long as it lives, so it gets a scope that shares
