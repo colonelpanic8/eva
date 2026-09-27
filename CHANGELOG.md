@@ -6,6 +6,7 @@ All notable changes to EVA will be documented here.
 
 ### Added
 
+- Messaging services behind a self-hosted bridge, such as WhatsApp on the multidevice bridge. Under Messaging → Messaging services, add the bridge's name, label, HTTPS origin, and token; the token stays on the phone while the rest travels in your configuration and asks to be provisioned on another device. The usual conversation, history, and send actions then work with `service: whatsapp`: search covers the account's chats and contacts and returns durable references, history shows recent messages with delivery status and attachments, and sending can start a new chat by number. Sends report exactly what the bridge saw: accepted by the service, refused, queued for later, or unknown, and a repeated request never sends twice.
 - Waze navigation, installed automatically once Waze is on the phone. EVA asks Waze to drive to a place's exact coordinates when a place search found them, so Waze starts the route instead of showing search results, and can drive to the Home or Work saved in Waze. It can also avoid tolls or freeways when asked. Like Google Maps, it asks for the unlock first on a locked phone.
 
 ## [0.40.1] - 2026-09-25
