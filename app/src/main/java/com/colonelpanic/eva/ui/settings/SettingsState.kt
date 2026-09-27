@@ -30,6 +30,10 @@ data class SettingsUiState(
         MessagingPreferences(),
     val messagingApps: List<MessagingApp> = emptyList(),
     val messagingPermissions: List<PermissionStatus> = emptyList(),
+    /** Service name to the last connection check of its messaging bridge. */
+    val messagingBridgeChecks: Map<String, String> = emptyMap(),
+    /** Bridges whose token is missing on this device or was saved for another origin. */
+    val messagingBridgesNeedingToken: Set<String> = emptySet(),
     val rememberedNumbers: Int = 0,
     val memories: com.colonelpanic.eva.data.Memories =
         com.colonelpanic.eva.data
@@ -88,6 +92,9 @@ data class SettingsActions(
     val onMessagingEnable: (Boolean) -> Unit = {},
     val onMessagingReply: (String, Boolean) -> Unit = { _, _ -> },
     val onMessagingRefresh: () -> Unit = {},
+    val onSaveMessagingBridge: (String, String, String, String) -> String? = { _, _, _, _ -> null },
+    val onRemoveMessagingBridge: (String) -> Unit = {},
+    val onCheckMessagingBridge: (String) -> Unit = {},
     val onForgetRememberedNumbers: () -> Unit = {},
     val onKeepMemory: (String) -> Unit = {},
     val onForgetMemory: (String) -> Unit = {},

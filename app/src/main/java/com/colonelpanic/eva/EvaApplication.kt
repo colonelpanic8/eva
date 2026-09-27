@@ -602,6 +602,10 @@ class EvaApplication :
             quietHangUpMillis = { settings.quietHangUpSeconds * 1_000L },
             wording = { prompts.wording.value },
             voiceKeywords = { contactKeywords.names() },
+            messagingBridges = {
+                messagingSettings.state.value.bridges
+                    .mapValues { it.value.label }
+            },
             callEndings = { settings.callEndings.value },
             hiddenCapabilities = { if (capabilities.screenControlEnabled) emptySet() else CapabilityRegistry.SCREEN_CONTROL },
             prompt = { prompts.load() },
