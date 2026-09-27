@@ -214,8 +214,9 @@ class EvaApplication :
     }
 
     val messagingSettings by lazy {
-        MessagingSettings(this, configuration::onLocalChange, configuration::onMessagingReplyChange)
+        MessagingSettings(this, configuration::onLocalChange, configuration::onMessagingReplyChange, configuration::onCredentialChange)
     }
+
     val notificationMessages by lazy {
         NotificationMessages(
             enabled = {

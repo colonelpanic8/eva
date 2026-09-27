@@ -630,6 +630,44 @@ class EvaConfigurationManagerTest {
             assertEquals("portable-reload-model", app.settings.textModel)
         }
 
+    @Test
+    fun `a restored messaging bridge keeps its identity and asks this device for its token`() =
+        runBlocking {
+            val baseline = app.configuration.snapshotForTest()
+            val origin = "https://bridge.example.ts.net"
+            val reference = SecretReference("messaging/whatsapp/bearer", "http-bearer", origin)
+            val restored =
+                baseline.copy(
+                    messaging = baseline.messaging.copy(bridges = mapOf("whatsapp" to MessagingBridgeDefinition("WhatsApp", origin))),
+                    credentials = EvaConfiguration.Credentials(baseline.credentials.required + reference),
+                )
+            val folder = MemoryDirectory(EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(restored)))
+            val manager = EvaConfigurationManager(app)
+            val loaded = manager.attachForTest(folder) as LinkedConfigurationResult.Loaded
+            assertTrue(
+                loaded.setupRequired.toString(),
+                "Provision local credential messaging/whatsapp/bearer for $origin." in loaded.setupRequired,
+            )
+            assertEquals(mapOf("whatsapp" to MessagingBridgeDefinition("WhatsApp", origin)), app.messagingSettings.state.value.bridges)
+            assertEquals(listOf("messaging/whatsapp/bearer"), app.messagingSettings.missingBridgeCredentials(restored.messaging.bridges))
+
+            // Without a token on this device the reference still travels, so another device is told to provision it.
+            app.appearance.saveDynamicColor(!baseline.appearance.dynamicColor)
+            manager.localChangeForTest()
+            val saved = EvaConfigurationCodec.resolve(folder).configuration
+            assertEquals(restored.messaging.bridges, saved.messaging.bridges)
+            assertTrue(reference in saved.credentials.required)
+            val again = manager.attachForTest(folder) as LinkedConfigurationResult.Loaded
+            assertTrue("Provision local credential messaging/whatsapp/bearer for $origin." in again.setupRequired)
+
+            // Removing the bridge drops its token reference from the shared file on the next save.
+            app.messagingSettings.removeBridge("whatsapp")
+            manager.localChangeForTest()
+            val removed = EvaConfigurationCodec.resolve(folder).configuration
+            assertTrue(removed.messaging.bridges.isEmpty())
+            assertTrue(removed.credentials.required.none { it.id.startsWith("messaging/") })
+        }
+
     private fun com.colonelpanic.eva.data.PortablePackageSettings.configuration() =
         EvaConfiguration.Packages(repositories, installed, waitMillis, services, serviceBindings)
 

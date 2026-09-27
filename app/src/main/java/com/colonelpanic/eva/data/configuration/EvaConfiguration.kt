@@ -74,6 +74,14 @@ data class EvaConfigurationDocument(
 @Serializable data class MessagingPatch(
     val enabled: Boolean? = null,
     val replies: List<String>? = null,
+    /** Service name to a linked messaging account reached through a bridge; the token stays on the device. */
+    val bridges: Map<String, MessagingBridgeDefinition>? = null,
+)
+
+@Serializable
+data class MessagingBridgeDefinition(
+    val label: String,
+    val origin: String,
 )
 
 @Serializable data class PromptPatch(
@@ -209,6 +217,7 @@ data class EvaConfiguration(
     data class Messaging(
         val enabled: Boolean,
         val replies: List<String>,
+        val bridges: Map<String, MessagingBridgeDefinition> = emptyMap(),
     )
 
     data class Prompt(
@@ -421,6 +430,7 @@ object EvaConfigurationCodec {
             MessagingPatch(
                 current.messaging.enabled.takeIf { it != base?.messaging?.enabled },
                 current.messaging.replies.takeIf { it != base?.messaging?.replies },
+                current.messaging.bridges.takeIf { it != base?.messaging?.bridges.orEmpty() },
             ).nonEmpty(),
         prompt =
             PromptPatch(
@@ -476,6 +486,7 @@ object EvaConfigurationCodec {
                 EvaConfiguration.Messaging(
                     requireNotNull(messaging?.enabled) { "messaging.enabled is missing." },
                     requireNotNull(messaging?.replies) { "messaging.replies is missing." },
+                    messaging?.bridges.orEmpty(),
                 ),
             prompt =
                 EvaConfiguration.Prompt(
@@ -521,6 +532,17 @@ object EvaConfigurationCodec {
         require(messaging.replies.size <= 100) { "At most 100 messaging reply identities may be configured." }
         require(messaging.replies.distinct().size == messaging.replies.size) { "Duplicate messaging reply identity." }
         messaging.replies.forEach { require(MESSAGING_IDENTITY.matches(it)) { "Invalid messaging reply identity." } }
+        require(messaging.bridges.size <= MAX_MESSAGING_BRIDGES) { "At most $MAX_MESSAGING_BRIDGES messaging bridges may be configured." }
+        messaging.bridges.forEach { (name, bridge) ->
+            require(SERVICE_NAME.matches(name) && name !in RESERVED_MESSAGING_SERVICES) { "Invalid messaging bridge service name." }
+            require(bridge.label.isNotBlank() && bridge.label.length <= 100 && bridge.label.none(Char::isISOControl)) {
+                "Invalid messaging bridge label."
+            }
+            bridge.origin.httpsOrigin()
+            require(credentials.required.any { it.id == messagingSecretId(name) && it.endpoint == bridge.origin }) {
+                "Messaging bridge credential requirement is missing or has a different origin."
+            }
+        }
         prompt.source.https("prompt.source")
         PromptConfig(prompt.components).validated(PromptDefaults.VARIABLES)
         require(packages.repositories.isNotEmpty()) { "packages.repositories must name at least one catalog." }
@@ -631,7 +653,8 @@ object EvaConfigurationCodec {
                 PROVIDER_SECRETS[reference.id]
                     ?: ("http-" + reference.id.substringAfterLast("/")).takeIf {
                         SERVICE_SECRET.matches(reference.id) ||
-                            PACKAGE_SECRET.matches(reference.id)
+                            PACKAGE_SECRET.matches(reference.id) ||
+                            MESSAGING_SECRET.matches(reference.id)
                     }
             require(expectedKind != null) { "Unknown or unscoped secret reference." }
             require(reference.kind == expectedKind) { "Secret reference kind does not match its scope." }
@@ -678,6 +701,11 @@ object EvaConfigurationCodec {
         credentials.required.filter { SERVICE_SECRET.matches(it.id) || PACKAGE_SECRET.matches(it.id) }.forEach { reference ->
             require(reference.id in declaredCredentials) { "HTTP credential requirement does not belong to a declared service." }
         }
+        credentials.required.filter { MESSAGING_SECRET.matches(it.id) }.forEach { reference ->
+            require(reference.id in messaging.bridges.keys.map(::messagingSecretId)) {
+                "Messaging credential requirement does not belong to a configured bridge."
+            }
+        }
         require(remembered.chosenNumbers.size <= 500)
         require(remembered.chosenNumbers.values.all { it >= 0 }) { "Invalid remembered number choice." }
         require(device.authorizations.all { it in DEVICE_AUTHORIZATIONS }) { "Unknown device authorization." }
@@ -698,7 +726,7 @@ object EvaConfigurationCodec {
                 extensions.copy(
                     grants = extensions.grants.sortedBy { it.instance }.map { it.copy(mutations = it.mutations.sorted()) },
                 ),
-            messaging = messaging.copy(replies = messaging.replies.sorted()),
+            messaging = messaging.copy(replies = messaging.replies.sorted(), bridges = messaging.bridges.toSortedMap()),
             credentials = credentials.copy(required = credentials.required.sortedBy { it.id }),
             // Numbers remembered before they were kept whole cannot be recovered, so they are dropped.
             remembered = remembered.copy(chosenNumbers = remembered.chosenNumbers.filterKeys(PhoneNumberKey.E164::matches).toSortedMap()),
@@ -727,7 +755,11 @@ object EvaConfigurationCodec {
                             ?.sortedBy { it.instance }
                             ?.map { it.copy(mutations = it.mutations.sorted()) },
                 ),
-            messaging = document.messaging?.copy(replies = document.messaging.replies?.sorted()),
+            messaging =
+                document.messaging?.copy(
+                    replies = document.messaging.replies?.sorted(),
+                    bridges = document.messaging.bridges?.toSortedMap(),
+                ),
             credentials = document.credentials?.copy(required = document.credentials.required?.sortedBy { it.id }),
             remembered = document.remembered?.copy(chosenNumbers = document.remembered.chosenNumbers?.toSortedMap()),
             device = document.device?.copy(authorizations = document.device.authorizations?.sorted()),
@@ -756,6 +788,7 @@ object EvaConfigurationCodec {
             MessagingPatch(
                 override.messaging?.enabled ?: base.messaging?.enabled,
                 override.messaging?.replies ?: base.messaging?.replies,
+                override.messaging?.bridges ?: base.messaging?.bridges,
             ).nonEmpty(),
         prompt =
             PromptPatch(
@@ -813,7 +846,7 @@ object EvaConfigurationCodec {
 
     private fun CapabilitiesPatch.nonEmpty() = takeIf { screenControl != null }
 
-    private fun MessagingPatch.nonEmpty() = takeIf { enabled != null || replies != null }
+    private fun MessagingPatch.nonEmpty() = takeIf { enabled != null || replies != null || bridges != null }
 
     private fun PromptPatch.nonEmpty() = takeIf { source != null || components != null }
 
@@ -870,7 +903,12 @@ object EvaConfigurationCodec {
     private val SEGMENT = Regex("[A-Za-z0-9][A-Za-z0-9._-]*")
     private val PACKAGE_SECRET = Regex("package/[0-9a-f-]{36}/basic")
     private val SERVICE_SECRET = Regex("service/[a-z][a-z0-9-]{0,63}/(basic|bearer)")
+    private val MESSAGING_SECRET = Regex("messaging/[a-z][a-z0-9-]{0,63}/bearer")
     private val SERVICE_NAME = Regex("[a-z][a-z0-9-]{0,63}")
+    private const val MAX_MESSAGING_BRIDGES = 16
+
+    /** Service names the shared messaging tools already give a meaning. */
+    val RESERVED_MESSAGING_SERVICES = setOf("sms", "notifications")
     private val MESSAGING_IDENTITY =
         Regex("[0-9]+:[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z][A-Za-z0-9_]*)+:[0-9]+:[0-9a-f]{64}(?:,[0-9a-f]{64})*")
     private val PROVIDER_SECRETS =
@@ -903,6 +941,10 @@ object EvaConfigurationCodec {
         name: String,
         scheme: String = "basic",
     ) = "service/$name/$scheme"
+
+    fun messagingSecretId(name: String) = "messaging/$name/bearer"
+
+    fun isMessagingBridgeName(name: String) = SERVICE_NAME.matches(name) && name !in RESERVED_MESSAGING_SERVICES
 
     private fun com.colonelpanic.eva.adapters.declarative.PackageDefinition.httpOrigins(): Set<String> =
         httpBindings().map { it.origin }.toSet()
