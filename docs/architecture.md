@@ -312,9 +312,17 @@ Phone numbers compare in E.164, reading a number without a country code as one
 from the SIM's country (`PlatformPhoneNumberKey`); `remembered.chosenNumbers` keys
 are E.164, and keys in any other form are dropped when the configuration loads.
 
-EVA exposes one search/read/send tool family with two execution paths:
+EVA exposes one search/read/send tool family with three execution paths:
 
 - SMS/MMS: native Android conversation lookup, history and sending.
+- Bridge services: a self-hosted
+  [messaging bridge](https://github.com/colonelpanic8/google-messages-multidevice-bridge)
+  holding one linked account, such as WhatsApp, reached over HTTPS with a
+  device-local bearer token. It provides durable conversation references,
+  contacts, recent history, new chats, and an outbox whose states EVA reports as
+  they are. Implemented in `messaging/BridgeMessaging.kt`; its HTTP and outcome
+  mapping have JVM coverage against a scripted bridge, and it has not been
+  verified against a live bridge or on a device.
 - Other apps: recent messaging notifications and their explicit text-reply
   actions. No target-app changes, extensions, Shizuku, or app-specific package
   allowlist are required.
@@ -323,16 +331,33 @@ EVA exposes one search/read/send tool family with two execution paths:
 
 Existing capability IDs remain stable:
 
-| Tool | SMS/MMS | Notification-backed app |
-| --- | --- | --- |
-| eva.android.messages.conversations | Omit service or use sms; optional name query (commas require every person) or participants phone numbers; threads with only the asked-for people rank first | service is notifications for discovery, exact package name, or unique visible app label; query matches conversation title |
-| eva.android.messages.history | Use the returned integer conversationId | Use the returned opaque conversationRef; result is only a notification excerpt |
-| eva.android.messages.send | Explicit recipient number(s) or conversationId, plus message | conversationRef and message; optional service must match |
+| Tool | SMS/MMS | Bridge service | Notification-backed app |
+| --- | --- | --- | --- |
+| eva.android.messages.conversations | Omit service or use sms; optional name query (commas require every person) or participants phone numbers; threads with only the asked-for people rank first | service is the bridge's configured name or label; query is passed to the bridge's name/number search and its contacts; participants filters to chats holding every number | service is notifications for discovery, exact package name, or unique visible app label; query matches conversation title |
+| eva.android.messages.history | Use the returned integer conversationId | Use the returned durable conversationRef (`bridge:<service>:<id>`) | Use the returned opaque conversationRef; result is only a notification excerpt |
+| eva.android.messages.send | Explicit recipient number(s) or conversationId, plus message | conversationRef, or recipient as E.164 numbers to reuse or start a chat, plus message | conversationRef and message; optional service must match |
 
 App search results include service package name, conversation title,
 conversationRef, and replyAvailable. If labels are ambiguous, use the package
 name. EVA never substitutes SMS when an app was explicitly requested. Device
 contacts remain useful for SMS, but a phone number is not an app reply target.
+
+Routing is by explicit naming: a `service` equal to a configured bridge's name
+or label selects that bridge, and a `bridge:` reference selects its bridge even
+without `service`; a reference paired with a different explicit service, an SMS
+thread ID, or a bridge no longer configured is refused rather than redirected.
+Service names are matched exactly (case-insensitively); EVA does not guess which
+service a spoken name means. When at least one bridge is configured, EVA appends
+the `messaging-bridges` note from `eva-wording.yaml`, listing the configured
+names, to the three messaging tools at connection time.
+
+Bridge search results list conversations newest first with name, participants
+(name and E.164 number), group flag, recency, unread state, and an attributed
+preview, followed by matching bridge contacts without a chat and the number to
+send to. History returns the bridge's stored recent messages oldest first with
+sender, elapsed time, direction, the bridge's status string for sent messages
+(shown as received; unknown values are passed through), attachment kinds, and
+reactions. Both are quoted as external data, like every other messaging read.
 
 The controller allows native reads before one send in a request. Every send
 still uses the dispatcher, journal, schema validation, and correlated receipt.
@@ -346,6 +371,35 @@ return **HANDED_OFF**, not delivered or read: Android accepted the app's reply
 action, but does not expose a reliable cross-app server-delivery receipt.
 Expired/cancelled targets or missing permission return **NOT_EXECUTED**.
 Uncertain submission returns **UNKNOWN** and is not automatically retried.
+
+A bridge send first reads `/v1/status`: `authentication_required` or
+`storage_failed` refuses with **NOT_EXECUTED** and says the bridge needs
+re-pairing; an unreachable bridge is **FAILED** with nothing queued. A recipient
+send reuses the chat holding exactly those numbers, otherwise queues chat
+creation under `<key>-chat` and waits for its conversation ID; a rejected,
+ambiguous, canceled, or still-pending creation is **NOT_EXECUTED** because no
+message was queued. The message is queued with an `Idempotency-Key` derived
+from the invocation's call ID and argument fingerprint (SHA-256), so a
+re-delivered invocation maps to the same bridge operation and the bridge
+deduplicates it; EVA never mints a fresh key to retry. EVA then polls
+`/v1/outbox/{key}` for a bounded wait and reports:
+
+| Outbox state | Result |
+| --- | --- |
+| `accepted`, `confirmed` | **COMPLETED**: the service's server accepted it; not delivered or read |
+| `rejected` | **NOT_EXECUTED** with the bridge's detail |
+| `canceled` | **NOT_EXECUTED** |
+| `ambiguous` | **UNKNOWN**; never resent |
+| `queued`, `sending` at the deadline | **HANDED_OFF**: queued at the bridge, with its current state; history shows the outcome later |
+
+A lost answer to the queue request is resolved by reading the key back: a
+record means it was queued, no record is **NOT_EXECUTED**, and an unreadable
+bridge is **UNKNOWN**. A 401/403 reports the saved token as unusable; 409 means
+the bridge holds a different operation for the key and nothing new was sent.
+Transport details and bridge error bodies beyond a short quoted text never reach
+the model. Bearer tokens are sent only in the `Authorization` header over HTTPS
+without redirects, and a response echoing the token is rejected, as for
+declarative packages.
 
 Only the current Android user's non-summary messaging notifications are
 considered. Android must expose exactly one eligible freeform reply action owned
@@ -367,18 +421,28 @@ not erase previously requested conversation receipts or undo sent messages.
 
 ### Limits
 
-This is not a full WhatsApp/Telegram client: it cannot start arbitrary new app
-chats, retrieve complete history, list silent/archived conversations, recover
-dismissed notifications, or send attachments. Locked-device notification reads
-and replies are refused. Notification visibility and action support vary by app.
-“No match” means no match among available notifications, not that the chat does
-not exist.
+The notification path is not a full WhatsApp/Telegram client: it cannot start
+arbitrary new app chats, retrieve complete history, list silent/archived
+conversations, recover dismissed notifications, or send attachments.
+Locked-device notification reads and replies are refused. Notification
+visibility and action support vary by app. “No match” means no match among
+available notifications, not that the chat does not exist.
 
-The shared interface is deliberately independent of extension files. Future
-service-account adapters can provide complete history/new-chat sends where an
-official API supports the user's account. They should preserve explicit service
-selection, account-scoped targets, authority checks, and honest receipt statuses,
-rather than replacing the common user-facing tools.
+A bridge service covers one linked account per bridge and only what that bridge
+has stored: history is the bridge's recent local snapshot, not the phone's
+complete archive, and search relies on the bridge's `q`/`limit` parameters.
+EVA sends text only; attachments are described, never downloaded or sent.
+Status strings are the bridge's own. A queued message stays at the bridge if the
+bridge is disconnected, so a handed-off send may still fail later; EVA does not
+watch the outbox afterwards. Reaching a bridge needs the phone on its network
+(for example the tailnet). The path has JVM tests against a scripted bridge and
+no live-bridge or device verification yet. The bridge holds the account; it is
+the operator's trust decision, and EVA's token grants no action by itself.
+
+The shared interface is deliberately independent of extension files. Bridge
+services are the first service-account adapters behind the common tools; they
+preserve explicit service selection, account-scoped durable targets, and honest
+receipt statuses rather than replacing the user-facing tools.
 
 ## Configuration and restoration
 
@@ -494,7 +558,7 @@ The schema separates these groups:
 | --- | --- |
 | `models`, `voice` | Text/realtime models, per-leg reasoning effort, lookup retry count, quiet hang-up delay, per-action call endings |
 | `appearance`, `capabilities` | Dynamic color and optional capability switches |
-| `messaging` | Notification-read opt-in and exact app-installation reply identities |
+| `messaging` | Notification-read opt-in, exact app-installation reply identities, and `bridges`: service name to label and HTTPS origin of a messaging bridge |
 | `prompt` | Source URL and complete ordered component list |
 | `packages` | Repository, imported package bytes and origins, wait budgets, service bindings, applied shipped defaults |
 | `services.http` | Named HTTPS origins with optional scoped local credential references |
@@ -563,6 +627,29 @@ Use the package instance IDs from your own export. The example assumes both
 packages are defined in the base and declare `https://agenda.example.org`.
 Collections replace inherited collections, so retain other bindings and credential
 references you still need when constructing an override.
+
+A messaging bridge is declared under `messaging.bridges` and requires a matching
+`messaging/<name>/bearer` entry of kind `http-bearer` in `credentials.required`
+with the bridge origin as its endpoint. The name is lowercase and cannot be `sms`
+or `notifications`. The token is entered under **Messaging → Messaging services**
+and stored only in the encrypted secret store, scoped to that origin; changing
+the origin invalidates it. Restoring the configuration keeps the bridge and
+reports the token as a provisioning need until it is entered on that device:
+
+```yaml
+messaging:
+  enabled: false
+  replies: []
+  bridges:
+    whatsapp:
+      label: WhatsApp
+      origin: https://bridge.example.ts.net
+credentials:
+  required:
+  - id: messaging/whatsapp/bearer
+    kind: http-bearer
+    endpoint: https://bridge.example.ts.net
+```
 
 Provision the local username/password or Bearer token through the extension's server settings.
 The **Service name** field identifies the reusable service. The repository stores
