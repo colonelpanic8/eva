@@ -51,6 +51,10 @@ class PackageHttpClient(
                     .url(url)
                     .header("User-Agent", USER_AGENT)
                     .tag(AtomicBoolean::class.java, AtomicBoolean(false))
+            request.headers.forEach { (name, value) ->
+                require(!name.equals("Authorization", true)) { "Authorization comes from the credential" }
+                builder.header(name, value)
+            }
             var authorization: String? = null
             request.credential?.let { name ->
                 val saved =
