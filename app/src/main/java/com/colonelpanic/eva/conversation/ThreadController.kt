@@ -87,6 +87,8 @@ class ThreadController(
     private val voiceKeywords: suspend () -> List<String> = { emptyList() },
     /** The user's per-action overrides of whether a successful action ends the voice call. */
     private val callEndings: () -> Map<String, CallEnding> = { emptyMap() },
+    /** Configured messaging bridges, service name to label, named to the model on the shared messaging tools. */
+    private val messagingBridges: () -> Map<String, String> = { emptyMap() },
     /** Capabilities the user has switched off. They are left out of the catalog entirely. */
     private val hiddenCapabilities: () -> Set<String> = { emptySet() },
     /** Read at every connection, so an edit to the prompt file applies to the next session. */
@@ -226,6 +228,20 @@ class ThreadController(
                 CallEnding.NEVER, null -> return tool
             }
         return tool.copy(description = tool.description + "\n\n" + wording().message(key))
+    }
+
+    /**
+     * Which bridge services exist is configuration, not wording, so EVA's note names them on the
+     * messaging tools at connection time; the note's words still come from the followed wording.
+     */
+    private fun bridgeNote(tool: ProviderToolDefinition): ProviderToolDefinition {
+        if (tool.capabilityId !in MESSAGING_TOOLS) return tool
+        val bridges = messagingBridges().takeIf { it.isNotEmpty() } ?: return tool
+        val listed = bridges.entries.joinToString(", ") { (name, label) -> if (label.equals(name, true)) name else "$name ($label)" }
+        return tool.copy(
+            description =
+                tool.description + "\n\n" + wording().message(Wording.MESSAGING_BRIDGES).replace("{services}", listed),
+        )
     }
 
     /** The prompt and the catalog are decided together: components rewrite and hide tools. */
@@ -371,7 +387,7 @@ class ThreadController(
                                 .apply(
                                     (if (voice) listOf(wording().describe(END_CONVERSATION), DEFER_TO_TEXT) else emptyList()) +
                                         phoneTools(snapshot, voice),
-                                ).map { tool -> endingNote(tool, endings[tool.capabilityId]) },
+                                ).map { tool -> endingNote(bridgeNote(tool), endings[tool.capabilityId]) },
                             snapshot.revision,
                         )
                     val provider =
@@ -1212,6 +1228,9 @@ class ThreadController(
     }
 
     companion object {
+        /** The shared messaging tools a configured bridge extends. */
+        val MESSAGING_TOOLS =
+            setOf(CapabilityRegistry.CONVERSATIONS_SEARCH, CapabilityRegistry.CONVERSATION_READ, CapabilityRegistry.SMS_SEND)
         const val UNTITLED = "New conversation"
         const val READ_ONLY_CALLS_PER_TURN = 24
         const val CALLS_PER_TURN = 32
