@@ -68,7 +68,7 @@ object BundledCapabilities {
     private val appMessageFields =
         schema(
             """{"service":{"type":"string","minLength":1,"maxLength":200},
-        "conversationRef":{"type":"string","minLength":1,"maxLength":100}}""",
+        "conversationRef":{"type":"string","minLength":1,"maxLength":300}}""",
         )
     private val sendSchema =
         JsonObject(
@@ -185,7 +185,7 @@ object BundledCapabilities {
                 schema(
                     """{"type":"object","properties":{
                     "service":{"type":"string","minLength":1,"maxLength":200},
-                    "conversationRef":{"type":"string","minLength":1,"maxLength":100},
+                    "conversationRef":{"type":"string","minLength":1,"maxLength":300},
                     "conversationId":{"type":"integer","minimum":1},
                     "limit":{"type":"integer","minimum":1,"maximum":${ConversationSummaries.MAX_MESSAGES}}},
                     "required":[],"additionalProperties":false}""",

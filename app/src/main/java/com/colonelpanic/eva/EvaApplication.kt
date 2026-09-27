@@ -217,6 +217,16 @@ class EvaApplication :
         MessagingSettings(this, configuration::onLocalChange, configuration::onMessagingReplyChange, configuration::onCredentialChange)
     }
 
+    /** Linked messaging accounts behind self-hosted bridges; tokens resolve only for a bridge's own origin. */
+    val bridgeMessaging by lazy {
+        com.colonelpanic.eva.messaging.BridgeMessaging(
+            bridges = { messagingSettings.state.value.bridges },
+            http =
+                com.colonelpanic.eva.adapters.declarative.PackageHttpClient(credential = { origin, name ->
+                    messagingSettings.bridgeCredential(name)?.takeIf { it.origin == origin }
+                }),
+        )
+    }
     val notificationMessages by lazy {
         NotificationMessages(
             enabled = {
@@ -251,6 +261,7 @@ class EvaApplication :
                                 MessagingBackend.Operation.SEND,
                                 chosenNumbers.remembering(SmsSendBackend(this@EvaApplication, intentHost, messageTargets), "recipient"),
                                 notificationMessages,
+                                bridgeMessaging,
                             ),
                         CapabilityRegistry.CONTACTS_SEARCH to
                             ContactsQueryBackend(this@EvaApplication, intentHost, ::contactHistory),
@@ -259,12 +270,14 @@ class EvaApplication :
                                 MessagingBackend.Operation.SEARCH,
                                 MessagingReadBackend(intentHost, messagingStore, MessagingReadBackend.Operation.CONVERSATIONS),
                                 notificationMessages,
+                                bridgeMessaging,
                             ),
                         CapabilityRegistry.CONVERSATION_READ to
                             MessagingBackend(
                                 MessagingBackend.Operation.READ,
                                 MessagingReadBackend(intentHost, messagingStore, MessagingReadBackend.Operation.MESSAGES),
                                 notificationMessages,
+                                bridgeMessaging,
                             ),
                         CapabilityRegistry.DIAL to
                             chosenNumbers.remembering(

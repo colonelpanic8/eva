@@ -36,6 +36,8 @@ data class HttpRequest(
     val credential: String?,
     val maxResponseBytes: Int,
     val credentialScheme: String = "basic",
+    /** Extra request headers; Authorization is always taken from the credential instead. */
+    val headers: Map<String, String> = emptyMap(),
 )
 
 class BindingArguments(
