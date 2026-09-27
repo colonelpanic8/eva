@@ -251,6 +251,7 @@ class MainActivity : ComponentActivity() {
         val signIn by eva.signIn.state.collectAsStateWithLifecycle()
         val messaging by eva.messagingSettings.state.collectAsStateWithLifecycle()
         val messagingApps by eva.notificationMessages.apps.collectAsStateWithLifecycle()
+        val messagingBridgeChecks by eva.bridgeMessaging.checks.collectAsStateWithLifecycle()
         val rememberedNumbers by eva.chosenNumbers.count.collectAsStateWithLifecycle()
         val memories by eva.memories.state.collectAsStateWithLifecycle()
         LaunchedEffect(Unit) { runCatching { eva.memories.load() } }
@@ -268,6 +269,14 @@ class MainActivity : ComponentActivity() {
             messaging = messaging,
             messagingApps = messagingApps,
             messagingPermissions = messagingPermissions,
+            messagingBridgeChecks = messagingBridgeChecks,
+            messagingBridgesNeedingToken =
+                remember(messaging) {
+                    eva.messagingSettings
+                        .missingBridgeCredentials(messaging.bridges)
+                        .map { it.split('/')[1] }
+                        .toSet()
+                },
             rememberedNumbers = rememberedNumbers,
             memories = memories,
             plugins = plugins,
@@ -430,6 +439,16 @@ class MainActivity : ComponentActivity() {
                     lifecycleScope.launch { eva.registry.changeAuthorization { eva.messagingSettings.allowReply(identity, allowed) } }
                 },
                 onMessagingRefresh = EvaNotificationListener::refreshMessages,
+                onSaveMessagingBridge = {
+                    name,
+                    label,
+                    origin,
+                    token,
+                    ->
+                    save { eva.messagingSettings.saveBridge(name, label, origin, token) }
+                },
+                onRemoveMessagingBridge = eva.messagingSettings::removeBridge,
+                onCheckMessagingBridge = { name -> lifecycleScope.launch { eva.bridgeMessaging.check(name) } },
                 onForgetRememberedNumbers = { lifecycleScope.launch { eva.chosenNumbers.forget() } },
                 onKeepMemory = { name -> editMemory { eva.memories.keep(name) } },
                 onForgetMemory = { name -> editMemory { eva.memories.forget(name) } },
