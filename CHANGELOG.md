@@ -4,6 +4,17 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.42.0] - 2026-09-28
+
+### Changed
+
+- Every action EVA runs stays in the conversation as one compact line under your request, showing what ran and whether it worked. Tap it to see the details the model sent and the full result.
+
+### Fixed
+
+- Actions and answers in older requests no longer vanish once a conversation gets long.
+- An action the voice model asked for while an earlier request was finishing in text used to disappear without a trace, and the model was left waiting for it. It now shows as not run, and the model is told nothing happened.
+
 ## [0.41.1] - 2026-09-28
 
 ### Fixed
