@@ -53,6 +53,9 @@ data class SettingsUiState(
     val canSeeMediaSessions: Boolean = false,
     val canControlScreen: Boolean = false,
     val screenControlEnabled: Boolean = true,
+    val deviceTask: com.colonelpanic.eva.data.configuration.DeviceTaskConfiguration =
+        com.colonelpanic.eva.data.configuration
+            .DeviceTaskConfiguration(),
     val spotifyClientId: String? = null,
     val spotifyAccount: String? = null,
     val spotifyPremium: Boolean? = null,
@@ -115,6 +118,8 @@ data class SettingsActions(
     val onOpenAssistantSettings: () -> Unit = {},
     val onOpenMediaControlSettings: () -> Unit = {},
     val onScreenControlChange: (Boolean) -> Unit = {},
+    val onDeviceTaskChange: (com.colonelpanic.eva.data.configuration.DeviceTaskConfiguration) -> Unit = {},
+    val onPortalToken: (String) -> Unit = {},
     val onSaveSpotifyClientId: (String) -> String? = { null },
     val onConnectSpotify: () -> String? = { null },
     val onCancelSpotifyConnect: () -> Unit = {},

@@ -310,6 +310,7 @@ class TextTaskAgent(
                 progress(TaskPhase.ACTING, call.name)
                 val actionStart = clock()
                 var actionResult: ActionResult? = null
+                var performEntered = false
                 // Publishing the child under the monitor makes stop/revise win before dispatch.
                 try {
                     interruptible {
@@ -317,6 +318,7 @@ class TextTaskAgent(
                         if (action == null) {
                             observation = backend.observe()
                         } else {
+                            performEntered = true
                             val r = backend.perform(action)
                             actionResult = r
                             if (r.executionStatus == ExecutionStatus.EXECUTED && action !is Screenshot) effects++
@@ -327,7 +329,7 @@ class TextTaskAgent(
                 } catch (e: CancellationException) {
                     currentCoroutineContext().ensureActive()
                     // A backend drains submitted input before returning from cancellation.
-                    if (action != null && actionResult == null) uncertain = true
+                    if (performEntered && actionResult == null) uncertain = true
                     if (!isStopped && revision == rev && !synchronized(control) { paused }) throw e
                 }
                 val elapsed = clock() - actionStart

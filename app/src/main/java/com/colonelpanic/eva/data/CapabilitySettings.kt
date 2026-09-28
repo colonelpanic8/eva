@@ -13,9 +13,47 @@ import kotlinx.coroutines.flow.asStateFlow
 class CapabilitySettings(
     context: Context,
     private val onChanged: () -> Unit = {},
+    private val onCredentialChanged: (String) -> Unit = {},
 ) {
     private val prefs = context.applicationContext.getSharedPreferences("eva.settings", Context.MODE_PRIVATE)
     private val mutableScreenControl = MutableStateFlow(prefs.getBoolean(SCREEN_CONTROL, true))
+
+    private val secrets = SecretStore(context)
+    private val mutableDeviceTask =
+        MutableStateFlow(
+            runCatching {
+                kotlinx.serialization.json.Json.decodeFromString<com.colonelpanic.eva.data.configuration.DeviceTaskConfiguration>(
+                    prefs.getString("capabilities.deviceTask", "{}")!!,
+                )
+            }.getOrDefault(
+                com.colonelpanic.eva.data.configuration
+                    .DeviceTaskConfiguration(),
+            ),
+        )
+    val deviceTaskFlow = mutableDeviceTask.asStateFlow()
+    val deviceTask get() = mutableDeviceTask.value
+
+    fun saveDeviceTask(value: com.colonelpanic.eva.data.configuration.DeviceTaskConfiguration) {
+        commit {
+            putString(
+                "capabilities.deviceTask",
+                kotlinx.serialization.json.Json.encodeToString(
+                    com.colonelpanic.eva.data.configuration.DeviceTaskConfiguration
+                        .serializer(),
+                    value,
+                ),
+            )
+        }
+        mutableDeviceTask.value = value
+        onChanged()
+    }
+
+    fun portalToken(): String? = secrets.read("device/portal")
+
+    fun savePortalToken(value: String) {
+        if (value.isBlank()) secrets.clear("device/portal") else secrets.write("device/portal", value.trim())
+        onCredentialChanged("device/portal")
+    }
 
     val screenControlFlow = mutableScreenControl.asStateFlow()
 

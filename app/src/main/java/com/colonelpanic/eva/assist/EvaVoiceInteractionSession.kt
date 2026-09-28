@@ -70,7 +70,10 @@ class EvaVoiceInteractionSession(
                     locked = locked,
                     needsMicrophone = needsMicrophone,
                     onStart = ::start,
-                    onStop = eva.controller::disconnect,
+                    onStop = {
+                        eva.controller.stopTask()
+                        eva.controller.disconnect()
+                    },
                     onToggleMicrophone = eva.controller::toggleMicrophone,
                     onTogglePlayback = eva.controller::togglePlayback,
                     onOpenApp = ::openApp,

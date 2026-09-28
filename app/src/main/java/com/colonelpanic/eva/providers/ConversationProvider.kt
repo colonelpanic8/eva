@@ -127,6 +127,7 @@ sealed interface ProviderEvent {
     data class Transcript(
         val role: String,
         val text: String,
+        val itemId: String? = null,
     ) : ProviderEvent
 
     /**
@@ -139,6 +140,10 @@ sealed interface ProviderEvent {
 
     /** The user started speaking. Only a provider that detects speech itself sends this. */
     data object UserSpeaking : ProviderEvent
+
+    data class SpeechInputStarted(
+        val itemId: String,
+    ) : ProviderEvent
 
     data class Failure(
         val message: String,

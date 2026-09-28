@@ -65,6 +65,7 @@ data class EvaConfigurationDocument(
 
 @Serializable data class CapabilitiesPatch(
     val screenControl: Boolean? = null,
+    val deviceTask: DeviceTaskConfiguration? = null,
 )
 
 @Serializable data class MessagingPatch(
@@ -198,6 +199,7 @@ data class EvaConfiguration(
 
     data class Capabilities(
         val screenControl: Boolean,
+        val deviceTask: DeviceTaskConfiguration = DeviceTaskConfiguration(),
     )
 
     data class Messaging(
@@ -409,7 +411,14 @@ object EvaConfigurationCodec {
                 current.voice.quietHangUpSeconds.takeIf { it != base?.voice?.quietHangUpSeconds },
             ).nonEmpty(),
         appearance = AppearancePatch(current.appearance.dynamicColor.takeIf { it != base?.appearance?.dynamicColor }).nonEmpty(),
-        capabilities = CapabilitiesPatch(current.capabilities.screenControl.takeIf { it != base?.capabilities?.screenControl }).nonEmpty(),
+        capabilities =
+            CapabilitiesPatch(
+                current.capabilities.screenControl.takeIf { it != base?.capabilities?.screenControl },
+                current.capabilities.deviceTask.takeIf {
+                    it !=
+                        base?.capabilities?.deviceTask
+                },
+            ).nonEmpty(),
         messaging =
             MessagingPatch(
                 current.messaging.enabled.takeIf { it != base?.messaging?.enabled },
@@ -463,7 +472,10 @@ object EvaConfigurationCodec {
                 ),
             appearance = EvaConfiguration.Appearance(requireNotNull(appearance?.dynamicColor) { "appearance.dynamicColor is missing." }),
             capabilities =
-                EvaConfiguration.Capabilities(requireNotNull(capabilities?.screenControl) { "capabilities.screenControl is missing." }),
+                EvaConfiguration.Capabilities(
+                    requireNotNull(capabilities?.screenControl) { "capabilities.screenControl is missing." },
+                    capabilities?.deviceTask ?: DeviceTaskConfiguration(),
+                ),
             messaging =
                 EvaConfiguration.Messaging(
                     requireNotNull(messaging?.enabled) { "messaging.enabled is missing." },
@@ -617,6 +629,7 @@ object EvaConfigurationCodec {
         credentials.required.forEach { reference ->
             val expectedKind =
                 PROVIDER_SECRETS[reference.id]
+                    ?: "portal-bearer".takeIf { reference.id == "device/portal" }
                     ?: ("http-" + reference.id.substringAfterLast("/")).takeIf {
                         SERVICE_SECRET.matches(reference.id) ||
                             PACKAGE_SECRET.matches(reference.id)
@@ -624,6 +637,12 @@ object EvaConfigurationCodec {
             require(expectedKind != null) { "Unknown or unscoped secret reference." }
             require(reference.kind == expectedKind) { "Secret reference kind does not match its scope." }
             when {
+                reference.id == "device/portal" -> {
+                    require(reference.endpoint == "http://127.0.0.1:${capabilities.deviceTask.portalPort}") {
+                        "Portal credential endpoint must match the configured local port."
+                    }
+                }
+
                 reference.id == BROKER_SECRET -> {
                     requireNotNull(
                         reference.endpoint,
@@ -737,7 +756,11 @@ object EvaConfigurationCodec {
                 override.voice?.quietHangUpSeconds ?: base.voice?.quietHangUpSeconds,
             ).nonEmpty(),
         appearance = AppearancePatch(override.appearance?.dynamicColor ?: base.appearance?.dynamicColor).nonEmpty(),
-        capabilities = CapabilitiesPatch(override.capabilities?.screenControl ?: base.capabilities?.screenControl).nonEmpty(),
+        capabilities =
+            CapabilitiesPatch(
+                override.capabilities?.screenControl ?: base.capabilities?.screenControl,
+                override.capabilities?.deviceTask ?: base.capabilities?.deviceTask,
+            ).nonEmpty(),
         messaging =
             MessagingPatch(
                 override.messaging?.enabled ?: base.messaging?.enabled,
@@ -797,7 +820,7 @@ object EvaConfigurationCodec {
 
     private fun AppearancePatch.nonEmpty() = takeIf { dynamicColor != null }
 
-    private fun CapabilitiesPatch.nonEmpty() = takeIf { screenControl != null }
+    private fun CapabilitiesPatch.nonEmpty() = takeIf { screenControl != null || deviceTask != null }
 
     private fun MessagingPatch.nonEmpty() = takeIf { enabled != null || replies != null }
 
@@ -890,4 +913,36 @@ object EvaConfigurationCodec {
 
     private fun com.colonelpanic.eva.adapters.declarative.PackageDefinition.httpOrigins(): Set<String> =
         httpBindings().map { it.origin }.toSet()
+}
+
+@Serializable
+data class DeviceTaskConfiguration(
+    val backend: String = "portal",
+    val portalPort: Int = 8080,
+    val credential: String = "device/portal",
+    val model: String = "gpt-6-sol",
+    val reasoningEffort: String = "low",
+    val maxSteps: Int = 30,
+    val maxMillis: Long = 300_000,
+    val modelTimeoutMillis: Long = 120_000,
+    val maxScreens: Int = 6,
+    val historyLines: Int = 30,
+    val maxRefusals: Int = 4,
+    val maxScreenshots: Int = 3,
+) {
+    init {
+        require(backend in setOf("portal", "shizuku"))
+        require(portalPort in 1..65535 && credential == "device/portal")
+        require(model.isNotBlank() && model.length <= 100 && reasoningEffort in setOf("low", "medium", "high"))
+        require(maxSteps in 1..200 && maxMillis in 1..600_000)
+        com.colonelpanic.eva.devicecontrol.worker.WorkerSettings(
+            maxSteps,
+            maxMillis,
+            modelTimeoutMillis,
+            maxScreens,
+            historyLines,
+            maxRefusals,
+            maxScreenshots,
+        )
+    }
 }

@@ -579,6 +579,11 @@ class EvaConfigurationManager(
         val packages = app.packageSettings.portable()
         val observedCredentialRefs =
             buildList {
+                if (app.capabilities.deviceTask.backend ==
+                    "portal"
+                ) {
+                    add(SecretReference("device/portal", "portal-bearer", "http://127.0.0.1:${app.capabilities.deviceTask.portalPort}"))
+                }
                 if (app.settings.apiKey() != null) add(SecretReference(OPENAI_REF, "openai-api-key"))
                 if (app.chatGpt.signedIn) add(SecretReference(CHATGPT_REF, "chatgpt-account"))
                 app.settings.hostLink().takeIf { it.isNotBlank() }?.let { link ->
@@ -626,7 +631,7 @@ class EvaConfigurationManager(
                 ),
             voice = EvaConfiguration.Voice(app.settings.voiceLookupRetries, app.settings.quietHangUpSeconds),
             appearance = EvaConfiguration.Appearance(app.appearance.dynamicColor),
-            capabilities = EvaConfiguration.Capabilities(app.capabilities.screenControlEnabled),
+            capabilities = EvaConfiguration.Capabilities(app.capabilities.screenControlEnabled, app.capabilities.deviceTask),
             messaging = EvaConfiguration.Messaging(messaging.enabled, replies),
             prompt = EvaConfiguration.Prompt(prompt.source, prompt.config.components),
             packages = packages.configuration(),
@@ -761,6 +766,7 @@ class EvaConfigurationManager(
         app.settings.saveQuietHangUpSeconds(configuration.voice.quietHangUpSeconds)
         app.appearance.saveDynamicColor(configuration.appearance.dynamicColor)
         app.capabilities.saveScreenControl(configuration.capabilities.screenControl)
+        app.capabilities.saveDeviceTask(configuration.capabilities.deviceTask)
         app.spotify.saveClientId(configuration.spotify.clientId.orEmpty())
         app.prompts.restorePortable(configuration.prompt.source, PromptConfig(configuration.prompt.components))
         val notices = app.packageSettings.restore(packages, beforePackagePreferences)
@@ -784,6 +790,10 @@ class EvaConfigurationManager(
             configuration.credentials.required.forEach { reference ->
                 val available =
                     when (reference.id) {
+                        "device/portal" -> {
+                            app.capabilities.portalToken() != null
+                        }
+
                         OPENAI_REF -> {
                             app.settings.apiKey() != null
                         }
@@ -920,7 +930,10 @@ class EvaConfigurationManager(
         attempt("voice lookup retries") { app.settings.saveVoiceLookupRetries(before.voice.lookupRetries) }
         attempt("quiet hang-up") { app.settings.saveQuietHangUpSeconds(before.voice.quietHangUpSeconds) }
         attempt("appearance") { app.appearance.saveDynamicColor(before.appearance.dynamicColor) }
-        attempt("capabilities") { app.capabilities.saveScreenControl(before.capabilities.screenControl) }
+        attempt("capabilities") {
+            app.capabilities.saveScreenControl(before.capabilities.screenControl)
+            app.capabilities.saveDeviceTask(before.capabilities.deviceTask)
+        }
         attempt("Spotify client") { app.spotify.saveClientId(before.spotify.clientId.orEmpty()) }
         attempt("packages") { app.packageSettings.restore(before.packages.portable(before.services)) }
         attempt("remembered choices") { app.chosenNumbers.replace(before.remembered.chosenNumbers) }

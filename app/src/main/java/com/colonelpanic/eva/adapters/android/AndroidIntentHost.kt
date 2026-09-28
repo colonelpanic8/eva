@@ -33,6 +33,7 @@ class AndroidIntentHost(
     private val context: Context,
     private val backgroundAssistantAvailable: () -> Boolean = { AssistantRole.isEva(context) },
     private val deviceLocked: () -> Boolean = { context.getSystemService(KeyguardManager::class.java).isDeviceLocked },
+    private val deviceTaskRunning: () -> Boolean = { false },
     private val requestUnlock: suspend (ComponentActivity) -> Boolean? = ::dismissKeyguard,
 ) {
     private var surface: WeakReference<ComponentActivity>? = null
@@ -112,6 +113,7 @@ class AndroidIntentHost(
                     }
                 }
             }
+            if (deviceTaskRunning()) return@withContext ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "A device task is running.")
             val start = starter() ?: return@withContext ExecutionOutcome(InvocationStatus.NOT_EXECUTED, SURFACE_LOST)
             try {
                 start(intent)

@@ -77,6 +77,13 @@ object BundledCapabilities {
     val definitions =
         listOf(
             tool(
+                CapabilityRegistry.DEVICE_TASK,
+                "Run a device task",
+                schema(
+                    """{"type":"object","properties":{"goal":{"type":"string","minLength":1,"maxLength":4000}},"required":["goal"],"additionalProperties":false}""",
+                ),
+            ),
+            tool(
                 CapabilityRegistry.SMS_COMPOSE,
                 "Prepare a text message",
                 messageSchema,

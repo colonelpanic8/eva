@@ -91,7 +91,10 @@ class ThreadController(
     /** Called with the answer a turn produced while nothing was attached to its thread. */
     private val onBackgroundAnswer: (BackgroundAnswer) -> Unit = {},
     private val nowMillis: () -> Long = System::currentTimeMillis,
+    private val deviceTasks: com.colonelpanic.eva.devicecontrol.DeviceTaskCoordinator? = null,
 ) {
+    private val deviceSpeechOwners = mutableMapOf<String, Pair<String, String>>()
+
     data class BackgroundAnswer(
         val threadId: String,
         val title: String,
@@ -207,6 +210,20 @@ class ThreadController(
 
     init {
         scope.launch {
+            deviceTasks?.running?.collect { running ->
+                val owned = running?.takeIf { it.threadId == shownThreadId }
+                mutableState.update {
+                    it.copy(
+                        deviceTaskActive = owned != null,
+                        providerMessage = if (owned != null) owned.progress?.message ?: owned.progress?.phase?.name else it.providerMessage,
+                    )
+                }
+            }
+        }
+    }
+
+    init {
+        scope.launch {
             try {
                 repository.recoverInterrupted()
                 store.recoverInterrupted().forEach { turn ->
@@ -253,12 +270,20 @@ class ThreadController(
                 .map { it.threadId }
                 .toSet()
         if (id == null) {
-            mutableState.update { it.copy(threadId = null, entries = emptyList(), working = false) }
+            mutableState.update { it.copy(threadId = null, entries = emptyList(), working = false, deviceTaskActive = false) }
             return
         }
         val items = store.items(id)
         val entries = projectEntries(store.turns(id), items, receipts(items))
-        mutableState.update { it.copy(threadId = id, entries = entries, working = activeTask(id) != null) }
+        mutableState.update {
+            it.copy(
+                threadId = id,
+                entries = entries,
+                working = activeTask(id) != null,
+                deviceTaskActive =
+                    deviceTasks?.running?.value?.threadId == id,
+            )
+        }
     }
 
     private suspend fun receipts(items: List<ThreadItem>): Map<String, InvocationRecord> {
@@ -457,7 +482,7 @@ class ThreadController(
                     // A spoken turn has no typed input; the response is the turn, and its transcript
                     // may still be in flight. Nothing else may own this thread's next answer.
                     activeTask(threadId)?.let { previous ->
-                        if (previous.delegated) return
+                        if (previous.delegated || deviceTasks?.owns(previous.turnId) == true) return
                         if (previous.dispatches.none { it.isActive }) previous.complete()
                     }
                     startTask(threadId, event.inputId, "", opened, spoken = true)
@@ -467,6 +492,16 @@ class ThreadController(
             is ProviderEvent.Transcript -> {
                 val task = activeTask(threadId)
                 if (event.role == "user") {
+                    val owner = event.itemId?.let { deviceSpeechOwners.remove(opened.connectionEpoch + ":" + it) }
+                    if (owner != null && deviceTasks?.owns(owner.second) == true) {
+                        if (event.text.trim().lowercase() in
+                            setOf("stop", "cancel", "stop device task", "cancel device task")
+                        ) {
+                            stopDeviceTask()
+                        } else {
+                            deviceTasks.revise(owner.first, event.text)
+                        }
+                    }
                     task?.request = event.text
                     store.append(
                         ThreadItem.UserMessage(
@@ -519,6 +554,14 @@ class ThreadController(
                 } else {
                     if (voice) actionResponses += event.call.generationId
                     taskFor(opened, event.call.inputId)?.dispatch(event)
+                }
+            }
+
+            is ProviderEvent.SpeechInputStarted -> {
+                val owner = deviceTasks?.running?.value?.takeIf { it.threadId == threadId }
+                if (owner != null) {
+                    deviceSpeechOwners[opened.connectionEpoch + ":" + event.itemId] = owner.threadId to owner.turnId
+                    deviceTasks?.pause(threadId)
                 }
             }
 
@@ -664,7 +707,27 @@ class ThreadController(
     }
 
     /** Cancels the shown thread's turn task. Distinct from ending the call, which leaves it running. */
+    fun stopDeviceTask() {
+        val owner = deviceTasks?.running?.value
+        deviceTasks?.stop()
+        owner?.turnId?.let { tasks[it]?.interrupt("Stopped.") }
+    }
+
+    fun reviseDeviceTask(text: String): Boolean {
+        if (text.isBlank() || text.length > 4000) return false
+        val thread = shownThreadId ?: return false
+        val owner = deviceTasks?.running?.value?.takeIf { it.threadId == thread } ?: return false
+        if (text.trim().lowercase() in setOf("stop", "cancel", "stop device task", "cancel device task")) {
+            stopDeviceTask()
+            return true
+        }
+        if (!deviceTasks.revise(thread, text)) return false
+        scope.launch { store.append(ThreadItem.UserMessage(UUID.randomUUID().toString(), thread, owner.turnId, nowMillis(), text, false)) }
+        return true
+    }
+
     fun stopTask() {
+        stopDeviceTask()
         val task = shownThreadId?.let { activeTask(it) } ?: return
         task.interrupt("Stopped.")
     }
@@ -676,10 +739,12 @@ class ThreadController(
 
     /** Every running task is interrupted with [reason], for when Android will not let them continue. */
     fun interruptAll(reason: String) {
+        deviceTasks?.stop()
         tasks.values.filter { it.active }.forEach { it.interrupt(reason) }
     }
 
     fun submit(text: String) {
+        if (text.isNotBlank() && reviseDeviceTask(text)) return
         val current = state.value
         val opened = session ?: return
         val threadId = attachedThreadId ?: return
@@ -923,6 +988,7 @@ class ThreadController(
 
         /** Providers report this once per input, after any tool follow-up, so it is the answer's end. */
         fun generationEnded(status: String) {
+            if (deviceTasks?.owns(turnId) == true) return
             if (status == "completed" || status == "cancelled") complete() else fail("The model could not complete this response.")
         }
 
@@ -938,9 +1004,11 @@ class ThreadController(
         }
 
         fun interrupt(reason: String) {
+            val drainingDevice = deviceTasks?.stop(turnId) == true
             if (!active) return
             active = false
             taskScope.launch(NonCancellable) {
+                if (drainingDevice) dispatches.joinAll()
                 store.closeTurn(turnId, TurnStatus.INTERRUPTED)
                 store.append(notice(threadId, turnId, NoticeKind.INTERRUPTED, reason))
                 finish()
@@ -949,6 +1017,10 @@ class ThreadController(
 
         private fun fail(reason: String) {
             if (!active) return
+            if (deviceTasks?.owns(turnId) == true) {
+                legLost()
+                return
+            }
             active = false
             taskScope.launch(NonCancellable) {
                 store.closeTurn(turnId, TurnStatus.FAILED)

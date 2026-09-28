@@ -9,6 +9,7 @@ data class ConversationState(
     val entries: List<ConversationEntry> = emptyList(),
     /** A turn task is running on the shown thread, attached or not. */
     val working: Boolean = false,
+    val deviceTaskActive: Boolean = false,
     val isLoading: Boolean = true,
     val isSubmitting: Boolean = false,
     val errorMessage: String? = null,
@@ -19,7 +20,11 @@ data class ConversationState(
     val mediaState: RealtimeMediaState = RealtimeMediaState.Idle,
     val mediaControls: MediaControls = MediaControls(),
     val providerLabel: String = "Not connected",
-)
+) {
+    val acceptsTextInput: Boolean get() =
+        !isLoading && errorMessage == null &&
+            (deviceTaskActive || (!isSubmitting && providerStatus == ProviderStatus.CONNECTED && !voiceMode))
+}
 
 data class ConversationEntry(
     val id: String,

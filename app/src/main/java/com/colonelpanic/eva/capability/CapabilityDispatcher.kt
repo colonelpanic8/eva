@@ -12,6 +12,10 @@ import java.util.Collections
 class CapabilityDispatcher(
     private val registry: CapabilityRegistry,
     private val repository: InvocationRepository,
+    private val executeAdmitted: suspend (
+        ToolProposal,
+        ExecutionBackend,
+    ) -> ExecutionOutcome = { proposal, backend -> backend.execute(proposal) },
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) {
     private val submissions = CallLocks()
@@ -91,7 +95,7 @@ class CapabilityDispatcher(
                 currentCoroutineContext().ensureActive()
                 val outcome =
                     try {
-                        admitted.execute(snapshot)
+                        executeAdmitted(snapshot, admitted)
                     } catch (error: CancellationException) {
                         throw error
                     } catch (_: Exception) {

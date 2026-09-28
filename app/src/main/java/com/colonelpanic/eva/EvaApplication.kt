@@ -95,7 +95,7 @@ class EvaApplication :
     Application(),
     VoiceSessionHost,
     TurnWorkHost {
-    val intentHost = AndroidIntentHost(this)
+    val intentHost = AndroidIntentHost(this, deviceTaskRunning = { deviceTasks.running.value != null })
     val shizukuShellHost by lazy { if (Build.VERSION.SDK_INT >= 37) ShizukuShellHost(this) else null }
 
     /** Screen control needs Shizuku too, but not Android 17: its helper only needs UiAutomation. */
@@ -122,7 +122,7 @@ class EvaApplication :
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val settings by lazy { OpenAiSettings(this, configuration::onLocalChange, configuration::onCredentialChange) }
     val appearance by lazy { AppearanceSettings(this, configuration::onLocalChange) }
-    val capabilities by lazy { CapabilitySettings(this, configuration::onLocalChange) }
+    val capabilities by lazy { CapabilitySettings(this, configuration::onLocalChange, configuration::onCredentialChange) }
     val prompts by lazy { PromptStore(this, onChanged = configuration::onLocalChange) }
     val chatGpt by lazy {
         ChatGptAccountStore(this, onChanged = configuration::onLocalChange, onCredentialChanged = configuration::onCredentialChange)
@@ -233,9 +233,62 @@ class EvaApplication :
             .MemoryStore(this)
     }
 
+    val deviceTasks by lazy {
+        com.colonelpanic.eva.devicecontrol.DeviceTaskCoordinator {
+            check(capabilities.screenControlEnabled) { "Screen control is disabled." }
+            val options = capabilities.deviceTask
+            val backend: com.colonelpanic.eva.devicecontrol.DeviceBackend =
+                when (options.backend) {
+                    "portal" -> {
+                        com.colonelpanic.eva.devicecontrol.portal.PortalBackend(
+                            com.colonelpanic.eva.devicecontrol.portal.PortalClient(
+                                port = options.portalPort,
+                                token = { capabilities.portalToken() ?: error("Provision the Portal token in settings.") },
+                            ),
+                        )
+                    }
+
+                    "shizuku" -> {
+                        val host = checkNotNull(deviceControlHost) { "Screen control requires Android 11 or newer." }
+                        com.colonelpanic.eva.devicecontrol.ShizukuDeviceBackend(
+                            read = { host.observe(15_000L) },
+                            input = { request -> host.act(request, 15_000L) },
+                        )
+                    }
+
+                    else -> {
+                        error("Unknown device backend.")
+                    }
+                }
+            com.colonelpanic.eva.devicecontrol.worker.TextTaskAgent(
+                backend,
+                com.colonelpanic.eva.devicecontrol.OpenAiWorkerModel(
+                    checkNotNull(access()) {
+                        "Sign in to OpenAI first."
+                    },
+                    options.model,
+                    options.reasoningEffort,
+                ),
+                com.colonelpanic.eva.devicecontrol
+                    .workerWording(prompts.wording.value),
+                com.colonelpanic.eva.devicecontrol.worker
+                    .WorkerSettings(
+                        options.maxSteps,
+                        options.maxMillis,
+                        options.modelTimeoutMillis,
+                        options.maxScreens,
+                        options.historyLines,
+                        options.maxRefusals,
+                        options.maxScreenshots,
+                    ),
+            )
+        }
+    }
+
     val registry by lazy {
         CapabilityRegistry(
             buildMap {
+                put(CapabilityRegistry.DEVICE_TASK, deviceTasks)
                 putAll(
                     com.colonelpanic.eva.capability.MemoryCapabilities
                         .backends(memories),
@@ -547,7 +600,16 @@ class EvaApplication :
         val repository = SqliteInvocationRepository(journal)
         ThreadController(
             registry = registry,
-            dispatcher = CapabilityDispatcher(registry, repository),
+            dispatcher =
+                CapabilityDispatcher(registry, repository, executeAdmitted = { proposal, backend ->
+                    val definition = registry.snapshot.definitions[proposal.capabilityId]
+                    deviceTasks.executeAdmitted(
+                        proposal,
+                        backend,
+                        definition?.readOnly != true || proposal.capabilityId in CapabilityRegistry.SCREEN_CONTROL,
+                    )
+                }),
+            deviceTasks = deviceTasks,
             store = SqliteConversationStore(journal),
             onBackgroundAnswer = { WorkNotifications.answered(this, it) },
             // A blank link means the phone talks to OpenAI itself; a link means the paired host bridge.

@@ -81,9 +81,7 @@ internal fun ConversationScreen(
     var draft by rememberSaveable { mutableStateOf("") }
     val storageFailed = state.errorMessage != null
     val canSend =
-        draft.isNotBlank() && !state.isLoading && !state.isSubmitting && !storageFailed &&
-            state.providerStatus == ProviderStatus.CONNECTED &&
-            !state.voiceMode
+        draft.isNotBlank() && state.acceptsTextInput
     val listState = rememberLazyListState()
     val groups = remember(state.entries) { groups(state.entries) }
     val inSession = state.voiceMode && state.providerStatus != ProviderStatus.DISCONNECTED

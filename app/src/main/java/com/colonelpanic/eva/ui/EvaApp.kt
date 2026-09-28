@@ -168,6 +168,7 @@ internal fun composerHint(state: ConversationState): String {
     return when {
         state.errorMessage != null -> "Sending is paused until you restart EVA."
         state.isLoading -> "Loading your action history…"
+        state.deviceTaskActive -> "Add a correction or answer, or type stop."
         state.isSubmitting || state.working -> "Working on your last request…"
         voiceConnected -> "Speak to EVA, or disconnect to use text."
         state.voiceMode -> "Setting up voice…"

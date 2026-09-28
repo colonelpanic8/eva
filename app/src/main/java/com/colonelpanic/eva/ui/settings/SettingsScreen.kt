@@ -366,17 +366,36 @@ private fun ScreenControlSection(
     state: SettingsUiState,
     actions: SettingsActions,
 ) {
-    if (!state.canControlScreen) return
     SettingsSection("Screen control") {
         SettingsSwitchRow(
             title = "Let EVA read and tap the screen",
             supporting =
-                "Experimental, and only while Shizuku is running and has authorized EVA. It can read the " +
-                    "elements of whatever app is in front, tap one, or replace one text field, which means it can " +
-                    "send or buy things. Off removes these tools from what the model is offered.",
+                "Device tasks use the selected backend. Direct screen tools use Shizuku. " +
+                    "Off removes screen control from the model’s tool catalog.",
             checked = state.screenControlEnabled,
             onCheckedChange = actions.onScreenControlChange,
         )
+        SettingsSwitchRow(
+            title = "Use Portal for device tasks",
+            supporting = "Portal runs on this phone. Off uses the Shizuku backend with its supported actions.",
+            checked = state.deviceTask.backend == "portal",
+            onCheckedChange = { actions.onDeviceTaskChange(state.deviceTask.copy(backend = if (it) "portal" else "shizuku")) },
+        )
+        var token by remember { mutableStateOf("") }
+        OutlinedTextField(
+            value = token,
+            onValueChange = {
+                token = it
+            },
+            label = { Text("Portal bearer token") },
+            visualTransformation =
+                androidx.compose.ui.text.input
+                    .PasswordVisualTransformation(),
+        )
+        TextButton(onClick = {
+            actions.onPortalToken(token)
+            token = ""
+        }) { Text("Save Portal token") }
     }
 }
 

@@ -114,8 +114,10 @@ class ThreadControllerTest {
         hiddenCapabilities: () -> Set<String> = { emptySet() },
         prompt: suspend () -> PromptConfig = { PromptDefaults.config },
         awaitCapabilities: suspend () -> Unit = {},
+        deviceTasks: com.colonelpanic.eva.devicecontrol.DeviceTaskCoordinator? = null,
     ) = ThreadController(
         registry = registry,
+        deviceTasks = deviceTasks,
         dispatcher = CapabilityDispatcher(registry, repository),
         repository = repository,
         store = store,
@@ -145,6 +147,98 @@ class ThreadControllerTest {
 
     /** The store owns turn identity; a provider's input id is only meaningful to its own leg. */
     private suspend fun latestTurn(controller: ThreadController) = store.turns(controller.state.value.threadId!!).last().id
+
+    @Test
+    fun `device corrections and stop bypass a pending dispatch and speech cancellation`() =
+        runTest {
+            val entered = CompletableDeferred<Unit>()
+            val phone =
+                object : com.colonelpanic.eva.devicecontrol.DeviceBackend {
+                    override suspend fun observe() =
+                        com.colonelpanic.eva.devicecontrol.proto.Observation(
+                            "o",
+                            "now",
+                            "fake",
+                            screen =
+                                com.colonelpanic.eva.devicecontrol.proto.Screen(
+                                    100,
+                                    200,
+                                    com.colonelpanic.eva.devicecontrol.proto.Orientation.PORTRAIT,
+                                ),
+                        )
+
+                    override suspend fun perform(action: com.colonelpanic.eva.devicecontrol.proto.Action) = error("No action expected")
+                }
+            val coordinator =
+                com.colonelpanic.eva.devicecontrol.DeviceTaskCoordinator {
+                    com.colonelpanic.eva.devicecontrol.worker.TextTaskAgent(
+                        phone,
+                        {
+                            entered.complete(Unit)
+                            kotlinx.coroutines.awaitCancellation()
+                        },
+                        com.colonelpanic.eva.devicecontrol
+                            .workerWording(Wording.bundled),
+                    )
+                }
+            val registry = CapabilityRegistry(mapOf(CapabilityRegistry.DEVICE_TASK to coordinator))
+            val provider = FakeProvider()
+            val controller = controller(provider, registry = registry, deviceTasks = coordinator)
+            advanceUntilIdle()
+            controller.connect("test")
+            advanceUntilIdle()
+            controller.submit("Control the device")
+            advanceUntilIdle()
+            provider.call("device", CapabilityRegistry.DEVICE_TASK, "goal" to "Open settings")
+            runCurrent()
+            entered.await()
+            provider.channel.send(ProviderEvent.ResponseEnded(provider.input.id, "cancelled"))
+            runCurrent()
+            assertTrue(controller.state.value.working)
+            assertTrue(controller.state.value.acceptsTextInput)
+            assertTrue(
+                controller.state.value
+                    .copy(providerStatus = ProviderStatus.DISCONNECTED)
+                    .acceptsTextInput,
+            )
+            provider.channel.send(ProviderEvent.SpeechInputStarted("correction-1"))
+            runCurrent()
+            provider.channel.send(ProviderEvent.Transcript("user", "An old transcript", "old-item"))
+            runCurrent()
+            assertEquals(
+                0L,
+                coordinator.running.value!!
+                    .agent.revision,
+            )
+            provider.channel.send(ProviderEvent.Transcript("user", "Use Settings", "correction-1"))
+            runCurrent()
+            assertEquals(
+                1L,
+                coordinator.running.value!!
+                    .agent.revision,
+            )
+            controller.submit("Actually open Bluetooth settings")
+            assertEquals(
+                2L,
+                coordinator.running.value!!
+                    .agent.revision,
+            )
+            runCurrent()
+            assertEquals(1, provider.submissions)
+            provider.channel.send(ProviderEvent.Failure("Connection lost"))
+            runCurrent()
+            assertTrue(controller.state.value.working)
+            assertNotNull(coordinator.running.value)
+            controller.stopTask()
+            assertTrue(
+                coordinator.running.value!!
+                    .agent.isStopped,
+            )
+            advanceUntilIdle()
+            assertNull(coordinator.lease.owner)
+            assertEquals(InvocationStatus.NOT_EXECUTED, repository.history().single().status)
+            assertEquals(TurnStatus.INTERRUPTED, store.turns(controller.state.value.threadId!!).single().status)
+        }
 
     // ---- text ----
 

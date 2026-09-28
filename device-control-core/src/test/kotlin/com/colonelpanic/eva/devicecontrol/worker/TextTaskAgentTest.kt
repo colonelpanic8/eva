@@ -58,6 +58,16 @@ class TextTaskAgentTest {
             screen,
         ) { action -> ActionResult(action.actionId, action.kind, true, "now", "now", screen, executionStatus = ExecutionStatus.EXECUTED) }
 
+    @Test fun stopAtActionBoundaryDoesNotClaimAnUnsubmittedMutation() =
+        runTest {
+            val phone = phone()
+            val agent = TextTaskAgent(phone, WorkerModel { reply("home") }, wording)
+            val result = agent.run("goal") { if (it.phase == com.colonelpanic.eva.devicecontrol.TaskPhase.ACTING) agent.cancel() }
+            assertEquals(TaskStatus.CANCELLED, result.status)
+            assertEquals(0, agent.effects)
+            assertTrue(phone.actions.isEmpty())
+        }
+
     @Test fun stopCancelsInferenceBeforeAnyAction() =
         runTest {
             val entered = CompletableDeferred<Unit>()

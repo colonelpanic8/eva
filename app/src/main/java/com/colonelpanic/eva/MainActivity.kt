@@ -256,6 +256,7 @@ class MainActivity : ComponentActivity() {
         val rememberedNumbers by eva.chosenNumbers.count.collectAsStateWithLifecycle()
         val memories by eva.memories.state.collectAsStateWithLifecycle()
         LaunchedEffect(Unit) { runCatching { eva.memories.load() } }
+        val deviceTask by eva.capabilities.deviceTaskFlow.collectAsStateWithLifecycle()
         val screenControl by eva.capabilities.screenControlFlow.collectAsStateWithLifecycle()
         val extensions by eva.extensions.settings.collectAsStateWithLifecycle()
         val plugins by eva.pluginBrowser.state.collectAsStateWithLifecycle()
@@ -303,6 +304,7 @@ class MainActivity : ComponentActivity() {
             canSeeMediaSessions = mediaControlAccess,
             canControlScreen = eva.deviceControlHost != null,
             screenControlEnabled = screenControl,
+            deviceTask = deviceTask,
             spotifyClientId = spotifyClientId,
             spotifyAccount = spotifyAccount?.description,
             spotifyPremium = spotifyAccount?.product.equals("premium", ignoreCase = true),
@@ -432,6 +434,8 @@ class MainActivity : ComponentActivity() {
                 onOpenAppSettings = ::openAppSettings,
                 onOpenMediaControlSettings = ::openMediaControlSettings,
                 onScreenControlChange = eva.capabilities::saveScreenControl,
+                onDeviceTaskChange = eva.capabilities::saveDeviceTask,
+                onPortalToken = eva.capabilities::savePortalToken,
                 onSaveSpotifyClientId = { clientId -> save { eva.spotify.saveClientId(clientId) } },
                 onConnectSpotify = {
                     eva.spotifyConnect.begin(

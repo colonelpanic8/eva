@@ -378,7 +378,18 @@ class ConfigurationCompositionTest {
             models = EvaConfiguration.Models("custom-text", "custom-realtime", "high", "medium"),
             voice = EvaConfiguration.Voice(2, quietHangUpSeconds = 12),
             appearance = EvaConfiguration.Appearance(dynamicColor = true),
-            capabilities = EvaConfiguration.Capabilities(screenControl = false),
+            capabilities =
+                EvaConfiguration.Capabilities(
+                    screenControl = false,
+                    deviceTask =
+                        DeviceTaskConfiguration(
+                            backend = "shizuku",
+                            portalPort = 8123,
+                            model = "worker-test",
+                            maxSteps = 17,
+                            maxMillis = 90_000,
+                        ),
+                ),
             messaging = EvaConfiguration.Messaging(enabled = true, replies = listOf(MESSAGING_IDENTITY)),
             prompt =
                 EvaConfiguration.Prompt(
