@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "EVA"
 include(":app")
+include(":keyword-core")
