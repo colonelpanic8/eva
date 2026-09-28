@@ -89,6 +89,25 @@ class SmsSendBackend(
     }
 }
 
+/** UCS-2 segmentation for text Android could not split itself; a part never ends inside a surrogate pair. */
+object SmsParts {
+    const val SINGLE_UNITS = 70
+    const val CONCATENATED_UNITS = 67
+
+    fun unicode(message: String): List<String> {
+        if (message.length <= SINGLE_UNITS) return listOf(message)
+        val parts = mutableListOf<String>()
+        var start = 0
+        while (start < message.length) {
+            var end = minOf(start + CONCATENATED_UNITS, message.length)
+            if (end < message.length && message[end - 1].isHighSurrogate()) end--
+            parts += message.substring(start, end)
+            start = end
+        }
+        return parts
+    }
+}
+
 /** Waits for the platform's per-part sent broadcasts so a reported send is one the radio accepted. */
 @RequiresApi(Build.VERSION_CODES.S)
 private class PlatformSmsSender(
@@ -104,11 +123,25 @@ private class PlatformSmsSender(
             val manager =
                 app.getSystemService(SmsManager::class.java)
                     ?: return@withContext SmsSendReport(0, failureCode = SmsSendResults.NO_SMS_SERVICE)
-            val parts = manager.divideMessage(message).orEmpty().ifEmpty { arrayListOf(message) }
+            val parts = divide(manager, message).ifEmpty { listOf(message) }
             val action = "${app.packageName}.SMS_SENT.${UUID.randomUUID()}"
             withTimeoutOrNull(SmsSendBackend.CONFIRMATION_TIMEOUT_MILLIS) {
                 awaitSend(manager, recipient, parts, action)
             } ?: SmsSendReport(parts.size, timedOut = true)
+        }
+
+    /**
+     * Splitting Unicode text longer than one part checks the SIM's EMS support by reading its group
+     * identifier, which only privileged apps may read, so some SIMs make Android's split throw.
+     */
+    private fun divide(
+        manager: SmsManager,
+        message: String,
+    ): List<String> =
+        try {
+            manager.divideMessage(message).orEmpty()
+        } catch (_: SecurityException) {
+            SmsParts.unicode(message)
         }
 
     private suspend fun awaitSend(
