@@ -337,70 +337,53 @@ class ConfigurationCompositionTest {
     }
 
     @Test
-    fun `messaging bridges round-trip with their token reference and never a token`() {
-        val bridges = mapOf("whatsapp" to MessagingBridgeDefinition("WhatsApp", "https://bridge.example.ts.net"))
-        val reference = SecretReference("messaging/whatsapp/bearer", "http-bearer", "https://bridge.example.ts.net")
+    fun `retired messaging bridges still load are reported and are omitted on the next write`() {
         val base = fullConfiguration()
-        val configuration =
-            base.copy(
-                messaging = base.messaging.copy(bridges = bridges),
-                credentials = EvaConfiguration.Credentials(base.credentials.required + reference),
-            )
-        val encoded = EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(configuration))
-        assertTrue(
-            encoded,
-            encoded.contains("  bridges:\n    whatsapp:\n      label: WhatsApp\n      origin: https://bridge.example.ts.net\n"),
+        val complete = EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(base))
+        val legacy =
+            complete
+                .replace(
+                    "messaging:\n",
+                    "messaging:\n  bridges:\n    whatsapp:\n      label: WhatsApp\n      origin: https://bridge.example.ts.net\n",
+                ).replace(
+                    "credentials:\n  required:\n",
+                    "credentials:\n  required:\n  - id: messaging/whatsapp/bearer\n    kind: http-bearer\n    endpoint: https://bridge.example.ts.net\n",
+                )
+        assertTrue(legacy.contains("bridges:") && legacy.contains("messaging/whatsapp/bearer"))
+        val resolved = EvaConfigurationCodec.resolve(reader(mapOf(EvaConfigurationCodec.FILE_NAME to legacy))).configuration
+        assertEquals(
+            mapOf("whatsapp" to MessagingBridgeDefinition("WhatsApp", "https://bridge.example.ts.net")),
+            resolved.messaging.legacyBridges,
         )
-        assertFalse(encoded.contains("token"))
-        val resolved = EvaConfigurationCodec.resolve(reader(mapOf(EvaConfigurationCodec.FILE_NAME to encoded))).configuration
-        assertEquals(bridges, resolved.messaging.bridges)
-        assertTrue(reference in resolved.credentials.required)
-        assertEquals(encoded, EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(resolved)))
-
-        // An override replaces the whole bridge collection, so an empty map clears inherited bridges.
-        val override =
-            EvaConfigurationCodec.encode(
-                EvaConfigurationDocument(
-                    include = listOf("shared/base.yaml"),
-                    messaging = MessagingPatch(bridges = emptyMap()),
-                    credentials = CredentialsPatch(base.credentials.required),
-                ),
-            )
-        val composed =
-            EvaConfigurationCodec
-                .resolve(reader(mapOf(EvaConfigurationCodec.FILE_NAME to override, "shared/base.yaml" to encoded)))
-                .configuration
-        assertTrue(composed.messaging.bridges.isEmpty())
-        assertTrue(composed.messaging.enabled)
+        assertTrue(resolved.credentials.required.none { it.id.startsWith("messaging/") })
+        assertEquals(complete, EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(resolved)))
     }
 
     @Test
-    fun `messaging bridges need a matching credential requirement and an unreserved https identity`() {
+    fun `package settings round-trip as text and must name an installed package`() {
         val base = fullConfiguration()
-        val origin = "https://bridge.example.ts.net"
+        val configured =
+            base.copy(
+                packages =
+                    base.packages.copy(
+                        settings =
+                            mapOf(INSTALLED_INSTANCE to mapOf("service" to "signal", "limit" to "20")),
+                    ),
+            )
+        val encoded = EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(configured))
+        assertTrue(encoded, encoded.contains("  settings:\n    $INSTALLED_INSTANCE:\n      limit: \"20\"\n      service: signal\n"))
+        val resolved = EvaConfigurationCodec.resolve(reader(mapOf(EvaConfigurationCodec.FILE_NAME to encoded))).configuration
+        assertEquals(configured.packages.settings, resolved.packages.settings)
 
-        fun failure(
-            bridges: Map<String, MessagingBridgeDefinition>,
-            credentials: List<SecretReference> = base.credentials.required,
-        ): String {
-            val document =
-                EvaConfigurationCodec.complete(
-                    base.copy(messaging = base.messaging.copy(bridges = bridges), credentials = EvaConfiguration.Credentials(credentials)),
-                )
+        fun failure(settings: Map<String, Map<String, String>>): String {
+            val document = EvaConfigurationCodec.complete(base.copy(packages = base.packages.copy(settings = settings)))
             return assertThrows(IllegalArgumentException::class.java) {
                 EvaConfigurationCodec.resolve(reader(mapOf(EvaConfigurationCodec.FILE_NAME to EvaConfigurationCodec.encode(document))))
             }.message.orEmpty()
         }
-        val valid = SecretReference("messaging/whatsapp/bearer", "http-bearer", origin)
-        val bridge = mapOf("whatsapp" to MessagingBridgeDefinition("WhatsApp", origin))
-        assertTrue(failure(bridge).contains("credential requirement is missing"))
-        assertTrue(failure(bridge, base.credentials.required + valid.copy(endpoint = "https://other.example")).contains("different origin"))
-        assertTrue(failure(bridge, base.credentials.required + valid.copy(kind = "http-basic")).contains("kind does not match"))
-        assertTrue(failure(mapOf("sms" to MessagingBridgeDefinition("Texts", origin))).contains("service name"))
-        assertTrue(failure(mapOf("WhatsApp" to MessagingBridgeDefinition("WhatsApp", origin))).contains("service name"))
-        assertTrue(failure(mapOf("whatsapp" to MessagingBridgeDefinition("WhatsApp", "http://bridge.example"))).contains("HTTPS origin"))
-        assertTrue(failure(mapOf("whatsapp" to MessagingBridgeDefinition("WhatsApp", "$origin/api"))).contains("HTTPS origin"))
-        assertTrue(failure(emptyMap(), base.credentials.required + valid).contains("does not belong to a configured bridge"))
+        assertTrue(failure(mapOf("00000000-0000-0000-0000-00000000dead" to mapOf("service" to "x"))).contains("unknown package"))
+        assertTrue(failure(mapOf(INSTALLED_INSTANCE to mapOf("bad name" to "x"))).contains("setting name"))
+        assertTrue(failure(mapOf(INSTALLED_INSTANCE to mapOf("service" to "a\u0000b"))).contains("setting value"))
     }
 
     @Test

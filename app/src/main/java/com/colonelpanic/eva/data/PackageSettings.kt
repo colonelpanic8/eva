@@ -28,6 +28,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 
 data class PackageConfigurationEntry(
     val id: String,
@@ -40,7 +41,17 @@ data class PackageConfigurationEntry(
     val credentialAvailable: Boolean = true,
     val contentAuthorities: List<String> = emptyList(),
     val credentialScheme: String = "basic",
+    /** The package's declared settings with the value configured for this installation, if any. */
+    val settings: List<PackageSettingValue> = emptyList(),
 )
+
+data class PackageSettingValue(
+    val setting: com.colonelpanic.eva.adapters.declarative.PackageSetting,
+    /** The configured text, or null when the package default applies. */
+    val configured: String?,
+) {
+    val missing: Boolean get() = configured == null && setting.default == null
+}
 
 data class PortablePackageSettings(
     val repositories: List<String>,
@@ -54,6 +65,8 @@ data class PortablePackageSettings(
     val appliedDefaults: List<String> = emptyList(),
     /** Extensions whose auto-enable choice differs from the default; absent means a refresh may enable it. */
     val autoEnabled: Map<String, Boolean> = emptyMap(),
+    /** Package instance to its configured setting values, as text; defaults are not written. */
+    val settings: Map<String, Map<String, String>> = emptyMap(),
 )
 
 @Serializable
@@ -143,6 +156,7 @@ class PackageSettings(
         savePreferences {
             remove("origin:$instance")
             remove("wait:$instance")
+            remove(SETTINGS_PREFIX + instance)
             putString(SERVICES, Json.encodeToString(StoredServiceSettings(retainedServices, retainedBindings)))
         }
         mutable.value = entries()
@@ -222,13 +236,16 @@ class PackageSettings(
             val packageBindings = settings.bindings.filter { it.packageInstance == identity.id }.associateBy { it.sourceOrigin }
             val origins = packageBindings.mapValues { (_, binding) -> settings.http.getValue(binding.service).origin }
             val configured = configurePackage(source, origins)
+            val values = storedSettings(identity.id)
             LoadedPackage(
                 identity,
                 configured,
                 configured.httpBindings().all { binding ->
                     binding.credential == null ||
                         credential(identity, binding.origin, binding.credential)?.scheme == binding.credentialScheme
-                },
+                } &&
+                    source.settings.values.none { it.default == null && typedSetting(it, values[it.name]) == null },
+                effectiveSettings(source, values),
             )
         }
 
@@ -305,6 +322,44 @@ class PackageSettings(
         onChanged()
     }
 
+    /** Stores one setting for an installation; a blank value returns it to the package default. */
+    fun saveSetting(
+        id: String,
+        name: String,
+        value: String,
+    ): String? =
+        runCatching {
+            val identity = sources.keys.single { it.id == id }
+            val setting = requireNotNull(sources.getValue(identity).settings[name]) { "This extension has no setting $name." }
+            val trimmed = value.trim()
+            val current = storedSettings(id)
+            val next =
+                if (trimmed.isEmpty()) {
+                    current - name
+                } else {
+                    requireNotNull(typedSetting(setting, trimmed)) { "Enter a valid value for ${setting.title}." }
+                    current + (name to trimmed)
+                }
+            savePreferences {
+                if (next.isEmpty()) {
+                    remove(
+                        SETTINGS_PREFIX + id,
+                    )
+                } else {
+                    putString(SETTINGS_PREFIX + id, Json.encodeToString<Map<String, String>>(next.toSortedMap()))
+                }
+            }
+            mutable.value = entries()
+            onChanged()
+        }.exceptionOrNull()?.let { it.message ?: "Could not save the setting." }
+
+    private fun storedSettings(instance: String): Map<String, String> =
+        prefs
+            .getString(SETTINGS_PREFIX + instance, null)
+            ?.let { encoded ->
+                runCatching { Json.decodeFromString<Map<String, String>>(encoded) }.getOrNull()
+            }.orEmpty()
+
     fun saveWait(
         id: String,
         seconds: String,
@@ -372,6 +427,7 @@ class PackageSettings(
                         PackageConfigurationEntry(identity.id, source.title, "", null, null, null, override(identity.id)),
                     )
                 }.map {
+                    val values = storedSettings(identity.id)
                     it.copy(
                         contentAuthorities =
                             source
@@ -379,6 +435,7 @@ class PackageSettings(
                                 .map { binding -> binding.authority }
                                 .distinct()
                                 .sorted(),
+                        settings = source.settings.values.map { setting -> PackageSettingValue(setting, values[setting.name]) },
                     )
                 }
         }
@@ -398,6 +455,7 @@ class PackageSettings(
             configured.bindings,
             appliedDefaults(),
             autoEnabled(),
+            imported().associate { it.identity.id to storedSettings(it.identity.id) }.filterValues { it.isNotEmpty() },
         )
     }
 
@@ -450,6 +508,12 @@ class PackageSettings(
                 .filter { it.startsWith("wait:") || it.startsWith("origin:") }
                 .forEach(::remove)
             restored.waitMillis.forEach { (id, value) -> putLong("wait:$id", value) }
+            prefs.all.keys
+                .filter { it.startsWith(SETTINGS_PREFIX) }
+                .forEach(::remove)
+            restored.settings.forEach { (id, values) ->
+                if (values.isNotEmpty()) putString(SETTINGS_PREFIX + id, Json.encodeToString<Map<String, String>>(values.toSortedMap()))
+            }
             if (restored.appliedDefaults.isEmpty()) remove(DEFAULTS) else putString(DEFAULTS, Json.encodeToString(restored.appliedDefaults))
             putString(SERVICES, Json.encodeToString(StoredServiceSettings(resolved.http, resolved.bindings)))
             resolved.legacy.forEach { service -> putString("origin:${service.packageInstance}", service.origin) }
@@ -590,9 +654,36 @@ class PackageSettings(
     }
 
     private companion object {
+        const val SETTINGS_PREFIX = "settings:"
         const val SERVICES = "services:v2"
         const val DEFAULTS = "defaults"
         const val REPOSITORIES = "repositories"
         val SERVICE_NAME = Regex("[a-z][a-z0-9-]{0,63}")
     }
 }
+
+/** A setting's text as its declared type, or null when it does not satisfy the setting's schema. */
+fun typedSetting(
+    setting: com.colonelpanic.eva.adapters.declarative.PackageSetting,
+    text: String?,
+): kotlinx.serialization.json.JsonPrimitive? {
+    val value =
+        when (setting.type) {
+            "integer" -> text?.toLongOrNull()?.let(::JsonPrimitive)
+            "boolean" -> text?.toBooleanStrictOrNull()?.let(::JsonPrimitive)
+            else -> text?.let(::JsonPrimitive)
+        } ?: return null
+    return value.takeIf {
+        com.colonelpanic.eva.capability.ToolSchema
+            .error(setting.schema, it) == null
+    }
+}
+
+/** Configured values that satisfy their schema, over the package defaults. */
+fun effectiveSettings(
+    definition: PackageDefinition,
+    configured: Map<String, String>,
+): Map<String, kotlinx.serialization.json.JsonPrimitive> =
+    definition.settings.values
+        .mapNotNull { setting -> (typedSetting(setting, configured[setting.name]) ?: setting.default)?.let { setting.name to it } }
+        .toMap()

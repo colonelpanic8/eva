@@ -214,18 +214,16 @@ class EvaApplication :
     }
 
     val messagingSettings by lazy {
-        MessagingSettings(this, configuration::onLocalChange, configuration::onMessagingReplyChange, configuration::onCredentialChange)
+        MessagingSettings(this, configuration::onLocalChange, configuration::onMessagingReplyChange)
     }
 
-    /** Linked messaging accounts behind self-hosted bridges; tokens resolve only for a bridge's own origin. */
-    val bridgeMessaging by lazy {
-        com.colonelpanic.eva.messaging.BridgeMessaging(
-            bridges = { messagingSettings.state.value.bridges },
-            http =
-                com.colonelpanic.eva.adapters.declarative.PackageHttpClient(credential = { origin, name ->
-                    messagingSettings.bridgeCredential(name)?.takeIf { it.origin == origin }
-                }),
-        )
+    /** Messaging services from installed extension packages, reached through their granted capabilities. */
+    val messagingServices: com.colonelpanic.eva.messaging.MessagingServices by lazy {
+        object : com.colonelpanic.eva.messaging.MessagingServices {
+            override fun all() = packageAdapter.messagingServices()
+
+            override fun backend(capabilityId: String) = extensions.routed.value[capabilityId]
+        }
     }
     val notificationMessages by lazy {
         NotificationMessages(
@@ -261,7 +259,7 @@ class EvaApplication :
                                 MessagingBackend.Operation.SEND,
                                 chosenNumbers.remembering(SmsSendBackend(this@EvaApplication, intentHost, messageTargets), "recipient"),
                                 notificationMessages,
-                                bridgeMessaging,
+                                messagingServices,
                             ),
                         CapabilityRegistry.CONTACTS_SEARCH to
                             ContactsQueryBackend(this@EvaApplication, intentHost, ::contactHistory),
@@ -270,14 +268,14 @@ class EvaApplication :
                                 MessagingBackend.Operation.SEARCH,
                                 MessagingReadBackend(intentHost, messagingStore, MessagingReadBackend.Operation.CONVERSATIONS),
                                 notificationMessages,
-                                bridgeMessaging,
+                                messagingServices,
                             ),
                         CapabilityRegistry.CONVERSATION_READ to
                             MessagingBackend(
                                 MessagingBackend.Operation.READ,
                                 MessagingReadBackend(intentHost, messagingStore, MessagingReadBackend.Operation.MESSAGES),
                                 notificationMessages,
-                                bridgeMessaging,
+                                messagingServices,
                             ),
                         CapabilityRegistry.DIAL to
                             chosenNumbers.remembering(
@@ -417,6 +415,16 @@ class EvaApplication :
             { identity -> extensions.adopt(identity) },
             { identity, digest, actions, enabled -> extensions.carryForward(identity, digest, actions, enabled) },
         )
+    }
+
+    fun savePackageSetting(
+        id: String,
+        name: String,
+        value: String,
+    ): String? {
+        val error = packageSettings.saveSetting(id, name, value)
+        if (error == null) packageAdapter.refresh()
+        return error
     }
 
     fun savePackageServer(
@@ -605,10 +613,7 @@ class EvaApplication :
             quietHangUpMillis = { settings.quietHangUpSeconds * 1_000L },
             wording = { prompts.wording.value },
             voiceKeywords = { contactKeywords.names() },
-            messagingBridges = {
-                messagingSettings.state.value.bridges
-                    .mapValues { it.value.label }
-            },
+            messagingServices = { messagingServices.all().associate { it.service to it.label } },
             callEndings = { settings.callEndings.value },
             hiddenCapabilities = { if (capabilities.screenControlEnabled) emptySet() else CapabilityRegistry.SCREEN_CONTROL },
             prompt = { prompts.load() },

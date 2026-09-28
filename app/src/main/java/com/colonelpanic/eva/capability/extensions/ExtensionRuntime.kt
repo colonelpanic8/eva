@@ -42,6 +42,13 @@ class ExtensionRuntime(
     private val updates = Mutex()
     private val mutable = MutableStateFlow(ExtensionSettings())
     val settings = mutable.asStateFlow()
+    private val mutableRouted = MutableStateFlow<Map<String, com.colonelpanic.eva.capability.ExecutionBackend>>(emptyMap())
+
+    /**
+     * Granted capabilities that EVA's own tools reach, keyed by capability ID. They carry the same grant
+     * and availability checks as offered tools, but are not in the catalog the model sees.
+     */
+    val routed = mutableRouted.asStateFlow()
 
     init {
         scope.launch {
@@ -199,6 +206,7 @@ class ExtensionRuntime(
             val backends = bundled.bindings.toMutableMap()
             val definitions = bundled.catalog.toMutableList()
             val revisions = bundled.bindingRevisions.toMutableMap()
+            val routedBackends = mutableMapOf<String, com.colonelpanic.eva.capability.ExecutionBackend>()
             val superseded = supersessions(installed)
             for (entry in installed) {
                 val identity = entry.identity ?: continue
@@ -224,12 +232,17 @@ class ExtensionRuntime(
                                 else -> null
                             }
                         }
+                    if (binding.routed) {
+                        routedBackends[binding.definition.id] = backend
+                        continue
+                    }
                     backends[binding.definition.id] = backend
                     definitions += binding.definition
                     revisions[binding.definition.id] = binding.revision
                 }
             }
             registry.replace(backends, definitions, revisions)
+            mutableRouted.value = routedBackends
             mutable.value =
                 ExtensionSettings(
                     installed.map { entry ->

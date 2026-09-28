@@ -1,0 +1,566 @@
+{
+  "formatVersion": 1,
+  "id": "io.github.colonelpanic8.messaging-bridge",
+  "version": "1.0.0",
+  "title": "Messaging bridge",
+  "description": "Reach a messaging account linked to a self-hosted multidevice bridge (github.com/colonelpanic8/google-messages-multidevice-bridge, HTTP API schema 1), such as WhatsApp or Google Messages. It serves EVA's shared conversation, history, and send tools under the service name you choose, so you can say \"on WhatsApp\". Chats, contacts, and messages are disclosed to EVA and its configured model. Sends are durable: the bridge deduplicates a repeated request and reports whether its server accepted, refused, or lost track of it.",
+  "setup": [
+    "Run the bridge for one network behind HTTPS reachable from the phone, for example with Tailscale Serve, and link it to the account in the bridge's web client.",
+    "In this extension's server settings, choose any name for the connection, replace https://bridge.example.ts.net with the bridge origin, and enter the bridge API token as the Bearer token.",
+    "Set Service name to what you will call it, such as whatsapp, and Label to how it should be shown. Each installation serves one bridge.",
+    "Enable the extension, allow its send and start_chat actions, and reconnect the conversation."
+  ],
+  "settings": {
+    "service": {
+      "type": "string",
+      "title": "Service name",
+      "description": "What you and EVA call this service, such as whatsapp: lowercase letters, digits, and hyphens.",
+      "default": "whatsapp",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "label": {
+      "type": "string",
+      "title": "Label",
+      "description": "How the service is shown, such as WhatsApp.",
+      "default": "WhatsApp",
+      "minLength": 1,
+      "maxLength": 100
+    }
+  },
+  "messaging": {
+    "service": {
+      "setting": "service"
+    },
+    "label": {
+      "setting": "label"
+    },
+    "conversations": {
+      "tool": "conversations",
+      "query": "query",
+      "limit": "limit"
+    },
+    "contacts": {
+      "tool": "contacts",
+      "query": "query",
+      "limit": "limit"
+    },
+    "history": {
+      "tool": "messages",
+      "conversation": "conversation",
+      "limit": "limit"
+    },
+    "send": {
+      "tool": "send",
+      "conversation": "conversation",
+      "text": "text"
+    },
+    "startChat": {
+      "tool": "start_chat",
+      "recipients": "recipients",
+      "conversation": "/conversation_id"
+    }
+  },
+  "capabilities": [
+    {
+      "tool": {
+        "name": "conversations",
+        "title": "Find conversations",
+        "description": "List the account's conversations newest first, optionally matching a name or phone number. Each line starts with the conversation ID to pass as conversationRef.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "Part of a name or phone number.",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "limit": {
+              "type": "integer",
+              "description": "Most conversations to return.",
+              "minimum": 1,
+              "maximum": 10
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": true
+        }
+      },
+      "effects": "read",
+      "execution": {
+        "mode": "synchronous",
+        "requiresForeground": false,
+        "maxWaitMillis": 15000
+      },
+      "binding": {
+        "kind": "http",
+        "origin": "https://bridge.example.ts.net",
+        "method": "GET",
+        "path": "/v1/conversations",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "value": {
+              "argument": "query",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "value": {
+              "argument": "limit",
+              "type": "integer",
+              "default": 10
+            }
+          }
+        ],
+        "maxResponseBytes": 524288,
+        "result": {
+          "maxBytes": 6000,
+          "items": {
+            "arrayPaths": [
+              "/conversations"
+            ],
+            "line": "conversationRef {id} | {name} | people {people} {numbers} | sender IDs {ids} | updated {updated} | unread {unread} | read-only {readOnly} | last {preview}",
+            "fields": {
+              "id": {
+                "pointer": "/id",
+                "type": "string",
+                "required": true
+              },
+              "name": {
+                "pointer": "/name",
+                "type": "string"
+              },
+              "people": {
+                "pointer": "/participants/*/name",
+                "type": "stringArray"
+              },
+              "numbers": {
+                "pointer": "/participants/*/address",
+                "type": "stringArray"
+              },
+              "updated": {
+                "pointer": "/updated",
+                "type": "string"
+              },
+              "unread": {
+                "pointer": "/unread",
+                "type": "boolean"
+              },
+              "readOnly": {
+                "pointer": "/read_only",
+                "type": "boolean"
+              },
+              "preview": {
+                "pointer": "/preview",
+                "type": "string"
+              },
+              "ids": {
+                "pointer": "/participants/*/id",
+                "type": "stringArray"
+              }
+            },
+            "maxItems": 10,
+            "truncationNote": "More conversations match; narrow the query."
+          }
+        },
+        "credential": "bridge",
+        "credentialScheme": "bearer"
+      }
+    },
+    {
+      "tool": {
+        "name": "contacts",
+        "title": "Find contacts",
+        "description": "Find people in the account's address book by name or number, including people with no conversation yet, with the E.164 number a chat can be started with.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "Part of a name or phone number.",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "limit": {
+              "type": "integer",
+              "description": "Most contacts to return.",
+              "minimum": 1,
+              "maximum": 10
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": true
+        }
+      },
+      "effects": "read",
+      "execution": {
+        "mode": "synchronous",
+        "requiresForeground": false,
+        "maxWaitMillis": 15000
+      },
+      "binding": {
+        "kind": "http",
+        "origin": "https://bridge.example.ts.net",
+        "method": "GET",
+        "path": "/v1/contacts",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "value": {
+              "argument": "query",
+              "type": "string",
+              "required": true
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "value": {
+              "argument": "limit",
+              "type": "integer",
+              "default": 5
+            }
+          }
+        ],
+        "maxResponseBytes": 524288,
+        "result": {
+          "maxBytes": 2000,
+          "items": {
+            "arrayPaths": [
+              "/contacts"
+            ],
+            "line": "{name} | number {address}",
+            "fields": {
+              "name": {
+                "pointer": "/name",
+                "type": "string"
+              },
+              "address": {
+                "pointer": "/address",
+                "type": "string"
+              }
+            },
+            "maxItems": 10,
+            "truncationNote": "More contacts match; narrow the query."
+          }
+        },
+        "credential": "bridge",
+        "credentialScheme": "bearer"
+      }
+    },
+    {
+      "tool": {
+        "name": "messages",
+        "title": "Read a conversation",
+        "description": "Read the most recent messages the bridge holds for a conversation, newest first, with sender ID (match it to the conversation's sender IDs), direction, delivery status, and attachment names.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "conversation": {
+              "type": "string",
+              "description": "The conversation ID from Find conversations.",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "limit": {
+              "type": "integer",
+              "description": "Most messages to return.",
+              "minimum": 1,
+              "maximum": 25
+            }
+          },
+          "required": [
+            "conversation"
+          ],
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": true
+        }
+      },
+      "effects": "read",
+      "execution": {
+        "mode": "synchronous",
+        "requiresForeground": false,
+        "maxWaitMillis": 15000
+      },
+      "binding": {
+        "kind": "http",
+        "origin": "https://bridge.example.ts.net",
+        "method": "GET",
+        "path": "/v1/conversations/{conversation}/messages",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation",
+            "value": {
+              "argument": "conversation",
+              "type": "string",
+              "required": true
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "value": {
+              "argument": "limit",
+              "type": "integer",
+              "default": 15
+            }
+          }
+        ],
+        "maxResponseBytes": 524288,
+        "result": {
+          "maxBytes": 8000,
+          "notExecutedStatuses": [
+            400,
+            404
+          ],
+          "items": {
+            "arrayPaths": [
+              "/messages"
+            ],
+            "line": "{time} | {direction} | from {sender} | {text} | status {status} | deleted {deleted} | attachments {attachments} {kinds}",
+            "fields": {
+              "time": {
+                "pointer": "/time",
+                "type": "string"
+              },
+              "direction": {
+                "pointer": "/direction",
+                "type": "string"
+              },
+              "sender": {
+                "pointer": "/sender_id",
+                "type": "string"
+              },
+              "text": {
+                "pointer": "/text",
+                "type": "string"
+              },
+              "status": {
+                "pointer": "/status",
+                "type": "string"
+              },
+              "deleted": {
+                "pointer": "/deleted",
+                "type": "boolean"
+              },
+              "attachments": {
+                "pointer": "/attachments/*/name",
+                "type": "stringArray"
+              },
+              "kinds": {
+                "pointer": "/attachments/*/mime",
+                "type": "stringArray"
+              }
+            },
+            "maxItems": 25,
+            "truncationNote": "Older messages exist; the bridge returned only the newest."
+          }
+        },
+        "credential": "bridge",
+        "credentialScheme": "bearer"
+      }
+    },
+    {
+      "tool": {
+        "name": "send",
+        "title": "Send a message",
+        "description": "Send text to an existing conversation. The bridge keeps a durable outbox: accepted means the service's server took the message, not that it was delivered or read.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "conversation": {
+              "type": "string",
+              "description": "The conversation ID.",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "text": {
+              "type": "string",
+              "description": "The message text.",
+              "minLength": 1,
+              "maxLength": 2000
+            }
+          },
+          "required": [
+            "conversation",
+            "text"
+          ],
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true
+        }
+      },
+      "effects": "write",
+      "execution": {
+        "mode": "synchronous",
+        "requiresForeground": false,
+        "maxWaitMillis": 25000
+      },
+      "receipts": {
+        "success": "Sent: the messaging service's server accepted the message. This is not a delivery or read receipt; the conversation's history shows its later status."
+      },
+      "binding": {
+        "kind": "http",
+        "origin": "https://bridge.example.ts.net",
+        "method": "POST",
+        "path": "/v1/messages",
+        "parameters": [],
+        "maxResponseBytes": 524288,
+        "result": {
+          "pointer": "/message_id",
+          "maxBytes": 256,
+          "notExecutedStatuses": [
+            400,
+            401,
+            403,
+            404
+          ]
+        },
+        "credential": "bridge",
+        "credentialScheme": "bearer",
+        "requestBody": {
+          "fields": {
+            "conversation_id": {
+              "argument": "conversation",
+              "type": "string",
+              "required": true
+            },
+            "text": {
+              "argument": "text",
+              "type": "string",
+              "required": true
+            }
+          }
+        },
+        "operation": {
+          "header": "Idempotency-Key",
+          "status": {
+            "path": "/v1/outbox/{operation}",
+            "state": "/state",
+            "detail": "/detail"
+          },
+          "outcomes": {
+            "queued": "pending",
+            "sending": "pending",
+            "accepted": "completed",
+            "confirmed": "completed",
+            "rejected": "not_executed",
+            "canceled": "not_executed",
+            "ambiguous": "unknown"
+          }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "start_chat",
+        "title": "Start a chat",
+        "description": "Open the conversation with the given E.164 numbers, creating it if needed. It sends no message; the result is the conversation ID.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "recipients": {
+              "type": "array",
+              "description": "E.164 phone numbers, such as +14155550100.",
+              "items": {
+                "type": "string",
+                "minLength": 4,
+                "maxLength": 16
+              },
+              "minItems": 1,
+              "maxItems": 20
+            }
+          },
+          "required": [
+            "recipients"
+          ],
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true
+        }
+      },
+      "effects": "write",
+      "execution": {
+        "mode": "synchronous",
+        "requiresForeground": false,
+        "maxWaitMillis": 25000
+      },
+      "receipts": {
+        "success": "The conversation is ready."
+      },
+      "binding": {
+        "kind": "http",
+        "origin": "https://bridge.example.ts.net",
+        "method": "POST",
+        "path": "/v1/conversations",
+        "parameters": [],
+        "maxResponseBytes": 524288,
+        "result": {
+          "pointer": "/conversation_id",
+          "maxBytes": 256,
+          "notExecutedStatuses": [
+            400,
+            401,
+            403
+          ]
+        },
+        "credential": "bridge",
+        "credentialScheme": "bearer",
+        "requestBody": {
+          "fields": {
+            "recipients": {
+              "argument": "recipients",
+              "type": "array",
+              "required": true
+            }
+          }
+        },
+        "operation": {
+          "header": "Idempotency-Key",
+          "status": {
+            "path": "/v1/outbox/{operation}",
+            "state": "/state",
+            "detail": "/detail"
+          },
+          "outcomes": {
+            "queued": "pending",
+            "sending": "pending",
+            "accepted": "completed",
+            "confirmed": "completed",
+            "rejected": "not_executed",
+            "canceled": "not_executed",
+            "ambiguous": "unknown"
+          }
+        }
+      }
+    }
+  ]
+}

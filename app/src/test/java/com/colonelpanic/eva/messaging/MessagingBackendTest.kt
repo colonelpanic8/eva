@@ -1,19 +1,31 @@
 package com.colonelpanic.eva.messaging
 
 import com.colonelpanic.eva.adapters.declarative.BearerCredential
+import com.colonelpanic.eva.adapters.declarative.ContentRequest
+import com.colonelpanic.eva.adapters.declarative.ContentRows
+import com.colonelpanic.eva.adapters.declarative.DeclarativeBackend
+import com.colonelpanic.eva.adapters.declarative.DeclarativeBinding
+import com.colonelpanic.eva.adapters.declarative.DeclarativeHost
+import com.colonelpanic.eva.adapters.declarative.HttpRequest
+import com.colonelpanic.eva.adapters.declarative.HttpResponse
+import com.colonelpanic.eva.adapters.declarative.IntentRequest
+import com.colonelpanic.eva.adapters.declarative.PackageCodec
 import com.colonelpanic.eva.adapters.declarative.PackageHttpClient
+import com.colonelpanic.eva.adapters.declarative.PackageMessagingService
 import com.colonelpanic.eva.capability.BundledCapabilities
 import com.colonelpanic.eva.capability.CapabilityDispatcher
 import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.capability.ClaimResult
 import com.colonelpanic.eva.capability.ExecutionBackend
 import com.colonelpanic.eva.capability.ExecutionOutcome
+import com.colonelpanic.eva.capability.InteractionMode
 import com.colonelpanic.eva.capability.InvocationRecord
 import com.colonelpanic.eva.capability.InvocationRepository
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.MemoryInvocationRepository
 import com.colonelpanic.eva.capability.ToolProposal
-import com.colonelpanic.eva.data.configuration.MessagingBridgeDefinition
+import com.colonelpanic.eva.capability.WaitBudget
+import com.colonelpanic.eva.data.effectiveSettings
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -23,6 +35,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class MessagingBackendTest {
     private var sends = 0
@@ -122,133 +135,213 @@ class MessagingBackendTest {
         }
 
     private val fake = FakeBridge()
-    private val bridges =
-        BridgeMessaging(
-            bridges = { mapOf("whatsapp" to MessagingBridgeDefinition("WhatsApp", FakeBridge.ORIGIN)) },
-            http = PackageHttpClient({ origin, _ -> BearerCredential.create(origin, FakeBridge.TOKEN) }, fake.client),
-            pollMillis = 10,
-            sendWaitMillis = 1_000,
+    private val bridgePackage =
+        PackageCodec.decode(
+            generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }
+                .map { File(it, "docs/examples/messaging-bridge.json") }
+                .first { it.isFile }
+                .readText(),
         )
+    private val role = checkNotNull(bridgePackage.messaging)
+    private var granted = role.tools
+    private val http = PackageHttpClient({ origin, _ -> BearerCredential.create(origin, FakeBridge.TOKEN) }, fake.client)
+    private val host =
+        object : DeclarativeHost {
+            override suspend fun unavailableReason(binding: DeclarativeBinding): String? = null
 
-    private fun withBridge(operation: MessagingBackend.Operation) = MessagingBackend(operation, sms, notifications, bridges)
+            override suspend fun launch(request: IntentRequest): ExecutionOutcome = error("unused")
 
-    private val chat =
-        """{"schema":1,"id":"chat-1","name":"","preview":"hey","updated":"2026-09-26T09:00:00Z","unread":false,"read_only":false,
-        "protocol":"whatsapp","state":"active","participants":[{"id":"a","name":"Alice","address":"+14155550100","is_me":false}]}"""
+            override suspend fun query(
+                request: ContentRequest,
+                timeoutMillis: Long,
+            ): ContentRows = error("unused")
 
-    @Test
-    fun `a service naming a bridge routes there while sms and notifications keep their paths`() =
-        runTest {
-            fake.conversations = "[$chat]"
-            val search = withBridge(MessagingBackend.Operation.SEARCH)
-            val bridged = search.execute(mapOf("service" to "WhatsApp", "query" to "Ali"))
-            assertEquals(InvocationStatus.COMPLETED, bridged.status)
-            assertTrue(bridged.message.contains("bridge:whatsapp:chat-1"))
-            assertEquals("/v1/conversations", fake.requests.first().path)
-            val app = search.execute(mapOf("service" to "Signal", "query" to "Ali"))
-            assertEquals(InvocationStatus.COMPLETED, app.status)
-            assertTrue(app.message.contains("Active notification conversations only"))
-            assertEquals(
-                InvocationStatus.COMPLETED,
-                withBridge(MessagingBackend.Operation.SEND)
-                    .execute(
-                        mapOf(
-                            "recipient" to "+15551234567",
-                            "message" to "Hi",
-                        ),
-                    ).status,
-            )
-            assertEquals(1, sends)
-            assertEquals(1, fake.requests.count { it.path == "/v1/conversations" })
+            override suspend fun request(
+                request: HttpRequest,
+                timeoutMillis: Long,
+            ): HttpResponse = http.execute(request, timeoutMillis)
+        }
+    private val services =
+        object : MessagingServices {
+            override fun all() =
+                listOf(
+                    PackageMessagingService(
+                        "whatsapp",
+                        "WhatsApp",
+                        "p",
+                        "Messaging bridge",
+                        role,
+                        role.tools.associateWith { "extension.package.p.$it" },
+                    ),
+                )
+
+            override fun backend(capabilityId: String): ExecutionBackend? {
+                val name = capabilityId.removePrefix("extension.package.p.")
+                if (name !in granted) return null
+                return DeclarativeBackend(
+                    bridgePackage.capabilities.single { it.name == name },
+                    host,
+                    { effectiveSettings(bridgePackage, emptyMap()) },
+                    pollMillis = 10,
+                ) { WaitBudget(InteractionMode.TYPED, 5_000, null, null) }
+            }
         }
 
+    private fun withService(operation: MessagingBackend.Operation) = MessagingBackend(operation, sms, notifications, services)
+
+    private val alice = """{"id":"alice@s","name":"Alice","address":"+14155550100","is_me":false}"""
+    private val chat =
+        """{"schema":1,"id":"chat-1","name":"","preview":"hey","updated":"2026-09-26T09:00:00Z","unread":true,"read_only":false,
+        "protocol":"whatsapp","state":"active","participants":[$alice]}"""
+
+    private suspend fun dispatch(
+        operation: MessagingBackend.Operation,
+        id: String,
+        arguments: Map<String, String>,
+        callId: String = "call-1",
+    ): InvocationRecord {
+        val definition = BundledCapabilities.definitions.single { it.id == id }
+        val registry = CapabilityRegistry(mapOf(id to withService(operation)), listOf(definition))
+        return CapabilityDispatcher(registry, MemoryInvocationRepository()).execute(
+            ToolProposal(callId, id, arguments, "request", registry.snapshot.revision),
+        )
+    }
+
     @Test
-    fun `bridge references route without a service and mismatches are refused rather than sent elsewhere`() =
+    fun `a service an extension provides answers the shared tools while sms and notifications keep their paths`() =
         runTest {
             fake.conversations = "[$chat]"
-            val read = withBridge(MessagingBackend.Operation.READ)
-            assertEquals(InvocationStatus.COMPLETED, read.execute(mapOf("conversationRef" to "bridge:whatsapp:chat-1")).status)
-            assertTrue(fake.requests.any { it.path == "/v1/conversations/chat-1/messages" })
-            val mismatch = read.execute(mapOf("service" to "Signal", "conversationRef" to "bridge:whatsapp:chat-1"))
-            assertEquals(InvocationStatus.NOT_EXECUTED, mismatch.status)
-            assertTrue(mismatch.message, mismatch.message.contains("belongs to whatsapp, not Signal"))
-            val elsewhere =
-                withBridge(MessagingBackend.Operation.SEND).execute(
+            fake.contacts = """[{"id":"c1","name":"Alicia","address":"+14155550111"}]"""
+            val found =
+                dispatch(
+                    MessagingBackend.Operation.SEARCH,
+                    CapabilityRegistry.CONVERSATIONS_SEARCH,
                     mapOf(
-                        "conversationRef" to "bridge:telegram:chat-9",
-                        "message" to "Hi",
+                        "service" to "WhatsApp",
+                        "query" to "Ali",
                     ),
                 )
-            assertEquals(InvocationStatus.NOT_EXECUTED, elsewhere.status)
-            assertTrue(elsewhere.message, elsewhere.message.contains("no longer configured"))
-            val wrongService =
-                withBridge(MessagingBackend.Operation.SEND).execute(
-                    mapOf(
-                        "service" to "whatsapp",
-                        "conversationRef" to "bridge:telegram:chat-9",
-                        "message" to "Hi",
-                    ),
+            assertEquals(InvocationStatus.COMPLETED, found.status)
+            assertTrue(found.message, found.message.contains("conversationRef \"chat-1\" | \"\" | people [\"Alice\"] [\"+14155550100\"]"))
+            assertTrue(found.message, found.message.contains("\"Alicia\" | number \"+14155550111\""))
+            assertTrue(found.message.contains("Pass service whatsapp"))
+            assertEquals(mapOf("q" to "Ali", "limit" to "10"), fake.requests.first { it.path == "/v1/conversations" }.query)
+            val read =
+                dispatch(
+                    MessagingBackend.Operation.READ,
+                    CapabilityRegistry.CONVERSATION_READ,
+                    mapOf("service" to "whatsapp", "conversationRef" to "chat-1", "limit" to "5"),
                 )
-            assertEquals(InvocationStatus.NOT_EXECUTED, wrongService.status)
-            assertTrue(wrongService.message, wrongService.message.contains("belongs to telegram"))
+            assertEquals(InvocationStatus.COMPLETED, read.status)
+            assertEquals(mapOf("limit" to "5"), fake.requests.last().query)
+            assertEquals("/v1/conversations/chat-1/messages", fake.requests.last().path)
+            val sms = withService(MessagingBackend.Operation.SEND).execute(mapOf("recipient" to "+15551234567", "message" to "Hi"))
+            assertEquals(InvocationStatus.COMPLETED, sms.status)
+            assertEquals(1, sends)
+            val app = withService(MessagingBackend.Operation.SEARCH).execute(mapOf("service" to "Signal", "query" to "Ali"))
+            assertTrue(app.message.contains("Active notification conversations only"))
             val smsId =
-                withBridge(MessagingBackend.Operation.SEND).execute(
-                    mapOf(
-                        "service" to "whatsapp",
-                        "conversationId" to "7",
-                        "message" to "Hi",
-                    ),
+                dispatch(
+                    MessagingBackend.Operation.SEND,
+                    CapabilityRegistry.SMS_SEND,
+                    mapOf("service" to "whatsapp", "conversationId" to "7", "message" to "Hi"),
                 )
             assertEquals(InvocationStatus.NOT_EXECUTED, smsId.status)
-            val local =
-                withBridge(MessagingBackend.Operation.SEND).execute(
-                    mapOf(
-                        "service" to "whatsapp",
-                        "recipient" to "415 555 0100",
-                        "message" to "Hi",
-                    ),
-                )
-            assertEquals(InvocationStatus.NOT_EXECUTED, local.status)
-            assertTrue(local.message, local.message.contains("starting with +"))
-            assertEquals(0, sends)
             assertTrue(fake.requests.none { it.method == "POST" })
         }
 
     @Test
-    fun `a redelivered send derives the same idempotency key and the token never reaches the journal`() =
+    fun `a redelivered send reaches the same server operation and the token never reaches the journal`() =
         runTest {
-            fake.conversations = "[$chat]"
             fake.onQueue = { _, key, _ ->
                 (if (key in fake.outbox) 200 else 202) to
-                    """{"id":"$key","state":"accepted","conversation_id":"chat-1","schema":1}""".also { fake.outbox[key] = it }
+                    """{"id":"$key","state":"accepted","conversation_id":"chat-1","message_id":"m-1"}""".also { fake.outbox[key] = it }
             }
-            val definition = BundledCapabilities.definitions.single { it.id == CapabilityRegistry.SMS_SEND }
-            val registry = CapabilityRegistry(mapOf(definition.id to withBridge(MessagingBackend.Operation.SEND)), listOf(definition))
-            val proposal =
-                ToolProposal(
-                    "send-1",
-                    definition.id,
-                    mapOf("service" to "whatsapp", "conversationRef" to "bridge:whatsapp:chat-1", "message" to "Hi"),
-                    "Message Alice on WhatsApp",
-                    registry.snapshot.revision,
-                )
-            val first = MemoryInvocationRepository()
-            val delivered = CapabilityDispatcher(registry, first).execute(proposal)
-            assertEquals(InvocationStatus.COMPLETED, delivered.status)
-            assertEquals("android.messaging", delivered.provenance?.source?.id)
-            // A lost result and a fresh journal replay the same invocation; the bridge sees one operation.
-            val redelivered = CapabilityDispatcher(registry, MemoryInvocationRepository()).execute(proposal)
-            assertEquals(InvocationStatus.COMPLETED, redelivered.status)
+            val arguments = mapOf("service" to "whatsapp", "conversationRef" to "chat-1", "message" to "Hi")
+            val first = dispatch(MessagingBackend.Operation.SEND, CapabilityRegistry.SMS_SEND, arguments)
+            val again = dispatch(MessagingBackend.Operation.SEND, CapabilityRegistry.SMS_SEND, arguments)
+            assertEquals(InvocationStatus.COMPLETED, first.status)
+            assertTrue(first.message, first.message.contains("not a delivery or read receipt"))
+            assertEquals(InvocationStatus.COMPLETED, again.status)
             val keys = fake.requests.filter { it.method == "POST" }.map { it.headers.getValue("Idempotency-Key") }
             assertEquals(2, keys.size)
             assertEquals(keys[0], keys[1])
             assertEquals(1, fake.outbox.size)
-            val other = CapabilityDispatcher(registry, MemoryInvocationRepository()).execute(proposal.copy(callId = "send-2"))
-            assertEquals(InvocationStatus.COMPLETED, other.status)
+            assertEquals(
+                InvocationStatus.COMPLETED,
+                dispatch(MessagingBackend.Operation.SEND, CapabilityRegistry.SMS_SEND, arguments, "call-2").status,
+            )
             assertEquals(2, fake.outbox.size)
-            first.history().forEach { record ->
-                assertFalse(record.message.contains(FakeBridge.TOKEN))
-                assertFalse(record.arguments.toString().contains(FakeBridge.TOKEN))
+            listOf(first, again).forEach { assertFalse(it.toString().contains(FakeBridge.TOKEN)) }
+        }
+
+    @Test
+    fun `a number starts the chat before the message is queued and a refused chat sends nothing`() =
+        runTest {
+            fake.onQueue = { path, key, _ ->
+                val record =
+                    if (path == "/v1/conversations") {
+                        """{"id":"$key","state":"accepted","conversation_id":"bob@s"}"""
+                    } else {
+                        """{"id":"$key","state":"accepted","conversation_id":"bob@s","message_id":"m-2"}"""
+                    }
+                fake.outbox[key] = record
+                202 to record
             }
+            val sent =
+                dispatch(
+                    MessagingBackend.Operation.SEND,
+                    CapabilityRegistry.SMS_SEND,
+                    mapOf("service" to "whatsapp", "recipient" to "+14155550122", "message" to "Hello Bob"),
+                )
+            assertEquals(InvocationStatus.COMPLETED, sent.status)
+            val posts = fake.requests.filter { it.method == "POST" }
+            assertEquals(listOf("/v1/conversations", "/v1/messages"), posts.map { it.path })
+            assertEquals("""{"recipients":["+14155550122"]}""", posts[0].body)
+            assertEquals("""{"conversation_id":"bob@s","text":"Hello Bob"}""", posts[1].body)
+            assertTrue(posts[0].headers.getValue("Idempotency-Key") != posts[1].headers.getValue("Idempotency-Key"))
+            fake.requests.clear()
+            fake.onQueue = { _, key, _ ->
+                202 to """{"id":"$key","state":"rejected","detail":"+14155550133 is not on WhatsApp"}""".also { fake.outbox[key] = it }
+            }
+            val refused =
+                dispatch(
+                    MessagingBackend.Operation.SEND,
+                    CapabilityRegistry.SMS_SEND,
+                    mapOf("service" to "whatsapp", "recipient" to "+14155550133", "message" to "Hi"),
+                    "call-3",
+                )
+            assertEquals(InvocationStatus.NOT_EXECUTED, refused.status)
+            assertTrue(refused.message, refused.message.contains("is not on WhatsApp") && refused.message.contains("was not sent"))
+            assertEquals(listOf("/v1/conversations"), fake.requests.filter { it.method == "POST" }.map { it.path })
+            val local =
+                dispatch(
+                    MessagingBackend.Operation.SEND,
+                    CapabilityRegistry.SMS_SEND,
+                    mapOf("service" to "whatsapp", "recipient" to "415 555 0100", "message" to "Hi"),
+                    "call-4",
+                )
+            assertEquals(InvocationStatus.NOT_EXECUTED, local.status)
+            assertTrue(local.message.contains("starting with +"))
+        }
+
+    @Test
+    fun `an extension without its send grant cannot send through the shared tool`() =
+        runTest {
+            granted = role.tools - "send"
+            val refused =
+                dispatch(
+                    MessagingBackend.Operation.SEND,
+                    CapabilityRegistry.SMS_SEND,
+                    mapOf(
+                        "service" to "whatsapp",
+                        "conversationRef" to "chat-1",
+                        "message" to "Hi",
+                    ),
+                )
+            assertEquals(InvocationStatus.NOT_EXECUTED, refused.status)
+            assertTrue(refused.message, refused.message.contains("allow its send action"))
+            assertTrue(fake.requests.isEmpty())
+            assertEquals(0, sends)
         }
 }

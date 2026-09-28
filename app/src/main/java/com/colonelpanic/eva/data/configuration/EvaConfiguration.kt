@@ -74,7 +74,10 @@ data class EvaConfigurationDocument(
 @Serializable data class MessagingPatch(
     val enabled: Boolean? = null,
     val replies: List<String>? = null,
-    /** Service name to a linked messaging account reached through a bridge; the token stays on the device. */
+    /**
+     * Retired in favor of extension messaging services. Read so a file from EVA 0.41 or 0.42 still loads;
+     * each entry is reported for re-creation in an extension and omitted on the next write.
+     */
     val bridges: Map<String, MessagingBridgeDefinition>? = null,
 )
 
@@ -102,6 +105,8 @@ data class PackagesPatch(
     val serviceBindings: List<PackageServiceBinding>? = null,
     val appliedDefaults: List<String>? = null,
     val autoEnabled: Map<String, Boolean>? = null,
+    /** Package instance to its configured setting values, as text. */
+    val settings: Map<String, Map<String, String>>? = null,
 )
 
 @Serializable
@@ -217,7 +222,8 @@ data class EvaConfiguration(
     data class Messaging(
         val enabled: Boolean,
         val replies: List<String>,
-        val bridges: Map<String, MessagingBridgeDefinition> = emptyMap(),
+        /** Retired bridges read from an older file; reported, never written back. */
+        val legacyBridges: Map<String, MessagingBridgeDefinition> = emptyMap(),
     )
 
     data class Prompt(
@@ -237,6 +243,8 @@ data class EvaConfiguration(
         val appliedDefaults: List<String> = emptyList(),
         /** Extensions a refresh may not enable on its own, recorded when the user turns one off. */
         val autoEnabled: Map<String, Boolean> = emptyMap(),
+        /** Package instance to its configured setting values, as text; package defaults are not written. */
+        val settings: Map<String, Map<String, String>> = emptyMap(),
     )
 
     data class Services(
@@ -430,7 +438,6 @@ object EvaConfigurationCodec {
             MessagingPatch(
                 current.messaging.enabled.takeIf { it != base?.messaging?.enabled },
                 current.messaging.replies.takeIf { it != base?.messaging?.replies },
-                current.messaging.bridges.takeIf { it != base?.messaging?.bridges.orEmpty() },
             ).nonEmpty(),
         prompt =
             PromptPatch(
@@ -448,6 +455,7 @@ object EvaConfigurationCodec {
                 current.packages.serviceBindings.takeIf { it != base?.packages?.serviceBindings },
                 current.packages.appliedDefaults.takeIf { it != base?.packages?.appliedDefaults },
                 current.packages.autoEnabled.takeIf { it != base?.packages?.autoEnabled },
+                current.packages.settings.takeIf { it != base?.packages?.settings.orEmpty() },
             ).nonEmpty(),
         services = ServicesPatch(current.services.http.takeIf { it != base?.services?.http }).nonEmpty(),
         extensions = ExtensionsPatch(current.extensions.grants.takeIf { it != base?.extensions?.grants }).nonEmpty(),
@@ -486,7 +494,7 @@ object EvaConfigurationCodec {
                 EvaConfiguration.Messaging(
                     requireNotNull(messaging?.enabled) { "messaging.enabled is missing." },
                     requireNotNull(messaging?.replies) { "messaging.replies is missing." },
-                    messaging?.bridges.orEmpty(),
+                    legacyBridges = messaging?.bridges.orEmpty(),
                 ),
             prompt =
                 EvaConfiguration.Prompt(
@@ -505,13 +513,18 @@ object EvaConfigurationCodec {
                     packages?.legacyBundledInstances.orEmpty(),
                     packages?.appliedDefaults.orEmpty(),
                     packages?.autoEnabled.orEmpty(),
+                    packages?.settings.orEmpty(),
                 ),
             services = EvaConfiguration.Services(services?.http.orEmpty()),
             extensions =
                 EvaConfiguration.Extensions(requireNotNull(extensions?.grants) { "extensions.grants is missing." }),
             spotify = EvaConfiguration.Spotify(if (spotify?.clearClientId == true) null else spotify?.clientId),
             credentials =
-                EvaConfiguration.Credentials(requireNotNull(credentials?.required) { "credentials.required is missing." }),
+                EvaConfiguration.Credentials(
+                    requireNotNull(credentials?.required) {
+                        "credentials.required is missing."
+                    }.filterNot { it.id.startsWith("messaging/") },
+                ),
             remembered =
                 EvaConfiguration.Remembered(requireNotNull(remembered?.chosenNumbers) { "remembered.chosenNumbers is missing." }),
             device =
@@ -532,17 +545,6 @@ object EvaConfigurationCodec {
         require(messaging.replies.size <= 100) { "At most 100 messaging reply identities may be configured." }
         require(messaging.replies.distinct().size == messaging.replies.size) { "Duplicate messaging reply identity." }
         messaging.replies.forEach { require(MESSAGING_IDENTITY.matches(it)) { "Invalid messaging reply identity." } }
-        require(messaging.bridges.size <= MAX_MESSAGING_BRIDGES) { "At most $MAX_MESSAGING_BRIDGES messaging bridges may be configured." }
-        messaging.bridges.forEach { (name, bridge) ->
-            require(SERVICE_NAME.matches(name) && name !in RESERVED_MESSAGING_SERVICES) { "Invalid messaging bridge service name." }
-            require(bridge.label.isNotBlank() && bridge.label.length <= 100 && bridge.label.none(Char::isISOControl)) {
-                "Invalid messaging bridge label."
-            }
-            bridge.origin.httpsOrigin()
-            require(credentials.required.any { it.id == messagingSecretId(name) && it.endpoint == bridge.origin }) {
-                "Messaging bridge credential requirement is missing or has a different origin."
-            }
-        }
         prompt.source.https("prompt.source")
         PromptConfig(prompt.components).validated(PromptDefaults.VARIABLES)
         require(packages.repositories.isNotEmpty()) { "packages.repositories must name at least one catalog." }
@@ -653,8 +655,7 @@ object EvaConfigurationCodec {
                 PROVIDER_SECRETS[reference.id]
                     ?: ("http-" + reference.id.substringAfterLast("/")).takeIf {
                         SERVICE_SECRET.matches(reference.id) ||
-                            PACKAGE_SECRET.matches(reference.id) ||
-                            MESSAGING_SECRET.matches(reference.id)
+                            PACKAGE_SECRET.matches(reference.id)
                     }
             require(expectedKind != null) { "Unknown or unscoped secret reference." }
             require(reference.kind == expectedKind) { "Secret reference kind does not match its scope." }
@@ -701,9 +702,12 @@ object EvaConfigurationCodec {
         credentials.required.filter { SERVICE_SECRET.matches(it.id) || PACKAGE_SECRET.matches(it.id) }.forEach { reference ->
             require(reference.id in declaredCredentials) { "HTTP credential requirement does not belong to a declared service." }
         }
-        credentials.required.filter { MESSAGING_SECRET.matches(it.id) }.forEach { reference ->
-            require(reference.id in messaging.bridges.keys.map(::messagingSecretId)) {
-                "Messaging credential requirement does not belong to a configured bridge."
+        require(packages.settings.keys.all { it in packageIds }) { "Package settings name an unknown package." }
+        packages.settings.values.forEach { values ->
+            require(values.size <= 16) { "At most 16 settings per package." }
+            values.forEach { (name, value) ->
+                require(SETTING_NAME.matches(name)) { "Invalid package setting name." }
+                require(value.length in 1..2000 && value.none(Char::isISOControl)) { "Invalid package setting value." }
             }
         }
         require(remembered.chosenNumbers.size <= 500)
@@ -720,13 +724,14 @@ object EvaConfigurationCodec {
                     serviceBindings = packages.serviceBindings.sortedWith(compareBy({ it.packageInstance }, { it.sourceOrigin })),
                     legacyBundledInstances = packages.legacyBundledInstances.toSortedMap(),
                     appliedDefaults = packages.appliedDefaults.sorted(),
+                    settings = packages.settings.mapValues { it.value.toSortedMap() }.toSortedMap(),
                 ),
             services = services.copy(http = services.http.toSortedMap()),
             extensions =
                 extensions.copy(
                     grants = extensions.grants.sortedBy { it.instance }.map { it.copy(mutations = it.mutations.sorted()) },
                 ),
-            messaging = messaging.copy(replies = messaging.replies.sorted(), bridges = messaging.bridges.toSortedMap()),
+            messaging = messaging.copy(replies = messaging.replies.sorted()),
             credentials = credentials.copy(required = credentials.required.sortedBy { it.id }),
             // Numbers remembered before they were kept whole cannot be recovered, so they are dropped.
             remembered = remembered.copy(chosenNumbers = remembered.chosenNumbers.filterKeys(PhoneNumberKey.E164::matches).toSortedMap()),
@@ -746,6 +751,10 @@ object EvaConfigurationCodec {
                     serviceBindings =
                         document.packages.serviceBindings?.sortedWith(compareBy({ it.packageInstance }, { it.sourceOrigin })),
                     appliedDefaults = document.packages.appliedDefaults?.sorted(),
+                    settings =
+                        document.packages.settings
+                            ?.mapValues { it.value.toSortedMap() }
+                            ?.toSortedMap(),
                 ),
             services = document.services?.copy(http = document.services.http?.toSortedMap()),
             extensions =
@@ -755,11 +764,7 @@ object EvaConfigurationCodec {
                             ?.sortedBy { it.instance }
                             ?.map { it.copy(mutations = it.mutations.sorted()) },
                 ),
-            messaging =
-                document.messaging?.copy(
-                    replies = document.messaging.replies?.sorted(),
-                    bridges = document.messaging.bridges?.toSortedMap(),
-                ),
+            messaging = document.messaging?.copy(replies = document.messaging.replies?.sorted()),
             credentials = document.credentials?.copy(required = document.credentials.required?.sortedBy { it.id }),
             remembered = document.remembered?.copy(chosenNumbers = document.remembered.chosenNumbers?.toSortedMap()),
             device = document.device?.copy(authorizations = document.device.authorizations?.sorted()),
@@ -806,6 +811,7 @@ object EvaConfigurationCodec {
                 override.packages?.serviceBindings ?: base.packages?.serviceBindings,
                 override.packages?.appliedDefaults ?: base.packages?.appliedDefaults,
                 override.packages?.autoEnabled ?: base.packages?.autoEnabled,
+                override.packages?.settings ?: base.packages?.settings,
             ).nonEmpty(),
         services = ServicesPatch(override.services?.http ?: base.services?.http).nonEmpty(),
         extensions = ExtensionsPatch(override.extensions?.grants ?: base.extensions?.grants).nonEmpty(),
@@ -854,7 +860,7 @@ object EvaConfigurationCodec {
         takeIf {
             repository != null || repositories != null || legacyBundledInstances != null || installed != null ||
                 waitMillis != null || services != null || serviceBindings != null || appliedDefaults != null ||
-                autoEnabled != null
+                autoEnabled != null || settings != null
         }
 
     private fun ServicesPatch.nonEmpty() = takeIf { http != null }
@@ -903,12 +909,8 @@ object EvaConfigurationCodec {
     private val SEGMENT = Regex("[A-Za-z0-9][A-Za-z0-9._-]*")
     private val PACKAGE_SECRET = Regex("package/[0-9a-f-]{36}/basic")
     private val SERVICE_SECRET = Regex("service/[a-z][a-z0-9-]{0,63}/(basic|bearer)")
-    private val MESSAGING_SECRET = Regex("messaging/[a-z][a-z0-9-]{0,63}/bearer")
+    private val SETTING_NAME = Regex("[A-Za-z_][A-Za-z0-9_]{0,63}")
     private val SERVICE_NAME = Regex("[a-z][a-z0-9-]{0,63}")
-    private const val MAX_MESSAGING_BRIDGES = 16
-
-    /** Service names the shared messaging tools already give a meaning. */
-    val RESERVED_MESSAGING_SERVICES = setOf("sms", "notifications")
     private val MESSAGING_IDENTITY =
         Regex("[0-9]+:[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z][A-Za-z0-9_]*)+:[0-9]+:[0-9a-f]{64}(?:,[0-9a-f]{64})*")
     private val PROVIDER_SECRETS =
@@ -941,10 +943,6 @@ object EvaConfigurationCodec {
         name: String,
         scheme: String = "basic",
     ) = "service/$name/$scheme"
-
-    fun messagingSecretId(name: String) = "messaging/$name/bearer"
-
-    fun isMessagingBridgeName(name: String) = SERVICE_NAME.matches(name) && name !in RESERVED_MESSAGING_SERVICES
 
     private fun com.colonelpanic.eva.adapters.declarative.PackageDefinition.httpOrigins(): Set<String> =
         httpBindings().map { it.origin }.toSet()

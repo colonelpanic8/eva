@@ -21,7 +21,15 @@
       "items": { "type": "string", "minLength": 1, "maxLength": 300 }
     },
     "androidPackages": { "type": "array", "maxItems": 16, "uniqueItems": true, "items": { "type": "string", "maxLength": 200 } },
-    "capabilities": { "type": "array", "minItems": 1, "maxItems": 64, "items": { "$ref": "#/$defs/capability" } }
+    "capabilities": { "type": "array", "minItems": 1, "maxItems": 64, "items": { "$ref": "#/$defs/capability" } },
+    "settings": {
+      "type": "object",
+      "maxProperties": 16,
+      "description": "User-set, non-secret values that setting slots read. Values live in the user's configuration (packages.settings), never in the package; secrets stay credential references.",
+      "propertyNames": { "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$" },
+      "additionalProperties": { "$ref": "#/$defs/setting" }
+    },
+    "messaging": { "$ref": "#/$defs/messaging" }
   },
   "$defs": {
     "capability": {
@@ -87,7 +95,72 @@
         "type": { "$ref": "#/$defs/scalarType" }
       }
     },
-    "slot": { "oneOf": [{ "$ref": "#/$defs/argumentSlot" }, { "$ref": "#/$defs/literalSlot" }] },
+    "settingSlot": {
+      "type": "object",
+      "required": ["setting", "type"],
+      "additionalProperties": false,
+      "description": "The user's configured value for a declared setting, or its default.",
+      "properties": { "setting": { "type": "string", "maxLength": 64 }, "type": { "$ref": "#/$defs/scalarType" } }
+    },
+    "slot": { "oneOf": [{ "$ref": "#/$defs/argumentSlot" }, { "$ref": "#/$defs/literalSlot" }, { "$ref": "#/$defs/settingSlot" }] },
+    "setting": {
+      "type": "object",
+      "required": ["type", "title"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "enum": ["string", "integer", "boolean"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "description": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "default": { "type": ["string", "integer", "boolean"] },
+        "enum": { "type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 200 } },
+        "minLength": { "type": "integer", "minimum": 0, "maximum": 2000 },
+        "maxLength": { "type": "integer", "minimum": 1, "maximum": 2000 },
+        "minimum": { "type": "integer" },
+        "maximum": { "type": "integer" }
+      }
+    },
+    "textSource": {
+      "oneOf": [
+        { "type": "string", "minLength": 1, "maxLength": 100 },
+        { "type": "object", "required": ["setting"], "additionalProperties": false, "properties": { "setting": { "type": "string", "maxLength": 64 } } }
+      ]
+    },
+    "messagingLookup": {
+      "type": "object",
+      "required": ["tool"],
+      "additionalProperties": false,
+      "properties": { "tool": { "type": "string", "maxLength": 64 }, "query": { "type": "string", "maxLength": 64 }, "limit": { "type": "string", "maxLength": 64 } }
+    },
+    "messaging": {
+      "type": "object",
+      "required": ["service", "label", "conversations", "history", "send"],
+      "additionalProperties": false,
+      "description": "Serve EVA's shared conversation, history, and send tools under a service name. The named tools are reached only through those shared tools.",
+      "properties": {
+        "service": { "$ref": "#/$defs/textSource" },
+        "label": { "$ref": "#/$defs/textSource" },
+        "conversations": { "$ref": "#/$defs/messagingLookup" },
+        "contacts": { "$ref": "#/$defs/messagingLookup" },
+        "history": {
+          "type": "object",
+          "required": ["tool", "conversation"],
+          "additionalProperties": false,
+          "properties": { "tool": { "type": "string", "maxLength": 64 }, "conversation": { "type": "string", "maxLength": 64 }, "limit": { "type": "string", "maxLength": 64 } }
+        },
+        "send": {
+          "type": "object",
+          "required": ["tool", "conversation", "text"],
+          "additionalProperties": false,
+          "properties": { "tool": { "type": "string", "maxLength": 64 }, "conversation": { "type": "string", "maxLength": 64 }, "text": { "type": "string", "maxLength": 64 } }
+        },
+        "startChat": {
+          "type": "object",
+          "required": ["tool", "recipients", "conversation"],
+          "additionalProperties": false,
+          "properties": { "tool": { "type": "string", "maxLength": 64 }, "recipients": { "type": "string", "maxLength": 64 }, "conversation": { "$ref": "#/$defs/pointer" } }
+        }
+      }
+    },
     "bodySlot": {
       "description": "Request-body slots may also carry a whole scalar-list argument as a JSON array.",
       "oneOf": [
@@ -119,6 +192,31 @@
       }
     },
     "pointer": { "type": "string", "maxLength": 1000, "pattern": "^(|/.*)$" },
+    "operation": {
+      "type": "object",
+      "required": ["header", "status", "outcomes"],
+      "additionalProperties": false,
+      "description": "A durable server-side operation. EVA sends the header with a key derived from the invocation, reads the status path with {operation} replaced by that key until the state maps to a final outcome, and never resubmits.",
+      "properties": {
+        "header": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9-]{0,63}$" },
+        "status": {
+          "type": "object",
+          "required": ["path", "state"],
+          "additionalProperties": false,
+          "properties": {
+            "path": { "type": "string", "maxLength": 2000, "pattern": "^/.*\\{operation\\}" },
+            "state": { "$ref": "#/$defs/pointer" },
+            "detail": { "$ref": "#/$defs/pointer" }
+          }
+        },
+        "outcomes": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 32,
+          "additionalProperties": { "enum": ["completed", "not_executed", "unknown", "pending"] }
+        }
+      }
+    },
     "binding": {
       "oneOf": [
         { "$ref": "#/$defs/select" },
@@ -281,6 +379,7 @@
         "requestBody": { "$ref": "#/$defs/bodyFields" },
         "credential": { "type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$" },
         "credentialScheme": { "enum": ["basic", "bearer"], "default": "basic" },
+        "operation": { "$ref": "#/$defs/operation" },
         "maxResponseBytes": { "type": "integer", "minimum": 1, "maximum": 1048576 },
         "result": { "$ref": "#/$defs/result" }
       }
@@ -325,7 +424,10 @@
             "additionalProperties": false,
             "properties": {
               "pointer": { "$ref": "#/$defs/pointer" },
-              "type": { "enum": ["string", "integer", "number", "boolean", "stringArray"] },
+              "type": {
+                "enum": ["string", "integer", "number", "boolean", "stringArray"],
+                "description": "A stringArray field may use one * segment to gather a string from every element it spans, such as /participants/*/name."
+              },
               "required": { "type": "boolean" }
             }
           }

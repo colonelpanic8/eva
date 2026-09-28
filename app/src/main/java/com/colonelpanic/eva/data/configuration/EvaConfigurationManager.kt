@@ -591,13 +591,8 @@ class EvaConfigurationManager(
                     service.credential?.let { add(SecretReference(it, "http-" + it.substringAfterLast("/"), service.origin)) }
                 }
                 packages.services.forEach { service -> add(SecretReference(service.credential, "http-basic", service.origin)) }
-                app.messagingSettings.state.value.bridges.forEach { (name, bridge) ->
-                    if (app.messagingSettings.bridgeCredential(name) != null) {
-                        add(SecretReference(EvaConfigurationCodec.messagingSecretId(name), "http-bearer", bridge.origin))
-                    }
-                }
             }
-        val credentialRefs = retainedCredentials(observedCredentialRefs, packages, messaging.bridges)
+        val credentialRefs = retainedCredentials(observedCredentialRefs, packages)
         val liveGrants =
             app.extensions.portableGrants().map { (instance, grant) ->
                 PortableGrant(instance, grant.identityKey, grant.digest, grant.mutations.sorted())
@@ -639,7 +634,7 @@ class EvaConfigurationManager(
                 ),
             appearance = EvaConfiguration.Appearance(app.appearance.dynamicColor),
             capabilities = EvaConfiguration.Capabilities(app.capabilities.screenControlEnabled),
-            messaging = EvaConfiguration.Messaging(messaging.enabled, replies, messaging.bridges),
+            messaging = EvaConfiguration.Messaging(messaging.enabled, replies),
             prompt = EvaConfiguration.Prompt(prompt.source, prompt.config.components),
             packages = packages.configuration(),
             services = EvaConfiguration.Services(packages.httpServices),
@@ -735,7 +730,6 @@ class EvaConfigurationManager(
     private fun retainedCredentials(
         observed: List<SecretReference>,
         packages: PortablePackageSettings,
-        bridges: Map<String, MessagingBridgeDefinition>,
     ): List<SecretReference> {
         val changes = synchronized(changedCredentials) { changedCredentials.toSet() }
         val current = observed.associateBy { it.id }
@@ -758,13 +752,6 @@ class EvaConfigurationManager(
         retained.keys
             .filter { (it.startsWith("package/") || it.startsWith("service/")) && it !in serviceIds }
             .forEach(retained::remove)
-        // A bridge's token reference always travels with the bridge, whether or not this device holds the token.
-        val bridgeIds = bridges.keys.map(EvaConfigurationCodec::messagingSecretId).toSet()
-        retained.keys.filter { it.startsWith("messaging/") && it !in bridgeIds }.forEach(retained::remove)
-        bridges.forEach { (name, bridge) ->
-            val id = EvaConfigurationCodec.messagingSecretId(name)
-            retained[id] = SecretReference(id, "http-bearer", bridge.origin)
-        }
         return retained.values.sortedBy { it.id }
     }
 
@@ -793,7 +780,7 @@ class EvaConfigurationManager(
         val available = availableMessagingReplies()
         val desiredReplies = configuration.replies.toSet()
         app.messagingSettings.replace(
-            MessagingPreferences(configuration.enabled, desiredReplies.intersect(available), configuration.bridges),
+            MessagingPreferences(configuration.enabled, desiredReplies.intersect(available)),
         )
         return desiredReplies - available
     }
@@ -828,12 +815,7 @@ class EvaConfigurationManager(
                         }
 
                         else -> {
-                            if (reference.id.startsWith("messaging/")) {
-                                reference.id !in app.messagingSettings.missingBridgeCredentials(configuration.messaging.bridges)
-                            } else {
-                                reference.id !in
-                                    app.packageSettings.missingCredentials(configuration.packages.portable(configuration.services))
-                            }
+                            reference.id !in app.packageSettings.missingCredentials(configuration.packages.portable(configuration.services))
                         }
                     }
                 if (!available) add("Provision local credential ${reference.id}${reference.endpoint?.let { " for $it" }.orEmpty()}.")
@@ -860,7 +842,11 @@ class EvaConfigurationManager(
     private fun packageNotices(configuration: EvaConfiguration): List<String> =
         configuration.packages.legacyBundledInstances.keys.sorted().map {
             "Bundled package $it was removed. Browse to reinstall and reapprove it."
-        }
+        } +
+            configuration.messaging.legacyBridges.toSortedMap().map { (name, bridge) ->
+                "Messaging bridge $name (${bridge.origin}) now comes from the Messaging bridge extension. " +
+                    "Install it, set its service to $name and its server to ${bridge.origin}, and enter its token."
+            }
 
     private fun contentAuthorizations(): List<String> =
         app.packageSettings.state.value
@@ -904,6 +890,7 @@ class EvaConfigurationManager(
             serviceBindings,
             appliedDefaults = appliedDefaults,
             autoEnabled = autoEnabled,
+            settings = settings,
         )
 
     private fun EvaConfiguration.Packages.portable(
@@ -919,6 +906,7 @@ class EvaConfigurationManager(
             serviceBindings.filter { it.packageInstance in installedInstances },
             appliedDefaults,
             autoEnabled,
+            settings.filterKeys { it in installedInstances },
         )
     }
 

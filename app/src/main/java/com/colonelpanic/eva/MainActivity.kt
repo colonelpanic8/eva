@@ -250,9 +250,8 @@ class MainActivity : ComponentActivity() {
         val account by eva.chatGpt.account.collectAsStateWithLifecycle()
         val signIn by eva.signIn.state.collectAsStateWithLifecycle()
         val messaging by eva.messagingSettings.state.collectAsStateWithLifecycle()
-        val bridgeCredentialRevision by eva.messagingSettings.credentialRevision.collectAsStateWithLifecycle()
+        val legacyBridges by eva.messagingSettings.legacyBridges.collectAsStateWithLifecycle()
         val messagingApps by eva.notificationMessages.apps.collectAsStateWithLifecycle()
-        val messagingBridgeChecks by eva.bridgeMessaging.checks.collectAsStateWithLifecycle()
         val rememberedNumbers by eva.chosenNumbers.count.collectAsStateWithLifecycle()
         val memories by eva.memories.state.collectAsStateWithLifecycle()
         LaunchedEffect(Unit) { runCatching { eva.memories.load() } }
@@ -270,14 +269,8 @@ class MainActivity : ComponentActivity() {
             messaging = messaging,
             messagingApps = messagingApps,
             messagingPermissions = messagingPermissions,
-            messagingBridgeChecks = messagingBridgeChecks,
-            messagingBridgesNeedingToken =
-                remember(messaging.bridges, bridgeCredentialRevision) {
-                    eva.messagingSettings
-                        .missingBridgeCredentials(messaging.bridges)
-                        .map { it.split('/')[1] }
-                        .toSet()
-                },
+            messagingServices = remember(packages, extensions) { eva.messagingServices.all() },
+            legacyBridges = legacyBridges,
             rememberedNumbers = rememberedNumbers,
             memories = memories,
             plugins = plugins,
@@ -440,16 +433,8 @@ class MainActivity : ComponentActivity() {
                     lifecycleScope.launch { eva.registry.changeAuthorization { eva.messagingSettings.allowReply(identity, allowed) } }
                 },
                 onMessagingRefresh = EvaNotificationListener::refreshMessages,
-                onSaveMessagingBridge = {
-                    name,
-                    label,
-                    origin,
-                    token,
-                    ->
-                    save { eva.messagingSettings.saveBridge(name, label, origin, token) }
-                },
-                onRemoveMessagingBridge = eva.messagingSettings::removeBridge,
-                onCheckMessagingBridge = { name -> lifecycleScope.launch { eva.bridgeMessaging.check(name) } },
+                onDismissLegacyBridges = eva.messagingSettings::dismissLegacyBridges,
+                onSavePackageSetting = eva::savePackageSetting,
                 onForgetRememberedNumbers = { lifecycleScope.launch { eva.chosenNumbers.forget() } },
                 onKeepMemory = { name -> editMemory { eva.memories.keep(name) } },
                 onForgetMemory = { name -> editMemory { eva.memories.forget(name) } },

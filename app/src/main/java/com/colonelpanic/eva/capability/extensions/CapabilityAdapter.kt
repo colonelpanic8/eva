@@ -32,6 +32,8 @@ data class CapabilityBinding(
     val definition: CapabilityDefinition,
     val backend: ExecutionBackend,
     val revision: String,
+    /** Reached only through one of EVA's own tools, such as a messaging service, never offered directly. */
+    val routed: Boolean = false,
 )
 
 class GrantedExecutionBackend(

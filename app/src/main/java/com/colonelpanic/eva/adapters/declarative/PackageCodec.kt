@@ -35,17 +35,19 @@ object PackageCodec {
         val root = (BoundedJson.freeze(BoundedJson.parse(json, MAX_BYTES)) as? JsonObject) ?: error("Expected package object")
         root.fields(
             setOf("formatVersion", "id", "version", "title", "capabilities"),
-            setOf("androidPackages", "description", "setup", "guidance"),
+            setOf("androidPackages", "description", "setup", "guidance", "settings", "messaging"),
         )
         require(root.getValue("formatVersion").long() == 1L)
         val id = root.text("id", 128).also { require(packageId.matches(it)) }
         val revision = root.text("version", 40).also { require(version.matches(it)) }
+        val settings = settings(root["settings"])
+        val reader = Reader(settings)
         val capabilities =
             root
                 .getValue("capabilities")
                 .array()
                 .also { require(it.size in 1..64) }
-                .map { capability(it.obj()) }
+                .map { reader.capability(it.obj()) }
         require(capabilities.map { it.name }.distinct().size == capabilities.size) { "Duplicate tool name" }
         val apps =
             root["androidPackages"]?.array().orEmpty().also { require(it.size <= 16) }.map {
@@ -69,6 +71,8 @@ object PackageCodec {
             description,
             setup,
             guidance,
+            settings,
+            root["messaging"]?.let { messaging(it.obj(), capabilities, settings) },
         ).also { definition ->
             require(
                 definition.httpBindings().filter { it.credential != null }.groupBy { it.origin }.values.all { bindings ->
@@ -78,497 +82,746 @@ object PackageCodec {
         }
     }
 
-    private fun capability(root: JsonObject): PackageCapability {
-        root.fields(setOf("tool", "binding", "execution"), setOf("effects", "validators", "receipts", "_meta"))
-        root["_meta"]?.obj()
-        val tool = ExtensionProtocol.tool(root.getValue("tool").obj())
-        val name = tool.name
-        val schema = tool.inputSchema
-        val properties = schema.getValue("properties").obj()
-        val validators =
-            root["validators"]
-                ?.obj()
-                ?.mapValues { (argument, validator) ->
-                    require(properties[argument]?.obj()?.get("type") == JsonPrimitive("string"))
-                    validator.string().also { require(it in NamedValidators.names) { "Unsupported named validator" } }
-                }.orEmpty()
-        val receipts =
-            root["receipts"]?.obj()?.let {
-                it.fields(emptySet(), setOf("success", "handlerMissing"))
-                ReceiptText(
-                    it["success"]?.string()?.also { text -> require(text.length in 1..1000) },
-                    it["handlerMissing"]?.string()?.also { text -> require(text.length in 1..1000) },
-                )
-            } ?: ReceiptText()
-        val binding = binding(root.getValue("binding").obj(), properties)
-        val alternatives = if (binding is DeclarativeBinding.Select) listOf(binding.present, binding.absent) else listOf(binding)
-        val claimed =
-            when (root["effects"]?.string()) {
-                "read" -> PackageEffect.READ
-                "write" -> PackageEffect.WRITE
-                "external_handoff" -> PackageEffect.HANDOFF
-                null, "unknown" -> PackageEffect.UNKNOWN
-                else -> error("Unsupported effects")
-            }
-        val effect =
-            when {
-                claimed == PackageEffect.UNKNOWN -> {
-                    claimed
-                }
+    private fun settings(value: JsonElement?): Map<String, PackageSetting> =
+        value
+            ?.obj()
+            ?.also { require(it.size <= 16) { "At most 16 settings" } }
+            ?.mapValues { (name, element) ->
+                require(identifier.matches(name)) { "Invalid setting name" }
+                val spec = element.obj()
+                spec.fields(setOf("type", "title"), setOf("description", "default", "enum", "minLength", "maxLength", "minimum", "maximum"))
+                val type =
+                    spec
+                        .text(
+                            "type",
+                            10,
+                        ).also { require(it in setOf("string", "integer", "boolean")) { "Unsupported setting type" } }
+                val constraints =
+                    buildMap<String, JsonElement> {
+                        put("type", JsonPrimitive(type))
+                        when (type) {
+                            "string" -> {
+                                require("minimum" !in spec && "maximum" !in spec)
+                                spec["enum"]?.let { values ->
+                                    val options =
+                                        values.array().also { require(it.size in 1..32) }.map {
+                                            it.string().also { option ->
+                                                require(option.length in 1..200 && option.none(Char::isISOControl))
+                                            }
+                                        }
+                                    require(options.distinct().size == options.size)
+                                    put("enum", JsonArray(options.map(::JsonPrimitive)))
+                                }
+                                val min = spec["minLength"]?.long()?.also { require(it in 0..2000) } ?: 0
+                                val max = spec["maxLength"]?.long()?.also { require(it in 1..2000) } ?: 500
+                                require(min <= max)
+                                put("minLength", JsonPrimitive(min))
+                                put("maxLength", JsonPrimitive(max))
+                            }
 
-                alternatives.any { it is DeclarativeBinding.Http && it.method !in setOf("GET", "HEAD") } -> {
-                    PackageEffect.WRITE
-                }
+                            "integer" -> {
+                                require("enum" !in spec && "minLength" !in spec && "maxLength" !in spec)
+                                spec["minimum"]?.let { put("minimum", JsonPrimitive(it.long())) }
+                                spec["maximum"]?.let { put("maximum", JsonPrimitive(it.long())) }
+                            }
 
-                alternatives.any { it is DeclarativeBinding.Intent } -> {
-                    if (claimed ==
-                        PackageEffect.WRITE
-                    ) {
-                        claimed
-                    } else {
-                        PackageEffect.HANDOFF
+                            else -> {
+                                require(spec.keys.none { it in setOf("enum", "minLength", "maxLength", "minimum", "maximum") })
+                            }
+                        }
                     }
+                val schema = JsonObject(constraints)
+                val default =
+                    spec["default"]?.let {
+                        val primitive = it as? JsonPrimitive ?: throw IllegalArgumentException("A setting default is a scalar")
+                        require(
+                            primitive != JsonNull && ToolSchema.error(schema, primitive) == null,
+                        ) { "Setting default does not satisfy its schema" }
+                        primitive
+                    }
+                PackageSetting(
+                    name,
+                    spec.text("title", 120),
+                    spec["description"]?.let { spec.text("description", 500) },
+                    schema,
+                    default,
+                )
+            }.orEmpty()
+
+    private fun messaging(
+        root: JsonObject,
+        capabilities: List<PackageCapability>,
+        settings: Map<String, PackageSetting>,
+    ): MessagingRole {
+        root.fields(setOf("service", "label", "conversations", "history", "send"), setOf("contacts", "startChat"))
+        val byName = capabilities.associateBy { it.name }
+
+        fun source(
+            key: String,
+            fixed: (String) -> Boolean,
+        ): TextSource =
+            when (val value = root.getValue(key)) {
+                is JsonObject -> {
+                    value.fields(setOf("setting"))
+                    val name = value.text("setting", 64)
+                    require(settings[name]?.type == "string") { "messaging.$key must name a string setting" }
+                    TextSource.Setting(name)
                 }
 
                 else -> {
-                    claimed
+                    TextSource.Fixed(value.string().also { require(fixed(it)) { "Invalid messaging.$key" } })
                 }
             }
-        tool.annotations?.let { ExtensionProtocol.checkAnnotations(it, effect.toEffect()) }
-        val execution = execution(root.getValue("execution").obj())
-        require(alternatives.all { (execution.mode == ExecutionMode.HANDOFF) == (it is DeclarativeBinding.Intent) })
-        require(alternatives.none { it is DeclarativeBinding.Intent } || execution.requiresForeground)
-        require(
-            !execution.requiresUnlock || alternatives.all { it is DeclarativeBinding.Intent },
-        ) { "Only intent bindings can require unlock" }
-        return PackageCapability(
-            name,
-            tool.title,
-            tool.description,
-            schema,
-            effect,
-            execution,
-            binding,
-            validators,
-            receipts,
-            tool.outputSchema,
-            tool.annotations,
-        )
-    }
 
-    private fun execution(root: JsonObject): ExecutionSemantics {
-        root.fields(setOf("mode", "requiresForeground"), setOf("maxWaitMillis", "requiresUnlock", "endsVoiceCall"))
-        val mode =
-            when (root.text("mode", 30)) {
-                "synchronous" -> ExecutionMode.SYNCHRONOUS
-                "handoff" -> ExecutionMode.HANDOFF
-                else -> error("Unsupported execution mode")
+        fun tool(
+            spec: JsonObject,
+            read: Boolean,
+        ): PackageCapability {
+            val capability = byName[spec.text("tool", 64)] ?: throw IllegalArgumentException("A messaging operation names an unknown tool")
+            require((capability.effect == PackageEffect.READ) == read) {
+                "Messaging lookups must be reads and messaging sends must be writes"
             }
-        val foreground =
-            (root["requiresForeground"] as? JsonPrimitive)?.takeUnless { it.isString }?.booleanOrNull ?: error("Expected boolean")
-        return ExecutionSemantics(
-            mode,
-            foreground,
-            root["maxWaitMillis"]?.takeUnless { it == JsonNull }?.long(),
-            root["requiresUnlock"]?.let {
-                (it as? JsonPrimitive)?.takeUnless { value -> value.isString }?.booleanOrNull
-                    ?: error("Expected boolean")
-            }
-                ?: false,
-            root["endsVoiceCall"]?.let { ExtensionProtocol.callEnding(it) } ?: CallEnding.NEVER,
-        )
-    }
+            return capability
+        }
 
-    private fun binding(
-        root: JsonObject,
-        properties: JsonObject,
-        allowSelect: Boolean = true,
-    ): DeclarativeBinding =
-        when (root.text("kind", 30)) {
-            "select" -> {
-                require(allowSelect)
-                root.fields(setOf("kind", "argument", "present", "absent"))
-                val argument = root.text("argument", 64).also { require(it in properties) }
-                DeclarativeBinding.Select(
-                    argument,
-                    binding(root.getValue("present").obj(), properties, false),
-                    binding(root.getValue("absent").obj(), properties, false),
+        fun argument(
+            capability: PackageCapability,
+            name: String,
+            type: String,
+        ): String {
+            val property =
+                capability.inputSchema
+                    .getValue("properties")
+                    .obj()[name]
+                    ?.obj() ?: throw IllegalArgumentException("Unknown messaging argument $name")
+            require(property["type"] == JsonPrimitive(type)) { "Messaging argument $name must be a $type" }
+            return name
+        }
+
+        fun lookup(spec: JsonObject): MessagingRole.Lookup {
+            spec.fields(setOf("tool"), setOf("query", "limit"))
+            val capability = tool(spec, read = true)
+            return MessagingRole.Lookup(
+                capability.name,
+                spec["query"]?.let { argument(capability, it.string(), "string") },
+                spec["limit"]?.let { argument(capability, it.string(), "integer") },
+            )
+        }
+        val history =
+            root.getValue("history").obj().let { spec ->
+                spec.fields(setOf("tool", "conversation"), setOf("limit"))
+                val capability = tool(spec, read = true)
+                MessagingRole.History(
+                    capability.name,
+                    argument(capability, spec.text("conversation", 64), "string"),
+                    spec["limit"]?.let { argument(capability, it.string(), "integer") },
                 )
             }
-
-            "android.intent" -> {
-                intent(root, properties)
+        val send =
+            root.getValue("send").obj().let { spec ->
+                spec.fields(setOf("tool", "conversation", "text"))
+                val capability = tool(spec, read = false)
+                MessagingRole.Send(
+                    capability.name,
+                    argument(capability, spec.text("conversation", 64), "string"),
+                    argument(capability, spec.text("text", 64), "string"),
+                )
             }
-
-            "android.content" -> {
-                content(root, properties)
-            }
-
-            "http" -> {
-                http(root, properties)
-            }
-
-            else -> {
-                error("Unsupported binding")
-            }
-        }
-
-    private fun intent(
-        root: JsonObject,
-        properties: JsonObject,
-    ): DeclarativeBinding.Intent {
-        root.fields(setOf("kind", "action"), setOf("uri", "extras", "package", "mimeType", "packageByName", "class", "querySpread"))
-        val actionSlot =
-            (root.getValue("action") as? JsonObject)?.let { spec ->
-                val argument = slot(spec, properties) as? ScalarSlot.Argument ?: error("An action slot names an argument")
-                val mapped = requireNotNull(argument.values) { "An action slot needs a closed value map" }
-                require(mapped.values.all(::isIntentAction)) { "Every mapped action must be an intent action" }
-                argument
-            }
-        val action = if (actionSlot == null) root.text("action", 200).also { require(isIntentAction(it)) } else null
-        val uri = root["uri"]?.obj()
-        val wholeUri = uri != null && "argument" in uri
-        val uriArgument =
-            if (wholeUri) {
-                uri.fields(setOf("argument", "schemes"))
-                uri.text("argument", 64).also { require(properties[it]?.obj()?.get("type") == JsonPrimitive("string")) }
-            } else {
-                null
-            }
-        val uriSchemes =
-            if (wholeUri) {
-                uri
-                    .getValue("schemes")
-                    .array()
-                    .also { require(it.size in 1..8) }
-                    .map { scheme ->
-                        scheme.string().also {
-                            require(Regex("[a-z][a-z0-9+.-]*").matches(it) && it !in FORBIDDEN_SCHEMES) { "Unsupported URI scheme" }
-                        }
-                    }.also { require(it.distinct().size == it.size) }
-            } else {
-                emptyList()
-            }
-        val path = if (wholeUri) emptyMap() else slots(uri?.get("path"), properties)
-        val base =
-            uri
-                ?.takeUnless { wholeUri }
-                ?.let {
-                    it.fields(setOf("base"), setOf("query", "opaque", "path"))
-                    it.text("base", 2000).also { base ->
-                        val placeholders = pathSlot.findAll(base).map { match -> match.groupValues[1] }.toSet()
-                        require(
-                            path.keys == placeholders && path.keys.all(identifier::matches),
-                        ) { "URI placeholders and path slots must match" }
-                        val fixed = pathSlot.replace(base, "placeholder")
-                        val parsed = URI(if ("opaque" in it) fixed + "placeholder" else fixed)
-                        require(parsed.isAbsolute && parsed.scheme.lowercase() !in FORBIDDEN_SCHEMES)
-                        // A provider URI is only a fixed destination; no slot may shape it.
-                        require(parsed.scheme.lowercase() != "content" || it.keys == setOf("base")) {
-                            "A content URI must be fixed"
-                        }
-                        require(parsed.rawFragment == null && parsed.rawUserInfo == null && '?' !in base)
-                        require(pathSlot.findAll(base).all { match -> match.range.first > base.indexOf(':') }) {
-                            "A placeholder cannot form the scheme"
-                        }
-                    }
-                }.orEmpty()
-        val opaque =
-            uri?.takeUnless { wholeUri }?.get("opaque")?.let { value ->
-                require(Regex("[A-Za-z][A-Za-z0-9+.-]*:").matches(base)) { "An opaque slot needs a fixed scheme-only base" }
-                require("query" !in uri) { "Opaque slots cannot be combined with query mappings" }
-                slot(value.obj(), properties).also { require(it.type == "string") }
-            }
-        val query = if (wholeUri) emptyMap() else slots(uri?.get("query"), properties)
-        val querySpread =
-            root["querySpread"]?.obj()?.let { spread ->
-                spread.fields(setOf("argument"))
-                val argument = spread.text("argument", 64)
-                val property = properties[argument]?.obj() ?: error("querySpread names a tool argument")
-                require(property["type"] == JsonPrimitive("object") && property["additionalProperties"] is JsonObject) {
-                    "querySpread needs a string-map argument"
-                }
-                require(uri != null && !wholeUri && "opaque" !in uri) { "querySpread needs a fixed base with query parameters" }
-                argument
-            }
-        val extras = slots(root["extras"], properties)
-        val target = root["package"]?.string()?.also { require(packageId.matches(it)) }
-        val targetClass =
-            root["class"]?.let {
-                require(target != null) { "A fixed class requires a fixed package" }
-                root.text("class", 300).also { name ->
-                    require(
-                        Regex("[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_$][A-Za-z0-9_$]*)+").matches(name),
-                    ) { "Use a fully qualified fixed activity class" }
-                }
-            }
-        val mimeType = root["mimeType"]?.string()?.also { require(Regex("[a-z0-9.+-]+/[a-z0-9.+-]+").matches(it)) }
-        val byName =
-            root["packageByName"]?.string()?.also {
-                require(properties[it]?.obj()?.get("type") == JsonPrimitive("string"))
-                require(target == null) { "Choose either a fixed package or a visible app name" }
-            }
-        return DeclarativeBinding.Intent(
-            action,
-            base,
-            query,
-            extras,
-            target,
-            mimeType,
-            byName,
-            opaque,
-            targetClass,
-            path,
-            actionSlot,
-            uriArgument,
-            uriSchemes,
-            querySpread,
-        )
-    }
-
-    private fun content(
-        root: JsonObject,
-        properties: JsonObject,
-    ): DeclarativeBinding.Content {
-        root.fields(setOf("kind", "authority", "uri", "projection", "maxRows", "maxBytes"), setOf("selection"))
-        val authority = root.text("authority", 200).also { require(packageId.matches(it)) }
-        val uriObject = root["uri"] as? JsonObject
-        uriObject?.fields(setOf("base"), setOf("query", "path"))
-        val uri = uriObject?.text("base", 2000) ?: root.text("uri", 2000)
-        val path = slots(uriObject?.get("path"), properties)
-        val placeholders = pathSlot.findAll(uri).map { it.groupValues[1] }.toSet()
-        require(path.keys == placeholders && path.keys.all(identifier::matches))
-        val parsed = URI(pathSlot.replace(uri, "placeholder"))
-        require(parsed.scheme == "content" && parsed.rawAuthority == authority && parsed.rawFragment == null && parsed.rawQuery == null)
-        if (uriObject != null) {
-            require(parsed.rawPath.startsWith('/') && !parsed.rawPath.startsWith("//"))
-            require(parsed.rawPath.none { it in "%\\" || it.isWhitespace() || it.isISOControl() })
-            require(parsed.rawPath.split('/').none { it == "." || it == ".." })
-        }
-        require(pathSlot.findAll(uri).all { match -> match.range.first > uri.indexOf('/', "content://".length) })
-        val query = slots(uriObject?.get("query"), properties)
-        val projection =
-            root.getValue("projection").obj().also { require(it.size in 1..32) }.mapValues { (name, type) ->
-                require(identifier.matches(name))
-                type.string().also { require(it in scalarTypes || it == "json") }
-            }
-        val selection =
-            root["selection"]?.array().orEmpty().also { require(it.size <= 16) }.map {
-                val condition = it.obj()
-                condition.fields(setOf("column", "operator", "value"))
-                val column = condition.text("column", 64).also { require(it in projection) }
-                val operator = condition.text("operator", 8).also { require(it in setOf("=", "!=", "<", "<=", ">", ">=", "LIKE")) }
-                val value = slot(condition.getValue("value").obj(), properties)
-                require(value.type == projection[column])
-                require(operator != "LIKE" || value.type == "string")
-                Predicate(column, operator, value)
-            }
-        return DeclarativeBinding.Content(
-            uri,
-            authority,
-            projection,
-            selection,
-            root.bounded("maxRows", 100),
-            root.bounded("maxBytes", 16_384),
-            query,
-            path,
-        )
-    }
-
-    private fun http(
-        root: JsonObject,
-        properties: JsonObject,
-    ): DeclarativeBinding.Http {
-        root.fields(
-            setOf("kind", "origin", "method", "path", "parameters", "maxResponseBytes", "result"),
-            setOf("requestBody", "credential", "credentialScheme"),
-        )
-        val origin = root.text("origin", 2000)
-        val parsed = URI(origin)
-        require(parsed.scheme == "https" && parsed.host != null && parsed.rawUserInfo == null && parsed.rawPath.isEmpty())
-        require(parsed.rawQuery == null && parsed.rawFragment == null && (parsed.port == -1 || parsed.port in 1..65535))
-        val method = root.text("method", 10).also { require(it in setOf("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE")) }
-        val path = root.text("path", 2000)
-        require(path.startsWith('/') && !path.startsWith("//") && path.none { it in "?#\\%" || it.isWhitespace() || it.isISOControl() })
-        require(path.split('/').none { it == "." || it == ".." })
-        val placeholders = pathSlot.findAll(path).map { it.groupValues[1] }.toList()
-        require(pathSlot.replace(path, "").none { it == '{' || it == '}' })
-        val parameters =
-            root.getValue("parameters").array().also { require(it.size <= 64) }.map {
-                val parameter = it.obj()
-                parameter.fields(setOf("in", "name", "value"))
-                val location = parameter.text("in", 10).also { require(it in setOf("path", "query")) }
-                val name = parameter.text("name", 64).also { require(identifier.matches(it)) }
-                Parameter(location, name, slot(parameter.getValue("value").obj(), properties))
-            }
-        require(parameters.map { it.location to it.name }.distinct().size == parameters.size)
-        require(parameters.filter { it.location == "path" }.map { it.name }.toSet() == placeholders.toSet())
-        val body = root["requestBody"]?.let { body(it.obj(), properties) as? BodyValue.Fields ?: error("Body must be an object") }
-        require(body == null || method !in setOf("GET", "HEAD"))
-        val credential = root["credential"]?.string()?.also { require(Regex("[a-z][a-z0-9_-]{0,63}").matches(it)) }
-        val scheme = root["credentialScheme"]?.string() ?: "basic"
-        require(scheme in setOf("basic", "bearer"))
-        require("credentialScheme" !in root || credential != null)
-        val result = root.getValue("result").obj()
-        result.fields(setOf("maxBytes"), setOf("pointer", "items", "evidence", "notExecutedStatuses"))
-        require(("pointer" in result) != ("items" in result))
-        val items = result["items"]?.obj()?.let { items(it, properties) }
-        val rejectedStatuses =
-            result["notExecutedStatuses"]
-                ?.array()
-                ?.map {
-                    it
-                        .long()
-                        .also { code ->
-                            require(code in 400..499)
-                        }.toInt()
-                }?.toSet()
-                .orEmpty()
-        val evidence =
-            result["evidence"]?.obj()?.let {
-                it.fields(setOf("pointer", "equals"))
-                val expected = it.getValue("equals")
-                require(expected is JsonPrimitive && expected != JsonNull)
-                Evidence(pointer(it), expected)
-            }
-        return DeclarativeBinding.Http(
-            origin,
-            method,
-            path,
-            parameters,
-            body,
-            credential,
-            root.bounded("maxResponseBytes", 1_048_576),
-            ResultProjection(
-                if (items ==
-                    null
+        val startChat =
+            root["startChat"]?.obj()?.let { spec ->
+                spec.fields(setOf("tool", "recipients", "conversation"))
+                val capability = tool(spec, read = false)
+                val binding = capability.binding as? DeclarativeBinding.Http
+                require(binding?.operation != null) { "Starting a chat must be a durable HTTP operation" }
+                val recipients = spec.text("recipients", 64)
+                val property =
+                    capability.inputSchema
+                        .getValue("properties")
+                        .obj()[recipients]
+                        ?.obj()
+                require(
+                    property?.get("type") == JsonPrimitive("array") && property["items"]?.obj()?.get("type") == JsonPrimitive("string"),
                 ) {
-                    pointer(result)
-                } else {
-                    ""
-                },
-                result.bounded("maxBytes", 16_384),
-                evidence,
-                items,
-                rejectedStatuses,
-            ),
-            credentialScheme = scheme,
-        )
+                    "Chat recipients must be an array of strings"
+                }
+                MessagingRole.StartChat(capability.name, recipients, pointer(JsonObject(mapOf("pointer" to spec.getValue("conversation")))))
+            }
+        val role =
+            MessagingRole(
+                source("service") { SERVICE.matches(it) && it !in RESERVED_SERVICES },
+                source("label") { it.length in 1..100 && it.none(Char::isISOControl) },
+                lookup(root.getValue("conversations").obj()),
+                root["contacts"]?.obj()?.let(::lookup),
+                history,
+                send,
+                startChat,
+            )
+        val tools = listOfNotNull(role.conversations.tool, role.contacts?.tool, role.history.tool, role.send.tool, role.startChat?.tool)
+        require(tools.distinct().size == tools.size) { "Each messaging operation needs its own tool" }
+        return role
     }
 
-    private fun items(
-        root: JsonObject,
-        properties: JsonObject,
-    ): ItemProjection {
-        root.fields(setOf("arrayPaths", "line", "fields", "maxItems", "truncationNote"), setOf("totalPointer", "filter"))
-        val paths =
-            root.getValue("arrayPaths").array().also { require(it.size in 1..4) }.map {
-                pointer(JsonObject(mapOf("pointer" to it))).also { path ->
-                    require(path.split('/').count { segment -> segment == "*" } <= 1)
-                }
-            }
-        val line = root.text("line", 2000).also { require(it.none(Char::isISOControl)) }
-        val fields =
-            root.getValue("fields").obj().also { require(it.size in 1..32) }.mapValues { (name, field) ->
-                require(identifier.matches(name))
-                val value = field.obj()
-                value.fields(setOf("pointer", "type"), setOf("required"))
-                val type = value.text("type", 20).also { require(it in scalarTypes || it == "stringArray") }
-                ItemField(pointer(value), type, value["required"]?.bool() ?: false)
-            }
-        require(pathSlot.findAll(line).map { it.groupValues[1] }.toSet() == fields.keys)
-        require(pathSlot.replace(line, "").none { it == '{' || it == '}' })
-        val note = root.text("truncationNote", 500).also { require(it.none(Char::isISOControl)) }
-        val total = root["totalPointer"]?.let { pointer(JsonObject(mapOf("pointer" to it))) }
-        val filter =
-            root["filter"]?.obj()?.let { value ->
-                value.fields(setOf("fields", "argument"))
-                val argument = value.text("argument", 64)
-                require(properties[argument]?.obj()?.get("type") == JsonPrimitive("string")) { "Filter argument must name a string input" }
-                val pointers =
-                    value.getValue("fields").array().also { require(it.size in 1..16) }.map {
-                        pointer(JsonObject(mapOf("pointer" to it)))
-                    }
-                require(pointers.distinct().size == pointers.size)
-                ItemFilter(pointers, argument)
-            }
-        return ItemProjection(paths, line, fields, root.bounded("maxItems", 100), note, total, filter)
-    }
+    /** Service names the shared messaging tools already give a meaning. */
+    val RESERVED_SERVICES = setOf("sms", "notifications")
+    val SERVICE = Regex("[a-z][a-z0-9-]{0,63}")
 
     private fun pointer(root: JsonObject): String =
         root.getValue("pointer").string().also {
             require(it.length <= 1000 && (it.isEmpty() || it.startsWith('/')) && !Regex("~(?![01])").containsMatchIn(it))
         }
 
-    private fun body(
-        root: JsonObject,
-        properties: JsonObject,
-    ): BodyValue =
-        if (root.keys == setOf("fields")) {
-            BodyValue.Fields(
-                root.getValue("fields").obj().also { require(it.size <= 64) }.mapValues { (key, value) ->
-                    require(identifier.matches(key))
-                    body(value.obj(), properties)
-                },
-            )
-        } else {
-            BodyValue.Scalar(slot(root, properties, allowArray = true))
-        }
-
-    private fun slots(
-        value: JsonElement?,
-        properties: JsonObject,
-    ): Map<String, ScalarSlot> =
-        value
-            ?.obj()
-            ?.also { require(it.size <= 64) }
-            ?.mapValues { (key, child) ->
-                require(key.length in 1..200 && key.none(Char::isISOControl))
-                slot(child.obj(), properties)
-            }.orEmpty()
-
-    private fun slot(
-        root: JsonObject,
-        properties: JsonObject,
-        allowArray: Boolean = false,
-    ): ScalarSlot {
-        val type = root.text("type", 10).also { require(it in scalarTypes || (allowArray && it == "array")) }
-        return if ("argument" in root) {
-            root.fields(setOf("argument", "type"), setOf("default", "required", "values"))
-            val name = root.text("argument", 64)
-            require(properties[name]?.obj()?.get("type") == JsonPrimitive(type)) { "Slot type does not match tool schema" }
-            val default =
-                root["default"]?.let {
-                    require(it != JsonNull && (it is JsonPrimitive || it is JsonArray))
-                    require(
-                        ToolSchema.error(properties.getValue(name).obj(), it) == null,
-                    ) { "Default does not satisfy the argument schema" }
-                    it
+    /** Per-package parsing; setting slots may name only the settings this package declares. */
+    private class Reader(
+        private val settings: Map<String, PackageSetting>,
+    ) {
+        fun capability(root: JsonObject): PackageCapability {
+            root.fields(setOf("tool", "binding", "execution"), setOf("effects", "validators", "receipts", "_meta"))
+            root["_meta"]?.obj()
+            val tool = ExtensionProtocol.tool(root.getValue("tool").obj())
+            val name = tool.name
+            val schema = tool.inputSchema
+            val properties = schema.getValue("properties").obj()
+            val validators =
+                root["validators"]
+                    ?.obj()
+                    ?.mapValues { (argument, validator) ->
+                        require(properties[argument]?.obj()?.get("type") == JsonPrimitive("string"))
+                        validator.string().also { require(it in NamedValidators.names) { "Unsupported named validator" } }
+                    }.orEmpty()
+            val receipts =
+                root["receipts"]?.obj()?.let {
+                    it.fields(emptySet(), setOf("success", "handlerMissing"))
+                    ReceiptText(
+                        it["success"]?.string()?.also { text -> require(text.length in 1..1000) },
+                        it["handlerMissing"]?.string()?.also { text -> require(text.length in 1..1000) },
+                    )
+                } ?: ReceiptText()
+            val binding = binding(root.getValue("binding").obj(), properties)
+            val alternatives = if (binding is DeclarativeBinding.Select) listOf(binding.present, binding.absent) else listOf(binding)
+            val claimed =
+                when (root["effects"]?.string()) {
+                    "read" -> PackageEffect.READ
+                    "write" -> PackageEffect.WRITE
+                    "external_handoff" -> PackageEffect.HANDOFF
+                    null, "unknown" -> PackageEffect.UNKNOWN
+                    else -> error("Unsupported effects")
                 }
-            val values =
-                root["values"]?.obj()?.let { mapping ->
-                    require(type == "string") { "Value maps apply to string arguments" }
-                    val allowed =
-                        properties
-                            .getValue(name)
-                            .obj()["enum"]
-                            ?.array()
-                            ?.map { it.string() }
-                            ?.toSet()
-                    require(allowed != null && mapping.keys == allowed) { "A value map must cover the argument enum exactly" }
-                    mapping.mapValues { (_, bound) ->
-                        bound.string().also { require(it.length in 1..200 && it.none(Char::isISOControl)) { "Invalid mapped value" } }
+            val effect =
+                when {
+                    claimed == PackageEffect.UNKNOWN -> {
+                        claimed
+                    }
+
+                    alternatives.any { it is DeclarativeBinding.Http && it.method !in setOf("GET", "HEAD") } -> {
+                        PackageEffect.WRITE
+                    }
+
+                    alternatives.any { it is DeclarativeBinding.Intent } -> {
+                        if (claimed ==
+                            PackageEffect.WRITE
+                        ) {
+                            claimed
+                        } else {
+                            PackageEffect.HANDOFF
+                        }
+                    }
+
+                    else -> {
+                        claimed
                     }
                 }
-            ScalarSlot.Argument(name, type, default, root["required"]?.bool() ?: false, values)
-        } else {
-            require(type != "array") { "Literal slots are scalars" }
-            root.fields(setOf("value", "type"))
-            val value = root.getValue("value") as? JsonPrimitive ?: error("Expected scalar literal")
-            val schema = JsonObject(mapOf("type" to JsonPrimitive(type)))
-            require(ToolSchema.error(schema, value) == null) { "Literal does not match type" }
-            require(value != JsonNull)
-            ScalarSlot.Literal(value, type)
+            tool.annotations?.let { ExtensionProtocol.checkAnnotations(it, effect.toEffect()) }
+            val execution = execution(root.getValue("execution").obj())
+            require(alternatives.all { (execution.mode == ExecutionMode.HANDOFF) == (it is DeclarativeBinding.Intent) })
+            require(alternatives.none { it is DeclarativeBinding.Intent } || execution.requiresForeground)
+            require(
+                !execution.requiresUnlock || alternatives.all { it is DeclarativeBinding.Intent },
+            ) { "Only intent bindings can require unlock" }
+            return PackageCapability(
+                name,
+                tool.title,
+                tool.description,
+                schema,
+                effect,
+                execution,
+                binding,
+                validators,
+                receipts,
+                tool.outputSchema,
+                tool.annotations,
+            )
+        }
+
+        private fun execution(root: JsonObject): ExecutionSemantics {
+            root.fields(setOf("mode", "requiresForeground"), setOf("maxWaitMillis", "requiresUnlock", "endsVoiceCall"))
+            val mode =
+                when (root.text("mode", 30)) {
+                    "synchronous" -> ExecutionMode.SYNCHRONOUS
+                    "handoff" -> ExecutionMode.HANDOFF
+                    else -> error("Unsupported execution mode")
+                }
+            val foreground =
+                (root["requiresForeground"] as? JsonPrimitive)?.takeUnless { it.isString }?.booleanOrNull ?: error("Expected boolean")
+            return ExecutionSemantics(
+                mode,
+                foreground,
+                root["maxWaitMillis"]?.takeUnless { it == JsonNull }?.long(),
+                root["requiresUnlock"]?.let {
+                    (it as? JsonPrimitive)?.takeUnless { value -> value.isString }?.booleanOrNull
+                        ?: error("Expected boolean")
+                }
+                    ?: false,
+                root["endsVoiceCall"]?.let { ExtensionProtocol.callEnding(it) } ?: CallEnding.NEVER,
+            )
+        }
+
+        private fun binding(
+            root: JsonObject,
+            properties: JsonObject,
+            allowSelect: Boolean = true,
+        ): DeclarativeBinding =
+            when (root.text("kind", 30)) {
+                "select" -> {
+                    require(allowSelect)
+                    root.fields(setOf("kind", "argument", "present", "absent"))
+                    val argument = root.text("argument", 64).also { require(it in properties) }
+                    DeclarativeBinding.Select(
+                        argument,
+                        binding(root.getValue("present").obj(), properties, false),
+                        binding(root.getValue("absent").obj(), properties, false),
+                    )
+                }
+
+                "android.intent" -> {
+                    intent(root, properties)
+                }
+
+                "android.content" -> {
+                    content(root, properties)
+                }
+
+                "http" -> {
+                    http(root, properties)
+                }
+
+                else -> {
+                    error("Unsupported binding")
+                }
+            }
+
+        private fun intent(
+            root: JsonObject,
+            properties: JsonObject,
+        ): DeclarativeBinding.Intent {
+            root.fields(setOf("kind", "action"), setOf("uri", "extras", "package", "mimeType", "packageByName", "class", "querySpread"))
+            val actionSlot =
+                (root.getValue("action") as? JsonObject)?.let { spec ->
+                    val argument = slot(spec, properties) as? ScalarSlot.Argument ?: error("An action slot names an argument")
+                    val mapped = requireNotNull(argument.values) { "An action slot needs a closed value map" }
+                    require(mapped.values.all(::isIntentAction)) { "Every mapped action must be an intent action" }
+                    argument
+                }
+            val action = if (actionSlot == null) root.text("action", 200).also { require(isIntentAction(it)) } else null
+            val uri = root["uri"]?.obj()
+            val wholeUri = uri != null && "argument" in uri
+            val uriArgument =
+                if (wholeUri) {
+                    uri.fields(setOf("argument", "schemes"))
+                    uri.text("argument", 64).also { require(properties[it]?.obj()?.get("type") == JsonPrimitive("string")) }
+                } else {
+                    null
+                }
+            val uriSchemes =
+                if (wholeUri) {
+                    uri
+                        .getValue("schemes")
+                        .array()
+                        .also { require(it.size in 1..8) }
+                        .map { scheme ->
+                            scheme.string().also {
+                                require(Regex("[a-z][a-z0-9+.-]*").matches(it) && it !in FORBIDDEN_SCHEMES) { "Unsupported URI scheme" }
+                            }
+                        }.also { require(it.distinct().size == it.size) }
+                } else {
+                    emptyList()
+                }
+            val path = if (wholeUri) emptyMap() else slots(uri?.get("path"), properties)
+            val base =
+                uri
+                    ?.takeUnless { wholeUri }
+                    ?.let {
+                        it.fields(setOf("base"), setOf("query", "opaque", "path"))
+                        it.text("base", 2000).also { base ->
+                            val placeholders = pathSlot.findAll(base).map { match -> match.groupValues[1] }.toSet()
+                            require(
+                                path.keys == placeholders && path.keys.all(identifier::matches),
+                            ) { "URI placeholders and path slots must match" }
+                            val fixed = pathSlot.replace(base, "placeholder")
+                            val parsed = URI(if ("opaque" in it) fixed + "placeholder" else fixed)
+                            require(parsed.isAbsolute && parsed.scheme.lowercase() !in FORBIDDEN_SCHEMES)
+                            // A provider URI is only a fixed destination; no slot may shape it.
+                            require(parsed.scheme.lowercase() != "content" || it.keys == setOf("base")) {
+                                "A content URI must be fixed"
+                            }
+                            require(parsed.rawFragment == null && parsed.rawUserInfo == null && '?' !in base)
+                            require(pathSlot.findAll(base).all { match -> match.range.first > base.indexOf(':') }) {
+                                "A placeholder cannot form the scheme"
+                            }
+                        }
+                    }.orEmpty()
+            val opaque =
+                uri?.takeUnless { wholeUri }?.get("opaque")?.let { value ->
+                    require(Regex("[A-Za-z][A-Za-z0-9+.-]*:").matches(base)) { "An opaque slot needs a fixed scheme-only base" }
+                    require("query" !in uri) { "Opaque slots cannot be combined with query mappings" }
+                    slot(value.obj(), properties).also { require(it.type == "string") }
+                }
+            val query = if (wholeUri) emptyMap() else slots(uri?.get("query"), properties)
+            val querySpread =
+                root["querySpread"]?.obj()?.let { spread ->
+                    spread.fields(setOf("argument"))
+                    val argument = spread.text("argument", 64)
+                    val property = properties[argument]?.obj() ?: error("querySpread names a tool argument")
+                    require(property["type"] == JsonPrimitive("object") && property["additionalProperties"] is JsonObject) {
+                        "querySpread needs a string-map argument"
+                    }
+                    require(uri != null && !wholeUri && "opaque" !in uri) { "querySpread needs a fixed base with query parameters" }
+                    argument
+                }
+            val extras = slots(root["extras"], properties)
+            val target = root["package"]?.string()?.also { require(packageId.matches(it)) }
+            val targetClass =
+                root["class"]?.let {
+                    require(target != null) { "A fixed class requires a fixed package" }
+                    root.text("class", 300).also { name ->
+                        require(
+                            Regex("[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_$][A-Za-z0-9_$]*)+").matches(name),
+                        ) { "Use a fully qualified fixed activity class" }
+                    }
+                }
+            val mimeType = root["mimeType"]?.string()?.also { require(Regex("[a-z0-9.+-]+/[a-z0-9.+-]+").matches(it)) }
+            val byName =
+                root["packageByName"]?.string()?.also {
+                    require(properties[it]?.obj()?.get("type") == JsonPrimitive("string"))
+                    require(target == null) { "Choose either a fixed package or a visible app name" }
+                }
+            return DeclarativeBinding.Intent(
+                action,
+                base,
+                query,
+                extras,
+                target,
+                mimeType,
+                byName,
+                opaque,
+                targetClass,
+                path,
+                actionSlot,
+                uriArgument,
+                uriSchemes,
+                querySpread,
+            )
+        }
+
+        private fun content(
+            root: JsonObject,
+            properties: JsonObject,
+        ): DeclarativeBinding.Content {
+            root.fields(setOf("kind", "authority", "uri", "projection", "maxRows", "maxBytes"), setOf("selection"))
+            val authority = root.text("authority", 200).also { require(packageId.matches(it)) }
+            val uriObject = root["uri"] as? JsonObject
+            uriObject?.fields(setOf("base"), setOf("query", "path"))
+            val uri = uriObject?.text("base", 2000) ?: root.text("uri", 2000)
+            val path = slots(uriObject?.get("path"), properties)
+            val placeholders = pathSlot.findAll(uri).map { it.groupValues[1] }.toSet()
+            require(path.keys == placeholders && path.keys.all(identifier::matches))
+            val parsed = URI(pathSlot.replace(uri, "placeholder"))
+            require(parsed.scheme == "content" && parsed.rawAuthority == authority && parsed.rawFragment == null && parsed.rawQuery == null)
+            if (uriObject != null) {
+                require(parsed.rawPath.startsWith('/') && !parsed.rawPath.startsWith("//"))
+                require(parsed.rawPath.none { it in "%\\" || it.isWhitespace() || it.isISOControl() })
+                require(parsed.rawPath.split('/').none { it == "." || it == ".." })
+            }
+            require(pathSlot.findAll(uri).all { match -> match.range.first > uri.indexOf('/', "content://".length) })
+            val query = slots(uriObject?.get("query"), properties)
+            val projection =
+                root.getValue("projection").obj().also { require(it.size in 1..32) }.mapValues { (name, type) ->
+                    require(identifier.matches(name))
+                    type.string().also { require(it in scalarTypes || it == "json") }
+                }
+            val selection =
+                root["selection"]?.array().orEmpty().also { require(it.size <= 16) }.map {
+                    val condition = it.obj()
+                    condition.fields(setOf("column", "operator", "value"))
+                    val column = condition.text("column", 64).also { require(it in projection) }
+                    val operator = condition.text("operator", 8).also { require(it in setOf("=", "!=", "<", "<=", ">", ">=", "LIKE")) }
+                    val value = slot(condition.getValue("value").obj(), properties)
+                    require(value.type == projection[column])
+                    require(operator != "LIKE" || value.type == "string")
+                    Predicate(column, operator, value)
+                }
+            return DeclarativeBinding.Content(
+                uri,
+                authority,
+                projection,
+                selection,
+                root.bounded("maxRows", 100),
+                root.bounded("maxBytes", 16_384),
+                query,
+                path,
+            )
+        }
+
+        private fun http(
+            root: JsonObject,
+            properties: JsonObject,
+        ): DeclarativeBinding.Http {
+            root.fields(
+                setOf("kind", "origin", "method", "path", "parameters", "maxResponseBytes", "result"),
+                setOf("requestBody", "credential", "credentialScheme", "operation"),
+            )
+            val origin = root.text("origin", 2000)
+            val parsed = URI(origin)
+            require(parsed.scheme == "https" && parsed.host != null && parsed.rawUserInfo == null && parsed.rawPath.isEmpty())
+            require(parsed.rawQuery == null && parsed.rawFragment == null && (parsed.port == -1 || parsed.port in 1..65535))
+            val method = root.text("method", 10).also { require(it in setOf("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE")) }
+            val path = root.text("path", 2000)
+            require(path.startsWith('/') && !path.startsWith("//") && path.none { it in "?#\\%" || it.isWhitespace() || it.isISOControl() })
+            require(path.split('/').none { it == "." || it == ".." })
+            val placeholders = pathSlot.findAll(path).map { it.groupValues[1] }.toList()
+            require(pathSlot.replace(path, "").none { it == '{' || it == '}' })
+            val parameters =
+                root.getValue("parameters").array().also { require(it.size <= 64) }.map {
+                    val parameter = it.obj()
+                    parameter.fields(setOf("in", "name", "value"))
+                    val location = parameter.text("in", 10).also { require(it in setOf("path", "query")) }
+                    val name = parameter.text("name", 64).also { require(identifier.matches(it)) }
+                    Parameter(location, name, slot(parameter.getValue("value").obj(), properties))
+                }
+            require(parameters.map { it.location to it.name }.distinct().size == parameters.size)
+            require(parameters.filter { it.location == "path" }.map { it.name }.toSet() == placeholders.toSet())
+            val body = root["requestBody"]?.let { body(it.obj(), properties) as? BodyValue.Fields ?: error("Body must be an object") }
+            require(body == null || method !in setOf("GET", "HEAD"))
+            val credential = root["credential"]?.string()?.also { require(Regex("[a-z][a-z0-9_-]{0,63}").matches(it)) }
+            val scheme = root["credentialScheme"]?.string() ?: "basic"
+            require(scheme in setOf("basic", "bearer"))
+            require("credentialScheme" !in root || credential != null)
+            val result = root.getValue("result").obj()
+            result.fields(setOf("maxBytes"), setOf("pointer", "items", "evidence", "notExecutedStatuses"))
+            require(("pointer" in result) != ("items" in result))
+            val items = result["items"]?.obj()?.let { items(it, properties) }
+            val rejectedStatuses =
+                result["notExecutedStatuses"]
+                    ?.array()
+                    ?.map {
+                        it
+                            .long()
+                            .also { code ->
+                                require(code in 400..499)
+                            }.toInt()
+                    }?.toSet()
+                    .orEmpty()
+            val evidence =
+                result["evidence"]?.obj()?.let {
+                    it.fields(setOf("pointer", "equals"))
+                    val expected = it.getValue("equals")
+                    require(expected is JsonPrimitive && expected != JsonNull)
+                    Evidence(pointer(it), expected)
+                }
+            return DeclarativeBinding.Http(
+                origin,
+                method,
+                path,
+                parameters,
+                body,
+                credential,
+                root.bounded("maxResponseBytes", 1_048_576),
+                ResultProjection(
+                    if (items ==
+                        null
+                    ) {
+                        pointer(result)
+                    } else {
+                        ""
+                    },
+                    result.bounded("maxBytes", 16_384),
+                    evidence,
+                    items,
+                    rejectedStatuses,
+                ),
+                credentialScheme = scheme,
+                operation =
+                    root["operation"]?.obj()?.let {
+                        require(method !in setOf("GET", "HEAD")) { "Only a write can be a durable operation" }
+                        require(items == null && evidence == null) { "A durable operation's outcome comes from its state" }
+                        operation(it)
+                    },
+            )
+        }
+
+        private fun operation(root: JsonObject): DurableOperation {
+            root.fields(setOf("header", "status", "outcomes"))
+            val header =
+                root.text("header", 64).also {
+                    require(Regex("[A-Za-z][A-Za-z0-9-]{0,63}").matches(it)) { "Invalid operation header" }
+                    require(it.lowercase() !in setOf("authorization", "host", "content-type", "content-length", "cookie")) {
+                        "The operation header cannot replace a transport header"
+                    }
+                }
+            val status = root.getValue("status").obj()
+            status.fields(setOf("path", "state"), setOf("detail"))
+            val path = status.text("path", 2000)
+            require(path.startsWith('/') && !path.startsWith("//") && path.none { it in "?#\\%" || it.isWhitespace() || it.isISOControl() })
+            require(path.split('/').none { it == "." || it == ".." })
+            require(pathSlot.findAll(path).map { it.groupValues[1] }.toList() == listOf("operation")) {
+                "The status path has exactly one {operation} placeholder"
+            }
+            require(pathSlot.replace(path, "").none { it == '{' || it == '}' })
+            val outcomes =
+                root
+                    .getValue("outcomes")
+                    .obj()
+                    .also { require(it.size in 1..32) }
+                    .map { (state, outcome) ->
+                        require(state.length in 1..64 && state.none(Char::isISOControl))
+                        state to
+                            when (outcome.string()) {
+                                "completed" -> OperationOutcome.COMPLETED
+                                "not_executed" -> OperationOutcome.NOT_EXECUTED
+                                "unknown" -> OperationOutcome.UNKNOWN
+                                "pending" -> OperationOutcome.PENDING
+                                else -> throw IllegalArgumentException("Unsupported operation outcome")
+                            }
+                    }.toMap()
+            require(OperationOutcome.COMPLETED in outcomes.values) { "A durable operation needs a completed state" }
+            return DurableOperation(
+                header,
+                path,
+                pointer(JsonObject(mapOf("pointer" to status.getValue("state")))),
+                status["detail"]?.let { pointer(JsonObject(mapOf("pointer" to it))) },
+                outcomes,
+            )
+        }
+
+        private fun items(
+            root: JsonObject,
+            properties: JsonObject,
+        ): ItemProjection {
+            root.fields(setOf("arrayPaths", "line", "fields", "maxItems", "truncationNote"), setOf("totalPointer", "filter"))
+            val paths =
+                root.getValue("arrayPaths").array().also { require(it.size in 1..4) }.map {
+                    pointer(JsonObject(mapOf("pointer" to it))).also { path ->
+                        require(path.split('/').count { segment -> segment == "*" } <= 1)
+                    }
+                }
+            val line = root.text("line", 2000).also { require(it.none(Char::isISOControl)) }
+            val fields =
+                root.getValue("fields").obj().also { require(it.size in 1..32) }.mapValues { (name, field) ->
+                    require(identifier.matches(name))
+                    val value = field.obj()
+                    value.fields(setOf("pointer", "type"), setOf("required"))
+                    val type = value.text("type", 20).also { require(it in scalarTypes || it == "stringArray") }
+                    val path = pointer(value)
+                    val wildcards = path.split('/').count { it == "*" }
+                    require(wildcards == 0 || (wildcards == 1 && type == "stringArray")) { "Only a stringArray field may collect with *" }
+                    ItemField(path, type, value["required"]?.bool() ?: false)
+                }
+            require(pathSlot.findAll(line).map { it.groupValues[1] }.toSet() == fields.keys)
+            require(pathSlot.replace(line, "").none { it == '{' || it == '}' })
+            val note = root.text("truncationNote", 500).also { require(it.none(Char::isISOControl)) }
+            val total = root["totalPointer"]?.let { pointer(JsonObject(mapOf("pointer" to it))) }
+            val filter =
+                root["filter"]?.obj()?.let { value ->
+                    value.fields(setOf("fields", "argument"))
+                    val argument = value.text("argument", 64)
+                    require(
+                        properties[argument]?.obj()?.get("type") == JsonPrimitive("string"),
+                    ) { "Filter argument must name a string input" }
+                    val pointers =
+                        value.getValue("fields").array().also { require(it.size in 1..16) }.map {
+                            pointer(JsonObject(mapOf("pointer" to it)))
+                        }
+                    require(pointers.distinct().size == pointers.size)
+                    ItemFilter(pointers, argument)
+                }
+            return ItemProjection(paths, line, fields, root.bounded("maxItems", 100), note, total, filter)
+        }
+
+        private fun body(
+            root: JsonObject,
+            properties: JsonObject,
+        ): BodyValue =
+            if (root.keys == setOf("fields")) {
+                BodyValue.Fields(
+                    root.getValue("fields").obj().also { require(it.size <= 64) }.mapValues { (key, value) ->
+                        require(identifier.matches(key))
+                        body(value.obj(), properties)
+                    },
+                )
+            } else {
+                BodyValue.Scalar(slot(root, properties, allowArray = true))
+            }
+
+        private fun slots(
+            value: JsonElement?,
+            properties: JsonObject,
+        ): Map<String, ScalarSlot> =
+            value
+                ?.obj()
+                ?.also { require(it.size <= 64) }
+                ?.mapValues { (key, child) ->
+                    require(key.length in 1..200 && key.none(Char::isISOControl))
+                    slot(child.obj(), properties)
+                }.orEmpty()
+
+        private fun slot(
+            root: JsonObject,
+            properties: JsonObject,
+            allowArray: Boolean = false,
+        ): ScalarSlot {
+            val type = root.text("type", 10).also { require(it in scalarTypes || (allowArray && it == "array")) }
+            if ("setting" in root) {
+                root.fields(setOf("setting", "type"))
+                val name = root.text("setting", 64)
+                require(settings[name]?.type == type) { "Setting slot names an undeclared setting or the wrong type" }
+                return ScalarSlot.Setting(name, type)
+            }
+            return if ("argument" in root) {
+                root.fields(setOf("argument", "type"), setOf("default", "required", "values"))
+                val name = root.text("argument", 64)
+                require(properties[name]?.obj()?.get("type") == JsonPrimitive(type)) { "Slot type does not match tool schema" }
+                val default =
+                    root["default"]?.let {
+                        require(it != JsonNull && (it is JsonPrimitive || it is JsonArray))
+                        require(
+                            ToolSchema.error(properties.getValue(name).obj(), it) == null,
+                        ) { "Default does not satisfy the argument schema" }
+                        it
+                    }
+                val values =
+                    root["values"]?.obj()?.let { mapping ->
+                        require(type == "string") { "Value maps apply to string arguments" }
+                        val allowed =
+                            properties
+                                .getValue(name)
+                                .obj()["enum"]
+                                ?.array()
+                                ?.map { it.string() }
+                                ?.toSet()
+                        require(allowed != null && mapping.keys == allowed) { "A value map must cover the argument enum exactly" }
+                        mapping.mapValues { (_, bound) ->
+                            bound.string().also { require(it.length in 1..200 && it.none(Char::isISOControl)) { "Invalid mapped value" } }
+                        }
+                    }
+                ScalarSlot.Argument(name, type, default, root["required"]?.bool() ?: false, values)
+            } else {
+                require(type != "array") { "Literal slots are scalars" }
+                root.fields(setOf("value", "type"))
+                val value = root.getValue("value") as? JsonPrimitive ?: error("Expected scalar literal")
+                val schema = JsonObject(mapOf("type" to JsonPrimitive(type)))
+                require(ToolSchema.error(schema, value) == null) { "Literal does not match type" }
+                require(value != JsonNull)
+                ScalarSlot.Literal(value, type)
+            }
         }
     }
 
