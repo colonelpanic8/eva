@@ -4,6 +4,12 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.43.0] - 2026-09-28
+
+### Added
+
+- EVA can operate other apps on the screen for you. Ask it to do something in an app, such as "turn off Wi-Fi scanning in Settings", and it works through the screen step by step until the task is done, asking you when the request is ambiguous. Tapping Stop halts it right away, and a correction while it runs changes that task instead of starting another. It needs the Mobilerun Portal app with its accessibility service on and Portal's token saved in EVA's settings; with Shizuku it can do a smaller set of actions.
+
 ## [0.42.0] - 2026-09-28
 
 ### Changed
