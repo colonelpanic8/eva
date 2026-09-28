@@ -12,6 +12,9 @@ class WordingTest {
         val tools =
             (
                 BundledCapabilities.definitions.map { it.id to it.inputSchema } +
+                    com.colonelpanic.eva.devicecontrol.worker.WorkerSchemas.schemas.map { (name, schema) ->
+                        "device-worker.$name" to schema
+                    } +
                     (PromptDefaults.END_CONVERSATION_ID to ThreadController.END_CONVERSATION.inputSchema)
             ).toMap()
         Wording.bundled.tools.forEach { (id, text) ->

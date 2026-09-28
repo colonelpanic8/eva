@@ -226,74 +226,13 @@ private class OpenAiResponsesSession(
                         put("tool_choice", "auto")
                     }
                 }
-            val http =
-                access
-                    .authorize(Request.Builder().url(access.responsesUrl))
-                    .header("Accept", if (access.serverKeepsHistory) "application/json" else "text/event-stream")
-                    .post(payload.toString().toRequestBody("application/json".toMediaType()))
-                    .build()
-            val body =
-                client.newCall(http).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        error(openAiErrorMessage(response.code, response.body.string(), "the request"))
-                    }
-                    if (access.serverKeepsHistory) {
-                        json.parseToJsonElement(response.body.string()).jsonObject
-                    } else {
-                        collectStream(response)
-                    }
-                }
+            val body = responsesPost(client, access, payload, ioDispatcher)
             if (!access.serverKeepsHistory) {
                 history.addAll(input)
                 history.addAll(body["output"]?.jsonArray.orEmpty())
             }
             body
         }
-
-    /**
-     * A streamed response delivers its items one event at a time and leaves the completion
-     * event's own output empty, so the items are collected into the same shape the stored
-     * path returns and the rest of the session cannot tell the two apart.
-     */
-    private fun collectStream(response: Response): JsonObject {
-        val items = mutableListOf<JsonElement>()
-        var id: String? = null
-        var status = "completed"
-        val source = response.body.source()
-        while (true) {
-            val line = source.readUtf8Line() ?: break
-            if (!line.startsWith("data:")) continue
-            val data = line.removePrefix("data:").trim()
-            if (data.isEmpty() || data == "[DONE]") continue
-            val event = runCatching { json.parseToJsonElement(data).jsonObject }.getOrNull() ?: continue
-            when (val type = event.str("type")) {
-                "response.output_item.done" -> {
-                    event["item"]?.let { items += it }
-                }
-
-                "error" -> {
-                    error(streamFailure(event.obj("error")))
-                }
-
-                else -> {
-                    if (type != null && type.startsWith("response.")) {
-                        val body = event.obj("response") ?: continue
-                        id = body.str("id") ?: id
-                        body.str("status")?.let { status = it }
-                        body.obj("error")?.let { error(streamFailure(it)) }
-                    }
-                }
-            }
-        }
-        return buildJsonObject {
-            id?.let { put("id", it) }
-            put("status", status)
-            put("output", JsonArray(items))
-        }
-    }
-
-    private fun streamFailure(error: JsonObject?): String =
-        "OpenAI rejected the request: ${error?.str("message")?.trim()?.take(300) ?: "no reason was given"}"
 
     override suspend fun submit(input: ConversationInput) {
         check(buffered == null)

@@ -1,6 +1,24 @@
 # Model-facing wording for EVA's own tools and notes. EVA follows this file alongside
 # eva-prompt.yaml; code keeps each tool's identity, schema structure, and validation.
 tools:
+  device-worker.observe: {"description": "Re-read the screen without acting, e.g. after content finished loading.", "parameters": {}}
+  device-worker.launch_app: {"description": "Bring an app to the foreground by Android package name.", "parameters": {"package": "Package name, e.g. com.android.settings.", "activity": "Specific activity, or null for the app's default.", "intent": "A few words: what this action should achieve."}}
+  device-worker.activate_element: {"description": "Click a clickable or checkable element (flag c or k).", "parameters": {"element": "Index from the current observation table.", "intent": "A few words: what this action should achieve."}}
+  device-worker.set_text: {"description": "Enter text into an editable element (flag e). The result reports the exact read-back; check it before continuing.", "parameters": {"element": "Index from the current observation table.", "text": "Text to enter.", "replace": "true replaces, false appends.", "intent": "A few words: what this action should achieve."}}
+  device-worker.scroll: {"description": "Scroll a scrollable element (flag s). `down` reveals content further down.", "parameters": {"direction": "Direction the viewport moves.", "element": "Scrollable element index, or null for the main one.", "intent": "A few words: what this action should achieve."}}
+  device-worker.back: {"description": "Press the system Back button.", "parameters": {"intent": "A few words: what this action should achieve."}}
+  device-worker.home: {"description": "Go to the home screen.", "parameters": {"intent": "A few words: what this action should achieve."}}
+  device-worker.tap_point: {"description": "Tap a pixel inside element `within`. Only when no element can be activated directly.", "parameters": {"x": "Pixel x.", "y": "Pixel y.", "within": "Element whose bounds contain the point.", "intent": "A few words: what this action should achieve."}}
+  device-worker.swipe: {"description": "Swipe between two pixels that both lie inside element `within`.", "parameters": {"start_x": "Start x.", "start_y": "Start y.", "end_x": "End x.", "end_y": "End y.", "within": "Element whose bounds contain both points.", "duration_ms": "50-5000, or null for the default.", "intent": "A few words: what this action should achieve."}}
+  device-worker.long_press: {"description": "Press and hold the centre of an element.", "parameters": {"element": "Index from the current observation table.", "intent": "A few words: what this action should achieve."}}
+  device-worker.screenshot: {"description": "Attach an image of the current screen to the next turn. Limited per task; use only when the table cannot answer (images, unlabeled controls).", "parameters": {"intent": "A few words: what this action should achieve."}}
+  device-worker.ime_action: {"description": "Press Enter in the focused editable field; this may submit the field.", "parameters": {"element": "Index from the current observation table.", "action": "Keyboard action to trigger.", "intent": "A few words: what this action should achieve."}}
+  device-worker.open_url: {"description": "Open an http(s) web address in the default app, or in `package`.", "parameters": {"url": "Absolute http:// or https:// URL.", "package": "App to open it in, or null for the default.", "intent": "A few words: what this action should achieve."}}
+  device-worker.open_notifications: {"description": "Open the notification shade.", "parameters": {"intent": "A few words: what this action should achieve."}}
+  device-worker.ask_user: {"description": "Ask the user one short question and wait for the answer. Use when the request is ambiguous or a needed detail is missing.", "parameters": {"question": "One short question the user can answer by voice."}}
+  device-worker.finish: {"description": "End the task with what was done or found, or why it failed.", "parameters": {"status": "Outcome.", "summary": "What was done or found, or why not; spoken to the user."}}
+  eva.device.task: {"description": "Run an explicit device-control task. Use when the user asks to control the screen or operate an app. Waits until the task ends; do not start a second device task.", "parameters": {"goal": "The complete device task, including user constraints."}}
+
   eva.session.end:
     description: >-
       Hang up this voice conversation after a brief spoken goodbye; the goodbye finishes playing
@@ -172,6 +190,18 @@ tools:
       returned by memory search. This removes the note, not prior conversations or action
       history containing it.
 messages:
+  device-worker.system: "You operate an Android device for the user through the tools provided. The last screen is the CURRENT indexed element table. Indices change after every action.\nCall exactly one tool per turn. Use ask_user or finish instead of plain text. Ask one short question BEFORE acting or answering when the request is ambiguous or a needed detail is missing. Name concrete choices seen on screen: two branches, contacts, or settings. Never choose a branch yourself or answer for all branches when one was requested. Vague words such as darker or louder require clarification about which setting.\nAfter set_text check read-back and fix mismatches. Prefer explicit Search/Go buttons to ime_action; Enter may submit the field. Prefer the text table; screenshot only when it cannot answer.\nWhen searching by scrolling, continue in the same direction until the target appears or nothing new appears. Reverse only to return to something already seen. If no route remains, finish failed or blocked. Finish completed only after observing the requested state or reading the requested answer. Keep intent brief."
+  device-worker.task: "Task: {goal}\nUser corrections in order: {revisions}"
+  device-worker.screen: "Screen at step {step} (observation {observation_id}):"
+  device-worker.one_call: "Call exactly one tool. Use ask_user for missing information or finish when done."
+  device-worker.invalid_call: "Invalid tool arguments. Use the advertised schema and current element indices."
+  device-worker.scroll_reversal: "The last scroll revealed new content. Continue {previous} until the target appears or nothing new appears; do not reverse now."
+  device-worker.scroll_end: "Scroll {direction} revealed nothing new. This is the end of that content; do not repeat that scroll."
+  device-worker.scrolled: "Scroll {direction}: {count} new elements appeared ({preview}). Read them, then continue {direction} if needed."
+  device-worker.screenshot_limit: "The screenshot budget is exhausted. Use the table or finish."
+  device-worker.result: "{kind}: {result}"
+  device-worker.text_result: "Text read-back verified={verified}; actual={actual}. Fix a mismatch before continuing."
+
   continuation: >-
     The voice call for this request has ended. Finish the request in text using the receipts in
     the conversation; do not repeat actions that already have a receipt.
