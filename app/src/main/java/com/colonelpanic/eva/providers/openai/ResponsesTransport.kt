@@ -29,7 +29,15 @@ internal suspend fun responsesPost(
     val request =
         access
             .authorize(Request.Builder().url(access.responsesUrl))
-            .header("Accept", if (access.serverKeepsHistory) "application/json" else "text/event-stream")
+            .apply {
+                payload["prompt_cache_key"]?.let { key ->
+                    val value = (key as? kotlinx.serialization.json.JsonPrimitive)?.content
+                    if (value != null) {
+                        header("session-id", value)
+                        header("thread-id", value)
+                    }
+                }
+            }.header("Accept", if (access.serverKeepsHistory) "application/json" else "text/event-stream")
             .post(payload.toString().toRequestBody("application/json".toMediaType()))
             .build()
     return kotlinx.coroutines.withContext(ioDispatcher) {

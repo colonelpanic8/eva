@@ -234,34 +234,46 @@ class EvaApplication :
     }
 
     val deviceTasks by lazy {
-        com.colonelpanic.eva.devicecontrol.DeviceTaskCoordinator {
-            check(capabilities.screenControlEnabled) { "Screen control is disabled." }
-            val options = capabilities.deviceTask
-            val backend: com.colonelpanic.eva.devicecontrol.DeviceBackend =
-                when (options.backend) {
-                    "portal" -> {
-                        com.colonelpanic.eva.devicecontrol.portal.PortalBackend(
-                            com.colonelpanic.eva.devicecontrol.portal.PortalClient(
-                                port = options.portalPort,
-                                token = { capabilities.portalToken() ?: error("Provision the Portal token in settings.") },
-                            ),
-                        )
-                    }
+        com.colonelpanic.eva.devicecontrol
+            .DeviceTaskCoordinator { createDeviceTaskAgent() }
+    }
 
-                    "shizuku" -> {
-                        val host = checkNotNull(deviceControlHost) { "Screen control requires Android 11 or newer." }
-                        com.colonelpanic.eva.devicecontrol.ShizukuDeviceBackend(
-                            read = { host.observe(15_000L) },
-                            input = { request -> host.act(request, 15_000L) },
-                        )
-                    }
-
-                    else -> {
-                        error("Unknown device backend.")
-                    }
+    internal fun createDeviceTaskAgent(
+        onDeviceTiming: (com.colonelpanic.eva.devicecontrol.portal.ActionTiming) -> Unit = {},
+        decorateModel: (
+            com.colonelpanic.eva.devicecontrol.worker.WorkerModel,
+        ) -> com.colonelpanic.eva.devicecontrol.worker.WorkerModel = { it },
+    ): com.colonelpanic.eva.devicecontrol.worker.TextTaskAgent {
+        check(capabilities.screenControlEnabled) { "Screen control is disabled." }
+        val options = capabilities.deviceTask
+        val backend: com.colonelpanic.eva.devicecontrol.DeviceBackend =
+            when (options.backend) {
+                "portal" -> {
+                    com.colonelpanic.eva.devicecontrol.portal.PortalBackend(
+                        com.colonelpanic.eva.devicecontrol.portal.PortalClient(
+                            port = options.portalPort,
+                            token = { capabilities.portalToken() ?: error("Provision the Portal token in settings.") },
+                        ),
+                        launchAliases = options.launchAliases,
+                        timing = onDeviceTiming,
+                    )
                 }
-            com.colonelpanic.eva.devicecontrol.worker.TextTaskAgent(
-                backend,
+
+                "shizuku" -> {
+                    val host = checkNotNull(deviceControlHost) { "Screen control requires Android 11 or newer." }
+                    com.colonelpanic.eva.devicecontrol.ShizukuDeviceBackend(
+                        read = { host.observe(15_000L) },
+                        input = { request -> host.act(request, 15_000L) },
+                    )
+                }
+
+                else -> {
+                    error("Unknown device backend.")
+                }
+            }
+        return com.colonelpanic.eva.devicecontrol.worker.TextTaskAgent(
+            backend,
+            decorateModel(
                 com.colonelpanic.eva.devicecontrol.OpenAiWorkerModel(
                     checkNotNull(access()) {
                         "Sign in to OpenAI first."
@@ -269,20 +281,21 @@ class EvaApplication :
                     options.model,
                     options.reasoningEffort,
                 ),
-                com.colonelpanic.eva.devicecontrol
-                    .workerWording(prompts.wording.value),
-                com.colonelpanic.eva.devicecontrol.worker
-                    .WorkerSettings(
-                        options.maxSteps,
-                        options.maxMillis,
-                        options.modelTimeoutMillis,
-                        options.maxScreens,
-                        options.historyLines,
-                        options.maxRefusals,
-                        options.maxScreenshots,
-                    ),
-            )
-        }
+            ),
+            com.colonelpanic.eva.devicecontrol
+                .workerWording(prompts.wording.value),
+            com.colonelpanic.eva.devicecontrol.worker
+                .WorkerSettings(
+                    options.maxSteps,
+                    options.maxMillis,
+                    options.modelTimeoutMillis,
+                    options.maxScreens,
+                    options.historyLines,
+                    options.maxRefusals,
+                    options.maxScreenshots,
+                    options.launchAliases,
+                ),
+        )
     }
 
     val registry by lazy {

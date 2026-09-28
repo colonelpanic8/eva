@@ -31,6 +31,10 @@ class TextTaskAgentTest {
             "test",
             listOf(
                 "task",
+                "extra_call",
+                "screen_content",
+                "history",
+                "revisions",
                 "screen",
                 "one_call",
                 "invalid_call",
@@ -40,6 +44,8 @@ class TextTaskAgentTest {
                 "screenshot_limit",
                 "result",
                 "text_result",
+                "text_verified",
+                "screenshot_attached",
             ).associateWith {
                 "$it {goal} {revisions} {result}"
             },
@@ -190,6 +196,123 @@ class TextTaskAgentTest {
             release.complete(Unit)
             assertEquals(TaskStatus.CANCELLED, result.await().status)
             assertEquals(1, agent.effects)
+            assertEquals(1, phone.actions.size)
+        }
+
+    @Test fun scrollFeedbackBoundsPreviewsAndIncludesResourceOnlyRows() =
+        runTest {
+            val requests = mutableListOf<WorkerRequest>()
+            val paragraph = "A long paragraph about opening hours repeated many times ".repeat(20)
+            val after =
+                screen.copy(
+                    observationId = "after",
+                    elements =
+                        listOf(
+                            com.colonelpanic.eva.devicecontrol.proto.Element(
+                                0,
+                                com.colonelpanic.eva.devicecontrol.proto.Role.TEXT,
+                                text = paragraph,
+                                bounds =
+                                    com.colonelpanic.eva.devicecontrol.proto
+                                        .Bounds(0, 0, 100, 100),
+                                depth = 0,
+                            ),
+                            com.colonelpanic.eva.devicecontrol.proto.Element(
+                                1,
+                                com.colonelpanic.eva.devicecontrol.proto.Role.SWITCH,
+                                resourceId = "test:id/toggle",
+                                checkable = true,
+                                bounds =
+                                    com.colonelpanic.eva.devicecontrol.proto
+                                        .Bounds(0, 100, 100, 200),
+                                depth = 0,
+                            ),
+                        ),
+                )
+            val phone =
+                FakeDeviceBackend(screen) { action ->
+                    ActionResult(action.actionId, action.kind, true, "now", "now", after, executionStatus = ExecutionStatus.EXECUTED)
+                }
+            val text = wording.copy(notices = wording.notices + ("scrolled" to "{count}: {preview}"))
+            val agent =
+                TextTaskAgent(
+                    phone,
+                    WorkerModel { request ->
+                        requests += request
+                        if (requests.size == 1) reply("scroll", """{"direction":"down","element":null,"intent":"Read"}""") else finish()
+                    },
+                    text,
+                )
+            assertEquals(TaskStatus.COMPLETED, agent.run("hours") {}.status)
+            val feedback =
+                requests
+                    .last()
+                    .messages
+                    .single { it.resultFor != null }
+                    .text
+            assertTrue(feedback.contains("2:"))
+            assertTrue(feedback.contains("toggle"))
+            assertTrue(feedback.contains("…"))
+            assertFalse(feedback.contains(paragraph.take(31)))
+            assertTrue(feedback.length < 200)
+        }
+
+    @Test fun noCallRetainsAssistantOutputAndReminder() =
+        runTest {
+            val requests = mutableListOf<WorkerRequest>()
+            val agent =
+                TextTaskAgent(
+                    phone(),
+                    WorkerModel { request ->
+                        requests += request
+                        if (requests.size ==
+                            1
+                        ) {
+                            WorkerReply(emptyList(), output = listOf(WorkerMessage("assistant", "checking")))
+                        } else {
+                            finish()
+                        }
+                    },
+                    wording,
+                )
+            assertEquals(TaskStatus.COMPLETED, agent.run("goal") {}.status)
+            assertTrue(requests.last().messages.any { it.role == "assistant" && it.text == "checking" })
+            assertTrue(
+                requests
+                    .last()
+                    .messages
+                    .last()
+                    .text
+                    .contains("one_call"),
+            )
+        }
+
+    @Test fun nativeExchangeRetainsFreshScreenAndSurvivesContextRebuild() =
+        runTest {
+            val requests = mutableListOf<WorkerRequest>()
+            val after = screen.copy(observationId = "after", packageName = "com.android.settings")
+            val phone =
+                FakeDeviceBackend(screen) { action ->
+                    ActionResult(action.actionId, action.kind, true, "now", "now", after, executionStatus = ExecutionStatus.EXECUTED)
+                }
+            val agent =
+                TextTaskAgent(
+                    phone,
+                    WorkerModel { request ->
+                        requests += request
+                        if (requests.size == 1) reply("home") else finish()
+                    },
+                    wording,
+                    WorkerSettings(maxScreens = 1),
+                )
+            assertEquals(TaskStatus.COMPLETED, agent.run("goal") {}.status)
+            val messages = requests.last().messages
+            val call = messages.single { it.call != null }
+            val result = messages.single { it.resultFor != null }
+            assertEquals(call.call!!.id, result.resultFor)
+            assertTrue(result.text.contains("ok"))
+            assertTrue(messages.last().text.contains("observation after"))
+            assertEquals(1, phone.observations)
             assertEquals(1, phone.actions.size)
         }
 

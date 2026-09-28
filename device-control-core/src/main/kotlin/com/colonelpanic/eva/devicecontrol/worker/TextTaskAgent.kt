@@ -125,6 +125,9 @@ class TextTaskAgent(
         var lastScroll: ScrollState? = null
         val repeats = mutableMapOf<String, Int>()
         var messages = mutableListOf<WorkerMessage>()
+        var pendingReply: WorkerReply? = null
+        var exchange = emptyList<WorkerMessage>()
+        val callHistory = mutableMapOf<Int, String>()
         var screens = 0
         var note = ""
         var image: String? = null
@@ -177,20 +180,47 @@ class TextTaskAgent(
                     lastScroll = null
                 }
                 val before = checkNotNull(observation)
+                pendingReply?.let { previous ->
+                    val output =
+                        previous.output.ifEmpty {
+                            previous.calls.map { WorkerMessage("assistant", "", call = it) }
+                        }
+                    exchange = output +
+                        previous.calls.mapIndexed { index, call ->
+                            WorkerMessage("tool", if (index == 0) note else wording.note("extra_call"), resultFor = call.id)
+                        }
+                    pendingReply = null
+                    if (previous.calls.isNotEmpty()) note = ""
+                }
                 if (screens >= settings.maxScreens || messages.isEmpty()) {
                     val corrections = synchronized(control) { revisions.joinToString("\n") }
-                    messages = mutableListOf(WorkerMessage("user", wording.note("task", "goal" to goal, "revisions" to corrections)))
+                    messages =
+                        mutableListOf(
+                            WorkerMessage(
+                                "user",
+                                wording.note("task", "goal" to goal, "revisions" to corrections) +
+                                    if (corrections.isBlank()) "" else "\n" + wording.note("revisions", "revisions" to corrections),
+                            ),
+                        )
                     if (steps.isNotEmpty()) {
                         messages +=
-                            WorkerMessage("user", steps.takeLast(settings.historyLines).joinToString("\n") { "${it.kind}: ${it.result}" })
+                            WorkerMessage(
+                                "user",
+                                wording.note("history") + "\n" +
+                                    steps.dropLast(if (exchange.isEmpty()) 0 else 1).takeLast(settings.historyLines).joinToString("\n") {
+                                        "step ${it.step}: ${callHistory[it.step] ?: it.kind} → ${it.result}"
+                                    },
+                            )
                     }
                     screens = 0
                 }
+                messages += exchange
+                exchange = emptyList()
                 messages +=
                     WorkerMessage(
                         "user",
                         wording.note("screen", "step" to (step + 1), "observation_id" to before.observationId) + "\n" + note + "\n" +
-                            before.renderTable(),
+                            before.renderTable(contentNotice = wording.note("screen_content")),
                         image,
                     )
                 screens++
@@ -220,6 +250,7 @@ class TextTaskAgent(
                 if (messages.any { it.png != null }) messages.clear()
                 step++
                 if (isStopped || revision != rev || synchronized(control) { paused }) continue
+                pendingReply = reply
                 val call = reply.calls.firstOrNull()
                 if (call == null) {
                     steps += WorkerStep(step, rev, "invalid_tool_count", "not_dispatched", StepTiming(observationMillis, modelMillis))
@@ -230,7 +261,7 @@ class TextTaskAgent(
                 }
                 noCall = 0
                 steps += WorkerStep(step, rev, call.name, "not_dispatched", StepTiming(observationMillis, modelMillis))
-                // Keep the prefix stable without requiring provider-specific function-call envelopes.
+                // Redact secret text in replayed calls as well as progress history.
                 val safeArgs =
                     if (call.name == "set_text" &&
                         before.elements.getOrNull(call.arguments["element"]?.jsonPrimitive?.intOrNull ?: -1)?.password == true
@@ -239,7 +270,11 @@ class TextTaskAgent(
                     } else {
                         call.arguments
                     }
-                messages += WorkerMessage("assistant", "${call.name} $safeArgs")
+                callHistory[step] = "${call.name}(${safeArgs.toString().take(800)})"
+                if (safeArgs != call.arguments) {
+                    val redacted = call.copy(arguments = safeArgs)
+                    pendingReply = reply.copy(calls = listOf(redacted) + reply.calls.drop(1), output = emptyList())
+                }
                 if (call.name == "ask_user") {
                     val question =
                         call.arguments["question"]
@@ -253,6 +288,7 @@ class TextTaskAgent(
                         continue
                     }
                     progress(TaskPhase.NEEDS_INPUT, question, StepTiming(observationMillis, modelMillis))
+                    note = question
                     val wait = clock()
                     while (!isStopped && revision == rev) mailbox.receive()
                     waited += clock() - wait
@@ -343,7 +379,11 @@ class TextTaskAgent(
                     }
                 observationMillis = 0
                 val r = actionResult
-                val outcome = r?.error?.javaClass?.simpleName ?: if (r?.ok == false) "failed" else "ok"
+                val aliasedLaunch =
+                    action is com.colonelpanic.eva.devicecontrol.proto.LaunchApp &&
+                        observation?.packageName in settings.launchAliases[action.packageName].orEmpty() &&
+                        r?.error is com.colonelpanic.eva.devicecontrol.proto.AppNotFound
+                val outcome = if (aliasedLaunch) "ok" else r?.error?.javaClass?.simpleName ?: if (r?.ok == false) "failed" else "ok"
                 steps[steps.lastIndex] = WorkerStep(step, rev, call.name, outcome, timing)
                 progress(TaskPhase.PROGRESS, "${call.name}: $outcome", timing)
                 if (isStopped) return result(TaskStatus.CANCELLED, "cancelled")
@@ -363,17 +403,34 @@ class TextTaskAgent(
                 if (reply.calls.size > 1) note += "\n" + wording.note("one_call")
                 if (r?.details is SetTextDetails) {
                     val d = r.details as SetTextDetails
-                    note += "\n" + wording.note("text_result", "verified" to d.verified, "actual" to (d.actual ?: "<password>"))
+                    note =
+                        if (d.verified) {
+                            wording.note("text_verified")
+                        } else {
+                            wording.note(
+                                "text_result",
+                                "verified" to d.verified,
+                                "expected" to JsonPrimitive(d.expected ?: "<password>"),
+                                "actual" to JsonPrimitive(d.actual ?: "<password>"),
+                            )
+                        }
                 }
                 if (r?.details is ScreenshotDetails) {
+                    note = wording.note("screenshot_attached")
                     screenshots++
                     image = (r.details as ScreenshotDetails).png
                     messages.clear()
                 }
                 if (action is Scroll && r?.ok == true) {
                     val old = before.elements.map(::identity).toSet()
-                    val fresh = after.elements.filter { identity(it) !in old }
-                    val labels = fresh.map { it.text ?: it.contentDescription ?: "" }.filter { it.isNotBlank() }
+                    val fresh =
+                        after.elements.filter {
+                            identity(it) !in old && (
+                                it.password || !it.text.isNullOrEmpty() || !it.contentDescription.isNullOrEmpty() ||
+                                    !it.resourceId.isNullOrEmpty() || it.checkable || it.selected
+                            )
+                        }
+                    val labels = fresh.map(::elementLabel)
                     val words = words(goal + synchronized(control) { revisions.joinToString(" ") })
                     lastScroll =
                         ScrollState(
@@ -389,12 +446,23 @@ class TextTaskAgent(
                     note +=
                         "\n" +
                         if (labels.isEmpty()) {
-                            wording.note("scroll_end", "direction" to action.direction.name.lowercase())
+                            wording.note("scroll_end", "direction" to action.direction.name.lowercase(), "edge" to edge(action.direction))
                         } else {
                             wording.note(
                                 "scrolled",
+                                "edge" to edge(action.direction),
                                 "count" to labels.size,
-                                "preview" to labels.take(3).joinToString(),
+                                "preview" to (
+                                    labels.take(3).joinToString { text ->
+                                        val shown =
+                                            if (text.codePointCount(0, text.length) <= 30) {
+                                                text
+                                            } else {
+                                                text.substring(0, text.offsetByCodePoints(0, 29)) + "…"
+                                            }
+                                        JsonPrimitive(shown).toString()
+                                    } + if (labels.size > 3) ", …" else ""
+                                ),
                                 "direction" to action.direction.name.lowercase(),
                             )
                         }
@@ -408,6 +476,8 @@ class TextTaskAgent(
             return result(if (isStopped) TaskStatus.CANCELLED else TaskStatus.FAILED, if (isStopped) "cancelled" else "timeout")
         } catch (_: Exception) {
             return result(TaskStatus.FAILED, "worker_error")
+        } finally {
+            model.close()
         }
     }
 
@@ -451,15 +521,19 @@ class TextTaskAgent(
 
     private fun identity(e: Element) = listOf(e.role, e.text, e.contentDescription, e.resourceId, e.checked, e.selected)
 
+    private fun elementLabel(element: Element): String =
+        when {
+            element.password -> "<password>"
+            !element.text.isNullOrEmpty() -> element.text
+            !element.contentDescription.isNullOrEmpty() -> element.contentDescription
+            !element.resourceId.isNullOrEmpty() -> element.resourceId.substringAfterLast(":id/")
+            else -> element.role.name.lowercase()
+        }
+
     private fun label(
         o: Observation,
         index: Int?,
-    ) = o.elements
-        .getOrNull(index ?: -1)
-        ?.let {
-            it.text ?: it.contentDescription
-                ?: it.resourceId
-        }.orEmpty()
+    ) = o.elements.getOrNull(index ?: -1)?.let(::elementLabel) ?: "#$index"
 
     private fun words(text: String) =
         Regex("[a-z0-9]+")
@@ -467,6 +541,14 @@ class TextTaskAgent(
             .map { it.value }
             .filter { it !in FILLER }
             .toSet()
+
+    private fun edge(d: ScrollDirection) =
+        when (d) {
+            ScrollDirection.DOWN -> "bottom"
+            ScrollDirection.UP -> "top"
+            ScrollDirection.LEFT -> "left"
+            ScrollDirection.RIGHT -> "right"
+        }
 
     private fun opposite(d: ScrollDirection) =
         when (d) {
