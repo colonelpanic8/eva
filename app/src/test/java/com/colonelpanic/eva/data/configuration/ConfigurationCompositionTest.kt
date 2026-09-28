@@ -387,6 +387,7 @@ class ConfigurationCompositionTest {
                             portalPort = 8123,
                             model = "worker-test",
                             maxSteps = 17,
+                            launchAliases = mapOf("org.example.app" to listOf("org.example.search")),
                             maxMillis = 90_000,
                         ),
                 ),

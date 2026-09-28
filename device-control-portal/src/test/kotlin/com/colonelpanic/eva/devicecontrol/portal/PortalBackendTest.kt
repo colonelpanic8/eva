@@ -172,6 +172,18 @@ class PortalBackendTest {
             assertEquals(1, phone.commands.size)
         }
 
+    @Test fun settingsSearchAliasSettlesWithoutWaitingForWrongPackage() =
+        runTest {
+            val phone = Phone().apply { afterCommand = { packageName = "com.google.android.settings.intelligence" } }
+            val timings = mutableListOf<ActionTiming>()
+            val backend = PortalBackend(phone, clock = { testScheduler.currentTime }, timing = timings::add)
+            val before = backend.observe()
+            val result = backend.perform(LaunchApp("a", "task", 0, before.observationId, "com.android.settings"))
+            assertTrue(result.ok)
+            assertFalse(result.unsettled)
+            assertTrue(timings.last().settleMillis < 1000)
+        }
+
     @Test fun launchMustReachRequestedPackageAndSettleReportsItsBudget() =
         runTest {
             val phone = Phone()

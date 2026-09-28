@@ -80,6 +80,7 @@ class PortalBackend(
     private val timestamp: () -> String = { Instant.now().toString() },
     private val sleep: suspend (Long) -> Unit = { delay(it) },
     private val timing: (ActionTiming) -> Unit = {},
+    private val launchAliases: Map<String, List<String>> = com.colonelpanic.eva.devicecontrol.worker.DEFAULT_LAUNCH_ALIASES,
 ) : DeviceBackend {
     private val lock = Mutex()
     private val session = UUID.randomUUID().toString()
@@ -224,8 +225,8 @@ class PortalBackend(
                                     plan.slowStart,
                                     plan.foregroundPackage?.let { pkg ->
                                         { screen ->
-                                            screen.observation.packageName ==
-                                                pkg
+                                            screen.observation.packageName == pkg ||
+                                                (action is LaunchApp && screen.observation.packageName in launchAliases[pkg].orEmpty())
                                         }
                                     },
                                 ).screen
@@ -236,7 +237,9 @@ class PortalBackend(
                                     is OpenUrl -> action.packageName
                                     else -> null
                                 }
-                            if (expected != null && after.observation.packageName != expected) {
+                            if (expected != null && after.observation.packageName != expected &&
+                                !(action is LaunchApp && after.observation.packageName in launchAliases[expected].orEmpty())
+                            ) {
                                 failure =
                                     if (launchError) {
                                         BackendUnavailable(action.actionId, action.boundObservationId, "portal")
@@ -300,7 +303,10 @@ class PortalBackend(
                             val begin = clock()
                             val png = client.screenshot()
                             httpMillis += clock() - begin
+                            val captureStart = clock()
                             after = snapshot().also { latest = it }
+                            settleMillis += clock() - captureStart
+                            polls++
                             val dimensions = ByteBuffer.wrap(png, 16, 8)
                             val width = dimensions.int
                             val height = dimensions.int

@@ -929,6 +929,7 @@ data class DeviceTaskConfiguration(
     val historyLines: Int = 30,
     val maxRefusals: Int = 4,
     val maxScreenshots: Int = 3,
+    val launchAliases: Map<String, List<String>> = com.colonelpanic.eva.devicecontrol.worker.DEFAULT_LAUNCH_ALIASES,
 ) {
     init {
         require(backend in setOf("portal", "shizuku"))
@@ -943,6 +944,7 @@ data class DeviceTaskConfiguration(
             historyLines,
             maxRefusals,
             maxScreenshots,
+            launchAliases,
         )
     }
 }

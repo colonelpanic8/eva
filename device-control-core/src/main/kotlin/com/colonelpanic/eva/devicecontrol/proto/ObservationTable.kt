@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonPrimitive
 fun Observation.renderTable(
     maxElements: Int = 200,
     maxText: Int = 80,
+    contentNotice: String? = null,
 ): String {
     require(maxElements >= 0 && maxText >= 1)
     val foreground = (packageName ?: "unknown") + (activity?.let { "/$it" } ?: "")
@@ -21,6 +22,7 @@ fun Observation.renderTable(
             header,
             "flags: c=clickable L=long-clickable e=editable s=scrollable k=checkable x=checked f=focused d=disabled v=selected p=password",
         )
+    contentNotice?.let { lines.add(1, it) }
     if (contentUnavailable) {
         val reason = unavailableReason?.let { " (reason: ${it.name.lowercase()})" }.orEmpty()
         lines += "CONTENT UNAVAILABLE: this screen is protected or exposes no accessibility content; it is not empty.$reason"
