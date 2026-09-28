@@ -88,8 +88,8 @@ class ThreadController(
     private val voiceKeywords: suspend () -> List<String> = { emptyList() },
     /** The user's per-action overrides of whether a successful action ends the voice call. */
     private val callEndings: () -> Map<String, CallEnding> = { emptyMap() },
-    /** Configured messaging bridges, service name to label, named to the model on the shared messaging tools. */
-    private val messagingBridges: () -> Map<String, String> = { emptyMap() },
+    /** Extension messaging services, service name to label, named to the model on the shared messaging tools. */
+    private val messagingServices: () -> Map<String, String> = { emptyMap() },
     /** Capabilities the user has switched off. They are left out of the catalog entirely. */
     private val hiddenCapabilities: () -> Set<String> = { emptySet() },
     /** Read at every connection, so an edit to the prompt file applies to the next session. */
@@ -236,13 +236,13 @@ class ThreadController(
     }
 
     /**
-     * Which bridge services exist is configuration, not wording, so EVA's note names them on the
+     * Which messaging services exist is configuration, not wording, so EVA's note names them on the
      * messaging tools at connection time; the note's words still come from the followed wording.
      */
-    private fun bridgeNote(tool: ProviderToolDefinition): ProviderToolDefinition {
+    private fun servicesNote(tool: ProviderToolDefinition): ProviderToolDefinition {
         if (tool.capabilityId !in MESSAGING_TOOLS) return tool
-        val bridges = messagingBridges().takeIf { it.isNotEmpty() } ?: return tool
-        val listed = bridges.entries.joinToString(", ") { (name, label) -> if (label.equals(name, true)) name else "$name ($label)" }
+        val services = messagingServices().takeIf { it.isNotEmpty() } ?: return tool
+        val listed = services.entries.joinToString(", ") { (name, label) -> if (label.equals(name, true)) name else "$name ($label)" }
         return tool.copy(
             description =
                 tool.description + "\n\n" + wording().message(Wording.MESSAGING_BRIDGES).replace("{services}", listed),
@@ -410,7 +410,7 @@ class ThreadController(
                                 .apply(
                                     (if (voice) listOf(wording().describe(END_CONVERSATION), DEFER_TO_TEXT) else emptyList()) +
                                         phoneTools(snapshot, voice),
-                                ).map { tool -> endingNote(bridgeNote(tool), endings[tool.capabilityId]) },
+                                ).map { tool -> endingNote(servicesNote(tool), endings[tool.capabilityId]) },
                             snapshot.revision,
                         )
                     val provider =

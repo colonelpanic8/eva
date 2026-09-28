@@ -117,7 +117,7 @@ class ThreadControllerTest {
         prompt: suspend () -> PromptConfig = { PromptDefaults.config },
         awaitCapabilities: suspend () -> Unit = {},
         callEndings: () -> Map<String, CallEnding> = { emptyMap() },
-        messagingBridges: () -> Map<String, String> = { emptyMap() },
+        messagingServices: () -> Map<String, String> = { emptyMap() },
     ) = ThreadController(
         registry = registry,
         dispatcher = CapabilityDispatcher(registry, repository),
@@ -132,13 +132,13 @@ class ThreadControllerTest {
         awaitCapabilities = awaitCapabilities,
         hiddenCapabilities = hiddenCapabilities,
         callEndings = callEndings,
-        messagingBridges = messagingBridges,
+        messagingServices = messagingServices,
         prompt = prompt,
         onBackgroundAnswer = { answers += it },
     )
 
     @Test
-    fun `configured messaging bridges are named on the shared messaging tools only`() =
+    fun `extension messaging services are named on the shared messaging tools only`() =
         runTest {
             val send = BundledCapabilities.definitions.single { it.id == CapabilityRegistry.SMS_SEND }
             val withMessaging =
@@ -150,7 +150,7 @@ class ThreadControllerTest {
                     listOf(send, lookup),
                 )
             val provider = FakeProvider()
-            val controller = controller(provider, registry = withMessaging, messagingBridges = { mapOf("whatsapp" to "WhatsApp") })
+            val controller = controller(provider, registry = withMessaging, messagingServices = { mapOf("whatsapp" to "WhatsApp") })
             advanceUntilIdle()
             controller.connect("test")
             advanceUntilIdle()

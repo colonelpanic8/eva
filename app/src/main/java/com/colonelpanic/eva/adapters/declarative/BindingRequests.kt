@@ -43,6 +43,8 @@ data class HttpRequest(
 class BindingArguments(
     private val capability: PackageCapability,
     arguments: Map<String, String>,
+    /** Effective setting values: the user's configured value, else the package default. */
+    private val settings: Map<String, JsonPrimitive> = emptyMap(),
 ) {
     private val values =
         ExtensionProtocol.arguments(
@@ -71,6 +73,10 @@ class BindingArguments(
 
             is ScalarSlot.Literal -> {
                 slot.value
+            }
+
+            is ScalarSlot.Setting -> {
+                requireNotNull(settings[slot.name]) { "A package setting is not configured" }
             }
         }
 

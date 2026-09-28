@@ -292,29 +292,35 @@ The user must authorize the particular real message sent during a device test.
 Automated tests use fake reply callbacks and construct Android intents without
 sending messages.
 
-To link an account through a messaging bridge (for example WhatsApp on the
-[multidevice bridge](https://github.com/colonelpanic8/google-messages-multidevice-bridge)
-served over Tailscale Serve):
+To use a messaging service such as WhatsApp through a self-hosted
+[multidevice bridge](https://github.com/colonelpanic8/google-messages-multidevice-bridge):
 
-1. Run one bridge instance per network with an HTTPS origin the phone can reach
-   and a bearer token; pair the bridge with the account in its own web client.
-2. Under **Messaging → Messaging services**, add a service: the name as it is
-   spoken (`whatsapp`), a label, the HTTPS origin only, and the token. The name,
-   label, and origin are saved to `eva.yaml` with a
-   `messaging/<name>/bearer` credential reference; the token stays on the phone.
-3. Select **Test connection**: it shows the bridge's `/v1/status` state,
-   transport, and phone responsiveness. `authentication_required` means the
-   bridge itself needs re-pairing.
-4. In a typed conversation, ask “Which WhatsApp chats did I get recently?”,
-   then read one or send a short message to a known number. Check the linked
-   app to confirm the message and its later delivery status.
-5. On another device, restore the same configuration and enter the token when
-   the setup list asks to provision `messaging/<name>/bearer`.
+1. Run one bridge instance per account with an HTTPS origin the phone can reach,
+   for example through Tailscale Serve, and link it in the bridge's web client.
+2. In **Extensions → Browse**, install **Messaging bridge**. In its settings,
+   choose any connection name, replace `https://bridge.example.ts.net` with the
+   bridge origin, and enter the bridge API token as the Bearer token. The origin
+   and a `service/<name>/bearer` reference are saved to `eva.yaml`; the token stays
+   on the phone.
+3. Set **Service name** to what you will say, such as `whatsapp`, and **Label**,
+   such as WhatsApp. These are saved under `packages.settings`.
+4. Enable the extension, allow its `send` and `start_chat` actions, and reconnect
+   the conversation. **Messaging → Messaging services** lists the service.
+5. In a typed conversation, ask "Which WhatsApp chats did I get recently?", then
+   read one, or send a short message to someone who expects it. Check the linked
+   app for the message and its later delivery status.
+6. On another device, restore the configuration, install the same extension, and
+   enter the token when the setup list asks for its credential.
 
-The bridge path has JVM tests against a scripted bridge (search, history,
-outbox outcome mapping, chat creation, idempotency key stability, and the
-configuration round trip). It has not been verified against a live bridge or on
-a device, and no automated test sends a real message.
+A bridge saved by EVA 0.41 or 0.42 under Messaging no longer routes messages. The
+Messaging screen lists it with its origin until **Forget old bridges**, which also
+clears its old token.
+
+The extension path has JVM tests against a scripted bridge: package parsing,
+settings, durable operations and their outcomes, chat creation, idempotency key
+stability, grant enforcement, and the configuration round trip. It has not been
+verified against a live bridge or on a device, and no automated test sends a real
+message.
 
 See [Architecture](architecture.md#messaging) for tool parameters, grant identity,
 receipt semantics, and notification lifetime limits.

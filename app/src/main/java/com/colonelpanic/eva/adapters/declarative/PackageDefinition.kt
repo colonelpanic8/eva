@@ -20,7 +20,76 @@ data class PackageDefinition(
     val setup: List<String> = emptyList(),
     /** How the package's tools fit together, for the model; external data like its tool descriptions. */
     val guidance: String? = null,
+    /** User-set, non-secret values the bindings read through setting slots; secrets stay credential references. */
+    val settings: Map<String, PackageSetting> = emptyMap(),
+    /** Tools that serve EVA's shared messaging tools under a service name instead of being offered directly. */
+    val messaging: MessagingRole? = null,
 )
+
+/**
+ * One configurable value. [schema] is the restricted JSON Schema its value must satisfy; values live in
+ * the user's configuration, never in the package, and are never secrets.
+ */
+data class PackageSetting(
+    val name: String,
+    val title: String,
+    val description: String?,
+    val schema: JsonObject,
+    val default: JsonPrimitive?,
+) {
+    val type: String get() = (schema.getValue("type") as JsonPrimitive).content
+}
+
+/** A fixed text or the value of a setting. */
+sealed interface TextSource {
+    data class Fixed(
+        val value: String,
+    ) : TextSource
+
+    data class Setting(
+        val name: String,
+    ) : TextSource
+}
+
+/**
+ * Which package tools answer EVA's shared messaging tools. Argument fields name the package tool's own
+ * inputs; [StartChat.conversation] points into the operation's final record for the new conversation ID.
+ */
+data class MessagingRole(
+    val service: TextSource,
+    val label: TextSource,
+    val conversations: Lookup,
+    val contacts: Lookup?,
+    val history: History,
+    val send: Send,
+    val startChat: StartChat?,
+) {
+    data class Lookup(
+        val tool: String,
+        val query: String?,
+        val limit: String?,
+    )
+
+    data class History(
+        val tool: String,
+        val conversation: String,
+        val limit: String?,
+    )
+
+    data class Send(
+        val tool: String,
+        val conversation: String,
+        val text: String,
+    )
+
+    data class StartChat(
+        val tool: String,
+        val recipients: String,
+        val conversation: String,
+    )
+
+    val tools: Set<String> get() = setOfNotNull(conversations.tool, contacts?.tool, history.tool, send.tool, startChat?.tool)
+}
 
 enum class PackageEffect { READ, WRITE, HANDOFF, UNKNOWN }
 
@@ -76,6 +145,12 @@ sealed interface ScalarSlot {
 
     data class Literal(
         val value: JsonPrimitive,
+        override val type: String,
+    ) : ScalarSlot
+
+    /** The user's configured value for a declared package setting. */
+    data class Setting(
+        val name: String,
         override val type: String,
     ) : ScalarSlot
 }
@@ -144,8 +219,25 @@ sealed interface DeclarativeBinding {
         val maxResponseBytes: Int,
         val result: ResultProjection,
         val credentialScheme: String = "basic",
+        /** A durable server-side operation EVA keys, polls, and maps to an outcome, or null for one exchange. */
+        val operation: DurableOperation? = null,
     ) : DeclarativeBinding
 }
+
+/**
+ * EVA sends [header] with a key derived from the invocation, so a re-delivered invocation names the same
+ * server operation. It then reads [statusPath] (with `{operation}` replaced by the key) on the same origin
+ * until [state] maps to a final outcome. A state absent from [outcomes] is an unknown outcome.
+ */
+data class DurableOperation(
+    val header: String,
+    val statusPath: String,
+    val state: String,
+    val detail: String?,
+    val outcomes: Map<String, OperationOutcome>,
+)
+
+enum class OperationOutcome { COMPLETED, NOT_EXECUTED, UNKNOWN, PENDING }
 
 data class Predicate(
     val column: String,

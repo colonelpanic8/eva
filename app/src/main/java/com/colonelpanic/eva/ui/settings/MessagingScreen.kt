@@ -12,20 +12,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.colonelpanic.eva.data.MessagingPreferences
@@ -73,7 +66,7 @@ fun MessagingScreen(
             SettingsDivider()
             NotificationMessagingSection(state, actions)
             SettingsDivider()
-            MessagingBridgesSection(state, actions)
+            MessagingServicesSection(state, actions)
             SettingsDivider()
             RememberedNumbersSection(state, actions)
             Spacer(Modifier.height(24.dp))
@@ -190,73 +183,40 @@ private fun NotificationMessagingSection(
 }
 
 /**
- * A linked account on a self-hosted bridge, such as WhatsApp. The service name, label, and origin
- * travel with the configuration; the bearer token is saved on this phone only, so a restored
- * bridge shows up here asking for it.
+ * Messaging services come from extensions: a package that declares the messaging role serves the
+ * shared conversation tools under its service name. Their settings, server, and token live with the
+ * extension, so this screen only says which services exist and where to change them.
  */
 @Composable
-private fun MessagingBridgesSection(
+private fun MessagingServicesSection(
     state: SettingsUiState,
     actions: SettingsActions,
 ) {
     SettingsSection("Messaging services") {
         SettingsBlock {
             Text(
-                "A self-hosted messaging bridge links one account, such as WhatsApp, with its full recent history and new chats. " +
-                    "Name it the way you would say it, for example whatsapp. The token stays on this phone.",
+                "An extension can provide a messaging service, such as WhatsApp through a self-hosted bridge, with its chats, " +
+                    "history, and new conversations. Install one under Extensions → Browse, then set its service name, server, " +
+                    "and token in its settings and allow its send action.",
             )
         }
-        state.messaging.bridges.forEach { (name, bridge) ->
-            BridgeEditor(name, bridge, name in state.messagingBridgesNeedingToken, state.messagingBridgeChecks[name], actions)
+        if (state.messagingServices.isEmpty()) {
+            SettingsRow("No messaging services", "No installed extension provides one yet.")
         }
-        BridgeEditor(null, null, false, null, actions)
-    }
-}
-
-@Composable
-private fun BridgeEditor(
-    name: String?,
-    bridge: MessagingBridgeDefinition?,
-    needsToken: Boolean,
-    check: String?,
-    actions: SettingsActions,
-) {
-    SettingsBlock {
-        var service by remember(name) { mutableStateOf(name.orEmpty()) }
-        var label by remember(name, bridge?.label) { mutableStateOf(bridge?.label.orEmpty()) }
-        var origin by remember(name, bridge?.origin) { mutableStateOf(bridge?.origin.orEmpty()) }
-        var token by remember(name) { mutableStateOf("") }
-        var error by remember(name) { mutableStateOf<String?>(null) }
-        Text(if (name == null) "Add a messaging service" else "Service $name")
-        if (needsToken) Text("A token is required on this device.")
-        if (name == null) {
-            OutlinedTextField(service, { service = it }, label = { Text("Service name, as spoken to EVA") }, singleLine = true)
+        state.messagingServices.forEach { service ->
+            SettingsRow(service.label, "Service ${service.service}, from the ${service.title} extension.")
         }
-        OutlinedTextField(label, { label = it }, label = { Text("Label") }, singleLine = true)
-        OutlinedTextField(origin, { origin = it }, label = { Text("HTTPS bridge URL (origin only)") }, singleLine = true)
-        OutlinedTextField(
-            token,
-            { token = it },
-            label = { Text(if (name == null || needsToken) "Bearer token" else "New bearer token (blank keeps the saved one)") },
-            visualTransformation = PasswordVisualTransformation(),
-            singleLine = true,
-        )
-        error?.let { Text(it) }
-        OutlinedButton(onClick = {
-            error = actions.onSaveMessagingBridge(name ?: service, label, origin, token)
-            if (error == null) {
-                token = ""
-                if (name == null) {
-                    service = ""
-                    label = ""
-                    origin = ""
+        if (state.legacyBridges.isNotEmpty()) {
+            SettingsBlock {
+                Text("Moved to extensions", style = MaterialTheme.typography.titleSmall)
+                state.legacyBridges.forEach { (name, bridge) ->
+                    Text(
+                        "$name (${bridge.label}) at ${bridge.origin} is no longer used. Install the Messaging bridge extension, " +
+                            "set its service to $name and its server to ${bridge.origin}, and enter the token again.",
+                    )
                 }
+                TextButton(onClick = actions.onDismissLegacyBridges) { Text("Forget old bridges") }
             }
-        }) { Text(if (name == null) "Add service" else "Save") }
-        if (name != null) {
-            check?.let { Text(it) }
-            TextButton(onClick = { actions.onCheckMessagingBridge(name) }) { Text("Test connection") }
-            TextButton(onClick = { actions.onRemoveMessagingBridge(name) }) { Text("Remove service") }
         }
     }
 }
@@ -299,13 +259,8 @@ private fun MessagingPreview() {
         MessagingScreen(
             state =
                 SettingsUiState(
-                    messaging =
-                        MessagingPreferences(
-                            enabled = true,
-                            replies = setOf("signal"),
-                            bridges = mapOf("whatsapp" to MessagingBridgeDefinition("WhatsApp", "https://bridge.example.ts.net")),
-                        ),
-                    messagingBridgeChecks = mapOf("whatsapp" to "Bridge state: connected. Transport connected, phone responsive."),
+                    messaging = MessagingPreferences(enabled = true, replies = setOf("signal")),
+                    legacyBridges = mapOf("whatsapp" to MessagingBridgeDefinition("WhatsApp", "https://bridge.example.ts.net")),
                     messagingApps =
                         listOf(
                             MessagingApp(identity = "signal", title = "Signal", packageName = "org.thoughtcrime.securesms"),

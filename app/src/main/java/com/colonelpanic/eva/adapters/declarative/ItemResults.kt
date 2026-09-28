@@ -63,7 +63,7 @@ object ItemResults {
             require(item is JsonObject)
             val fields =
                 projection.fields.mapValues { (_, field) ->
-                    val value = BindingResults.pointer(item, field.pointer) ?: JsonNull
+                    val value = collect(item, field.pointer) ?: JsonNull
                     if (value == JsonNull) {
                         require(!field.required) { "Required item field missing" }
                     } else if (field.type == "stringArray") {
@@ -119,6 +119,29 @@ object ItemResults {
                     ""
                 }
         return ProjectedItems(text, structured)
+    }
+
+    /** A `*` segment gathers the string at the rest of the pointer from every element it spans. */
+    private fun collect(
+        item: JsonElement,
+        pointer: String,
+    ): JsonElement? {
+        val star = pointer.indexOf("/*")
+        if (star < 0 || (star + 2 < pointer.length && pointer[star + 2] != '/')) return BindingResults.pointer(item, pointer)
+        val container = BindingResults.pointer(item, pointer.substring(0, star)) ?: return null
+        val rest = pointer.substring(star + 2)
+        val elements =
+            when (container) {
+                is JsonArray -> container
+                is JsonObject -> container.values
+                else -> return null
+            }
+        return JsonArray(
+            elements
+                .take(100)
+                .mapNotNull { BindingResults.pointer(it, rest) as? JsonPrimitive }
+                .filter { it.isString && it.content.isNotEmpty() },
+        )
     }
 
     private fun arrays(

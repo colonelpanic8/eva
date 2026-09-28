@@ -16,11 +16,24 @@ import com.colonelpanic.eva.capability.extensions.InstalledExtension
 import com.colonelpanic.eva.capability.extensions.PackageIdentity
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.serialization.json.JsonPrimitive
 
 data class LoadedPackage(
     val identity: PackageIdentity,
     val definition: PackageDefinition,
     val configured: Boolean,
+    /** Effective setting values for setting slots. */
+    val settings: Map<String, JsonPrimitive> = emptyMap(),
+)
+
+/** An installed package serving the shared messaging tools; [capabilityIds] maps its tool names to registry IDs. */
+data class PackageMessagingService(
+    val service: String,
+    val label: String,
+    val instance: String,
+    val title: String,
+    val role: MessagingRole,
+    val capabilityIds: Map<String, String>,
 )
 
 class PackageAdapter(
@@ -63,7 +76,7 @@ class PackageAdapter(
                         },
                         definition.digest,
                     ),
-                    if (item.configured) null else "Configure the approved server URL and credential before enabling.",
+                    if (item.configured) null else "Configure the approved server URL, credential, and required settings before enabling.",
                     capabilityPrefix = "extension.package.${item.identity.id}",
                     androidPackages = definition.appTargets(),
                 )
@@ -76,6 +89,43 @@ class PackageAdapter(
         removed: Boolean,
     ) = Unit
 
+    /** Read at execution, so a saved setting applies without rebuilding the catalog. */
+    @Synchronized
+    private fun settings(identity: PackageIdentity): Map<String, JsonPrimitive> =
+        packages.find { it.identity == identity }?.settings.orEmpty()
+
+    /**
+     * Configured messaging services, one package per service name. A name no valid package claims first,
+     * in installation order, is taken by the next; the shared tools never guess between two.
+     */
+    @Synchronized
+    fun messagingServices(): List<PackageMessagingService> {
+        val services = linkedMapOf<String, PackageMessagingService>()
+        for (item in packages.filter { it.configured }.sortedBy { it.identity.id }) {
+            val role = item.definition.messaging ?: continue
+
+            fun text(source: TextSource) =
+                when (source) {
+                    is TextSource.Fixed -> source.value
+                    is TextSource.Setting -> item.settings[source.name]?.content
+                }
+            val service =
+                text(role.service)?.takeIf { PackageCodec.SERVICE.matches(it) && it !in PackageCodec.RESERVED_SERVICES } ?: continue
+            if (service in services) continue
+            val prefix = "extension.package.${item.identity.id}"
+            services[service] =
+                PackageMessagingService(
+                    service,
+                    text(role.label)?.takeIf { it.isNotBlank() } ?: item.definition.title,
+                    item.identity.instanceId,
+                    item.definition.title,
+                    role,
+                    role.tools.associateWith { "$prefix.$it" },
+                )
+        }
+        return services.values.toList()
+    }
+
     @Synchronized
     override fun available(
         identity: AdapterIdentity,
@@ -87,6 +137,10 @@ class PackageAdapter(
         val item =
             packages.find { it.identity == extension.identity && it.definition.digest == extension.descriptor?.digest }
                 ?: return emptyList()
+        val routed =
+            item.definition.messaging
+                ?.tools
+                .orEmpty()
         return item.definition.capabilities.map { capability ->
             val descriptor = checkNotNull(extension.descriptor)
             CapabilityBinding(
@@ -103,10 +157,15 @@ class PackageAdapter(
                 ),
                 BudgetedBackend(
                     item.identity.instanceId,
-                    DeclarativeBackend(capability, host(item.identity)) { budget(item.identity, capability, it) },
+                    DeclarativeBackend(
+                        capability,
+                        host(item.identity),
+                        { settings(item.identity) },
+                    ) { budget(item.identity, capability, it) },
                     execution,
                 ) { budget(item.identity, capability, it) },
                 item.definition.digest,
+                routed = capability.name in routed,
             )
         }
     }

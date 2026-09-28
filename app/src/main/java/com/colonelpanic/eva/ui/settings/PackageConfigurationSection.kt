@@ -89,7 +89,44 @@ internal fun ExtensionConfiguration(
             }
         }
     }
-    if (showWait) WaitField("Wait override (blank uses extension default)", entry.id, entry.waitMillis, actions)
+    if (showWait) {
+        entry.settings.forEach { SettingField(entry.id, it, actions) }
+        WaitField("Wait override (blank uses extension default)", entry.id, entry.waitMillis, actions)
+    }
+}
+
+/** One declared package setting; the value is saved to the user's configuration, never inside the package. */
+@Composable
+private fun SettingField(
+    id: String,
+    value: com.colonelpanic.eva.data.PackageSettingValue,
+    actions: SettingsActions,
+) {
+    val setting = value.setting
+    SettingsBlock {
+        var draft by remember(id, setting.name, value.configured) { mutableStateOf(value.configured.orEmpty()) }
+        var error by remember(id, setting.name) { mutableStateOf<String?>(null) }
+        Text(setting.title)
+        setting.description?.let { Text(it) }
+        val options =
+            (setting.schema["enum"] as? kotlinx.serialization.json.JsonArray)?.joinToString {
+                (it as kotlinx.serialization.json.JsonPrimitive).content
+            }
+        OutlinedTextField(
+            draft,
+            { draft = it },
+            label = {
+                Text(
+                    setting.default?.let { "Blank uses the default: ${it.content}" }
+                        ?: if (value.missing) "Required" else setting.type,
+                )
+            },
+            supportingText = options?.let { { Text("One of: $it") } },
+            singleLine = true,
+        )
+        error?.let { Text(it) }
+        OutlinedButton(onClick = { error = actions.onSavePackageSetting(id, setting.name, draft) }) { Text("Save ${setting.title}") }
+    }
 }
 
 private fun suggestedServiceName(instance: String) = "package-$instance"

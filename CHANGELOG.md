@@ -4,6 +4,16 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Extensions can declare settings, such as a service name, that you set in Extensions and that are saved with your configuration (`packages.settings`). Settings are never secrets: tokens stay credentials kept on the phone.
+- Extensions can declare durable HTTP operations. EVA sends a key derived from the request, reads the server's status until it finishes, and reports what the server said: done, refused, still queued, or unknown. A repeated request reaches the same operation instead of sending twice.
+- Extensions can provide a messaging service for the usual conversation, history, and send actions. The new **Messaging bridge** extension in the catalog does this for a self-hosted multidevice bridge, such as WhatsApp.
+
+### Changed
+
+- WhatsApp and other bridges now come from the Messaging bridge extension instead of Messaging → Messaging services. A bridge saved by 0.41 or 0.42 is listed there with its server address until you forget it; install the extension, enter the same server and token, and set its service name.
+
 ## [0.42.0] - 2026-09-28
 
 ### Changed

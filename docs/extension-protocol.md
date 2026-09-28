@@ -286,7 +286,9 @@ lifetime and background continuation are described in [Architecture](architectur
 ### V1 package fields
 
 The root requires `formatVersion: 1`, `id`, `version`, `title`, and
-`capabilities` (1–64 entries), with optional `androidPackages`; the full UTF-8 document is bounded to 256 KiB.
+`capabilities` (1–64 entries), with optional `androidPackages`, `description`, `setup`,
+`guidance`, [`settings`](#package-settings), and [`messaging`](#messaging-services); the
+full UTF-8 document is bounded to 256 KiB.
 Duplicate JSON keys, unknown fields, invalid Unicode, and unsupported versions
 are rejected. Object ordering does not affect the canonical contract digest.
 The package ID is a lowercase dotted name; capability names are ASCII identifiers.
@@ -313,8 +315,9 @@ ask from, the launch proceeds and Android decides, as for any other intent. The 
 the digest, and other binding kinds reject it. The common wait policy, rather than the file
 codec, applies the 60-second clamp.
 
-A typed slot is exactly `{"argument":"title","type":"string"}` or
-`{"value":"default","type":"string"}`. Argument types must match the tool
+A typed slot is exactly `{"argument":"title","type":"string"}`,
+`{"value":"default","type":"string"}`, or `{"setting":"service","type":"string"}`, which
+reads a [package setting](#package-settings). Argument types must match the tool
 schema; literal types must match their values. A string argument slot whose
 tool property declares an `enum` may add `values`, a map from every enum value to
 the string the binding sends (`{"driving":"d","bicycling":"b"}`); the map must
@@ -605,7 +608,10 @@ HTTP `result` chooses exactly one of `pointer` (existing text/JSON projection) o
   characters or executable expressions.
 - `fields`: a map of slot names to `{pointer, type, required?}`. Pointers resolve
   relative to the current item. Types are scalar string/integer/number/boolean
-  or `stringArray`; missing/null optional fields render `null`. Required or
+  or `stringArray`; missing/null optional fields render `null`. A `stringArray`
+  pointer may contain one `*` segment, which gathers the nonempty string at the
+  rest of the pointer from every element it spans (at most 100), so
+  `/participants/*/name` lists participant names. Required or
   wrongly typed fields fail validation. Every declared slot must occur in `line`.
 - `maxItems`: 1–100. `truncationNote`: bounded display text, shown when items or
   bytes were capped. Only whole lines are emitted, so identifiers never become
@@ -625,7 +631,8 @@ HTTP `result` chooses exactly one of `pointer` (existing text/JSON projection) o
 
 Apart from the explicit local filter described below, the mapping cannot sort,
 join records, calculate values, run regexes,
-execute scripts, fetch additional pages, poll jobs, or infer completion from text.
+execute scripts, fetch additional pages, or infer completion from text. The only
+polling is a declared [durable operation](#durable-http-operations).
 It does not silently flatten arbitrary objects or guess alternate response paths.
 
 Argument slots optionally carry `default` (a scalar satisfying the argument's
@@ -636,6 +643,117 @@ chooses between two fully declared bindings based only on argument presence.
 Nested selects are rejected. Both branches must use the capability's execution
 mode, and effect floors account for both. It cannot construct new destinations.
 
+
+### Package settings
+
+`settings` declares up to 16 values the user sets for an installation, each
+`{type, title, description?, default?, ...}`. `type` is `string` (optional `enum`,
+`minLength`, `maxLength`, capped at 2,000 and defaulting to 500), `integer`
+(optional `minimum`, `maximum`), or `boolean`. A `default` must satisfy those
+constraints. A setting slot, `{"setting":"name","type":"string"}`, may appear
+wherever an argument or literal slot may, and its type must match the setting's.
+
+Values live in the user's configuration, never in the package: `packages.settings`
+maps each package instance to its values as text, and Extensions shows a field for
+each setting. EVA converts a value to its declared type and checks it against the
+declared constraints when it is saved and again before use; a value that no longer
+fits falls back to the default. A setting without a default must be configured
+before the extension can be enabled. Settings are not part of the package digest:
+they are the user's own inputs within the approved origin and binding, like
+arguments, so changing one needs no re-approval.
+
+Settings are never secrets. A value that must stay secret is a named
+[credential](#v1-package-fields) bound through a reusable HTTP service, whose value
+stays in the encrypted secret store and whose reference, not value, travels in the
+configuration. A setting cannot reach a request header, so it cannot carry
+credential material there by accident.
+
+### Durable HTTP operations
+
+A non-GET HTTP binding may declare `operation`:
+
+```json
+{
+  "header": "Idempotency-Key",
+  "status": {"path": "/v1/outbox/{operation}", "state": "/state", "detail": "/detail"},
+  "outcomes": {"queued": "pending", "sending": "pending", "accepted": "completed",
+    "rejected": "not_executed", "ambiguous": "unknown"}
+}
+```
+
+EVA derives a key from the invocation (SHA-256 of its call ID and argument
+fingerprint, 64 hexadecimal characters) and sends it in `header`; a header that
+could replace a transport header such as `Authorization` is rejected. A re-delivered
+invocation therefore names the same server operation, and EVA never mints a new key
+to retry. `status.path` has exactly one `{operation}` placeholder and is read on the
+same origin with the same credential. `state` points at a string in that record,
+and `outcomes` maps each state to `completed`, `not_executed`, `unknown`, or
+`pending`; at least one state must be `completed`, and a state absent from the map
+is `unknown`.
+
+EVA submits once, then reads the status every second until the state is final or
+the wait budget (less two seconds) runs out. The result:
+
+| Observed | Status |
+| --- | --- |
+| A `completed` state | `completed`, led by the capability's `receipts.success` text when present |
+| A `not_executed` state | `not_executed`, quoting `detail` |
+| An `unknown` or unrecognized state | `unknown`; never resubmitted |
+| Still `pending` at the deadline | `handed_off`: queued at the server; check later rather than repeat |
+| HTTP 409 on submission | `not_executed`: the server holds a different operation for the key |
+| A declared `notExecutedStatuses` code | `not_executed` |
+| No usable answer to the submission | the key is read back: a record continues as above, a 404 is `not_executed`, and an unreadable status is `unknown` |
+
+The final record is the result's structured data, and `result.pointer` selects the
+text appended after the state. A durable operation cannot use `items` or `evidence`.
+
+### Messaging services
+
+`messaging` lets a package serve EVA's shared conversation, history, and send
+tools under a service name, instead of offering its own tools for the same job:
+
+```json
+{
+  "service": {"setting": "service"},
+  "label": {"setting": "label"},
+  "conversations": {"tool": "conversations", "query": "query", "limit": "limit"},
+  "contacts": {"tool": "contacts", "query": "query", "limit": "limit"},
+  "history": {"tool": "messages", "conversation": "conversation", "limit": "limit"},
+  "send": {"tool": "send", "conversation": "conversation", "text": "text"},
+  "startChat": {"tool": "start_chat", "recipients": "recipients", "conversation": "/conversation_id"}
+}
+```
+
+`service` and `label` are fixed text or a string setting. The service name is
+lowercase letters, digits, and hyphens, and cannot be `sms` or `notifications`.
+Each operation names one of the package's tools, and each tool serves at most one
+operation. The other fields name that tool's inputs: `query`, `conversation`, and
+`text` are strings, `limit` is an integer, and `recipients` is an array of strings.
+Lookups must be `read` tools; `send` and `startChat` must not be. `startChat`
+must be a durable operation, and its `conversation` points at the new
+conversation's ID in the final record.
+
+The named tools are not offered to the model; the shared tools reach them. Each
+still needs its grant: enabling the extension allows the lookups, and `send` and
+`startChat` must be allowed individually, exactly as if they were offered. When
+`service` equals a configured service's name or label, the shared tools route
+there:
+
+- Conversation search calls `conversations` with the query (or the digits of the
+  first participant number) and limit, then `contacts` with the query, and returns
+  both as the package's external data.
+- History calls `history` with `conversationRef` as the conversation ID.
+- Send calls `send` for a `conversationRef`. For `recipient` E.164 numbers it
+  first calls `startChat`, and sends only if that completed with a conversation
+  ID; otherwise nothing is sent.
+
+Each step is its own package invocation with a call ID derived from the shared
+invocation's, so a re-delivered send reaches the same durable operations. The
+shared invocation is what the journal records. A service name that two packages
+claim belongs to the first in installation order; one package installation serves
+one service. The [Messaging bridge example](examples/messaging-bridge.json) is a
+byte-identical copy of the catalog package; it has JVM coverage against a scripted
+bridge and no device verification yet.
 
 ### Encoded opaque intent values
 
