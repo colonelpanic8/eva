@@ -490,6 +490,143 @@ then add a native accessibility backend with the same action/eval checks. Compar
 a vision-first `TaskAgent` against the text worker using identical initial states,
 budgets and timing capture; no vision-first implementation is included here.
 
+### Worker efficiency and model-input comparison
+
+Completion-only acceptance above did not establish worker efficiency parity. The
+same-device audit used emulator-5592, Portal 0.7.25 and prototype `bb45f12`, with
+`gpt-6-sol`, low effort and append context capped at six screens. All device work
+was serial. Prototype runs used its per-serial lease; EVA ran its admitted task
+capability through the production agent factory and journal. No other serial was
+used. Prototype source was unchanged; an external Python import hook recorded
+requests without changing their contents.
+
+`vda eval prepare --serial emulator-5592` completed. This prototype CLI accepts
+`--filter id:settings.wifi_scanning_off.baseline`, not `id=...`; the rejected
+filter attempt ran no worker. Batches were `parity-wifi`, `parity-wifi-traced`,
+`parity-ble`, `parity-closing`, and `parity-pool`.
+
+Each table cell is **steps / wall seconds / model ms / action ms**. Python wall
+time is its task timer; EVA wall time is instrumentation wall time, including
+local setup (the same convention as the historical measurements). Action time
+includes HTTP, target recheck and settling/post-capture; explicit observe work is
+excluded. Python's initial observation is outside its per-step device timer.
+The linked timing artifact retains EVA standalone observation times separately.
+
+| Case | Python same device | EVA historical | EVA after 1 | EVA after 2 |
+| --- | --- | --- | --- | --- |
+| settings.wifi_scanning_off.baseline | 5 / 18.781 / 13023 / 5700 | 23 / 124.364 / 75143 / 46463 | 4 / 16.115 / 10424 / 4781 | 4 / 18.713 / 13530 / 4884 |
+| settings.ble_scanning_off.deep | 7 / 21.764 / 14000 / 7732 | 14 / 61.184 / 39802 / 20994 | 6 / 20.044 / 13558 / 6104 | 5 / 18.096 / 12286 / 5514 |
+| chrome_read.closing_time.baseline | 2 / 5.271 / 4973 / 273 | 4 / 10.415 / 8661 / 1416 | 2 / 8.843 / 7805 / 748 | 2 / 7.752 / 7180 / 324 |
+| chrome_read.pool_hours.scrolling | 7 / 22.928 / 15403 / 7471 | 6 / 31.291 / 23547 / 7327 | 6 / 24.139 / 16482 / 7297 | 7 / 26.659 / 17364 / 8894 |
+
+Settings values were independently checked at `0`; Chrome answers were 9 p.m.
+and 4:30 p.m. All eight after-runs returned the expected result. The last pool run
+used five scrolls, screenshot, finish. The first pool run read the answer in a
+full-paragraph scroll preview, so its six steps are not comparable to Python's
+bounded preview behavior. The final preview bound and read-back/screenshot notice
+alignment were verified with JVM tests after the 16-task budget was exhausted;
+there was no ninth after-run on those final feedback changes.
+
+There were exactly **16 live worker tasks**: five Python baselines (including a
+second Wi-Fi run for tracing), two fresh EVA-before Settings runs, one failed
+WebSocket integration trial, and eight after-runs. The failed trial delivered no
+action and ended after two no-call turns: the adapter initially read only
+`response.completed.output`, but this endpoint emitted calls in
+`response.output_item.done`. The collector now handles those items, with a
+regression test. The matching Python Wi-Fi baseline passed; the difference was
+transport decoding, not navigation or a device/backend refusal.
+
+The historical Settings slowdown was not reproduced consistently before fixing
+code. Fresh EVA-before was Wi-Fi **4 / 14.668 / 9703 / 4443** and
+Bluetooth **5 / 17.494 / 12041 / 5149** (same tuple units). Python's traced
+Wi-Fi repeat was **4 / 21.290 / 16808 / 4455**. Force-stopping Settings
+and its search app preserves recent search controls; later runs exposed scanning
+switches directly in search. This state and model variation confound a causal
+claim that the code changes alone removed 19 steps. Step counts now compare
+favorably with these same-device baselines, but wall-time parity is not established
+for every case: both Chrome cases remained slower, predominantly in inference.
+Host load was not controlled; Gradle checks overlapped some after-runs, so these
+wall-time samples are not an isolated latency benchmark.
+
+#### Model-visible differences and fixes
+
+The [compressed request archive](../experiments/device-control/evidence/worker-model-parity.json.gz)
+contains the first three actual requests of each Settings case for Python,
+EVA-before, and both after rounds, including instructions, complete tool schemas,
+rendered tables and preceding call/result messages. It also contains unified row
+diffs. Read it with `gzip -dc .../worker-model-parity.json.gz | jq .requests`.
+[Per-step timing data](../experiments/device-control/evidence/worker-parity-timings.json)
+includes every run and the failed trial. These artifacts contain synthetic emulator
+screen data, not authorization headers or account credentials.
+
+- **Calls/results:** Python `worker/loop.py:713-819` sends native tool calls and
+  correlated results, then the fresh table as a user message in the same next
+  request. It does not place the full table inside the tool-result string. EVA
+  already supplied that fresh table, but encoded calls as assistant prose and
+  status as a screen prefix. It now preserves native call IDs, result items and
+  provider output (including encrypted reasoning), and retains the last exchange
+  when rebuilding bounded context. Extra calls receive explicit non-execution
+  results. Non-tool replies retain their output and the one-call reminder.
+- **Tools/wording:** all primitive names and parameter schemas already matched.
+  The deliberate differences remain: no `propose_commit`, no finish evidence
+  parameter, and no approval/evidence/injection-policy instructions. The non-policy
+  system wording, IME preference for explicit buttons, finish descriptions,
+  read-back/scroll/screenshot notices now follow the prototype. A catalog sentence
+  clarifies reading truncated text instead of inferring the hidden portion.
+- **Tables:** row ordering, role/flag letters, indentation, bounds, 200-element
+  cap, 80-codepoint text truncation and JSON quoting matched. Wi-Fi steps 2–3 and
+  Bluetooth steps 1 and 3 were byte-identical row-for-row. Wi-Fi step 1 differed
+  in launcher dock bounds during settling; Bluetooth step 2 differed only in the
+  clock text. The prototype's static untrusted-content header is now injected
+  from the wording catalog. Its additional injection-policy wrapper is intentionally
+  not ported; there is no classifier or enforcement gate.
+- **Scroll feedback:** the port emitted whole labels and omitted resource-only
+  or state-only rows. Python `worker/loop.py:1018-1033` quotes up to three labels,
+  each bounded to 30 codepoints, with an omitted-label marker. That rendering and
+  row inclusion now match, with a focused fake-backend test. Scroll feedback stays
+  in the correlated result; the full current table follows it.
+- **Context/model:** both use `gpt-6-sol`, low effort, one action per turn and
+  append context. EVA now uses `tool_choice=auto` like Python and reuses one
+  subscription WebSocket per task with stable `session-id`/`thread-id` and cache
+  key. It sends the full append prefix; Python can send deltas using
+  `previous_response_id`. The logical context is equivalent. API-key calls retain
+  cancellable HTTP. Socket interruption cancels the underlying connection, late
+  frames cannot satisfy a replacement call, and task completion closes the socket.
+- **Launch aliases:** portable `capabilities.deviceTask.launchAliases` defaults
+  to `com.android.settings: [com.google.android.settings.intelligence]`. Both
+  worker result handling and Portal launch settling recognize the alias. An
+  alias launch no longer waits six seconds for the wrong package or reports
+  `app_not_found`; the fake transport test verifies settlement below one second.
+
+#### Action latency
+
+Python `bridge/portal/adapter.py:96-121,588-622` and EVA use the same policy:
+100 ms poll, 100 ms gesture margin, 300 ms quiet window, 1500 ms no-change grace,
+4000 ms normal budget, 6000 ms launch/read budgets. Their signatures both compare
+package, activity, keyboard/content availability and complete element values.
+No timing constant was reduced. The alias-aware foreground condition was the
+behavioral correction. Screenshot telemetry now charges the post-capture tree
+read to settling, matching Python.
+
+Across the eight after-runs, Settings activation settling was 566–1969 ms; all
+those samples settled successfully. The historical 4–5 second activation costs
+did not recur on these routes. The old aggregate measurements cannot distinguish
+an unstable/no-change tree from HTTP or host-load delay, so they do not justify
+claiming a different settle constant caused the slowdown. Live model-token usage
+shows 70,912 cached input tokens out of 159,402 (44.5%) across the eight after-runs;
+detailed per-step request and action timings remain in the
+artifacts above. The earlier on-device stop measurements predate this WebSocket
+change; its cancellation/reuse/late-frame behavior has JVM coverage, not a new
+on-device interruption measurement in this capped audit.
+
+The catalog mirror is still exactly `app/src/main/resources/eva-wording.yaml`
+→ `colonelpanic8/eva-instructions/eva-wording.yaml`, byte-for-byte. This audit
+changes tool keys `device-worker.ime_action` and `device-worker.finish`; updates
+message keys `device-worker.{system,task,one_call,scroll_reversal,scroll_end,
+scrolled,screenshot_limit,result,text_result}`; and adds
+`device-worker.{revisions,history,screen_content,extra_call,text_verified,screenshot_attached}`.
+No external catalog was modified or pushed.
+
 ### Messaging setup and verification
 
 Ivan reporteda verified real SMS send on 2026-09-14. That verifies direct

@@ -248,7 +248,10 @@ ambiguous choices, reports scroll progress, restricts reversals, detects repeate
 or unchanged actions and repeated refusals, and bounds steps, active time,
 screenshots and retained context. Append context preserves a cacheable prefix
 until its screen limit or a revision rebuilds it from the goal, corrections and
-recent step summaries. Screenshots are limited model attachments and are not
+recent step summaries and the last correlated native call/result exchange. Model
+output items are retained for provider reasoning continuity. Scroll previews quote
+up to three 30-codepoint labels; tables retain their 200-element/80-codepoint
+limits. Screenshots are limited model attachments and are not
 journaled. There is no approval, risk classification, evidence gate or injection
 subsystem. A future vision-first agent can implement `TaskAgent` independently.
 
@@ -279,13 +282,16 @@ a running device task. Controller stop, explicit stop/cancel input and assistant
 panel Stop use this control path before asynchronous persistence/cleanup.
 
 `OpenAiWorkerModel` is a thin app adapter using the existing subscription/API-key
-selection and shared Responses HTTP/SSE transport. Default model/effort are
+selection, a task-owned subscription Responses WebSocket, and shared cancellable
+HTTP/SSE for API keys. Default model/effort are
 `gpt-6-sol`/`low`. The shared transport explicitly calls `OkHttp Call.cancel()` on
-coroutine cancellation, including while reading SSE. It still resides in `:app`;
+coroutine cancellation, including while reading SSE. The task socket preserves
+cache routing across turns, is cancelled on interrupted inference and closed when
+the task ends. Both transports still reside in `:app`;
 extracting that transport, access contracts and credential injection remains the
 OpenAI-client branch's work before a JVM host can use this adapter.
 
-Backend, local Portal port, credential reference, model/effort and worker/context
+Backend, local Portal port, credential reference, launch aliases, model/effort and worker/context
 budgets live in portable `capabilities.deviceTask`. Settings edit that model;
 Portal's bearer token is Keystore-backed and excluded from shared configuration.
 Restore retains `device/portal` and reports local provisioning. Worker instructions,

@@ -11,6 +11,9 @@ import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.ToolProposal
 import com.colonelpanic.eva.data.SqliteInvocationRepository
+import com.colonelpanic.eva.devicecontrol.worker.WorkerModel
+import com.colonelpanic.eva.devicecontrol.worker.WorkerReply
+import com.colonelpanic.eva.devicecontrol.worker.WorkerRequest
 import com.colonelpanic.eva.providers.openai.ChatGptTokens
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancelAndJoin
@@ -18,6 +21,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -64,11 +68,37 @@ class DeviceTaskEvalTest {
                 ),
             )
             app.capabilities.savePortalToken(credentials.getValue("portal").jsonPrimitive.content)
+            var requests = 0
+            val coordinator =
+                DeviceTaskCoordinator {
+                    app.createDeviceTaskAgent(onDeviceTiming = { timing ->
+                        instrumentation.sendStatus(0, Bundle().apply { putString("stream", "EVA_ACTION $timing\n") })
+                    }) { model ->
+                        object : WorkerModel {
+                            override fun close() = model.close()
+
+                            override suspend fun complete(request: WorkerRequest): WorkerReply {
+                                requests++
+                                if (args.getString("dumpModel") == "true" &&
+                                    requests <= (args.getString("dumpModelSteps")?.toIntOrNull()?.coerceIn(1, 30) ?: 3)
+                                ) {
+                                    java.io.File(app.filesDir, "device-eval-request-$requests.json").writeText(
+                                        Json { prettyPrint = true }.encodeToString(request),
+                                    )
+                                }
+                                val reply = model.complete(request)
+                                instrumentation.sendStatus(0, Bundle().apply { putString("stream", "EVA_USAGE ${reply.usage}\n") })
+                                return reply
+                            }
+                        }
+                    }
+                }
+            val registry = CapabilityRegistry(mapOf(CapabilityRegistry.DEVICE_TASK to coordinator))
             val goal = checkNotNull(args.getString("goal"))
             val id = UUID.randomUUID().toString()
             val reporter =
                 launch(Dispatchers.Default) {
-                    app.deviceTasks.running.collect { running ->
+                    coordinator.running.collect { running ->
                         running?.progress?.let { p ->
                             instrumentation.sendStatus(
                                 0,
@@ -82,15 +112,15 @@ class DeviceTaskEvalTest {
             val watchdog =
                 launch(Dispatchers.Default) {
                     delay(180_000)
-                    app.deviceTasks.stop()
+                    coordinator.stop()
                 }
             val interrupt =
                 args.getString("interruptAt")?.let { phase ->
                     launch(Dispatchers.Default) {
-                        app.deviceTasks.running.first { it?.progress?.phase?.name == phase }
+                        coordinator.running.first { it?.progress?.phase?.name == phase }
                         delay(100)
                         val start = System.nanoTime()
-                        app.deviceTasks.stop()
+                        coordinator.stop()
                         instrumentation.sendStatus(
                             0,
                             Bundle().apply { putString("stream", "EVA_STOP $phase latchMicros=${(System.nanoTime() - start) / 1000}\n") },
@@ -99,11 +129,11 @@ class DeviceTaskEvalTest {
                 }
             SqliteInvocationRepository(app, "device-eval.sqlite").use { repository ->
                 val dispatcher =
-                    CapabilityDispatcher(app.registry, repository, executeAdmitted = {
+                    CapabilityDispatcher(registry, repository, executeAdmitted = {
                         proposal,
                         backend,
                         ->
-                        app.deviceTasks.executeAdmitted(proposal, backend, true)
+                        coordinator.executeAdmitted(proposal, backend, true)
                     })
                 val result =
                     dispatcher.execute(
@@ -112,7 +142,7 @@ class DeviceTaskEvalTest {
                             CapabilityRegistry.DEVICE_TASK,
                             mapOf("goal" to goal),
                             goal,
-                            app.registry.snapshot.revision,
+                            registry.snapshot.revision,
                             "eval",
                             id,
                         ),

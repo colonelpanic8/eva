@@ -1,0 +1,1313 @@
+[
+  {
+    "implementation": "python",
+    "case": "wifi",
+    "steps": 5,
+    "wallSeconds": 18.781,
+    "modelMillis": 13023,
+    "actionMillis": 5700,
+    "outcome": "completed",
+    "detail": [
+      {
+        "step": 1,
+        "call": "launch_app(com.android.settings)",
+        "result": "ok",
+        "modelMillis": 2611,
+        "actionMillis": 2098,
+        "observationMillis": 0
+      },
+      {
+        "step": 2,
+        "call": "activate_element(0 \"search_action_bar\")",
+        "result": "ok",
+        "modelMillis": 2400,
+        "actionMillis": 1689,
+        "observationMillis": 0
+      },
+      {
+        "step": 3,
+        "call": "set_text(1 \"Search settings\" \u2190 \"Wi-Fi scanning\")",
+        "result": "ok",
+        "modelMillis": 2020,
+        "actionMillis": 1181,
+        "observationMillis": 0
+      },
+      {
+        "step": 4,
+        "call": "activate_element(16 \"Wi-Fi scanning\")",
+        "result": "ok",
+        "modelMillis": 2631,
+        "actionMillis": 732,
+        "observationMillis": 0
+      },
+      {
+        "step": 5,
+        "call": "finish(completed)",
+        "result": "completed",
+        "modelMillis": 3361,
+        "actionMillis": 0,
+        "observationMillis": 0
+      }
+    ]
+  },
+  {
+    "implementation": "python",
+    "case": "wifi-traced",
+    "steps": 4,
+    "wallSeconds": 21.29,
+    "modelMillis": 16808,
+    "actionMillis": 4455,
+    "outcome": "completed",
+    "detail": [
+      {
+        "step": 1,
+        "call": "launch_app(com.android.settings)",
+        "result": "ok",
+        "modelMillis": 5499,
+        "actionMillis": 2163,
+        "observationMillis": 0
+      },
+      {
+        "step": 2,
+        "call": "activate_element(0 \"search_action_bar\")",
+        "result": "ok",
+        "modelMillis": 3856,
+        "actionMillis": 1640,
+        "observationMillis": 0
+      },
+      {
+        "step": 3,
+        "call": "activate_element(8 \"Wi-Fi scanning\")",
+        "result": "ok",
+        "modelMillis": 3469,
+        "actionMillis": 652,
+        "observationMillis": 0
+      },
+      {
+        "step": 4,
+        "call": "finish(completed)",
+        "result": "completed",
+        "modelMillis": 3984,
+        "actionMillis": 0,
+        "observationMillis": 0
+      }
+    ]
+  },
+  {
+    "implementation": "python",
+    "case": "ble",
+    "steps": 7,
+    "wallSeconds": 21.764,
+    "modelMillis": 14000,
+    "actionMillis": 7732,
+    "outcome": "completed",
+    "detail": [
+      {
+        "step": 1,
+        "call": "back()",
+        "result": "ok",
+        "modelMillis": 2848,
+        "actionMillis": 1128,
+        "observationMillis": 0
+      },
+      {
+        "step": 2,
+        "call": "launch_app(com.android.settings)",
+        "result": "ok",
+        "modelMillis": 1795,
+        "actionMillis": 1678,
+        "observationMillis": 0
+      },
+      {
+        "step": 3,
+        "call": "activate_element(9 \"other\")",
+        "result": "ok",
+        "modelMillis": 1718,
+        "actionMillis": 1645,
+        "observationMillis": 0
+      },
+      {
+        "step": 4,
+        "call": "back()",
+        "result": "ok",
+        "modelMillis": 1653,
+        "actionMillis": 1076,
+        "observationMillis": 0
+      },
+      {
+        "step": 5,
+        "call": "activate_element(0 \"search_action_bar\")",
+        "result": "ok",
+        "modelMillis": 2017,
+        "actionMillis": 1693,
+        "observationMillis": 0
+      },
+      {
+        "step": 6,
+        "call": "activate_element(12 \"Bluetooth scanning\")",
+        "result": "ok",
+        "modelMillis": 1712,
+        "actionMillis": 512,
+        "observationMillis": 0
+      },
+      {
+        "step": 7,
+        "call": "finish(completed)",
+        "result": "completed",
+        "modelMillis": 2257,
+        "actionMillis": 0,
+        "observationMillis": 0
+      }
+    ]
+  },
+  {
+    "implementation": "python",
+    "case": "closing",
+    "steps": 2,
+    "wallSeconds": 5.271,
+    "modelMillis": 4973,
+    "actionMillis": 273,
+    "outcome": "completed",
+    "detail": [
+      {
+        "step": 1,
+        "call": "screenshot()",
+        "result": "ok",
+        "modelMillis": 1788,
+        "actionMillis": 273,
+        "observationMillis": 0
+      },
+      {
+        "step": 2,
+        "call": "finish(completed)",
+        "result": "completed",
+        "modelMillis": 3185,
+        "actionMillis": 0,
+        "observationMillis": 0
+      }
+    ]
+  },
+  {
+    "implementation": "python",
+    "case": "pool",
+    "steps": 7,
+    "wallSeconds": 22.928,
+    "modelMillis": 15403,
+    "actionMillis": 7471,
+    "outcome": "completed",
+    "detail": [
+      {
+        "step": 1,
+        "call": "scroll(down 0)",
+        "result": "ok",
+        "modelMillis": 1861,
+        "actionMillis": 1502,
+        "observationMillis": 0
+      },
+      {
+        "step": 2,
+        "call": "scroll(down 0)",
+        "result": "ok",
+        "modelMillis": 1907,
+        "actionMillis": 1592,
+        "observationMillis": 0
+      },
+      {
+        "step": 3,
+        "call": "scroll(down 0)",
+        "result": "ok",
+        "modelMillis": 2086,
+        "actionMillis": 1427,
+        "observationMillis": 0
+      },
+      {
+        "step": 4,
+        "call": "scroll(down 0)",
+        "result": "ok",
+        "modelMillis": 1742,
+        "actionMillis": 1610,
+        "observationMillis": 0
+      },
+      {
+        "step": 5,
+        "call": "scroll(down 0)",
+        "result": "ok",
+        "modelMillis": 2259,
+        "actionMillis": 1055,
+        "observationMillis": 0
+      },
+      {
+        "step": 6,
+        "call": "screenshot()",
+        "result": "ok",
+        "modelMillis": 1984,
+        "actionMillis": 285,
+        "observationMillis": 0
+      },
+      {
+        "step": 7,
+        "call": "finish(completed)",
+        "result": "completed",
+        "modelMillis": 3564,
+        "actionMillis": 0,
+        "observationMillis": 0
+      }
+    ]
+  },
+  {
+    "implementation": "historical",
+    "case": "wifi",
+    "steps": 23,
+    "wallSeconds": 124.364,
+    "observationMillis": 2330,
+    "modelMillis": 75143,
+    "actionMillis": 46463,
+    "cachedTokens": 0,
+    "inputTokens": 0,
+    "outcome": "COMPLETED",
+    "detail": [
+      {
+        "step": 1,
+        "revision": 0,
+        "kind": "launch_app",
+        "result": "ok",
+        "observationMillis": 96,
+        "modelMillis": 3962,
+        "actionMillis": 4163
+      },
+      {
+        "step": 2,
+        "revision": 0,
+        "kind": "activate_element",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2020,
+        "actionMillis": 5289
+      },
+      {
+        "step": 3,
+        "revision": 0,
+        "kind": "set_text",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2035,
+        "actionMillis": 1852
+      },
+      {
+        "step": 4,
+        "revision": 0,
+        "kind": "observe",
+        "result": "ok",
+        "observationMillis": 779,
+        "modelMillis": 2315,
+        "actionMillis": 0
+      },
+      {
+        "step": 5,
+        "revision": 0,
+        "kind": "ime_action",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 12645,
+        "actionMillis": 2095
+      },
+      {
+        "step": 6,
+        "revision": 0,
+        "kind": "back",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2146,
+        "actionMillis": 3128
+      },
+      {
+        "step": 7,
+        "revision": 0,
+        "kind": "activate_element",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 3535,
+        "actionMillis": 4482
+      },
+      {
+        "step": 8,
+        "revision": 0,
+        "kind": "observe",
+        "result": "ok",
+        "observationMillis": 76,
+        "modelMillis": 5828,
+        "actionMillis": 0
+      },
+      {
+        "step": 9,
+        "revision": 0,
+        "kind": "activate_element",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2964,
+        "actionMillis": 5052
+      },
+      {
+        "step": 10,
+        "revision": 0,
+        "kind": "observe",
+        "result": "ok",
+        "observationMillis": 1379,
+        "modelMillis": 1882,
+        "actionMillis": 0
+      },
+      {
+        "step": 11,
+        "revision": 0,
+        "kind": "activate_element",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 4497,
+        "actionMillis": 3251
+      },
+      {
+        "step": 12,
+        "revision": 0,
+        "kind": "back",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2556,
+        "actionMillis": 1934
+      },
+      {
+        "step": 13,
+        "revision": 0,
+        "kind": "activate_element",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2026,
+        "actionMillis": 2058
+      },
+      {
+        "step": 14,
+        "revision": 0,
+        "kind": "back",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2709,
+        "actionMillis": 1693
+      },
+      {
+        "step": 15,
+        "revision": 0,
+        "kind": "back",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 1527,
+        "actionMillis": 2215
+      },
+      {
+        "step": 16,
+        "revision": 0,
+        "kind": "back",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2184,
+        "actionMillis": 1226
+      },
+      {
+        "step": 17,
+        "revision": 0,
+        "kind": "scroll",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2371,
+        "actionMillis": 1475
+      },
+      {
+        "step": 18,
+        "revision": 0,
+        "kind": "scroll",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 5337,
+        "actionMillis": 1407
+      },
+      {
+        "step": 19,
+        "revision": 0,
+        "kind": "activate_element",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2004,
+        "actionMillis": 1585
+      },
+      {
+        "step": 20,
+        "revision": 0,
+        "kind": "activate_element",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 4513,
+        "actionMillis": 1508
+      },
+      {
+        "step": 21,
+        "revision": 0,
+        "kind": "activate_element",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 1909,
+        "actionMillis": 1432
+      },
+      {
+        "step": 22,
+        "revision": 0,
+        "kind": "activate_element",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2088,
+        "actionMillis": 618
+      },
+      {
+        "step": 23,
+        "revision": 0,
+        "kind": "finish",
+        "result": "completed",
+        "observationMillis": 0,
+        "modelMillis": 2090,
+        "actionMillis": 0
+      }
+    ]
+  },
+  {
+    "implementation": "historical",
+    "case": "ble",
+    "steps": 14,
+    "wallSeconds": 61.184,
+    "observationMillis": 54,
+    "modelMillis": 39802,
+    "actionMillis": 20994,
+    "cachedTokens": 0,
+    "inputTokens": 0,
+    "outcome": "COMPLETED",
+    "detail": [
+      {
+        "step": 1,
+        "revision": 0,
+        "kind": "back",
+        "result": "ok",
+        "observationMillis": 54,
+        "modelMillis": 2406,
+        "actionMillis": 1636
+      },
+      {
+        "step": 2,
+        "revision": 0,
+        "kind": "launch_app",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 6508,
+        "actionMillis": 1428
+      },
+      {
+        "step": 3,
+        "revision": 0,
+        "kind": "activate_element",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2358,
+        "actionMillis": 1650
+      },
+      {
+        "step": 4,
+        "revision": 0,
+        "kind": "activate_element",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 3025,
+        "actionMillis": 1478
+      },
+      {
+        "step": 5,
+        "revision": 0,
+        "kind": "activate_element",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2074,
+        "actionMillis": 1434
+      },
+      {
+        "step": 6,
+        "revision": 0,
+        "kind": "launch_app",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 1687,
+        "actionMillis": 448
+      },
+      {
+        "step": 7,
+        "revision": 0,
+        "kind": "back",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2512,
+        "actionMillis": 957
+      },
+      {
+        "step": 8,
+        "revision": 0,
+        "kind": "back",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2147,
+        "actionMillis": 1071
+      },
+      {
+        "step": 9,
+        "revision": 0,
+        "kind": "back",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 1680,
+        "actionMillis": 1405
+      },
+      {
+        "step": 10,
+        "revision": 0,
+        "kind": "activate_element",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2085,
+        "actionMillis": 1954
+      },
+      {
+        "step": 11,
+        "revision": 0,
+        "kind": "set_text",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2480,
+        "actionMillis": 2648
+      },
+      {
+        "step": 12,
+        "revision": 0,
+        "kind": "activate_element",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 5387,
+        "actionMillis": 1270
+      },
+      {
+        "step": 13,
+        "revision": 0,
+        "kind": "activate_element",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2766,
+        "actionMillis": 3615
+      },
+      {
+        "step": 14,
+        "revision": 0,
+        "kind": "finish",
+        "result": "completed",
+        "observationMillis": 0,
+        "modelMillis": 2687,
+        "actionMillis": 0
+      }
+    ]
+  },
+  {
+    "implementation": "historical",
+    "case": "closing",
+    "steps": 4,
+    "wallSeconds": 10.415,
+    "observationMillis": 51,
+    "modelMillis": 8661,
+    "actionMillis": 1416,
+    "cachedTokens": 0,
+    "inputTokens": 0,
+    "outcome": "COMPLETED",
+    "detail": [
+      {
+        "step": 1,
+        "revision": 0,
+        "kind": "activate_element",
+        "result": "ok",
+        "observationMillis": 51,
+        "modelMillis": 2228,
+        "actionMillis": 973
+      },
+      {
+        "step": 2,
+        "revision": 0,
+        "kind": "activate_element",
+        "result": "NotActionable",
+        "observationMillis": 0,
+        "modelMillis": 1693,
+        "actionMillis": 19
+      },
+      {
+        "step": 3,
+        "revision": 0,
+        "kind": "screenshot",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2075,
+        "actionMillis": 424
+      },
+      {
+        "step": 4,
+        "revision": 0,
+        "kind": "finish",
+        "result": "completed",
+        "observationMillis": 0,
+        "modelMillis": 2665,
+        "actionMillis": 0
+      }
+    ]
+  },
+  {
+    "implementation": "historical",
+    "case": "pool",
+    "steps": 6,
+    "wallSeconds": 31.291,
+    "observationMillis": 146,
+    "modelMillis": 23547,
+    "actionMillis": 7327,
+    "cachedTokens": 0,
+    "inputTokens": 0,
+    "outcome": "COMPLETED",
+    "detail": [
+      {
+        "step": 1,
+        "revision": 0,
+        "kind": "scroll",
+        "result": "ok",
+        "observationMillis": 146,
+        "modelMillis": 3674,
+        "actionMillis": 1665
+      },
+      {
+        "step": 2,
+        "revision": 0,
+        "kind": "scroll",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 10036,
+        "actionMillis": 1468
+      },
+      {
+        "step": 3,
+        "revision": 0,
+        "kind": "scroll",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2399,
+        "actionMillis": 1597
+      },
+      {
+        "step": 4,
+        "revision": 0,
+        "kind": "scroll",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2343,
+        "actionMillis": 1513
+      },
+      {
+        "step": 5,
+        "revision": 0,
+        "kind": "scroll",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2110,
+        "actionMillis": 1084
+      },
+      {
+        "step": 6,
+        "revision": 0,
+        "kind": "finish",
+        "result": "completed",
+        "observationMillis": 0,
+        "modelMillis": 2985,
+        "actionMillis": 0
+      }
+    ]
+  },
+  {
+    "implementation": "before",
+    "case": "wifi",
+    "steps": 4,
+    "wallSeconds": 14.668,
+    "observationMillis": 181,
+    "modelMillis": 9703,
+    "actionMillis": 4443,
+    "cachedTokens": 0,
+    "inputTokens": 0,
+    "outcome": "COMPLETED",
+    "detail": [
+      {
+        "step": 1,
+        "revision": 0,
+        "kind": "launch_app",
+        "result": "ok",
+        "observationMillis": 181,
+        "modelMillis": 2798,
+        "actionMillis": 2144
+      },
+      {
+        "step": 2,
+        "revision": 0,
+        "kind": "activate_element",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2929,
+        "actionMillis": 1685
+      },
+      {
+        "step": 3,
+        "revision": 0,
+        "kind": "activate_element",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2052,
+        "actionMillis": 614
+      },
+      {
+        "step": 4,
+        "revision": 0,
+        "kind": "finish",
+        "result": "completed",
+        "observationMillis": 0,
+        "modelMillis": 1924,
+        "actionMillis": 0
+      }
+    ]
+  },
+  {
+    "implementation": "before",
+    "case": "ble",
+    "steps": 5,
+    "wallSeconds": 17.494,
+    "observationMillis": 52,
+    "modelMillis": 12041,
+    "actionMillis": 5149,
+    "cachedTokens": 0,
+    "inputTokens": 0,
+    "outcome": "COMPLETED",
+    "detail": [
+      {
+        "step": 1,
+        "revision": 0,
+        "kind": "back",
+        "result": "ok",
+        "observationMillis": 52,
+        "modelMillis": 2973,
+        "actionMillis": 1189
+      },
+      {
+        "step": 2,
+        "revision": 0,
+        "kind": "launch_app",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2263,
+        "actionMillis": 1376
+      },
+      {
+        "step": 3,
+        "revision": 0,
+        "kind": "activate_element",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 1949,
+        "actionMillis": 1988
+      },
+      {
+        "step": 4,
+        "revision": 0,
+        "kind": "activate_element",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2371,
+        "actionMillis": 596
+      },
+      {
+        "step": 5,
+        "revision": 0,
+        "kind": "finish",
+        "result": "completed",
+        "observationMillis": 0,
+        "modelMillis": 2485,
+        "actionMillis": 0
+      }
+    ]
+  },
+  {
+    "implementation": "after-1",
+    "case": "wifi",
+    "steps": 2,
+    "wallSeconds": 6.016,
+    "observationMillis": 358,
+    "modelMillis": 5565,
+    "actionMillis": 0,
+    "cachedTokens": 0,
+    "inputTokens": 0,
+    "outcome": "FAILED",
+    "detail": [
+      {
+        "step": 1,
+        "revision": 0,
+        "kind": "invalid_tool_count",
+        "result": "not_dispatched",
+        "observationMillis": 179,
+        "modelMillis": 3604,
+        "actionMillis": 0
+      },
+      {
+        "step": 2,
+        "revision": 0,
+        "kind": "invalid_tool_count",
+        "result": "not_dispatched",
+        "observationMillis": 179,
+        "modelMillis": 1961,
+        "actionMillis": 0
+      }
+    ]
+  },
+  {
+    "implementation": "final-1",
+    "case": "wifi",
+    "steps": 4,
+    "wallSeconds": 16.115,
+    "observationMillis": 511,
+    "modelMillis": 10424,
+    "actionMillis": 4781,
+    "cachedTokens": 8832,
+    "inputTokens": 13598,
+    "outcome": "COMPLETED",
+    "detail": [
+      {
+        "step": 1,
+        "revision": 0,
+        "kind": "launch_app",
+        "result": "ok",
+        "observationMillis": 511,
+        "modelMillis": 4087,
+        "actionMillis": 2144
+      },
+      {
+        "step": 2,
+        "revision": 0,
+        "kind": "activate_element",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2104,
+        "actionMillis": 1880
+      },
+      {
+        "step": 3,
+        "revision": 0,
+        "kind": "activate_element",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2372,
+        "actionMillis": 757
+      },
+      {
+        "step": 4,
+        "revision": 0,
+        "kind": "finish",
+        "result": "completed",
+        "observationMillis": 0,
+        "modelMillis": 1861,
+        "actionMillis": 0
+      }
+    ]
+  },
+  {
+    "implementation": "final-1",
+    "case": "ble",
+    "steps": 6,
+    "wallSeconds": 20.044,
+    "observationMillis": 65,
+    "modelMillis": 13558,
+    "actionMillis": 6104,
+    "cachedTokens": 6912,
+    "inputTokens": 25626,
+    "outcome": "COMPLETED",
+    "detail": [
+      {
+        "step": 1,
+        "revision": 0,
+        "kind": "back",
+        "result": "ok",
+        "observationMillis": 47,
+        "modelMillis": 2776,
+        "actionMillis": 2351
+      },
+      {
+        "step": 2,
+        "revision": 0,
+        "kind": "launch_app",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2454,
+        "actionMillis": 1514
+      },
+      {
+        "step": 3,
+        "revision": 0,
+        "kind": "activate_element",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 1968,
+        "actionMillis": 1630
+      },
+      {
+        "step": 4,
+        "revision": 0,
+        "kind": "observe",
+        "result": "ok",
+        "observationMillis": 18,
+        "modelMillis": 2116,
+        "actionMillis": 0
+      },
+      {
+        "step": 5,
+        "revision": 0,
+        "kind": "activate_element",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2278,
+        "actionMillis": 609
+      },
+      {
+        "step": 6,
+        "revision": 0,
+        "kind": "finish",
+        "result": "completed",
+        "observationMillis": 0,
+        "modelMillis": 1966,
+        "actionMillis": 0
+      }
+    ]
+  },
+  {
+    "implementation": "final-1",
+    "case": "closing",
+    "steps": 2,
+    "wallSeconds": 8.843,
+    "observationMillis": 75,
+    "modelMillis": 7805,
+    "actionMillis": 748,
+    "cachedTokens": 0,
+    "inputTokens": 9416,
+    "outcome": "COMPLETED",
+    "detail": [
+      {
+        "step": 1,
+        "revision": 0,
+        "kind": "screenshot",
+        "result": "ok",
+        "observationMillis": 75,
+        "modelMillis": 3786,
+        "actionMillis": 748
+      },
+      {
+        "step": 2,
+        "revision": 0,
+        "kind": "finish",
+        "result": "completed",
+        "observationMillis": 0,
+        "modelMillis": 4019,
+        "actionMillis": 0
+      }
+    ]
+  },
+  {
+    "implementation": "final-1",
+    "case": "pool",
+    "steps": 6,
+    "wallSeconds": 24.139,
+    "observationMillis": 66,
+    "modelMillis": 16482,
+    "actionMillis": 7297,
+    "cachedTokens": 16256,
+    "inputTokens": 30460,
+    "outcome": "COMPLETED",
+    "detail": [
+      {
+        "step": 1,
+        "revision": 0,
+        "kind": "scroll",
+        "result": "ok",
+        "observationMillis": 66,
+        "modelMillis": 3307,
+        "actionMillis": 1515
+      },
+      {
+        "step": 2,
+        "revision": 0,
+        "kind": "scroll",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2995,
+        "actionMillis": 1507
+      },
+      {
+        "step": 3,
+        "revision": 0,
+        "kind": "scroll",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2345,
+        "actionMillis": 1605
+      },
+      {
+        "step": 4,
+        "revision": 0,
+        "kind": "scroll",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 3397,
+        "actionMillis": 1629
+      },
+      {
+        "step": 5,
+        "revision": 0,
+        "kind": "scroll",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2181,
+        "actionMillis": 1041
+      },
+      {
+        "step": 6,
+        "revision": 0,
+        "kind": "finish",
+        "result": "completed",
+        "observationMillis": 0,
+        "modelMillis": 2257,
+        "actionMillis": 0
+      }
+    ]
+  },
+  {
+    "implementation": "final-2",
+    "case": "wifi",
+    "steps": 4,
+    "wallSeconds": 18.713,
+    "observationMillis": 46,
+    "modelMillis": 13530,
+    "actionMillis": 4884,
+    "cachedTokens": 6656,
+    "inputTokens": 13558,
+    "outcome": "COMPLETED",
+    "detail": [
+      {
+        "step": 1,
+        "revision": 0,
+        "kind": "launch_app",
+        "result": "ok",
+        "observationMillis": 46,
+        "modelMillis": 6125,
+        "actionMillis": 2165
+      },
+      {
+        "step": 2,
+        "revision": 0,
+        "kind": "activate_element",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 3036,
+        "actionMillis": 1999
+      },
+      {
+        "step": 3,
+        "revision": 0,
+        "kind": "activate_element",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2016,
+        "actionMillis": 720
+      },
+      {
+        "step": 4,
+        "revision": 0,
+        "kind": "finish",
+        "result": "completed",
+        "observationMillis": 0,
+        "modelMillis": 2353,
+        "actionMillis": 0
+      }
+    ]
+  },
+  {
+    "implementation": "final-2",
+    "case": "ble",
+    "steps": 5,
+    "wallSeconds": 18.096,
+    "observationMillis": 43,
+    "modelMillis": 12286,
+    "actionMillis": 5514,
+    "cachedTokens": 10496,
+    "inputTokens": 19384,
+    "outcome": "COMPLETED",
+    "detail": [
+      {
+        "step": 1,
+        "revision": 0,
+        "kind": "back",
+        "result": "ok",
+        "observationMillis": 43,
+        "modelMillis": 3239,
+        "actionMillis": 1739
+      },
+      {
+        "step": 2,
+        "revision": 0,
+        "kind": "launch_app",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2204,
+        "actionMillis": 1415
+      },
+      {
+        "step": 3,
+        "revision": 0,
+        "kind": "activate_element",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 1494,
+        "actionMillis": 1775
+      },
+      {
+        "step": 4,
+        "revision": 0,
+        "kind": "activate_element",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 3105,
+        "actionMillis": 585
+      },
+      {
+        "step": 5,
+        "revision": 0,
+        "kind": "finish",
+        "result": "completed",
+        "observationMillis": 0,
+        "modelMillis": 2244,
+        "actionMillis": 0
+      }
+    ]
+  },
+  {
+    "implementation": "final-2",
+    "case": "closing",
+    "steps": 2,
+    "wallSeconds": 7.752,
+    "observationMillis": 43,
+    "modelMillis": 7180,
+    "actionMillis": 324,
+    "cachedTokens": 0,
+    "inputTokens": 9466,
+    "outcome": "COMPLETED",
+    "detail": [
+      {
+        "step": 1,
+        "revision": 0,
+        "kind": "screenshot",
+        "result": "ok",
+        "observationMillis": 43,
+        "modelMillis": 4433,
+        "actionMillis": 324
+      },
+      {
+        "step": 2,
+        "revision": 0,
+        "kind": "finish",
+        "result": "completed",
+        "observationMillis": 0,
+        "modelMillis": 2747,
+        "actionMillis": 0
+      }
+    ]
+  },
+  {
+    "implementation": "final-2",
+    "case": "pool",
+    "steps": 7,
+    "wallSeconds": 26.659,
+    "observationMillis": 49,
+    "modelMillis": 17364,
+    "actionMillis": 8894,
+    "cachedTokens": 21760,
+    "inputTokens": 37894,
+    "outcome": "COMPLETED",
+    "detail": [
+      {
+        "step": 1,
+        "revision": 0,
+        "kind": "scroll",
+        "result": "ok",
+        "observationMillis": 49,
+        "modelMillis": 3681,
+        "actionMillis": 1583
+      },
+      {
+        "step": 2,
+        "revision": 0,
+        "kind": "scroll",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 1833,
+        "actionMillis": 1586
+      },
+      {
+        "step": 3,
+        "revision": 0,
+        "kind": "scroll",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2067,
+        "actionMillis": 1442
+      },
+      {
+        "step": 4,
+        "revision": 0,
+        "kind": "scroll",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2169,
+        "actionMillis": 1560
+      },
+      {
+        "step": 5,
+        "revision": 0,
+        "kind": "scroll",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2119,
+        "actionMillis": 1309
+      },
+      {
+        "step": 6,
+        "revision": 0,
+        "kind": "screenshot",
+        "result": "ok",
+        "observationMillis": 0,
+        "modelMillis": 2403,
+        "actionMillis": 1414
+      },
+      {
+        "step": 7,
+        "revision": 0,
+        "kind": "finish",
+        "result": "completed",
+        "observationMillis": 0,
+        "modelMillis": 3092,
+        "actionMillis": 0
+      }
+    ]
+  }
+]
