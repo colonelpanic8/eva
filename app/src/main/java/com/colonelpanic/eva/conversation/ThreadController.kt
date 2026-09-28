@@ -659,7 +659,8 @@ class ThreadController(
         val message = "No request is active to run this action. Nothing was executed."
         val id = "provider:${event.call.providerSessionId}:${event.call.callId}"
         val arguments = event.arguments.mapValues { (_, value) -> (value as? JsonPrimitive)?.content ?: value.toString() }
-        val title = registry.snapshot.definitions[event.capabilityId]?.title ?: event.capabilityId
+        val snapshot = connectionTools[opened]?.snapshot ?: registry.snapshot
+        val title = snapshot.definitions[event.capabilityId]?.title ?: event.capabilityId
         try {
             store.append(
                 ThreadItem.ActionCall(UUID.randomUUID().toString(), threadId, null, nowMillis(), id, event.capabilityId, title, arguments),
@@ -670,7 +671,7 @@ class ThreadController(
                     event.capabilityId,
                     arguments,
                     VOICE_REQUEST,
-                    catalogRevision = event.call.catalogRevision,
+                    catalogRevision = snapshot.revision,
                     threadId = threadId,
                     interactionMode = if (voice) InteractionMode.VOICE else InteractionMode.TYPED,
                 ),
@@ -678,6 +679,8 @@ class ThreadController(
             )
         } catch (error: CancellationException) {
             throw error
+        } catch (_: InvocationPersistenceException) {
+            mutableState.update { it.copy(errorMessage = SessionController.STORAGE_ERROR) }
         } catch (_: Exception) {
             // The model is still told nothing ran; the missing row is the only loss.
         }
