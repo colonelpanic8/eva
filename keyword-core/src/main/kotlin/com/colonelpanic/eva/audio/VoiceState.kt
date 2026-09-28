@@ -1,6 +1,6 @@
-package com.voicedeviceagent.companion.audio
+package com.colonelpanic.eva.audio
 
-import com.voicedeviceagent.companion.keyword.VoiceNotice
+import com.colonelpanic.eva.keyword.VoiceNotice
 
 enum class VoiceState {
     ASLEEP,

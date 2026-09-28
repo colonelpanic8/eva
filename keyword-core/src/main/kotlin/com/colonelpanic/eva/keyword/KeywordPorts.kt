@@ -1,4 +1,4 @@
-package com.voicedeviceagent.companion.keyword
+package com.colonelpanic.eva.keyword
 
 /** Local stop provenance, independent of a transport or execution implementation. */
 enum class StopSource { KEYWORD, NOTIFICATION, UI, HOST }

@@ -1,4 +1,4 @@
-package com.voicedeviceagent.companion.audio
+package com.colonelpanic.eva.audio
 
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock

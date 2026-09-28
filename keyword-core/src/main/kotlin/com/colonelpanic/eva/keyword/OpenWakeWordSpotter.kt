@@ -1,6 +1,6 @@
-package com.voicedeviceagent.companion.keyword
+package com.colonelpanic.eva.keyword
 
-import com.voicedeviceagent.companion.audio.FrameRingBuffer
+import com.colonelpanic.eva.audio.FrameRingBuffer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow

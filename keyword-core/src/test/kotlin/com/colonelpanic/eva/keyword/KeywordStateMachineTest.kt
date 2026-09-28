@@ -1,10 +1,10 @@
 @file:OptIn(ExperimentalCoroutinesApi::class)
 
-package com.voicedeviceagent.companion.keyword
+package com.colonelpanic.eva.keyword
 
-import com.voicedeviceagent.companion.audio.VoiceEvent
-import com.voicedeviceagent.companion.audio.VoiceState
-import com.voicedeviceagent.companion.keyword.VoiceNotice
+import com.colonelpanic.eva.audio.VoiceEvent
+import com.colonelpanic.eva.audio.VoiceState
+import com.colonelpanic.eva.keyword.VoiceNotice
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals

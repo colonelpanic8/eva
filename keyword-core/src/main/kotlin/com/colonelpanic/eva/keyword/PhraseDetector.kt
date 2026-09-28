@@ -1,4 +1,4 @@
-package com.voicedeviceagent.companion.keyword
+package com.colonelpanic.eva.keyword
 
 /**
  * How one phrase model's scores become detections. A phrase fires when [patience] consecutive

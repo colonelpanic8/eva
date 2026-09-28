@@ -1,6 +1,6 @@
-package com.voicedeviceagent.companion.keyword
+package com.colonelpanic.eva.keyword
 
-import com.voicedeviceagent.companion.audio.VoiceEvent
+import com.colonelpanic.eva.audio.VoiceEvent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

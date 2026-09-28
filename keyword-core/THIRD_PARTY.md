@@ -6,7 +6,7 @@ The Kotlin sources and corresponding JVM tests are adapted from Ivan Malison's
 [voice-device-agent](https://github.com/colonelpanic8/voice-device-agent),
 `android/companion/app/src/{main,test}/java/com/voicedeviceagent/companion/`,
 revision `bb45f1274e4e5568ecf70d0e52156956feab3923`, under Apache-2.0 (see EVA's
-[LICENSE](../LICENSE)). Original package names are retained. EVA replaces the
+[LICENSE](../LICENSE)). Packages use EVA’s `com.colonelpanic.eva` namespace. EVA replaces the
 companion transport and execution dependencies with local ports, separates the
 ONNX implementation, and adjusts state publication and spotter lifecycle handling.
 

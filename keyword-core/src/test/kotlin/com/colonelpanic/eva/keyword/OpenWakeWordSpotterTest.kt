@@ -1,4 +1,4 @@
-package com.voicedeviceagent.companion.keyword
+package com.colonelpanic.eva.keyword
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart

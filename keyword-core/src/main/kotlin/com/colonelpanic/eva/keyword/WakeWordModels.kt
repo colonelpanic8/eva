@@ -1,4 +1,4 @@
-package com.voicedeviceagent.companion.keyword
+package com.colonelpanic.eva.keyword
 
 /** The three openWakeWord stages; see [OpenWakeWordPipeline] for how they are chained. */
 interface WakeWordModels : AutoCloseable {

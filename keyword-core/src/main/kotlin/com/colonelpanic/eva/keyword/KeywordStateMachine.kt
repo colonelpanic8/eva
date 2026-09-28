@@ -1,8 +1,8 @@
-package com.voicedeviceagent.companion.keyword
+package com.colonelpanic.eva.keyword
 
-import com.voicedeviceagent.companion.audio.VoiceEvent
-import com.voicedeviceagent.companion.audio.VoiceFlags
-import com.voicedeviceagent.companion.audio.notice
+import com.colonelpanic.eva.audio.VoiceEvent
+import com.colonelpanic.eva.audio.VoiceFlags
+import com.colonelpanic.eva.audio.notice
 import java.util.concurrent.atomic.AtomicLong
 
 /** The user-facing mode; connection and task activity are tracked separately in [VoiceFlags]. */

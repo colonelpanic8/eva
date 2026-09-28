@@ -1,4 +1,4 @@
-package com.voicedeviceagent.companion.keyword
+package com.colonelpanic.eva.keyword
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

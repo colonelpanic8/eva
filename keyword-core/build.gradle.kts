@@ -19,6 +19,6 @@ dependencies {
 tasks.register<JavaExec>("syntheticEvaluation") {
     dependsOn(tasks.testClasses)
     classpath = sourceSets.test.get().runtimeClasspath
-    mainClass.set("com.voicedeviceagent.companion.keyword.SyntheticEvaluation")
+    mainClass.set("com.colonelpanic.eva.keyword.SyntheticEvaluation")
     args(providers.gradleProperty("keywordModelsDir").getOrElse(""))
 }

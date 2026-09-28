@@ -1,4 +1,4 @@
-package com.voicedeviceagent.companion.audio
+package com.colonelpanic.eva.audio
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
