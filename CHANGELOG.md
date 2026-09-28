@@ -4,6 +4,11 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Longer text messages with characters such as an em dash, curly quotes, or emoji send again. On some SIMs Android refused to split such a message for EVA, so nothing was sent, EVA reported the outcome as unknown, and it then blocked further messages in the same request. EVA now splits the message itself when Android refuses.
+- Saving only a new token for an existing messaging service now clears the Messaging screen's request for a token.
+
 ## [0.41.0] - 2026-09-26
 
 ### Added
