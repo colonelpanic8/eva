@@ -19,3 +19,5 @@ include(":app")
 
 include(":device-control-core")
 include(":device-control-portal")
+
+include(":device-control-host")
