@@ -1,0 +1,62 @@
+id: settings.show_taps.scrolling
+family: settings
+variant: scrolling
+goal: >-
+  Can you go into Developer options and turn on the setting that shows a little dot wherever
+  I touch the screen?
+variation:
+  ambiguity: none
+  scrolling: long
+  text_length: medium
+  ui_state: home
+apps: [com.android.settings]
+initial_state:
+  procedure: developer_options_enabled_show_taps_off
+reset:
+  - helper: snapshot_setting
+    namespace: global
+    key: development_settings_enabled
+  - helper: snapshot_setting
+    namespace: system
+    key: show_touches
+  - helper: set_setting
+    namespace: global
+    key: development_settings_enabled
+    value: "1"
+  - helper: set_setting
+    namespace: system
+    key: show_touches
+    value: "0"
+  - helper: force_stop
+    package: com.android.settings
+  - helper: force_stop
+    package: com.google.android.settings.intelligence
+  - helper: go_home
+teardown:
+  # Settings must be stopped first: Developer options, if still open, answers
+  # development_settings_enabled=0 by turning off adb.
+  - helper: force_stop
+    package: com.android.settings
+  - helper: force_stop
+    package: com.google.android.settings.intelligence
+  - helper: restore_setting
+    namespace: system
+    key: show_touches
+  - helper: restore_setting
+    namespace: global
+    key: development_settings_enabled
+  - helper: go_home
+expected: >-
+  The worker opens Settings > System > Developer options, scrolls the long list down to the
+  Input section, and turns on "Show taps". No other developer option changes. Teardown
+  restores both settings.
+checker:
+  name: settings_value
+  namespace: system
+  key: show_touches
+  equals: "1"
+risk: reversible
+requires_approval: false
+tags: [m1, settings, toggle, scrolling]
+timeout_s: 240
+max_steps: 30

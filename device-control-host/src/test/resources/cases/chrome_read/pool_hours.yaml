@@ -1,0 +1,37 @@
+id: chrome_read.pool_hours.scrolling
+family: chrome_read
+variant: scrolling
+goal: What time does the pool close on Sundays, according to the community center page in Chrome?
+variation:
+  ambiguity: none
+  scrolling: long
+  text_length: long
+  ui_state: app_foreground
+apps: [com.android.chrome]
+initial_state:
+  procedure: chrome_showing_fixture
+  params:
+    fixture: community-center.html
+reset:
+  - helper: force_stop
+    package: com.android.chrome
+  - helper: open_url
+    fixture: community-center.html
+  - helper: wait
+    seconds: 3
+teardown:
+  - helper: force_stop
+    package: com.android.chrome
+  - helper: go_home
+expected: >-
+  The long facilities page opens at the top. The worker scrolls down past a dozen sections
+  (several with other closing times) to "Pool" at the bottom and answers 4:30 PM.
+checker:
+  name: answer_contains
+  includes:
+    - ["4:30", "4.30", "four thirty", "four-thirty", "16:30", "half past four"]
+risk: read_only
+requires_approval: false
+tags: [m1, chrome, read, scrolling]
+timeout_s: 180
+max_steps: 20

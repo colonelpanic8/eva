@@ -1,0 +1,62 @@
+id: settings.dark_theme.ambiguous
+family: settings
+variant: ambiguous
+goal: Make the screen darker.
+followups:
+  - I mean switch the phone to the dark theme.
+variation:
+  ambiguity: underspecified
+  scrolling: none
+  text_length: short
+  ui_state: home
+apps: [com.android.settings]
+initial_state:
+  procedure: light_theme
+reset:
+  - helper: snapshot_setting
+    namespace: secure
+    key: ui_night_mode
+  - helper: snapshot_setting
+    namespace: system
+    key: screen_brightness
+  - helper: snapshot_setting
+    namespace: system
+    key: screen_brightness_mode
+  - helper: set_setting
+    namespace: secure
+    key: ui_night_mode
+    value: "1"
+  - helper: force_stop
+    package: com.android.settings
+  - helper: force_stop
+    package: com.google.android.settings.intelligence
+  - helper: go_home
+teardown:
+  - helper: restore_setting
+    namespace: secure
+    key: ui_night_mode
+  - helper: restore_setting
+    namespace: system
+    key: screen_brightness
+  - helper: restore_setting
+    namespace: system
+    key: screen_brightness_mode
+  - helper: force_stop
+    package: com.android.settings
+  - helper: force_stop
+    package: com.google.android.settings.intelligence
+  - helper: go_home
+expected: >-
+  "Darker" could mean lower brightness or the dark theme. The worker asks which one is meant,
+  receives the scripted follow-up, and turns on Dark theme (Display & touch > Dark theme).
+  Changing brightness instead fails the check; teardown restores theme and brightness.
+checker:
+  name: settings_value
+  namespace: secure
+  key: ui_night_mode
+  equals: "2"
+risk: reversible
+requires_approval: false
+tags: [m1, settings, toggle, ambiguous]
+timeout_s: 180
+max_steps: 25

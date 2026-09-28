@@ -1,0 +1,37 @@
+id: chrome_read.closing_time.baseline
+family: chrome_read
+variant: baseline
+goal: What does the article in Chrome say the library's new weekday closing time is?
+variation:
+  ambiguity: none
+  scrolling: none
+  text_length: short
+  ui_state: app_foreground
+apps: [com.android.chrome]
+initial_state:
+  procedure: chrome_showing_fixture
+  params:
+    fixture: library-hours.html
+reset:
+  - helper: force_stop
+    package: com.android.chrome
+  - helper: open_url
+    fixture: library-hours.html
+  - helper: wait
+    seconds: 3
+teardown:
+  - helper: force_stop
+    package: com.android.chrome
+  - helper: go_home
+expected: >-
+  The worker reads the page already open in Chrome and answers that weekday closing time
+  moves to 9 PM (from 8 PM), without navigating away from the page.
+checker:
+  name: answer_contains
+  includes:
+    - ["9 pm", "9pm", "9 p.m.", "9:00 pm", "9:00 p.m.", "nine", "21:00"]
+risk: read_only
+requires_approval: false
+tags: [m1, chrome, read]
+timeout_s: 120
+max_steps: 15

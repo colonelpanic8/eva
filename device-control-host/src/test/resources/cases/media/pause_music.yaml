@@ -1,0 +1,69 @@
+id: media.pause_music.baseline
+family: media
+variant: baseline
+goal: Pause the music.
+variation:
+  ambiguity: none
+  scrolling: none
+  text_length: short
+  ui_state: app_foreground
+apps: [com.google.android.apps.youtube.music]
+initial_state:
+  procedure: ytmusic_playing_track_1
+  params:
+    package: com.google.android.apps.youtube.music
+reset:
+  - helper: force_stop
+    package: com.google.android.apps.youtube.music
+  - helper: launch_app
+    package: com.google.android.apps.youtube.music
+  - helper: wait
+    seconds: 3
+  - helper: media_key
+    key: play
+    package: com.google.android.apps.youtube.music
+  - helper: wait
+    seconds: 2
+  - helper: media_key
+    key: previous
+    package: com.google.android.apps.youtube.music
+  - helper: wait
+    seconds: 1
+  - helper: media_key
+    key: previous
+    package: com.google.android.apps.youtube.music
+  - helper: wait
+    seconds: 1
+  - helper: media_key
+    key: previous
+    package: com.google.android.apps.youtube.music
+  - helper: wait
+    seconds: 2
+  - helper: media_key
+    key: play
+    package: com.google.android.apps.youtube.music
+  - helper: wait
+    seconds: 2
+teardown:
+  - helper: media_key
+    key: pause
+    package: com.google.android.apps.youtube.music
+  - helper: force_stop
+    package: com.google.android.apps.youtube.music
+  - helper: go_home
+expected: >-
+  With YouTube Music playing the first synthetic track in the foreground, the worker taps the
+  pause control. Playback is paused and the app is still open.
+checker:
+  name: all_of
+  checks:
+    - name: media_playback
+      package: com.google.android.apps.youtube.music
+      state: paused
+    - name: foreground_package
+      package: com.google.android.apps.youtube.music
+risk: reversible
+requires_approval: false
+tags: [m1, media]
+timeout_s: 90
+max_steps: 10

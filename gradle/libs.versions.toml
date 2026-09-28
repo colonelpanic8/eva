@@ -1,4 +1,5 @@
 [versions]
+kotlinxCli = "0.3.6"
 activityCompose = "1.13.0"
 agp = "9.4.1"
 composeBom = "2026.09.00"
@@ -21,6 +22,7 @@ desugarJdkLibs = "2.1.5"
 slf4j = "2.0.20"
 
 [libraries]
+kotlinx-cli = { module = "org.jetbrains.kotlinx:kotlinx-cli", version.ref = "kotlinxCli" }
 robolectric = { module = "org.robolectric:robolectric", version = "4.17" }
 webrtc = { module = "io.github.webrtc-sdk:android", version = "150.7871.01" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }

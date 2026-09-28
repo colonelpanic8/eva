@@ -1,0 +1,41 @@
+id: chrome_read.farmers_market.two_facts
+family: chrome_read
+variant: two-facts
+goal: >-
+  I had an article about the farmers market open in Chrome. What time does it open on
+  Saturdays now, and where is it being held this year?
+variation:
+  ambiguity: none
+  scrolling: none
+  text_length: medium
+  ui_state: home
+apps: [com.android.chrome]
+initial_state:
+  procedure: chrome_showing_fixture_in_background
+  params:
+    fixture: farmers-market.html
+reset:
+  - helper: force_stop
+    package: com.android.chrome
+  - helper: open_url
+    fixture: farmers-market.html
+  - helper: wait
+    seconds: 3
+  - helper: go_home
+teardown:
+  - helper: force_stop
+    package: com.android.chrome
+  - helper: go_home
+expected: >-
+  From the home screen, the worker returns to Chrome, where the article is still open, and
+  answers both parts: the market opens at 8 AM and is now on the east lawn of Lincoln Park.
+checker:
+  name: answer_contains
+  includes:
+    - ["8 am", "8am", "8 a.m.", "8:00", "eight"]
+    - ["lincoln park"]
+risk: read_only
+requires_approval: false
+tags: [m1, chrome, read, multi-fact]
+timeout_s: 180
+max_steps: 20

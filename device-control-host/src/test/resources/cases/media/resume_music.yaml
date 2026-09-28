@@ -1,0 +1,73 @@
+id: media.resume_music.home
+family: media
+variant: home
+goal: Put my music back on.
+variation:
+  ambiguity: none
+  scrolling: none
+  text_length: short
+  ui_state: home
+apps: [com.google.android.apps.youtube.music]
+initial_state:
+  procedure: ytmusic_paused_in_background
+  params:
+    package: com.google.android.apps.youtube.music
+reset:
+  - helper: force_stop
+    package: com.google.android.apps.youtube.music
+  - helper: launch_app
+    package: com.google.android.apps.youtube.music
+  - helper: wait
+    seconds: 3
+  - helper: media_key
+    key: play
+    package: com.google.android.apps.youtube.music
+  - helper: wait
+    seconds: 2
+  - helper: media_key
+    key: previous
+    package: com.google.android.apps.youtube.music
+  - helper: wait
+    seconds: 1
+  - helper: media_key
+    key: previous
+    package: com.google.android.apps.youtube.music
+  - helper: wait
+    seconds: 1
+  - helper: media_key
+    key: previous
+    package: com.google.android.apps.youtube.music
+  - helper: wait
+    seconds: 2
+  - helper: media_key
+    key: play
+    package: com.google.android.apps.youtube.music
+  - helper: wait
+    seconds: 2
+  - helper: media_key
+    key: pause
+    package: com.google.android.apps.youtube.music
+  - helper: wait
+    seconds: 1
+  - helper: go_home
+teardown:
+  - helper: media_key
+    key: pause
+    package: com.google.android.apps.youtube.music
+  - helper: force_stop
+    package: com.google.android.apps.youtube.music
+  - helper: go_home
+expected: >-
+  YouTube Music is paused in the background with the first track queued and the home screen
+  showing. The worker resumes playback (from the app or the media notification) without
+  starting a different track.
+checker:
+  name: media_playback
+  package: com.google.android.apps.youtube.music
+  state: playing
+  title_contains: Harbor Lights
+risk: reversible
+requires_approval: false
+tags: [m1, media]
+timeout_s: 120
+max_steps: 15

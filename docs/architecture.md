@@ -232,6 +232,10 @@ round-trip on the JVM. `:device-control-portal` is also JVM-only: OkHttp transpo
 tree mapping, target rechecks, action planning, quiet-window settling, launch
 verification, and text read-back all run unchanged on a JVM host over a forwarded
 loopback port. Both modules can be consumed by `:device-control-host` as-is.
+`:device-control-host` is a JVM command-line application (`eva-device`) over the
+same modules: `observe`, `act`, and an eval runner that reads voice-device-agent's
+case files and applies the same resets and independent checkers. Its `--agent worker`
+mode waits for the OpenAI client to be extracted into a JVM module.
 
 Portal on the same phone is the default task backend. Its full typed action set
 includes Unicode replace/append text, password redaction, screenshot PNGs, Enter
