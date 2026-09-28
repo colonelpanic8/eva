@@ -1,0 +1,10 @@
+{
+  "action_id": "act-5",
+  "task_id": "task-1",
+  "task_revision": 2,
+  "bound_observation_id": "fake-obs-0002",
+  "issued_at": "2026-01-01T00:00:00Z",
+  "expires_at": "2026-01-01T00:00:10Z",
+  "lease_id": "lease-1",
+  "kind": "back"
+}

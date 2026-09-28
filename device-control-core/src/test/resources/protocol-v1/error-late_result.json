@@ -1,0 +1,10 @@
+{
+  "action_id": "act-12",
+  "observation_id": "fake-obs-0002",
+  "execution_status": "executed",
+  "code": "late_result",
+  "task_id": "task-1",
+  "action_revision": 1,
+  "current_revision": 2,
+  "outcome_error": null
+}

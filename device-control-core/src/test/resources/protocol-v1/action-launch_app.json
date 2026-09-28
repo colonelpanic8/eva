@@ -1,0 +1,12 @@
+{
+  "action_id": "act-1",
+  "task_id": "task-1",
+  "task_revision": 2,
+  "bound_observation_id": "fake-obs-0001",
+  "issued_at": null,
+  "expires_at": null,
+  "lease_id": null,
+  "kind": "launch_app",
+  "package": "org.example.messages",
+  "activity": null
+}

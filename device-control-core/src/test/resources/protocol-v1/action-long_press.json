@@ -1,0 +1,13 @@
+{
+  "action_id": "act-10",
+  "task_id": "task-1",
+  "task_revision": 2,
+  "bound_observation_id": "fake-obs-0002",
+  "issued_at": null,
+  "expires_at": null,
+  "lease_id": null,
+  "kind": "long_press",
+  "element": 3,
+  "duration_ms": null,
+  "allow_click_fallback": false
+}

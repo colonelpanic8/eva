@@ -1,0 +1,13 @@
+{
+  "action_id": "act-3",
+  "task_id": "task-1",
+  "task_revision": 2,
+  "bound_observation_id": "fake-obs-0002",
+  "issued_at": null,
+  "expires_at": null,
+  "lease_id": null,
+  "kind": "set_text",
+  "element": 3,
+  "text": "Running late, see you at 7",
+  "replace": true
+}

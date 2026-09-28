@@ -1,0 +1,14 @@
+{
+  "action_id": "act-8",
+  "task_id": "task-1",
+  "task_revision": 2,
+  "bound_observation_id": "fake-obs-0002",
+  "issued_at": null,
+  "expires_at": null,
+  "lease_id": null,
+  "kind": "tap_point",
+  "x": 970,
+  "y": 2150,
+  "within": 4,
+  "scope_override": false
+}

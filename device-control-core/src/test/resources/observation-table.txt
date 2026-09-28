@@ -1,0 +1,7 @@
+observation fake-obs-0002 · org.example.messages/.ConversationActivity · 1080x2400 portrait · keyboard hidden
+flags: c=clickable L=long-clickable e=editable s=scrollable k=checkable x=checked f=focused d=disabled v=selected p=password
+[0] other @0,0,1080,2400
+ [1] text "Mom" @40,100,1040,250
+ [2] list id="thread" @0,300,1080,2000 s
+ [3] edit_text desc="Message" id="compose" @40,2050,880,2250 ce
+ [4] button desc="Send" id="send" @900,2050,1040,2250 c

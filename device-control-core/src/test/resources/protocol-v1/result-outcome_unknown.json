@@ -1,0 +1,19 @@
+{
+  "action_id": "act-13",
+  "kind": "activate_element",
+  "ok": false,
+  "started_at": "2026-01-01T00:00:00Z",
+  "finished_at": "2026-01-01T00:00:00Z",
+  "execution_status": "outcome_unknown",
+  "observation": null,
+  "post_observation_failure": "accessibility tree unavailable after the action",
+  "details": null,
+  "error": {
+    "action_id": "act-13",
+    "observation_id": "fake-obs-0003",
+    "execution_status": "outcome_unknown",
+    "code": "backend_unavailable",
+    "backend": "fake"
+  },
+  "unsettled": false
+}

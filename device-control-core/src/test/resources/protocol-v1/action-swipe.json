@@ -1,0 +1,21 @@
+{
+  "action_id": "act-9",
+  "task_id": "task-1",
+  "task_revision": 2,
+  "bound_observation_id": "fake-obs-0002",
+  "issued_at": null,
+  "expires_at": null,
+  "lease_id": null,
+  "kind": "swipe",
+  "start": {
+    "x": 540,
+    "y": 1600
+  },
+  "end": {
+    "x": 540,
+    "y": 600
+  },
+  "within": 2,
+  "duration_ms": 300,
+  "scope_override": false
+}

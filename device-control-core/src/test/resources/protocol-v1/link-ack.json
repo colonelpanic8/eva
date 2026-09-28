@@ -1,0 +1,12 @@
+{
+    "kind": "ack",
+    "session_generation": "session-1",
+    "action_id": "act-5",
+    "result": null,
+    "error": {
+        "code": "stale_observation",
+        "action_id": "act-5",
+        "observation_id": "fake-obs-0002",
+        "latest_observation_id": "fake-obs-0009"
+    }
+}

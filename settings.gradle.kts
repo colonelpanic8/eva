@@ -16,3 +16,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "EVA"
 include(":app")
+
+include(":device-control-core")

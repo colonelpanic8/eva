@@ -1,0 +1,7 @@
+{
+  "action_id": "act-12",
+  "observation_id": "fake-obs-0002",
+  "execution_status": "not_dispatched",
+  "code": "lease_invalid",
+  "lease_id": "lease-9"
+}

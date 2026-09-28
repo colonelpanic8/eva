@@ -1,0 +1,6 @@
+{
+    "kind": "lease_grant",
+    "session_generation": "session-1",
+    "lease_id": "lease-1",
+    "expires_at": "2026-01-01T00:00:30Z"
+}
