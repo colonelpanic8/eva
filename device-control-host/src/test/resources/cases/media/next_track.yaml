@@ -1,0 +1,76 @@
+id: media.next_track.other_app
+family: media
+variant: other-app
+goal: Skip to the next song.
+variation:
+  ambiguity: none
+  scrolling: none
+  text_length: short
+  ui_state: app_deep
+apps: [com.google.android.apps.youtube.music, com.android.settings]
+initial_state:
+  procedure: ytmusic_playing_track_1_settings_foreground
+  params:
+    package: com.google.android.apps.youtube.music
+reset:
+  - helper: force_stop
+    package: com.google.android.apps.youtube.music
+  - helper: launch_app
+    package: com.google.android.apps.youtube.music
+  - helper: wait
+    seconds: 3
+  - helper: media_key
+    key: play
+    package: com.google.android.apps.youtube.music
+  - helper: wait
+    seconds: 2
+  - helper: media_key
+    key: previous
+    package: com.google.android.apps.youtube.music
+  - helper: wait
+    seconds: 1
+  - helper: media_key
+    key: previous
+    package: com.google.android.apps.youtube.music
+  - helper: wait
+    seconds: 1
+  - helper: media_key
+    key: previous
+    package: com.google.android.apps.youtube.music
+  - helper: wait
+    seconds: 2
+  - helper: media_key
+    key: play
+    package: com.google.android.apps.youtube.music
+  - helper: wait
+    seconds: 2
+  - helper: force_stop
+    package: com.android.settings
+  - helper: launch_app
+    package: com.android.settings
+    action: android.settings.DISPLAY_SETTINGS
+  - helper: wait
+    seconds: 1
+teardown:
+  - helper: media_key
+    key: pause
+    package: com.google.android.apps.youtube.music
+  - helper: force_stop
+    package: com.google.android.apps.youtube.music
+  - helper: force_stop
+    package: com.android.settings
+  - helper: go_home
+expected: >-
+  Music plays the first track while Settings is open on the Display page. The worker skips
+  once, via the media notification or YouTube Music, so the second track ("02 Paper Kites")
+  is playing; skipping twice or pausing fails.
+checker:
+  name: media_playback
+  package: com.google.android.apps.youtube.music
+  state: playing
+  title_contains: Paper Kites
+risk: reversible
+requires_approval: false
+tags: [m1, media]
+timeout_s: 120
+max_steps: 15

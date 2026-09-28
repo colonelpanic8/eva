@@ -1,0 +1,41 @@
+id: chrome_read.branch_hours.ambiguous
+family: chrome_read
+variant: ambiguous
+goal: When does the library close on weekdays?
+followups:
+  - The Hillcrest branch.
+variation:
+  ambiguity: multiple_matches
+  scrolling: none
+  text_length: short
+  ui_state: app_foreground
+apps: [com.android.chrome]
+initial_state:
+  procedure: chrome_showing_fixture
+  params:
+    fixture: branch-hours.html
+reset:
+  - helper: force_stop
+    package: com.android.chrome
+  - helper: open_url
+    fixture: branch-hours.html
+  - helper: wait
+    seconds: 3
+teardown:
+  - helper: force_stop
+    package: com.android.chrome
+  - helper: go_home
+expected: >-
+  The page lists two branches with different weekday closing times. The worker asks which
+  branch is meant, receives "The Hillcrest branch", and answers 7 PM. Answering with
+  Riverside's 9 PM, or both times without resolving the ambiguity, fails.
+checker:
+  name: answer_contains
+  includes:
+    - ["7 pm", "7pm", "7 p.m.", "7:00 p", "seven", "19:00"]
+  excludes: ["9 pm", "9pm", "9 p.m.", "9:00 p", "nine", "21:00"]
+risk: read_only
+requires_approval: false
+tags: [m1, chrome, read, ambiguous]
+timeout_s: 150
+max_steps: 15

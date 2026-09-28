@@ -1,0 +1,52 @@
+id: settings.ble_scanning_off.deep
+family: settings
+variant: deep
+goal: Turn off Bluetooth scanning.
+variation:
+  ambiguity: none
+  scrolling: short
+  text_length: short
+  ui_state: app_deep
+apps: [com.android.settings]
+initial_state:
+  procedure: ble_scanning_on_display_settings_open
+reset:
+  - helper: snapshot_setting
+    namespace: global
+    key: ble_scan_always_enabled
+  - helper: set_setting
+    namespace: global
+    key: ble_scan_always_enabled
+    value: "1"
+  - helper: force_stop
+    package: com.android.settings
+  - helper: force_stop
+    package: com.google.android.settings.intelligence
+  - helper: launch_app
+    package: com.android.settings
+    action: android.settings.DISPLAY_SETTINGS
+  - helper: wait
+    seconds: 2
+teardown:
+  - helper: restore_setting
+    namespace: global
+    key: ble_scan_always_enabled
+  - helper: force_stop
+    package: com.android.settings
+  - helper: force_stop
+    package: com.google.android.settings.intelligence
+  - helper: go_home
+expected: >-
+  Starting inside Settings on the unrelated Display page, the worker navigates to Location >
+  Location services > Bluetooth scanning and switches it off. Teardown restores the original
+  value.
+checker:
+  name: settings_value
+  namespace: global
+  key: ble_scan_always_enabled
+  equals: "0"
+risk: reversible
+requires_approval: false
+tags: [m1, settings, toggle]
+timeout_s: 180
+max_steps: 25

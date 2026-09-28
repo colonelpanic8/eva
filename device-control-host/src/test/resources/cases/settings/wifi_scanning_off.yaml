@@ -1,0 +1,47 @@
+id: settings.wifi_scanning_off.baseline
+family: settings
+variant: baseline
+goal: Turn off Wi-Fi scanning.
+variation:
+  ambiguity: none
+  scrolling: short
+  text_length: short
+  ui_state: home
+apps: [com.android.settings]
+initial_state:
+  procedure: wifi_scanning_on
+reset:
+  - helper: snapshot_setting
+    namespace: global
+    key: wifi_scan_always_enabled
+  - helper: set_setting
+    namespace: global
+    key: wifi_scan_always_enabled
+    value: "1"
+  - helper: force_stop
+    package: com.android.settings
+  - helper: force_stop
+    package: com.google.android.settings.intelligence
+  - helper: go_home
+teardown:
+  - helper: restore_setting
+    namespace: global
+    key: wifi_scan_always_enabled
+  - helper: force_stop
+    package: com.android.settings
+  - helper: force_stop
+    package: com.google.android.settings.intelligence
+  - helper: go_home
+expected: >-
+  The worker opens Settings, navigates to Location > Location services > Wi-Fi scanning,
+  and switches it off. Teardown restores the device's original value.
+checker:
+  name: settings_value
+  namespace: global
+  key: wifi_scan_always_enabled
+  equals: "0"
+risk: reversible
+requires_approval: false
+tags: [m1, settings, toggle]
+timeout_s: 180
+max_steps: 25

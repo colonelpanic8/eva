@@ -1,0 +1,84 @@
+id: media.volume_down.ambiguous
+family: media
+variant: ambiguous
+goal: The music is too loud, turn it down a bit.
+variation:
+  ambiguity: underspecified
+  scrolling: none
+  text_length: short
+  ui_state: app_foreground
+apps: [com.google.android.apps.youtube.music]
+initial_state:
+  procedure: ytmusic_playing_loud
+  params:
+    package: com.google.android.apps.youtube.music
+    music_volume: 12
+reset:
+  - helper: snapshot_volume
+    stream: music
+  - helper: set_volume
+    stream: music
+    level: 12
+  - helper: force_stop
+    package: com.google.android.apps.youtube.music
+  - helper: launch_app
+    package: com.google.android.apps.youtube.music
+  - helper: wait
+    seconds: 3
+  - helper: media_key
+    key: play
+    package: com.google.android.apps.youtube.music
+  - helper: wait
+    seconds: 2
+  - helper: media_key
+    key: previous
+    package: com.google.android.apps.youtube.music
+  - helper: wait
+    seconds: 1
+  - helper: media_key
+    key: previous
+    package: com.google.android.apps.youtube.music
+  - helper: wait
+    seconds: 1
+  - helper: media_key
+    key: previous
+    package: com.google.android.apps.youtube.music
+  - helper: wait
+    seconds: 2
+  - helper: media_key
+    key: play
+    package: com.google.android.apps.youtube.music
+  - helper: wait
+    seconds: 2
+teardown:
+  - helper: media_key
+    key: pause
+    package: com.google.android.apps.youtube.music
+  - helper: force_stop
+    package: com.google.android.apps.youtube.music
+  - helper: restore_volume
+    stream: music
+  - helper: go_home
+expected: >-
+  Music plays at media volume 12 of 15. "A bit" is underspecified; the worker lowers the media
+  volume (Settings > Sound & vibration > Media volume, or the volume panel) to somewhere
+  between 1 and 11 and keeps the music playing. Muting or pausing fails. Teardown restores
+  the original volume.
+checker:
+  name: all_of
+  checks:
+    - name: stream_volume
+      stream: music
+      at_least: 1
+      at_most: 11
+    - name: media_playback
+      package: com.google.android.apps.youtube.music
+      state: playing
+risk: reversible
+requires_approval: false
+tags: [m1, media, volume, ambiguous]
+timeout_s: 150
+max_steps: 20
+not_runnable_on_emulator: >-
+  The emulator runs with -no-audio and ignores every media volume change, so the reset cannot
+  set volume 12.
