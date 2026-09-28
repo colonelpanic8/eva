@@ -2,7 +2,6 @@ package com.colonelpanic.eva.ui
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,6 +24,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
@@ -189,7 +190,7 @@ private fun ActionBranch(actions: List<ConversationEntry>) {
     ) {
         Box(modifier = Modifier.width(2.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outlineVariant))
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            actions.forEach { ActionRow(it) }
+            actions.forEach { action -> key(action.id) { ActionRow(action) } }
         }
     }
 }
@@ -201,13 +202,14 @@ private fun ActionRow(action: ConversationEntry) {
     val status = action.status.presentation()
     val title = action.actionTitle ?: action.capabilityId ?: "Action"
     Surface(
+        onClick = { expanded = !expanded },
         color = MaterialTheme.colorScheme.surfaceContainer,
         contentColor = MaterialTheme.colorScheme.onSurface,
         shape = RoundedCornerShape(12.dp),
         modifier =
             Modifier
                 .maxWidthFraction(0.92f)
-                .clickable(onClickLabel = if (expanded) "Hide details" else "Show details") { expanded = !expanded }
+                .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" }
                 .animateContentSize(),
     ) {
         Column(
@@ -233,8 +235,8 @@ private fun ActionRow(action: ConversationEntry) {
                 action.arguments.forEach { (name, value) -> DetailText("$name: $value") }
                 if (action.arguments.isNotEmpty()) HorizontalDivider()
                 Text(text = action.response, style = MaterialTheme.typography.bodyMedium)
-            } else if (action.response.isNotBlank()) {
-                DetailText(action.response.lineSequence().first(), maxLines = 1)
+            } else {
+                (action.result ?: action.response).lineSequence().firstOrNull { it.isNotBlank() }?.let { DetailText(it, maxLines = 1) }
             }
         }
     }

@@ -285,6 +285,7 @@ class ThreadControllerTest {
             assertEquals("Opened Park", provider.results.single().message)
             val turn = latestTurn(controller)
             assertEquals(turn, entry(controller, "provider:session:first").parentId)
+            assertEquals(EntryStatus.HANDED_OFF, entry(controller, "provider:session:first").status)
             assertEquals(turn, repository.history().single().turnId)
             provider.channel.send(ProviderEvent.AssistantText(provider.input.id, "The park is open.", false))
             provider.channel.send(ProviderEvent.ResponseEnded(provider.input.id, "completed"))
@@ -579,6 +580,32 @@ class ThreadControllerTest {
         }
 
     @Test
+    fun `a call no request owns is shown as not run and the model is told`() =
+        runTest {
+            val voice = FakeProvider()
+            val background = FakeProvider(epoch = "background")
+            val controller = controller(voice, background = background, media = { VoiceMedia() })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            voice.input = ConversationInput("voice:turn-1", "")
+            voice.channel.send(ProviderEvent.ResponseStarted("voice:turn-1", "voice:turn-1"))
+            advanceUntilIdle()
+            voice.call("delegate", ThreadController.DEFER_TO_TEXT.capabilityId, "task" to "Read recent Paseo messages")
+            advanceUntilIdle()
+            voice.input = ConversationInput("voice:turn-2", "")
+            voice.channel.send(ProviderEvent.ResponseStarted("voice:turn-2", "voice:turn-2"))
+            voice.call("stray", action.id, "place" to "Park")
+            advanceUntilIdle()
+            assertEquals(0, executions)
+            assertEquals("NOT_EXECUTED", voice.results.last().status)
+            val row = entry(controller, "provider:session:stray")
+            assertEquals(EntryStatus.NOT_EXECUTED, row.status)
+            assertNull(row.parentId)
+            assertEquals(mapOf("place" to "Park"), row.arguments)
+        }
+
+    @Test
     fun `failed text continuation is reported as a failed handoff`() =
         runTest {
             val voice = FakeProvider()
@@ -741,7 +768,7 @@ class ThreadControllerTest {
         }
 
     @Test
-    fun `an early action stays under its turn after the thread outgrows the history window`() =
+    fun `an early action stays under its turn after the thread outgrows the display window`() =
         runTest {
             val provider = FakeProvider()
             val controller = controller(provider)

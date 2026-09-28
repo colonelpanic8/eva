@@ -39,6 +39,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -122,6 +123,10 @@ class ThreadController(
 
     private var shownThreadId: String? = null
     private val tasks = mutableMapOf<String, TurnTask>()
+
+    /** Refreshes run one at a time, so an older read can never publish over a newer one. */
+    private val refreshLock = Mutex()
+    private val refreshRequests = Channel<Unit>(Channel.CONFLATED)
 
     private var media: RealtimeMediaSession? = null
     private var connectionJob: Job? = null
@@ -272,7 +277,22 @@ class ThreadController(
                 mutableState.update { it.copy(isLoading = false, errorMessage = SessionController.STORAGE_ERROR) }
             }
         }
-        scope.launch { store.changes.collect { refresh() } }
+        scope.launch { store.changes.collect { requestRefresh() } }
+        scope.launch {
+            for (request in refreshRequests) {
+                try {
+                    refresh()
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    mutableState.update { it.copy(errorMessage = SessionController.STORAGE_ERROR) }
+                }
+            }
+        }
+    }
+
+    private fun requestRefresh() {
+        refreshRequests.trySend(Unit)
     }
 
     // ---- threads ----
@@ -293,7 +313,9 @@ class ThreadController(
 
     private suspend fun shownOrNewThread(): String = shownThreadId ?: store.createThread(UNTITLED).id.also { shownThreadId = it }
 
-    private suspend fun refresh() {
+    private suspend fun refresh() = refreshLock.withLock { load() }
+
+    private suspend fun load() {
         val id = shownThreadId
         val summaries =
             store.threads().map { ThreadSummary(it.id, it.title, it.updatedAtMillis, activeTask(it.id) != null) }
@@ -572,7 +594,7 @@ class ThreadController(
                     }
                 } else {
                     if (voice) actionResponses += event.call.generationId
-                    taskFor(opened, event.call.inputId)?.dispatch(event)
+                    taskFor(opened, event.call.inputId)?.dispatch(event) ?: rejectUnowned(event, opened, threadId, voice)
                 }
             }
 
@@ -621,6 +643,51 @@ class ThreadController(
             }
 
             ProviderEvent.Closed -> {}
+        }
+    }
+
+    /**
+     * A call no request owns, such as one proposed while a delegated request finishes in text.
+     * It is journaled and shown as not run, and the model is told so rather than left waiting.
+     */
+    private suspend fun rejectUnowned(
+        event: ProviderEvent.ToolCallReady,
+        opened: ConversationSession,
+        threadId: String,
+        voice: Boolean,
+    ) {
+        val message = "No request is active to run this action. Nothing was executed."
+        val id = "provider:${event.call.providerSessionId}:${event.call.callId}"
+        val arguments = event.arguments.mapValues { (_, value) -> (value as? JsonPrimitive)?.content ?: value.toString() }
+        val title = registry.snapshot.definitions[event.capabilityId]?.title ?: event.capabilityId
+        try {
+            store.append(
+                ThreadItem.ActionCall(UUID.randomUUID().toString(), threadId, null, nowMillis(), id, event.capabilityId, title, arguments),
+            )
+            dispatcher.execute(
+                ToolProposal(
+                    id,
+                    event.capabilityId,
+                    arguments,
+                    VOICE_REQUEST,
+                    catalogRevision = event.call.catalogRevision,
+                    threadId = threadId,
+                    interactionMode = if (voice) InteractionMode.VOICE else InteractionMode.TYPED,
+                ),
+                message,
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            // The model is still told nothing ran; the missing row is the only loss.
+        }
+        requestRefresh()
+        try {
+            opened.submitToolResult(CorrelatedToolResult(event.call, InvocationStatus.NOT_EXECUTED.name, message))
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            // The leg is gone and has no one left to tell.
         }
     }
 
@@ -892,7 +959,7 @@ class ThreadController(
                     id,
                     event.capabilityId,
                     arguments.mapValues { it.value.orEmpty() },
-                    request.ifBlank { VOICE_REQUEST },
+                    request.ifBlank { VOICE_REQUEST }.take(MAX_PROPOSAL_REQUEST),
                     catalogRevision = context.snapshot.revision,
                     threadId = threadId,
                     turnId = turnId,
@@ -948,7 +1015,7 @@ class ThreadController(
                         )
                         try {
                             val result = dispatcher.execute(proposal, rejection ?: argumentError)
-                            refresh()
+                            requestRefresh()
                             val changesPhone = definition?.readOnly == false && !definition.bookkeeping
                             if (changesPhone &&
                                 (result.status == InvocationStatus.COMPLETED || result.status == InvocationStatus.HANDED_OFF)
@@ -1237,6 +1304,7 @@ class ThreadController(
         const val READ_ONLY_CALLS_PER_TURN = 24
         const val CALLS_PER_TURN = 32
         private const val VOICE_REQUEST = "Voice request"
+        private const val MAX_PROPOSAL_REQUEST = 1000
 
         /** Bounds the wait for a goodbye whose end is never reported. */
         private const val END_SPEECH_LIMIT_MILLIS = 10_000L

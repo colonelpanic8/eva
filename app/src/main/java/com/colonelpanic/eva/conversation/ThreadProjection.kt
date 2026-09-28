@@ -12,13 +12,13 @@ fun projectEntries(
     receipts: Map<String, InvocationRecord>,
 ): List<ConversationEntry> {
     val byTurn = turns.associateBy { it.id }
-    val order = mutableListOf<String>()
+    val order = linkedSetOf<String>()
     val requests = mutableMapOf<String, String>()
     val answers = mutableMapOf<String, MutableList<String>>()
     val built = mutableMapOf<String, ConversationEntry>()
 
     fun place(id: String) {
-        if (id !in order) order += id
+        order += id
     }
 
     for (item in items) {
@@ -57,6 +57,7 @@ fun projectEntries(
                         capabilityId = item.capabilityId,
                         actionTitle = item.title,
                         arguments = item.arguments,
+                        result = receipt?.message,
                         parentId = turnId,
                     )
             }
