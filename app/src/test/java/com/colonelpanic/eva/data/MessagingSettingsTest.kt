@@ -94,8 +94,13 @@ class MessagingSettingsTest {
         reopened.saveBridge("whatsapp", "WhatsApp", "https://moved.example.ts.net", "")
         assertEquals(null, reopened.bridgeCredential("whatsapp"))
         assertEquals(listOf("messaging/whatsapp/bearer"), reopened.missingBridgeCredentials(reopened.state.value.bridges))
+        // A token entered for an unchanged bridge leaves the portable state equal, so presence is signalled separately.
+        val before = reopened.state.value to reopened.credentialRevision.value
         reopened.saveBridge("whatsapp", "WhatsApp", "https://moved.example.ts.net", "new-token")
         assertEquals("Bearer new-token", reopened.bridgeCredential("whatsapp")?.authorization())
+        assertEquals(before.first, reopened.state.value)
+        assertTrue(reopened.credentialRevision.value != before.second)
+        assertTrue(reopened.missingBridgeCredentials(reopened.state.value.bridges).isEmpty())
 
         // A restore replaces the portable part and leaves the device-local token alone.
         reopened.replace(reopened.state.value.copy(bridges = emptyMap()))
