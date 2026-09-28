@@ -565,7 +565,10 @@ class EvaApplication :
         val repository = SqliteInvocationRepository(journal)
         ThreadController(
             registry = registry,
-            dispatcher = CapabilityDispatcher(registry, repository),
+            dispatcher =
+                CapabilityDispatcher(registry, repository, onBackendFailure = { capability, error ->
+                    android.util.Log.w("EvaDispatch", "$capability threw before reporting an outcome", error)
+                }),
             store = SqliteConversationStore(journal),
             onBackgroundAnswer = { WorkNotifications.answered(this, it) },
             // A blank link means the phone talks to OpenAI itself; a link means the paired host bridge.
