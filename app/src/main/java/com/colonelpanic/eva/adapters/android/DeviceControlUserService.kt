@@ -153,14 +153,14 @@ class DeviceControlUserService : IDeviceControl.Stub() {
                 )
                 put(
                     "text",
-                    node.text
+                    (if (node.isPassword) "<password>" else node.text)
                         ?.toString()
                         .orEmpty()
                         .take(MAX_FIELD_CHARS),
                 )
                 put(
                     "desc",
-                    node.contentDescription
+                    (if (node.isPassword) "" else node.contentDescription)
                         ?.toString()
                         .orEmpty()
                         .take(MAX_FIELD_CHARS),
@@ -173,6 +173,7 @@ class DeviceControlUserService : IDeviceControl.Stub() {
                 put("editable", node.isEditable)
                 put("focused", node.isFocused)
                 put("scrollable", node.isScrollable)
+                put("password", node.isPassword)
             }
         for (child in 0 until node.childCount) collect(node.getChild(child), nodes, entries, depth + 1)
     }

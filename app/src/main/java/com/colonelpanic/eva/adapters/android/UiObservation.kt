@@ -23,6 +23,7 @@ data class UiNode(
     val editable: Boolean,
     val focused: Boolean,
     val scrollable: Boolean,
+    val password: Boolean = false,
 ) {
     val centerX get() = (left + right) / 2
     val centerY get() = (top + bottom) / 2
@@ -132,6 +133,7 @@ data class UiObservation(
                         editable = node.flag("editable"),
                         focused = node.flag("focused"),
                         scrollable = node.flag("scrollable"),
+                        password = node.flag("password"),
                     )
                 }
             return UiObservation(
