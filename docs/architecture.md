@@ -232,12 +232,33 @@ compact text table preserves indices, hierarchy, bounds, state flags, truncation
 and password redaction. `DeviceBackend` exposes only `observe()` and
 `perform(action)`; `TaskAgent` defines goal/progress/terminal-result and independent
 revision/cancellation methods. A scripted fake backend is available to JVM tests.
-No task-agent implementation is registered yet. Both `:device-control-core` and
+No task-agent implementation is registered in the Android app yet. Both
+`:device-control-core` and
 `:device-control-portal` are plain Kotlin/JVM libraries without Android types; a
-JVM host can consume them as-is, using a forwarded loopback Portal port. The
-worker/model contract implementation remains to be added in JVM code. EVA's
+`device-control-host` application consumes them using an adb-forwarded loopback
+Portal port. The worker/model contract implementation remains to be added in
+JVM code. EVA's
 existing OpenAI Responses provider remains in `:app`; extracting its HTTP/SSE
 transport and injecting subscription credentials is still needed for a JVM host.
+
+The host provides `observe`, one-shot `act`, and `eval run`. Its only project
+dependencies are core and Portal. The eval runner loads the settings, Chrome-read,
+and media case YAMLs from voice-device-agent, executes ADB reset/teardown helpers,
+and checks results independently through ADB and a separate fresh Portal backend.
+Screen checks wait for Portal's package to agree with Android's resumed activity.
+Settings/volume snapshots persist locally until successfully restored; teardown
+runs even after reset, task, or checker failure. Every run records its outcome,
+checker verdict, phase/agent steps, and elapsed times in local JSONL.
+
+`noop` performs no task and supplies no answer. `scripted` executes an explicit
+per-case action/answer file through `DeviceBackend`; it never reads the checker
+expectations to manufacture a result and stops after a failed or unknown action.
+`worker` requires exactly one JVM `WorkerAgentFactory` service provider. None is
+shipped at this baseline: the factory must instantiate the shared core worker,
+inject its JVM model client/authentication, and apply the case's budgets and
+follow-up policy. This host does not copy the worker or add Android dependencies.
+The host serial lock coordinates commands sharing its state directory; it does
+not replace the future device-wide EVA lease or coordinate other automation tools.
 
 The Portal backend talks to the unmodified Mobilerun Portal app at
 `http://127.0.0.1:<port>` with a runtime-supplied bearer token. It reuses the

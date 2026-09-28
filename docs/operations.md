@@ -490,3 +490,98 @@ adb -s DEVICE shell am instrument -w \
   -e evaOpenAiKey "$OPENAI_API_KEY" \
   com.colonelpanic.eva.debug.test/androidx.test.runner.AndroidJUnitRunner
 ```
+
+## JVM device-control host
+
+Build in the Android dev shell (the host itself targets JVM 17):
+
+```sh
+direnv exec . just device-host
+# Equivalent: direnv exec . ./gradlew :device-control-host:installDist
+# Commands below also run inside direnv exec .
+device-control-host/build/install/eva-device/bin/eva-device observe --serial emulator-5594
+device-control-host/build/install/eva-device/bin/eva-device act --serial emulator-5594 '{"kind":"home"}'
+device-control-host/build/install/eva-device/bin/eva-device eval run \
+  --serial emulator-5594 --agent noop --families settings,chrome_read \
+  --cases /path/to/voice-device-agent/evals/cases \
+  --fixture-base-url http://10.0.2.2:<fixture-port>
+```
+
+Portal must already be installed, enabled, and listening on device TCP 8080.
+Each command reads its token from the content provider without printing or saving
+it, creates `adb -s SERIAL forward tcp:0 tcp:8080`, and removes only its own forward
+on completion. Both an emulator serial and a QEMU property are required unless
+`--allow-physical SERIAL` exactly matches the selected serial. Always use an AVD
+you own; never aim a test at another session's emulator.
+
+`act` accepts protocol v1 JSON. It observes immediately before dispatch and fills
+omitted `action_id`, `task_id`, `task_revision`, and `bound_observation_id` fields.
+Explicit fields are preserved, including stale observation IDs (which are rejected).
+Element indices in short action templates refer to that command's fresh screen;
+IDs from a previous CLI process cannot bind to the new backend session. For
+multi-step automation use a `TaskAgent` with its own backend instance. Actions are
+not retried after failures or uncertain results.
+
+Eval options include `--case ID`, comma-separated `--families`, and `--state-dir`
+(default `.device-control/`, gitignored). Each invocation writes a unique
+`runs/*.jsonl`; per-device `snapshots/*.json` retain original settings/volume across
+interruption. Startup restores pending snapshots before a new batch. Teardown
+attempts every step, then any pending restoration; unresolved snapshots stop the
+batch. Exit codes are 0 for passing/excluded cases, 1 for failed evals/actions,
+and 2 for command/configuration errors. A noop batch is expected to exit 1.
+Reset errors and checker errors are distinct from failed checker verdicts.
+Cases marked `not_runnable_on_emulator` are recorded without reset or task work.
+
+Use the lab's device preparation before evaluating Chrome/media: finish Chrome's
+first-run and notification prompts, serve `evals/fixtures/web/` on a fresh high
+port bound to `0.0.0.0`, and use `10.0.2.2` from the emulator. The lab's emulator
+Chrome flags (`--disable-fre --no-default-browser-check --no-first-run
+--no-restore-state` in `/data/local/tmp/chrome-command-line`, preceded by `_`)
+ensure one tab after force-stop. Media cases require the synthetic tracks and a
+prepared player queue; loading their YAMLs does not provision that queue.
+
+For a deterministic harness run, supply `--agent scripted --script /path/script.json`.
+The JSON maps case IDs to protocol action templates and an optional final answer:
+
+```json
+{
+  "chrome_read.closing_time.baseline": {
+    "actions": [],
+    "answer": "The library now closes at 9 PM on weekdays."
+  }
+}
+```
+
+This supplied answer tests checker plumbing; it is not evidence of model reasoning.
+Script actions go through Portal and stop on the first failed/unknown result.
+
+To enable `--agent worker`, add a JVM adapter implementing
+`com.colonelpanic.eva.devicecontrol.host.WorkerAgentFactory`, register its class
+in `META-INF/services/com.colonelpanic.eva.devicecontrol.host.WorkerAgentFactory`,
+and include its artifact on the host runtime classpath. `create(backend, case)`
+must construct slice 1's shared `TaskAgent`, inject the extracted JVM model
+transport and runtime credential source, apply `maxSteps`/`timeoutMillis`, and
+handle the case's followups. Neither that core factory nor a JVM OpenAI client
+exists at host baseline `ed9b6e6`; `--agent worker` fails before connecting or
+resetting a device until a real provider is installed. No model calls or token
+refresh logic are duplicated in the host.
+
+Unit coverage includes all twelve lab YAMLs, reset mapping with a fake ADB,
+restoration after failure, independent checkers, recorded Portal observations,
+media dumpsys parsing, physical-device refusal, and no retry of uncertain actions.
+The opt-in device test is restricted to the dedicated host emulator:
+
+```sh
+EVA_HOST_TEST_SERIAL=emulator-5594 direnv exec . ./gradlew \
+  :device-control-host:test --tests '*DeviceSmokeTest'
+```
+
+Host verification on 2026-09-28 used a new `vda-tablet-host` AVD on
+`emulator-5594` (API 37, Portal 0.7.25). Compact observation, a settled Home action,
+and the opt-in JVM device test passed. After Chrome first-run preparation, all
+four settings and all four Chrome cases with `--agent noop` produced the expected
+failed checker verdicts, with no reset/teardown errors and no pending snapshots.
+The Chrome closing-time case with one scripted URL action and a supplied answer
+passed. These establish host/reset/checker plumbing, not worker parity. Media
+helpers/checkers were JVM-tested; media tasks were not run on this AVD. The
+emulator was stopped after verification.
