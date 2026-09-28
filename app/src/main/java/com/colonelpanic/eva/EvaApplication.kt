@@ -116,7 +116,8 @@ class EvaApplication :
     val configuration by lazy { EvaConfigurationManager(this) }
     val chosenNumbers by lazy { ChosenNumbers(this, onChanged = configuration::onLocalChange) }
 
-    private suspend fun contactHistory() = ContactHistory(messagingStore.lastMessaged(), chosenNumbers.all())
+    private suspend fun contactHistory() =
+        ContactHistory(messagingStore.lastMessaged(), chosenNumbers.all(), messagingStore.phoneNumberKey())
 
     private val mediaFactory by lazy { WebRtcMediaSessionFactory(this) }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -213,7 +214,18 @@ class EvaApplication :
     }
 
     val messagingSettings by lazy {
-        MessagingSettings(this, configuration::onLocalChange, configuration::onMessagingReplyChange)
+        MessagingSettings(this, configuration::onLocalChange, configuration::onMessagingReplyChange, configuration::onCredentialChange)
+    }
+
+    /** Linked messaging accounts behind self-hosted bridges; tokens resolve only for a bridge's own origin. */
+    val bridgeMessaging by lazy {
+        com.colonelpanic.eva.messaging.BridgeMessaging(
+            bridges = { messagingSettings.state.value.bridges },
+            http =
+                com.colonelpanic.eva.adapters.declarative.PackageHttpClient(credential = { origin, name ->
+                    messagingSettings.bridgeCredential(name)?.takeIf { it.origin == origin }
+                }),
+        )
     }
     val notificationMessages by lazy {
         NotificationMessages(
@@ -315,6 +327,7 @@ class EvaApplication :
                                 MessagingBackend.Operation.SEND,
                                 chosenNumbers.remembering(SmsSendBackend(this@EvaApplication, intentHost, messageTargets), "recipient"),
                                 notificationMessages,
+                                bridgeMessaging,
                             ),
                         CapabilityRegistry.CONTACTS_SEARCH to
                             ContactsQueryBackend(this@EvaApplication, intentHost, ::contactHistory),
@@ -323,12 +336,14 @@ class EvaApplication :
                                 MessagingBackend.Operation.SEARCH,
                                 MessagingReadBackend(intentHost, messagingStore, MessagingReadBackend.Operation.CONVERSATIONS),
                                 notificationMessages,
+                                bridgeMessaging,
                             ),
                         CapabilityRegistry.CONVERSATION_READ to
                             MessagingBackend(
                                 MessagingBackend.Operation.READ,
                                 MessagingReadBackend(intentHost, messagingStore, MessagingReadBackend.Operation.MESSAGES),
                                 notificationMessages,
+                                bridgeMessaging,
                             ),
                         CapabilityRegistry.DIAL to
                             chosenNumbers.remembering(
@@ -338,6 +353,9 @@ class EvaApplication :
                                 ),
                                 "number",
                             ),
+                        CapabilityRegistry.LOCATION_CURRENT to
+                            com.colonelpanic.eva.adapters.android
+                                .CurrentLocationBackend(this@EvaApplication),
                         CapabilityRegistry.OPEN_APP to
                             intent("App opened.", "No installed app matches that name.") {
                                 NativeIntents.launchApp(this@EvaApplication, it)
@@ -614,7 +632,9 @@ class EvaApplication :
         ThreadController(
             registry = registry,
             dispatcher =
-                CapabilityDispatcher(registry, repository, executeAdmitted = { proposal, backend ->
+                CapabilityDispatcher(registry, repository, onBackendFailure = { capability, error ->
+                    android.util.Log.w("EvaDispatch", "$capability threw before reporting an outcome", error)
+                }, executeAdmitted = { proposal, backend ->
                     val definition = registry.snapshot.definitions[proposal.capabilityId]
                     deviceTasks.executeAdmitted(
                         proposal,
@@ -659,6 +679,11 @@ class EvaApplication :
             quietHangUpMillis = { settings.quietHangUpSeconds * 1_000L },
             wording = { prompts.wording.value },
             voiceKeywords = { contactKeywords.names() },
+            messagingBridges = {
+                messagingSettings.state.value.bridges
+                    .mapValues { it.value.label }
+            },
+            callEndings = { settings.callEndings.value },
             hiddenCapabilities = { if (capabilities.screenControlEnabled) emptySet() else CapabilityRegistry.SCREEN_CONTROL },
             prompt = { prompts.load() },
         ).also { controller ->

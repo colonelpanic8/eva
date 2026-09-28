@@ -45,7 +45,16 @@ class PackageHttpClient(
             ) {
                 throw BindingNotSubmitted("The request destination is outside the approved origin. Nothing was submitted.")
             }
-            val builder = Request.Builder().url(url).tag(AtomicBoolean::class.java, AtomicBoolean(false))
+            val builder =
+                Request
+                    .Builder()
+                    .url(url)
+                    .header("User-Agent", USER_AGENT)
+                    .tag(AtomicBoolean::class.java, AtomicBoolean(false))
+            request.headers.forEach { (name, value) ->
+                require(!name.equals("Authorization", true)) { "Authorization comes from the credential" }
+                builder.header(name, value)
+            }
             var authorization: String? = null
             request.credential?.let { name ->
                 val saved =
@@ -83,4 +92,9 @@ class PackageHttpClient(
                 HttpResponse(response.code, text)
             }
         }
+
+    companion object {
+        /** Public services such as OpenStreetMap's refuse anonymous library clients. */
+        const val USER_AGENT = "EVA (+https://github.com/colonelpanic8/eva)"
+    }
 }

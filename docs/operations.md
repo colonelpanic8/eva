@@ -659,6 +659,30 @@ The user must authorize the particular real message sent during a device test.
 Automated tests use fake reply callbacks and construct Android intents without
 sending messages.
 
+To link an account through a messaging bridge (for example WhatsApp on the
+[multidevice bridge](https://github.com/colonelpanic8/google-messages-multidevice-bridge)
+served over Tailscale Serve):
+
+1. Run one bridge instance per network with an HTTPS origin the phone can reach
+   and a bearer token; pair the bridge with the account in its own web client.
+2. Under **Messaging → Messaging services**, add a service: the name as it is
+   spoken (`whatsapp`), a label, the HTTPS origin only, and the token. The name,
+   label, and origin are saved to `eva.yaml` with a
+   `messaging/<name>/bearer` credential reference; the token stays on the phone.
+3. Select **Test connection**: it shows the bridge's `/v1/status` state,
+   transport, and phone responsiveness. `authentication_required` means the
+   bridge itself needs re-pairing.
+4. In a typed conversation, ask “Which WhatsApp chats did I get recently?”,
+   then read one or send a short message to a known number. Check the linked
+   app to confirm the message and its later delivery status.
+5. On another device, restore the same configuration and enter the token when
+   the setup list asks to provision `messaging/<name>/bearer`.
+
+The bridge path has JVM tests against a scripted bridge (search, history,
+outbox outcome mapping, chat creation, idempotency key stability, and the
+configuration round trip). It has not been verified against a live bridge or on
+a device, and no automated test sends a real message.
+
 See [Architecture](architecture.md#messaging) for tool parameters, grant identity,
 receipt semantics, and notification lifetime limits.
 

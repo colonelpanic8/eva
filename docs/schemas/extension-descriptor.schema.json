@@ -44,7 +44,8 @@
           "properties": {
             "mode": { "const": "synchronous" },
             "requiresForeground": { "const": false },
-            "maxWaitMillis": { "type": ["integer", "null"], "minimum": 1, "maximum": 60000 }
+            "maxWaitMillis": { "type": ["integer", "null"], "minimum": 1, "maximum": 60000 },
+            "endsVoiceCall": { "enum": ["never", "after_reply", "immediately"], "description": "Whether a successful call ends a voice call; never when omitted. The user may override it." }
           }
         },
         "result": {

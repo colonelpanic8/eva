@@ -128,7 +128,8 @@ class PortableConfigurationStoresTest {
         val readAsset: (String) -> String = { path -> File(assets, path).readText() }
         val maps = DefaultPackages.all.single { it.id == "android.google-maps" }
         var changes = 0
-        val settings = PackageSettings(context, onChanged = { changes++ }, readAsset = readAsset, providerPresent = { true })
+        val settings =
+            PackageSettings(context, onChanged = { changes++ }, readAsset = readAsset, providerPresent = { true }, appInstalled = { true })
 
         val adopted = settings.adoptDefaults()
         assertEquals(DefaultPackages.all.map { it.id }, adopted.map { it.definition.id })
@@ -149,7 +150,7 @@ class PortableConfigurationStoresTest {
 
         val restored = settings.portable().copy(appliedDefaults = emptyList())
         assertTrue(PackageSettings(context, readAsset = readAsset).restore(restored).isEmpty())
-        val fresh = PackageSettings(context, readAsset = readAsset, providerPresent = { true })
+        val fresh = PackageSettings(context, readAsset = readAsset, providerPresent = { true }, appInstalled = { true })
         assertTrue(fresh.appliedDefaults().isEmpty())
         val readopted = fresh.adoptDefaults()
         assertEquals(DefaultPackages.all.map { it.identity }, readopted.map { it.identity })
@@ -158,20 +159,26 @@ class PortableConfigurationStoresTest {
     }
 
     @Test
-    fun `an app's default package waits unrecorded until its provider is present`() {
+    fun `an app's default package waits unrecorded until its provider or app is present`() {
         val assets =
             generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }
                 .map { File(it, "app/src/main/assets") }
                 .first { it.isDirectory }
         val readAsset: (String) -> String = { path -> File(assets, path).readText() }
         val paseo = DefaultPackages.all.single { it.id == "android.paseo" }
+        val waze = DefaultPackages.all.single { it.id == "android.waze" }
         var present = false
-        val settings = PackageSettings(context, readAsset = readAsset, providerPresent = { present })
-        assertTrue(settings.adoptDefaults().none { it.definition.id == paseo.id })
+        var installed = emptySet<String>()
+        val settings = PackageSettings(context, readAsset = readAsset, providerPresent = { present }, appInstalled = { it in installed })
+        assertTrue(settings.adoptDefaults().none { it.definition.id == paseo.id || it.definition.id == waze.id })
         assertFalse(paseo.id in settings.appliedDefaults())
+        assertFalse(waze.id in settings.appliedDefaults())
         present = true
         assertEquals(paseo.identity, settings.adoptDefaults().single().identity)
         assertTrue(paseo.id in settings.appliedDefaults())
+        installed = setOf("com.waze")
+        assertEquals(waze.identity, settings.adoptDefaults().single().identity)
+        assertTrue(waze.id in settings.appliedDefaults())
     }
 
     @Test

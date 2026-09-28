@@ -57,7 +57,8 @@
         "mode": { "enum": ["synchronous", "handoff"], "description": "Intent bindings require handoff plus requiresForeground true; HTTP and content bindings require synchronous." },
         "requiresForeground": { "type": "boolean" },
         "maxWaitMillis": { "type": ["integer", "null"], "minimum": 1, "description": "Capability default wait; the common policy clamps the effective wait to 60,000 ms." },
-        "requiresUnlock": { "type": "boolean", "description": "Intent bindings only. On a locked phone showing EVA's screen, EVA asks for the unlock before opening the target; declining opens nothing." }
+        "requiresUnlock": { "type": "boolean", "description": "Intent bindings only. On a locked phone showing EVA's screen, EVA asks for the unlock before opening the target; declining opens nothing." },
+        "endsVoiceCall": { "enum": ["never", "after_reply", "immediately"], "description": "Whether a successful call ends a voice call: after the model's reply to the result, or immediately without reading it back. Never when omitted. The user may override it." }
       }
     },
     "scalarType": { "enum": ["string", "integer", "number", "boolean"] },

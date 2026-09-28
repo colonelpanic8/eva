@@ -44,7 +44,7 @@ data class BasicCredential(
             username: String,
             password: String,
         ): BasicCredential {
-            val origin = credentialOrigin(url)
+            val origin = serverOrigin(url)
             require(username.isNotEmpty() && ':' !in username && username.none(Char::isISOControl)) { "Enter a valid basic-auth username." }
             require(password.isNotEmpty() && password.none(Char::isISOControl)) { "Enter a password without control characters." }
             require(username.length <= 1024 && password.length <= 4096) { "Credential is too long." }
@@ -122,7 +122,7 @@ class BearerCredential private constructor(
             url: String,
             token: String,
         ): BearerCredential {
-            val origin = credentialOrigin(url)
+            val origin = serverOrigin(url)
             require(token.length in 1..4096 && Regex("[A-Za-z0-9._~+/-]+=*").matches(token)) {
                 "Enter a valid Bearer token without whitespace."
             }
@@ -136,7 +136,8 @@ class BearerCredential private constructor(
     }
 }
 
-private fun credentialOrigin(url: String): String {
+/** The HTTPS origin a credential or service is approved for, without any path, query, or fragment. */
+fun serverOrigin(url: String): String {
     val parsed = url.trim().toHttpUrl()
     require(parsed.isHttps && parsed.username.isEmpty() && parsed.password.isEmpty()) {
         "Use an HTTPS server origin without credentials."

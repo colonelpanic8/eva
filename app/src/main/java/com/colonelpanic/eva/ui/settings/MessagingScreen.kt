@@ -12,16 +12,24 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.colonelpanic.eva.data.MessagingPreferences
+import com.colonelpanic.eva.data.configuration.MessagingBridgeDefinition
 import com.colonelpanic.eva.messaging.MessagingApp
 import com.colonelpanic.eva.ui.MenuButton
 import com.colonelpanic.eva.ui.evaTopAppBarColors
@@ -64,6 +72,8 @@ fun MessagingScreen(
             ContactLookupSection(state, actions)
             SettingsDivider()
             NotificationMessagingSection(state, actions)
+            SettingsDivider()
+            MessagingBridgesSection(state, actions)
             SettingsDivider()
             RememberedNumbersSection(state, actions)
             Spacer(Modifier.height(24.dp))
@@ -180,6 +190,78 @@ private fun NotificationMessagingSection(
 }
 
 /**
+ * A linked account on a self-hosted bridge, such as WhatsApp. The service name, label, and origin
+ * travel with the configuration; the bearer token is saved on this phone only, so a restored
+ * bridge shows up here asking for it.
+ */
+@Composable
+private fun MessagingBridgesSection(
+    state: SettingsUiState,
+    actions: SettingsActions,
+) {
+    SettingsSection("Messaging services") {
+        SettingsBlock {
+            Text(
+                "A self-hosted messaging bridge links one account, such as WhatsApp, with its full recent history and new chats. " +
+                    "Name it the way you would say it, for example whatsapp. The token stays on this phone.",
+            )
+        }
+        state.messaging.bridges.forEach { (name, bridge) ->
+            BridgeEditor(name, bridge, name in state.messagingBridgesNeedingToken, state.messagingBridgeChecks[name], actions)
+        }
+        BridgeEditor(null, null, false, null, actions)
+    }
+}
+
+@Composable
+private fun BridgeEditor(
+    name: String?,
+    bridge: MessagingBridgeDefinition?,
+    needsToken: Boolean,
+    check: String?,
+    actions: SettingsActions,
+) {
+    SettingsBlock {
+        var service by remember(name) { mutableStateOf(name.orEmpty()) }
+        var label by remember(name, bridge?.label) { mutableStateOf(bridge?.label.orEmpty()) }
+        var origin by remember(name, bridge?.origin) { mutableStateOf(bridge?.origin.orEmpty()) }
+        var token by remember(name) { mutableStateOf("") }
+        var error by remember(name) { mutableStateOf<String?>(null) }
+        Text(if (name == null) "Add a messaging service" else "Service $name")
+        if (needsToken) Text("A token is required on this device.")
+        if (name == null) {
+            OutlinedTextField(service, { service = it }, label = { Text("Service name, as spoken to EVA") }, singleLine = true)
+        }
+        OutlinedTextField(label, { label = it }, label = { Text("Label") }, singleLine = true)
+        OutlinedTextField(origin, { origin = it }, label = { Text("HTTPS bridge URL (origin only)") }, singleLine = true)
+        OutlinedTextField(
+            token,
+            { token = it },
+            label = { Text(if (name == null || needsToken) "Bearer token" else "New bearer token (blank keeps the saved one)") },
+            visualTransformation = PasswordVisualTransformation(),
+            singleLine = true,
+        )
+        error?.let { Text(it) }
+        OutlinedButton(onClick = {
+            error = actions.onSaveMessagingBridge(name ?: service, label, origin, token)
+            if (error == null) {
+                token = ""
+                if (name == null) {
+                    service = ""
+                    label = ""
+                    origin = ""
+                }
+            }
+        }) { Text(if (name == null) "Add service" else "Save") }
+        if (name != null) {
+            check?.let { Text(it) }
+            TextButton(onClick = { actions.onCheckMessagingBridge(name) }) { Text("Test connection") }
+            TextButton(onClick = { actions.onRemoveMessagingBridge(name) }) { Text("Remove service") }
+        }
+    }
+}
+
+/**
  * The one messaging leftover that outlives a conversation, so it is forgettable from here. Only
  * the number and when it was reached are held, never a name or anything that was said.
  */
@@ -217,7 +299,13 @@ private fun MessagingPreview() {
         MessagingScreen(
             state =
                 SettingsUiState(
-                    messaging = MessagingPreferences(enabled = true, replies = setOf("signal")),
+                    messaging =
+                        MessagingPreferences(
+                            enabled = true,
+                            replies = setOf("signal"),
+                            bridges = mapOf("whatsapp" to MessagingBridgeDefinition("WhatsApp", "https://bridge.example.ts.net")),
+                        ),
+                    messagingBridgeChecks = mapOf("whatsapp" to "Bridge state: connected. Transport connected, phone responsive."),
                     messagingApps =
                         listOf(
                             MessagingApp(identity = "signal", title = "Signal", packageName = "org.thoughtcrime.securesms"),

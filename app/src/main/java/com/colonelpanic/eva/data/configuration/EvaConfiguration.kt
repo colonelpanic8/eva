@@ -5,8 +5,10 @@ import com.charleskorn.kaml.SingleLineStringStyle
 import com.charleskorn.kaml.Yaml
 import com.charleskorn.kaml.YamlConfiguration
 import com.charleskorn.kaml.YamlException
+import com.colonelpanic.eva.adapters.android.PhoneNumberKey
 import com.colonelpanic.eva.adapters.declarative.PackageCodec
 import com.colonelpanic.eva.adapters.declarative.httpBindings
+import com.colonelpanic.eva.capability.CallEnding
 import com.colonelpanic.eva.conversation.prompt.PromptComponent
 import com.colonelpanic.eva.conversation.prompt.PromptConfig
 import com.colonelpanic.eva.conversation.prompt.PromptDefaults
@@ -57,6 +59,8 @@ data class EvaConfigurationDocument(
     val quietHangUpSeconds: Int? = null,
     /** Read only: [EvaConfigurationCodec.decode] moves it into the prompt's call slot. */
     val oneShotExternal: Boolean? = null,
+    /** Action id to `never`, `after_reply`, or `immediately`, overriding what the action declares. */
+    val endCallAfter: Map<String, String>? = null,
 )
 
 @Serializable data class AppearancePatch(
@@ -71,6 +75,14 @@ data class EvaConfigurationDocument(
 @Serializable data class MessagingPatch(
     val enabled: Boolean? = null,
     val replies: List<String>? = null,
+    /** Service name to a linked messaging account reached through a bridge; the token stays on the device. */
+    val bridges: Map<String, MessagingBridgeDefinition>? = null,
+)
+
+@Serializable
+data class MessagingBridgeDefinition(
+    val label: String,
+    val origin: String,
 )
 
 @Serializable data class PromptPatch(
@@ -187,6 +199,8 @@ data class EvaConfiguration(
         val lookupRetries: Int,
         /** Silence after a one-request call's action is reported before EVA hangs up; 0 never does. */
         val quietHangUpSeconds: Int = DEFAULT_QUIET_HANG_UP_SECONDS,
+        /** Per-action overrides of whether a successful action ends the voice call. */
+        val endCallAfter: Map<String, String> = emptyMap(),
     ) {
         companion object {
             const val DEFAULT_QUIET_HANG_UP_SECONDS = 5
@@ -205,6 +219,7 @@ data class EvaConfiguration(
     data class Messaging(
         val enabled: Boolean,
         val replies: List<String>,
+        val bridges: Map<String, MessagingBridgeDefinition> = emptyMap(),
     )
 
     data class Prompt(
@@ -409,6 +424,7 @@ object EvaConfigurationCodec {
             VoicePatch(
                 current.voice.lookupRetries.takeIf { it != base?.voice?.lookupRetries },
                 current.voice.quietHangUpSeconds.takeIf { it != base?.voice?.quietHangUpSeconds },
+                endCallAfter = current.voice.endCallAfter.takeIf { it != base?.voice?.endCallAfter.orEmpty() },
             ).nonEmpty(),
         appearance = AppearancePatch(current.appearance.dynamicColor.takeIf { it != base?.appearance?.dynamicColor }).nonEmpty(),
         capabilities =
@@ -423,6 +439,7 @@ object EvaConfigurationCodec {
             MessagingPatch(
                 current.messaging.enabled.takeIf { it != base?.messaging?.enabled },
                 current.messaging.replies.takeIf { it != base?.messaging?.replies },
+                current.messaging.bridges.takeIf { it != base?.messaging?.bridges.orEmpty() },
             ).nonEmpty(),
         prompt =
             PromptPatch(
@@ -469,6 +486,7 @@ object EvaConfigurationCodec {
                     requireNotNull(voice?.lookupRetries) { "voice.lookupRetries is missing." },
                     // Documents written before the quiet-line backstop was configurable still load.
                     voice.quietHangUpSeconds ?: EvaConfiguration.Voice.DEFAULT_QUIET_HANG_UP_SECONDS,
+                    voice.endCallAfter.orEmpty(),
                 ),
             appearance = EvaConfiguration.Appearance(requireNotNull(appearance?.dynamicColor) { "appearance.dynamicColor is missing." }),
             capabilities =
@@ -480,6 +498,7 @@ object EvaConfigurationCodec {
                 EvaConfiguration.Messaging(
                     requireNotNull(messaging?.enabled) { "messaging.enabled is missing." },
                     requireNotNull(messaging?.replies) { "messaging.replies is missing." },
+                    messaging?.bridges.orEmpty(),
                 ),
             prompt =
                 EvaConfiguration.Prompt(
@@ -518,9 +537,24 @@ object EvaConfigurationCodec {
         require(models.voiceReasoningEffort in OpenAiModels.VOICE_REASONING_EFFORTS) { "Unknown voice reasoning effort." }
         require(voice.lookupRetries in 0..10) { "voice.lookupRetries must be between 0 and 10." }
         require(voice.quietHangUpSeconds in 0..60) { "voice.quietHangUpSeconds must be between 0 and 60." }
+        CallEnding.checkOverrides(voice.endCallAfter.keys)
+        require(voice.endCallAfter.values.all { CallEnding.of(it) != null }) {
+            "voice.endCallAfter values must be never, after_reply, or immediately."
+        }
         require(messaging.replies.size <= 100) { "At most 100 messaging reply identities may be configured." }
         require(messaging.replies.distinct().size == messaging.replies.size) { "Duplicate messaging reply identity." }
         messaging.replies.forEach { require(MESSAGING_IDENTITY.matches(it)) { "Invalid messaging reply identity." } }
+        require(messaging.bridges.size <= MAX_MESSAGING_BRIDGES) { "At most $MAX_MESSAGING_BRIDGES messaging bridges may be configured." }
+        messaging.bridges.forEach { (name, bridge) ->
+            require(SERVICE_NAME.matches(name) && name !in RESERVED_MESSAGING_SERVICES) { "Invalid messaging bridge service name." }
+            require(bridge.label.isNotBlank() && bridge.label.length <= 100 && bridge.label.none(Char::isISOControl)) {
+                "Invalid messaging bridge label."
+            }
+            bridge.origin.httpsOrigin()
+            require(credentials.required.any { it.id == messagingSecretId(name) && it.endpoint == bridge.origin }) {
+                "Messaging bridge credential requirement is missing or has a different origin."
+            }
+        }
         prompt.source.https("prompt.source")
         PromptConfig(prompt.components).validated(PromptDefaults.VARIABLES)
         require(packages.repositories.isNotEmpty()) { "packages.repositories must name at least one catalog." }
@@ -632,7 +666,8 @@ object EvaConfigurationCodec {
                     ?: "portal-bearer".takeIf { reference.id == "device/portal" }
                     ?: ("http-" + reference.id.substringAfterLast("/")).takeIf {
                         SERVICE_SECRET.matches(reference.id) ||
-                            PACKAGE_SECRET.matches(reference.id)
+                            PACKAGE_SECRET.matches(reference.id) ||
+                            MESSAGING_SECRET.matches(reference.id)
                     }
             require(expectedKind != null) { "Unknown or unscoped secret reference." }
             require(reference.kind == expectedKind) { "Secret reference kind does not match its scope." }
@@ -685,13 +720,17 @@ object EvaConfigurationCodec {
         credentials.required.filter { SERVICE_SECRET.matches(it.id) || PACKAGE_SECRET.matches(it.id) }.forEach { reference ->
             require(reference.id in declaredCredentials) { "HTTP credential requirement does not belong to a declared service." }
         }
-        require(remembered.chosenNumbers.size <= 500)
-        remembered.chosenNumbers.forEach { (number, time) ->
-            require(number.matches(Regex("[0-9]{7,15}")) && time >= 0) { "Invalid remembered number choice." }
+        credentials.required.filter { MESSAGING_SECRET.matches(it.id) }.forEach { reference ->
+            require(reference.id in messaging.bridges.keys.map(::messagingSecretId)) {
+                "Messaging credential requirement does not belong to a configured bridge."
+            }
         }
+        require(remembered.chosenNumbers.size <= 500)
+        require(remembered.chosenNumbers.values.all { it >= 0 }) { "Invalid remembered number choice." }
         require(device.authorizations.all { it in DEVICE_AUTHORIZATIONS }) { "Unknown device authorization." }
         require(device.authorizations.distinct().size == device.authorizations.size) { "Duplicate device authorization." }
         return copy(
+            voice = voice.copy(endCallAfter = voice.endCallAfter.toSortedMap()),
             packages =
                 packages.copy(
                     installed = packages.installed.sortedBy { it.instance },
@@ -706,15 +745,17 @@ object EvaConfigurationCodec {
                 extensions.copy(
                     grants = extensions.grants.sortedBy { it.instance }.map { it.copy(mutations = it.mutations.sorted()) },
                 ),
-            messaging = messaging.copy(replies = messaging.replies.sorted()),
+            messaging = messaging.copy(replies = messaging.replies.sorted(), bridges = messaging.bridges.toSortedMap()),
             credentials = credentials.copy(required = credentials.required.sortedBy { it.id }),
-            remembered = remembered.copy(chosenNumbers = remembered.chosenNumbers.toSortedMap()),
+            // Numbers remembered before they were kept whole cannot be recovered, so they are dropped.
+            remembered = remembered.copy(chosenNumbers = remembered.chosenNumbers.filterKeys(PhoneNumberKey.E164::matches).toSortedMap()),
             device = device.copy(authorizations = device.authorizations.sorted()),
         )
     }
 
     private fun canonical(document: EvaConfigurationDocument) =
         document.copy(
+            voice = document.voice?.copy(endCallAfter = document.voice.endCallAfter?.toSortedMap()),
             packages =
                 document.packages?.copy(
                     legacyBundledInstances = document.packages.legacyBundledInstances?.toSortedMap(),
@@ -733,7 +774,11 @@ object EvaConfigurationCodec {
                             ?.sortedBy { it.instance }
                             ?.map { it.copy(mutations = it.mutations.sorted()) },
                 ),
-            messaging = document.messaging?.copy(replies = document.messaging.replies?.sorted()),
+            messaging =
+                document.messaging?.copy(
+                    replies = document.messaging.replies?.sorted(),
+                    bridges = document.messaging.bridges?.toSortedMap(),
+                ),
             credentials = document.credentials?.copy(required = document.credentials.required?.sortedBy { it.id }),
             remembered = document.remembered?.copy(chosenNumbers = document.remembered.chosenNumbers?.toSortedMap()),
             device = document.device?.copy(authorizations = document.device.authorizations?.sorted()),
@@ -754,6 +799,7 @@ object EvaConfigurationCodec {
             VoicePatch(
                 override.voice?.lookupRetries ?: base.voice?.lookupRetries,
                 override.voice?.quietHangUpSeconds ?: base.voice?.quietHangUpSeconds,
+                endCallAfter = override.voice?.endCallAfter ?: base.voice?.endCallAfter,
             ).nonEmpty(),
         appearance = AppearancePatch(override.appearance?.dynamicColor ?: base.appearance?.dynamicColor).nonEmpty(),
         capabilities =
@@ -765,6 +811,7 @@ object EvaConfigurationCodec {
             MessagingPatch(
                 override.messaging?.enabled ?: base.messaging?.enabled,
                 override.messaging?.replies ?: base.messaging?.replies,
+                override.messaging?.bridges ?: base.messaging?.bridges,
             ).nonEmpty(),
         prompt =
             PromptPatch(
@@ -816,13 +863,13 @@ object EvaConfigurationCodec {
     private fun ModelsPatch.nonEmpty() =
         takeIf { text != null || realtime != null || reasoningEffort != null || voiceReasoningEffort != null }
 
-    private fun VoicePatch.nonEmpty() = takeIf { lookupRetries != null || quietHangUpSeconds != null }
+    private fun VoicePatch.nonEmpty() = takeIf { lookupRetries != null || quietHangUpSeconds != null || endCallAfter != null }
 
     private fun AppearancePatch.nonEmpty() = takeIf { dynamicColor != null }
 
     private fun CapabilitiesPatch.nonEmpty() = takeIf { screenControl != null || deviceTask != null }
 
-    private fun MessagingPatch.nonEmpty() = takeIf { enabled != null || replies != null }
+    private fun MessagingPatch.nonEmpty() = takeIf { enabled != null || replies != null || bridges != null }
 
     private fun PromptPatch.nonEmpty() = takeIf { source != null || components != null }
 
@@ -879,7 +926,12 @@ object EvaConfigurationCodec {
     private val SEGMENT = Regex("[A-Za-z0-9][A-Za-z0-9._-]*")
     private val PACKAGE_SECRET = Regex("package/[0-9a-f-]{36}/basic")
     private val SERVICE_SECRET = Regex("service/[a-z][a-z0-9-]{0,63}/(basic|bearer)")
+    private val MESSAGING_SECRET = Regex("messaging/[a-z][a-z0-9-]{0,63}/bearer")
     private val SERVICE_NAME = Regex("[a-z][a-z0-9-]{0,63}")
+    private const val MAX_MESSAGING_BRIDGES = 16
+
+    /** Service names the shared messaging tools already give a meaning. */
+    val RESERVED_MESSAGING_SERVICES = setOf("sms", "notifications")
     private val MESSAGING_IDENTITY =
         Regex("[0-9]+:[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z][A-Za-z0-9_]*)+:[0-9]+:[0-9a-f]{64}(?:,[0-9a-f]{64})*")
     private val PROVIDER_SECRETS =
@@ -897,6 +949,8 @@ object EvaConfigurationCodec {
             "android.permission.READ_SMS",
             "android.permission.SEND_SMS",
             "android.permission.CALL_PHONE",
+            "android.permission.ACCESS_COARSE_LOCATION",
+            "android.permission.ACCESS_FINE_LOCATION",
             "android.permission.POST_NOTIFICATIONS",
             "android.role.ASSISTANT",
             "android.notification-listener",
@@ -910,6 +964,10 @@ object EvaConfigurationCodec {
         name: String,
         scheme: String = "basic",
     ) = "service/$name/$scheme"
+
+    fun messagingSecretId(name: String) = "messaging/$name/bearer"
+
+    fun isMessagingBridgeName(name: String) = SERVICE_NAME.matches(name) && name !in RESERVED_MESSAGING_SERVICES
 
     private fun com.colonelpanic.eva.adapters.declarative.PackageDefinition.httpOrigins(): Set<String> =
         httpBindings().map { it.origin }.toSet()

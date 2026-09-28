@@ -12,34 +12,70 @@ class ConversationSummariesTest {
     private val group = Conversation(7, listOf(alice, bob), now - 2 * HOUR, "See you then")
 
     @Test
-    fun `a listed conversation carries the id a later send needs`() {
+    fun `a listed conversation carries the id a later send needs and each named number`() {
         assertEquals(
-            "Recent conversations: 7 — Alice Smith, Bob (group of 2) — 2 hours ago — \"See you then\". " +
-                ConversationSummaries.USE_THE_ID,
-            ConversationSummaries.describeConversations(null, listOf(group), now),
+            "Recent conversations: 7 — Alice Smith (+12025550100), Bob (+12025550101) (group of 2) — 2 hours ago — " +
+                "\"See you then\". " + ConversationSummaries.USE_THE_ID,
+            ConversationSummaries.describeConversations("", ConversationQuery.of(null, emptyList(), usPhoneNumbers), listOf(group), now),
         )
     }
 
     @Test
-    fun `a participant without a contact entry is still addressable by number`() {
-        val summary =
+    fun `an empty search says so and that sending to the numbers starts a conversation`() {
+        assertEquals(
+            "No text conversation matches \"climbing\". " + ConversationSummaries.STARTS_ONE,
             ConversationSummaries.describeConversations(
-                "555",
-                listOf(Conversation(9, listOf(unknown), now - 45 * MINUTE)),
+                "\"climbing\"",
+                ConversationQuery.of("climbing", emptyList(), usPhoneNumbers),
+                emptyList(),
                 now,
-            )
-        assertEquals(
-            "Conversations matching \"555\": 9 — +12025550102 — 45 minutes ago. " + ConversationSummaries.USE_THE_ID,
-            summary,
+            ),
         )
     }
 
     @Test
-    fun `an empty result says so instead of inviting a retry with the same words`() {
+    fun `numbers find the conversation with exactly those people despite formatting`() {
+        val query = ConversationQuery.of(null, listOf("(202) 555-0100", "2025550101"), usPhoneNumbers)
+        val wider = Conversation(8, listOf(alice, bob, unknown), now - MINUTE)
+        val direct = Conversation(9, listOf(alice), now)
+        val ranked = query.rank(listOf(direct, wider, group))
+
+        assertEquals(listOf(7L, 8L), ranked.map(Conversation::id))
         assertEquals(
-            "No conversation matches \"climbing\".",
-            ConversationSummaries.describeConversations("climbing", emptyList(), now),
+            "Conversations with only those people: 7 — Alice Smith (+12025550100), Bob (+12025550101) (group of 2) — " +
+                "2 hours ago — \"See you then\". Conversations that also include others: 8 — Alice Smith (+12025550100), " +
+                "Bob (+12025550101), +12025550102 (group of 3) — 1 minute ago. " + ConversationSummaries.USE_THE_ID,
+            ConversationSummaries.describeConversations("those people", query, ranked, now),
         )
+    }
+
+    @Test
+    fun `a number abroad that shares only its trailing digits is someone else`() {
+        val london = Conversation(10, listOf(ConversationParticipant("+44 20 2555 0100")), now)
+        val query = ConversationQuery.of(null, listOf("+1 202 555 0100"), usPhoneNumbers)
+        assertEquals(emptyList<Long>(), query.rank(listOf(london)).map(Conversation::id))
+    }
+
+    @Test
+    fun `a name leads with the direct thread even when a group is newer`() {
+        val direct = Conversation(9, listOf(alice), now - 3 * DAY)
+        val ranked = ConversationQuery.of("alice", emptyList(), usPhoneNumbers).rank(listOf(group, direct))
+        assertEquals(listOf(9L, 7L), ranked.map(Conversation::id))
+    }
+
+    @Test
+    fun `comma separated names need every person in the conversation`() {
+        val direct = Conversation(9, listOf(alice), now)
+        val query = ConversationQuery.of("Alice, bob", emptyList(), usPhoneNumbers)
+        assertEquals(listOf(7L), query.rank(listOf(direct, group)).map(Conversation::id))
+        assertTrue(query.isExact(group))
+    }
+
+    @Test
+    fun `without an exact match the search says a send starts one`() {
+        val query = ConversationQuery.of(null, listOf("+12025550100"), usPhoneNumbers)
+        val summary = ConversationSummaries.describeConversations("+12025550100", query, query.rank(listOf(group)), now)
+        assertTrue(summary.startsWith(ConversationSummaries.NO_EXACT + " Conversations that also include others: 7 — "))
     }
 
     @Test
@@ -72,5 +108,6 @@ class ConversationSummariesTest {
         const val SECOND = 1_000L
         const val MINUTE = 60 * SECOND
         const val HOUR = 60 * MINUTE
+        const val DAY = 24 * HOUR
     }
 }

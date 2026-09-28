@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.ui.settings
 
+import com.colonelpanic.eva.capability.CallEnding
 import com.colonelpanic.eva.capability.extensions.ExtensionSettings
 import com.colonelpanic.eva.conversation.prompt.VoiceCallMode
 import com.colonelpanic.eva.data.MessagingPreferences
@@ -15,6 +16,13 @@ data class PermissionStatus(
     val granted: Boolean,
 )
 
+/** One of EVA's own actions that can end a voice call, with what it declares. */
+data class NativeCallEnding(
+    val id: String,
+    val title: String,
+    val declared: CallEnding,
+)
+
 /** Everything the settings screens render, collected once by the activity. */
 data class SettingsUiState(
     val configuration: ConfigurationStatus = ConfigurationStatus(),
@@ -22,6 +30,10 @@ data class SettingsUiState(
         MessagingPreferences(),
     val messagingApps: List<MessagingApp> = emptyList(),
     val messagingPermissions: List<PermissionStatus> = emptyList(),
+    /** Service name to the last connection check of its messaging bridge. */
+    val messagingBridgeChecks: Map<String, String> = emptyMap(),
+    /** Bridges whose token is missing on this device or was saved for another origin. */
+    val messagingBridgesNeedingToken: Set<String> = emptySet(),
     val rememberedNumbers: Int = 0,
     val memories: com.colonelpanic.eva.data.Memories =
         com.colonelpanic.eva.data
@@ -47,6 +59,9 @@ data class SettingsUiState(
     val reasoningEffort: String = OpenAiModels.TEXT_REASONING_EFFORT,
     val voiceReasoningEffort: String = OpenAiModels.VOICE_REASONING_EFFORT,
     val voiceLookupRetries: Int = 5,
+    /** The user's per-action choices; an absent action uses what it declares. */
+    val callEndings: Map<String, CallEnding> = emptyMap(),
+    val nativeCallEndings: List<NativeCallEnding> = emptyList(),
     /** Read from the prompt's call slot, which this switch edits. */
     val callMode: VoiceCallMode? = VoiceCallMode.ONE_REQUEST,
     val isDeviceAssistant: Boolean = false,
@@ -80,6 +95,9 @@ data class SettingsActions(
     val onMessagingEnable: (Boolean) -> Unit = {},
     val onMessagingReply: (String, Boolean) -> Unit = { _, _ -> },
     val onMessagingRefresh: () -> Unit = {},
+    val onSaveMessagingBridge: (String, String, String, String) -> String? = { _, _, _, _ -> null },
+    val onRemoveMessagingBridge: (String) -> Unit = {},
+    val onCheckMessagingBridge: (String) -> Unit = {},
     val onForgetRememberedNumbers: () -> Unit = {},
     val onKeepMemory: (String) -> Unit = {},
     val onForgetMemory: (String) -> Unit = {},
@@ -114,6 +132,7 @@ data class SettingsActions(
     val onSelectReasoningEffort: (String) -> Unit = {},
     val onSelectVoiceReasoningEffort: (String) -> Unit = {},
     val onVoiceLookupRetriesChange: (Int) -> Unit = {},
+    val onCallEnding: (String, CallEnding?) -> Unit = { _, _ -> },
     val onEndAfterOneRequestChange: (Boolean) -> Unit = {},
     val onOpenAssistantSettings: () -> Unit = {},
     val onOpenMediaControlSettings: () -> Unit = {},

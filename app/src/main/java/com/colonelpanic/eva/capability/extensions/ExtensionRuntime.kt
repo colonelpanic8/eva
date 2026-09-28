@@ -17,6 +17,8 @@ data class ExtensionSettingsEntry(
     val installed: InstalledExtension,
     val enabled: Boolean,
     val mutations: Set<String>,
+    /** The app extension this package is folded under, and the actions it takes over. */
+    val supersession: Supersession? = null,
 ) {
     val key: String get() = "${installed.identity?.key}:${installed.descriptor?.digest}"
 }
@@ -197,12 +199,14 @@ class ExtensionRuntime(
             val backends = bundled.bindings.toMutableMap()
             val definitions = bundled.catalog.toMutableList()
             val revisions = bundled.bindingRevisions.toMutableMap()
+            val superseded = supersessions(installed)
             for (entry in installed) {
                 val identity = entry.identity ?: continue
                 val descriptor = entry.descriptor ?: continue
+                val withheld = superseded[identity.instanceId]?.actions.orEmpty()
                 for (binding in adapter.bindings(entry)) {
                     val capability = binding.capability
-                    if (!grants.allowed(identity, descriptor, capability)) continue
+                    if (capability.name in withheld || !grants.allowed(identity, descriptor, capability)) continue
                     val backend =
                         GrantedExecutionBackend(binding.backend) {
                             when {
@@ -230,7 +234,12 @@ class ExtensionRuntime(
                 ExtensionSettings(
                     installed.map { entry ->
                         val grant = entry.identity?.let { identity -> entry.descriptor?.let { grants.grant(identity, it) } }
-                        ExtensionSettingsEntry(entry, grant != null, grant?.mutations.orEmpty())
+                        ExtensionSettingsEntry(
+                            entry,
+                            grant != null,
+                            grant?.mutations.orEmpty(),
+                            entry.identity?.let { superseded[it.instanceId] },
+                        )
                     },
                     error,
                 )

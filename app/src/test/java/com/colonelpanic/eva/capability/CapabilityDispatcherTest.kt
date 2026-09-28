@@ -31,7 +31,7 @@ class CapabilityDispatcherTest {
             }
         }
     private val registry = TestCapabilities.registry(backend)
-    private val dispatcher = CapabilityDispatcher(registry, repository) { 10L }
+    private val dispatcher = CapabilityDispatcher(registry, repository, nowMillis = { 10L })
 
     private fun proposal(
         id: String = "session:call",

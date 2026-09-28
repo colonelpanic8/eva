@@ -1,0 +1,3 @@
+* Changed: Every action EVA runs stays in the conversation as one compact line under your request, showing what ran and whether it worked. Tap it to see the details the model sent and the full result.
+* Fixed: Actions and answers in older requests no longer vanish once a conversation gets long.
+* ...see CHANGELOG.md for the rest.

@@ -1,6 +1,7 @@
 package com.colonelpanic.eva.capability.extensions
 
 import com.colonelpanic.eva.capability.BoundedJson
+import com.colonelpanic.eva.capability.CallEnding
 import com.colonelpanic.eva.capability.ExecutionOutcome
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.ToolSchema
@@ -217,7 +218,7 @@ object ExtensionProtocol {
         val effect = effect(root.getValue("effects").text(20))
         tool.annotations?.let { checkAnnotations(it, effect) }
         val execution = root.getValue("execution").obj()
-        execution.fields(setOf("mode", "requiresForeground"), setOf("maxWaitMillis"))
+        execution.fields(setOf("mode", "requiresForeground"), setOf("maxWaitMillis", "endsVoiceCall"))
         require(execution["mode"] == JsonPrimitive("synchronous")) { "Installed extensions execute synchronously" }
         require(execution["requiresForeground"] == JsonPrimitive(false)) { "Foreground execution is unsupported" }
         val wait =
@@ -241,8 +242,12 @@ object ExtensionProtocol {
             bytes,
             tool.outputSchema,
             tool.annotations,
+            execution["endsVoiceCall"]?.let(::callEnding) ?: CallEnding.NEVER,
         )
     }
+
+    /** Shared with the declarative codec: `never`, `after_reply`, or `immediately`. */
+    fun callEnding(value: JsonElement): CallEnding = CallEnding.of(value.text(20)) ?: error("Unsupported endsVoiceCall")
 
     /** Shared with the declarative codec: one MCP tool object, EVA's bounds applied. */
     fun tool(root: JsonObject): McpTool {
@@ -392,6 +397,7 @@ data class Capability(
     val maxResultBytes: Int,
     val outputSchema: JsonObject? = null,
     val annotations: JsonObject? = null,
+    val endsVoiceCall: CallEnding = CallEnding.NEVER,
 )
 
 data class Descriptor(

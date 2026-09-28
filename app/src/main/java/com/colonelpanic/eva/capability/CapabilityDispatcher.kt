@@ -17,6 +17,8 @@ class CapabilityDispatcher(
         ExecutionBackend,
     ) -> ExecutionOutcome = { proposal, backend -> backend.execute(proposal) },
     private val nowMillis: () -> Long = System::currentTimeMillis,
+    /** Sees what a backend threw; the journal and the model only learn that the outcome is unknown. */
+    private val onBackendFailure: (String, Exception) -> Unit = { _, _ -> },
 ) {
     private val submissions = CallLocks()
     val catalogRevision: String get() = registry.snapshot.revision
@@ -98,7 +100,8 @@ class CapabilityDispatcher(
                         executeAdmitted(snapshot, admitted)
                     } catch (error: CancellationException) {
                         throw error
-                    } catch (_: Exception) {
+                    } catch (error: Exception) {
+                        onBackendFailure(proposal.capabilityId, error)
                         ExecutionOutcome(InvocationStatus.UNKNOWN, UNKNOWN_MESSAGE)
                     }
                 journal(mayHaveExecuted = true) {

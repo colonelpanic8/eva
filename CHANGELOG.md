@@ -4,6 +4,64 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.42.0] - 2026-09-28
+
+### Changed
+
+- Every action EVA runs stays in the conversation as one compact line under your request, showing what ran and whether it worked. Tap it to see the details the model sent and the full result.
+
+### Fixed
+
+- Actions and answers in older requests no longer vanish once a conversation gets long.
+- An action the voice model asked for while an earlier request was finishing in text used to disappear without a trace, and the model was left waiting for it. It now shows as not run, and the model is told nothing happened.
+
+## [0.41.1] - 2026-09-28
+
+### Fixed
+
+- Longer text messages with characters such as an em dash, curly quotes, or emoji send again. On some SIMs Android refused to split such a message for EVA, so nothing was sent, EVA reported the outcome as unknown, and it then blocked further messages in the same request. EVA now splits the message itself when Android refuses.
+- Saving only a new token for an existing messaging service now clears the Messaging screen's request for a token.
+
+## [0.41.0] - 2026-09-26
+
+### Added
+
+- Messaging services behind a self-hosted bridge, such as WhatsApp on the multidevice bridge. Under Messaging → Messaging services, add the bridge's name, label, HTTPS origin, and token; the token stays on the phone while the rest travels in your configuration and asks to be provisioned on another device. The usual conversation, history, and send actions then work with `service: whatsapp`: search covers the account's chats and contacts and returns durable references, history shows recent messages with delivery status and attachments, and sending can start a new chat by number. Sends report exactly what the bridge saw: accepted by the service, refused, queued for later, or unknown, and a repeated request never sends twice.
+- Waze navigation, installed automatically once Waze is on the phone. EVA asks Waze to drive to a place's exact coordinates when a place search found them, so Waze starts the route instead of showing search results, and can drive to the Home or Work saved in Waze. It can also avoid tolls or freeways when asked. Like Google Maps, it asks for the unlock first on a locked phone.
+
+## [0.40.1] - 2026-09-25
+
+### Changed
+
+- Contacts search and conversation search compare whole phone numbers instead of their last seven digits, so a number abroad that happens to end the same way no longer counts as someone you text. Numbers remembered before this change are forgotten once.
+
+## [0.40.0] - 2026-09-25
+
+### Changed
+
+- EVA finds an existing text conversation more reliably. Conversation search takes the phone numbers of everyone in it and returns the thread with exactly those people, even an older one, ahead of group chats that also include others. A name search accepts several people separated by commas, puts a one-to-one chat ahead of groups, and shows each person's number.
+
+## [0.39.0] - 2026-09-25
+
+### Added
+
+- Placing a phone call or starting music now ends the voice call, so the call or song gets the phone's audio. EVA says its closing line first, and if the action fails the call stays open so you hear why.
+- Under Settings → Device assistant, and beside each extension action, you can choose whether a voice call stays open, ends after EVA confirms, or ends right away once that action succeeds. The choice is saved in your configuration (`voice.endCallAfter`).
+- Extensions can declare `endsVoiceCall` for actions that hand the phone to another app. Google Maps navigation and Google Translate's listening screens now use it.
+
+## [0.38.0] - 2026-09-24
+
+### Added
+
+- Ask "where am I?" and EVA answers with the phone's location and nearest address. It asks for the Location permission when the app opens.
+- A new OpenStreetMap places extension, on by default, finds places near you with addresses and hours, and hands the one you pick to Google Maps. It sends your area to OpenStreetMap; turn it off to stop.
+
+## [0.37.1] - 2026-09-24
+
+### Fixed
+
+- Mova no longer appears twice under Extensions when both Mova's own extension and the catalog's Mova package are installed. Mova's extension handles the actions both offer, so the model sees each once; the package's remaining link actions are listed inside Mova's row.
+
 ## [0.37.0] - 2026-09-24
 
 ### Added

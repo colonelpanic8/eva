@@ -52,6 +52,9 @@ data class Wording(
         const val CONTINUATION = "continuation"
         const val HANG_UP_DEFERRED = "hang-up-deferred"
         const val EXTENSION_GUIDANCE = "extension-guidance"
+        const val ENDS_CALL_IMMEDIATELY = "ends-call-immediately"
+        const val ENDS_CALL_AFTER_REPLY = "ends-call-after-reply"
+        const val MESSAGING_BRIDGES = "messaging-bridges"
 
         private val yaml = Yaml(configuration = YamlConfiguration(encodeDefaults = false))
 

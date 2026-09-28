@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.ui
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,13 +23,20 @@ import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import com.colonelpanic.eva.conversation.ConversationEntry
@@ -122,6 +130,10 @@ internal fun ConversationEntryItem(
         SessionDivider(entry.response)
         return
     }
+    if (entry.capabilityId != null && entry.request.isBlank()) {
+        ActionRow(entry)
+        return
+    }
     Column(
         modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -178,9 +190,70 @@ private fun ActionBranch(actions: List<ConversationEntry>) {
     ) {
         Box(modifier = Modifier.width(2.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outlineVariant))
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            actions.forEach { ResponseBubble(it) }
+            actions.forEach { action -> key(action.id) { ActionRow(action) } }
         }
     }
+}
+
+/** One line per action; tapping it shows the arguments the model sent and the full result. */
+@Composable
+private fun ActionRow(action: ConversationEntry) {
+    var expanded by rememberSaveable(action.id) { mutableStateOf(false) }
+    val status = action.status.presentation()
+    val title = action.actionTitle ?: action.capabilityId ?: "Action"
+    Surface(
+        onClick = { expanded = !expanded },
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = RoundedCornerShape(12.dp),
+        modifier =
+            Modifier
+                .maxWidthFraction(0.92f)
+                .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" }
+                .animateContentSize(),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                StatusIndicator(status)
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                Text(text = status.label, style = MaterialTheme.typography.labelMedium, color = status.color())
+            }
+            if (expanded) {
+                action.capabilityId?.let { DetailText(it) }
+                action.arguments.forEach { (name, value) -> DetailText("$name: $value") }
+                if (action.arguments.isNotEmpty()) HorizontalDivider()
+                Text(text = action.response, style = MaterialTheme.typography.bodyMedium)
+            } else {
+                (action.result ?: action.response).lineSequence().firstOrNull { it.isNotBlank() }?.let { DetailText(it, maxLines = 1) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DetailText(
+    text: String,
+    maxLines: Int = Int.MAX_VALUE,
+) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = maxLines,
+        overflow = TextOverflow.Ellipsis,
+    )
 }
 
 @Composable
@@ -201,20 +274,25 @@ private fun SessionDivider(label: String) {
 }
 
 @Composable
+private fun StatusIndicator(status: StatusPresentation) {
+    if (status.inProgress) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(12.dp),
+            strokeWidth = 2.dp,
+            color = status.color(),
+        )
+    } else {
+        Box(modifier = Modifier.size(10.dp).background(status.color(), CircleShape))
+    }
+}
+
+@Composable
 private fun StatusLine(status: StatusPresentation) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        if (status.inProgress) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(12.dp),
-                strokeWidth = 2.dp,
-                color = status.color(),
-            )
-        } else {
-            Box(modifier = Modifier.size(10.dp).background(status.color(), CircleShape))
-        }
+        StatusIndicator(status)
         Text(
             text = status.label,
             style = MaterialTheme.typography.labelLarge,

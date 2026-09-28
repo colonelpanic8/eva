@@ -1,6 +1,7 @@
 package com.colonelpanic.eva.adapters.declarative
 
 import com.colonelpanic.eva.capability.BoundedJson
+import com.colonelpanic.eva.capability.CallEnding
 import com.colonelpanic.eva.capability.ExecutionMode
 import com.colonelpanic.eva.capability.ExecutionSemantics
 import com.colonelpanic.eva.capability.ToolSchema
@@ -156,7 +157,7 @@ object PackageCodec {
     }
 
     private fun execution(root: JsonObject): ExecutionSemantics {
-        root.fields(setOf("mode", "requiresForeground"), setOf("maxWaitMillis", "requiresUnlock"))
+        root.fields(setOf("mode", "requiresForeground"), setOf("maxWaitMillis", "requiresUnlock", "endsVoiceCall"))
         val mode =
             when (root.text("mode", 30)) {
                 "synchronous" -> ExecutionMode.SYNCHRONOUS
@@ -174,6 +175,7 @@ object PackageCodec {
                     ?: error("Expected boolean")
             }
                 ?: false,
+            root["endsVoiceCall"]?.let { ExtensionProtocol.callEnding(it) } ?: CallEnding.NEVER,
         )
     }
 

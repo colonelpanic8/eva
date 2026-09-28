@@ -1,0 +1,3 @@
+* Added: Placing a phone call or starting music now ends the voice call, so the call or song gets the phone's audio. EVA says its closing line first, and if the action fails the call stays open so you hear why.
+* Added: Under Settings → Device assistant, and beside each extension action, you can choose whether a voice call stays open, ends after EVA confirms, or ends right away once that action succeeds. The choice is saved in your configuration (`voice.endCallAfter`).
+* ...see CHANGELOG.md for the rest.

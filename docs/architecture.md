@@ -126,6 +126,9 @@ Manual imports do not gain new grants this way. Installed Android providers do n
 either, except the pinned default providers (Mova and Paseo): they start enabled
 with every action unless the user turned them off. See
 [default providers](extension-protocol.md#7-identity-grants-and-untrusted-text).
+An app's own installed extension takes over same-named actions from declarative
+packages that target that app; the package's other actions stay available and are
+listed under the app.
 
 The dispatcher validates identity, arguments, binding revision, availability, and
 grants, then journals a claim before dispatch. Duplicate call IDs cannot execute
@@ -194,6 +197,17 @@ for concrete identity, schema, waiting, and authorization rules.
   call takes audio focus, which pauses EVA's microphone and playback until it ends.
   An API 36 emulator placed a call from EVA's process with the keyguard showing;
   physical-device verification is pending.
+- `eva.android.location.current` reads the phone's location from `LocationManager`
+  (fused provider where present), falling back to the newest cached fix, and adds
+  the nearest address from the platform `Geocoder`. It needs `ACCESS_COARSE_LOCATION`
+  or `ACCESS_FINE_LOCATION`, requested with EVA's other permissions; with only
+  approximate access the result says so. A voice session adds the `location`
+  foreground-service type when the grant exists, so the tool answers while another
+  app has the screen; outside a session in the background Android withholds the fix.
+  The OpenStreetMap places package's `nearby` search takes a bounding box around them. Declarative
+  HTTP requests identify themselves as EVA, since public services such as Nominatim
+  refuse anonymous library clients. JVM-tested under Robolectric; device verification
+  is pending.
 - SMS draft handoff and native direct-message sending are distinct capabilities.
   Notification replies share the same authorized messaging boundary. Do not remove
   native behavior merely because a declarative compose example exists. See
@@ -384,10 +398,21 @@ The **Messaging** drawer destination owns phone-permission status, contact-name
 lookup retries, notification-message access/reply grants, and remembered-number
 management. Moving these controls does not rename their portable fields:
 `voice.lookupRetries`, `messaging`, and `remembered.chosenNumbers` remain stable.
+Phone numbers compare in E.164, reading a number without a country code as one
+from the SIM's country (`PlatformPhoneNumberKey`); `remembered.chosenNumbers` keys
+are E.164, and keys in any other form are dropped when the configuration loads.
 
-EVA exposes one search/read/send tool family with two execution paths:
+EVA exposes one search/read/send tool family with three execution paths:
 
 - SMS/MMS: native Android conversation lookup, history and sending.
+- Bridge services: a self-hosted
+  [messaging bridge](https://github.com/colonelpanic8/google-messages-multidevice-bridge)
+  holding one linked account, such as WhatsApp, reached over HTTPS with a
+  device-local bearer token. It provides durable conversation references,
+  contacts, recent history, new chats, and an outbox whose states EVA reports as
+  they are. Implemented in `messaging/BridgeMessaging.kt`; its HTTP and outcome
+  mapping have JVM coverage against a scripted bridge, and it has not been
+  verified against a live bridge or on a device.
 - Other apps: recent messaging notifications and their explicit text-reply
   actions. No target-app changes, extensions, Shizuku, or app-specific package
   allowlist are required.
@@ -396,16 +421,33 @@ EVA exposes one search/read/send tool family with two execution paths:
 
 Existing capability IDs remain stable:
 
-| Tool | SMS/MMS | Notification-backed app |
-| --- | --- | --- |
-| eva.android.messages.conversations | Omit service or use sms; optional participant query | service is notifications for discovery, exact package name, or unique visible app label; query matches conversation title |
-| eva.android.messages.history | Use the returned integer conversationId | Use the returned opaque conversationRef; result is only a notification excerpt |
-| eva.android.messages.send | Explicit recipient number(s) or conversationId, plus message | conversationRef and message; optional service must match |
+| Tool | SMS/MMS | Bridge service | Notification-backed app |
+| --- | --- | --- | --- |
+| eva.android.messages.conversations | Omit service or use sms; optional name query (commas require every person) or participants phone numbers; threads with only the asked-for people rank first | service is the bridge's configured name or label; query is passed to the bridge's name/number search and its contacts; participants filters to chats holding every number | service is notifications for discovery, exact package name, or unique visible app label; query matches conversation title |
+| eva.android.messages.history | Use the returned integer conversationId | Use the returned durable conversationRef (`bridge:<service>:<id>`) | Use the returned opaque conversationRef; result is only a notification excerpt |
+| eva.android.messages.send | Explicit recipient number(s) or conversationId, plus message | conversationRef, or recipient as E.164 numbers to reuse or start a chat, plus message | conversationRef and message; optional service must match |
 
 App search results include service package name, conversation title,
 conversationRef, and replyAvailable. If labels are ambiguous, use the package
 name. EVA never substitutes SMS when an app was explicitly requested. Device
 contacts remain useful for SMS, but a phone number is not an app reply target.
+
+Routing is by explicit naming: a `service` equal to a configured bridge's name
+or label selects that bridge, and a `bridge:` reference selects its bridge even
+without `service`; a reference paired with a different explicit service, an SMS
+thread ID, or a bridge no longer configured is refused rather than redirected.
+Service names are matched exactly (case-insensitively); EVA does not guess which
+service a spoken name means. When at least one bridge is configured, EVA appends
+the `messaging-bridges` note from `eva-wording.yaml`, listing the configured
+names, to the three messaging tools at connection time.
+
+Bridge search results list conversations newest first with name, participants
+(name and E.164 number), group flag, recency, unread state, and an attributed
+preview, followed by matching bridge contacts without a chat and the number to
+send to. History returns the bridge's stored recent messages oldest first with
+sender, elapsed time, direction, the bridge's status string for sent messages
+(shown as received; unknown values are passed through), attachment kinds, and
+reactions. Both are quoted as external data, like every other messaging read.
 
 The controller allows native reads before one send in a request. Every send
 still uses the dispatcher, journal, schema validation, and correlated receipt.
@@ -419,6 +461,35 @@ return **HANDED_OFF**, not delivered or read: Android accepted the app's reply
 action, but does not expose a reliable cross-app server-delivery receipt.
 Expired/cancelled targets or missing permission return **NOT_EXECUTED**.
 Uncertain submission returns **UNKNOWN** and is not automatically retried.
+
+A bridge send first reads `/v1/status`: `authentication_required` or
+`storage_failed` refuses with **NOT_EXECUTED** and says the bridge needs
+re-pairing; an unreachable bridge is **FAILED** with nothing queued. A recipient
+send reuses the chat holding exactly those numbers, otherwise queues chat
+creation under `<key>-chat` and waits for its conversation ID; a rejected,
+ambiguous, canceled, or still-pending creation is **NOT_EXECUTED** because no
+message was queued. The message is queued with an `Idempotency-Key` derived
+from the invocation's call ID and argument fingerprint (SHA-256), so a
+re-delivered invocation maps to the same bridge operation and the bridge
+deduplicates it; EVA never mints a fresh key to retry. EVA then polls
+`/v1/outbox/{key}` for a bounded wait and reports:
+
+| Outbox state | Result |
+| --- | --- |
+| `accepted`, `confirmed` | **COMPLETED**: the service's server accepted it; not delivered or read |
+| `rejected` | **NOT_EXECUTED** with the bridge's detail |
+| `canceled` | **NOT_EXECUTED** |
+| `ambiguous` | **UNKNOWN**; never resent |
+| `queued`, `sending` at the deadline | **HANDED_OFF**: queued at the bridge, with its current state; history shows the outcome later |
+
+A lost answer to the queue request is resolved by reading the key back: a
+record means it was queued, no record is **NOT_EXECUTED**, and an unreadable
+bridge is **UNKNOWN**. A 401/403 reports the saved token as unusable; 409 means
+the bridge holds a different operation for the key and nothing new was sent.
+Transport details and bridge error bodies beyond a short quoted text never reach
+the model. Bearer tokens are sent only in the `Authorization` header over HTTPS
+without redirects, and a response echoing the token is rejected, as for
+declarative packages.
 
 Only the current Android user's non-summary messaging notifications are
 considered. Android must expose exactly one eligible freeform reply action owned
@@ -440,18 +511,28 @@ not erase previously requested conversation receipts or undo sent messages.
 
 ### Limits
 
-This is not a full WhatsApp/Telegram client: it cannot start arbitrary new app
-chats, retrieve complete history, list silent/archived conversations, recover
-dismissed notifications, or send attachments. Locked-device notification reads
-and replies are refused. Notification visibility and action support vary by app.
-“No match” means no match among available notifications, not that the chat does
-not exist.
+The notification path is not a full WhatsApp/Telegram client: it cannot start
+arbitrary new app chats, retrieve complete history, list silent/archived
+conversations, recover dismissed notifications, or send attachments.
+Locked-device notification reads and replies are refused. Notification
+visibility and action support vary by app. “No match” means no match among
+available notifications, not that the chat does not exist.
 
-The shared interface is deliberately independent of extension files. Future
-service-account adapters can provide complete history/new-chat sends where an
-official API supports the user's account. They should preserve explicit service
-selection, account-scoped targets, authority checks, and honest receipt statuses,
-rather than replacing the common user-facing tools.
+A bridge service covers one linked account per bridge and only what that bridge
+has stored: history is the bridge's recent local snapshot, not the phone's
+complete archive, and search relies on the bridge's `q`/`limit` parameters.
+EVA sends text only; attachments are described, never downloaded or sent.
+Status strings are the bridge's own. A queued message stays at the bridge if the
+bridge is disconnected, so a handed-off send may still fail later; EVA does not
+watch the outbox afterwards. Reaching a bridge needs the phone on its network
+(for example the tailnet). The path has JVM tests against a scripted bridge and
+no live-bridge or device verification yet. The bridge holds the account; it is
+the operator's trust decision, and EVA's token grants no action by itself.
+
+The shared interface is deliberately independent of extension files. Bridge
+services are the first service-account adapters behind the common tools; they
+preserve explicit service selection, account-scoped durable targets, and honest
+receipt statuses rather than replacing the user-facing tools.
 
 ## Configuration and restoration
 
@@ -466,8 +547,8 @@ repository sources, service endpoints, wait budgets, and saved user preferences.
 Configuration import must validate before replacing working settings and preserve
 identity-dependent authorization. Invalid or incompatible input must be visible.
 
-Shipped default packages (Google Maps, Web, Email, Calendar, Settings, Clock, and Paseo
-once its provider is present) are adopted once per
+Shipped default packages (Google Maps, OpenStreetMap places, Web, Email, Calendar, Settings, Clock, Waze
+once Waze is installed, and Paseo once its provider is present) are adopted once per
 configuration: after the desired configuration is attached at startup, EVA
 installs and approves each default not yet listed in `packages.appliedDefaults`
 and records it there. The result is an ordinary installation and grant, so the
@@ -565,9 +646,9 @@ The schema separates these groups:
 
 | Group | Settings |
 | --- | --- |
-| `models`, `voice` | Text/realtime models, per-leg reasoning effort, lookup retry count, quiet hang-up delay |
+| `models`, `voice` | Text/realtime models, per-leg reasoning effort, lookup retry count, quiet hang-up delay, per-action call endings |
 | `appearance`, `capabilities` | Dynamic color, optional capability switches, and device-task backend/model/budgets |
-| `messaging` | Notification-read opt-in and exact app-installation reply identities |
+| `messaging` | Notification-read opt-in, exact app-installation reply identities, and `bridges`: service name to label and HTTPS origin of a messaging bridge |
 | `prompt` | Source URL and complete ordered component list |
 | `packages` | Repository, imported package bytes and origins, wait budgets, service bindings, applied shipped defaults |
 | `services.http` | Named HTTPS origins with optional scoped local credential references |
@@ -636,6 +717,29 @@ Use the package instance IDs from your own export. The example assumes both
 packages are defined in the base and declare `https://agenda.example.org`.
 Collections replace inherited collections, so retain other bindings and credential
 references you still need when constructing an override.
+
+A messaging bridge is declared under `messaging.bridges` and requires a matching
+`messaging/<name>/bearer` entry of kind `http-bearer` in `credentials.required`
+with the bridge origin as its endpoint. The name is lowercase and cannot be `sms`
+or `notifications`. The token is entered under **Messaging → Messaging services**
+and stored only in the encrypted secret store, scoped to that origin; changing
+the origin invalidates it. Restoring the configuration keeps the bridge and
+reports the token as a provisioning need until it is entered on that device:
+
+```yaml
+messaging:
+  enabled: false
+  replies: []
+  bridges:
+    whatsapp:
+      label: WhatsApp
+      origin: https://bridge.example.ts.net
+credentials:
+  required:
+  - id: messaging/whatsapp/bearer
+    kind: http-bearer
+    endpoint: https://bridge.example.ts.net
+```
 
 Provision the local username/password or Bearer token through the extension's server settings.
 The **Service name** field identifies the reusable service. The repository stores
@@ -723,6 +827,21 @@ in the same response as an action, or while an action result is unreported, is
 answered as not executed and happens after the next response instead, so the
 result is spoken on the call rather than re-homed. Each attachment's closing
 notice says who or what ended it.
+
+Some actions hand the phone to something that needs its audio or screen, so a
+successful one ends the call in either call mode. A capability declares
+`endsVoiceCall` (`never`, `after_reply`, or `immediately`); placing a phone call
+and playing media declare `immediately`. `voice.endCallAfter` maps capability IDs
+to the same values and overrides the declaration; the settings pickers beside each
+extension action and under Device assistant edit that map. The effective choice is
+fixed when a voice call opens, and EVA appends a note from `eva-wording.yaml` to that
+tool's description so the model says its closing line first. With `immediately`,
+EVA withholds the result from the model (the receipt is still journaled), completes
+the turn, and hangs up once current speech has played. If other actions were
+proposed in the same response, their results must still be spoken, so all results
+are delivered and EVA hangs up after the reply instead. `after_reply` delivers the result
+and hangs up when the response answering it ends. User speech before then cancels
+the pending hang-up. A refused, failed, or uncertain action never ends the call.
 
 The Instructions screen supports a user-picked YAML file or EVA's own external-files
 copy, and a raw HTTPS source the prompt follows. The default source is

@@ -11,6 +11,7 @@ import com.colonelpanic.eva.EvaPermissions
 import com.colonelpanic.eva.adapters.android.ContentProviderAccess
 import com.colonelpanic.eva.adapters.android.MediaControlAccess
 import com.colonelpanic.eva.assist.AssistantRole
+import com.colonelpanic.eva.capability.CallEnding
 import com.colonelpanic.eva.capability.extensions.ExtensionGrant
 import com.colonelpanic.eva.conversation.prompt.PromptConfig
 import com.colonelpanic.eva.data.MessagingPreferences
@@ -577,6 +578,7 @@ class EvaConfigurationManager(
     private suspend fun snapshot(): EvaConfiguration {
         val prompt = app.prompts.portableSnapshot()
         val packages = app.packageSettings.portable()
+        val messaging = app.messagingSettings.state.value
         val observedCredentialRefs =
             buildList {
                 if (app.capabilities.deviceTask.backend ==
@@ -594,8 +596,13 @@ class EvaConfigurationManager(
                     service.credential?.let { add(SecretReference(it, "http-" + it.substringAfterLast("/"), service.origin)) }
                 }
                 packages.services.forEach { service -> add(SecretReference(service.credential, "http-basic", service.origin)) }
+                app.messagingSettings.state.value.bridges.forEach { (name, bridge) ->
+                    if (app.messagingSettings.bridgeCredential(name) != null) {
+                        add(SecretReference(EvaConfigurationCodec.messagingSecretId(name), "http-bearer", bridge.origin))
+                    }
+                }
             }
-        val credentialRefs = retainedCredentials(observedCredentialRefs, packages)
+        val credentialRefs = retainedCredentials(observedCredentialRefs, packages, messaging.bridges)
         val liveGrants =
             app.extensions.portableGrants().map { (instance, grant) ->
                 PortableGrant(instance, grant.identityKey, grant.digest, grant.mutations.sorted())
@@ -611,7 +618,6 @@ class EvaConfigurationManager(
             ).associateBy { it.instance }
                 .values
                 .toList()
-        val messaging = app.messagingSettings.state.value
         val replyChanges = synchronized(changedMessagingReplies) { changedMessagingReplies.toSet() }
         val replies =
             (
@@ -629,10 +635,16 @@ class EvaConfigurationManager(
                     app.settings.reasoningEffort,
                     app.settings.voiceReasoningEffort,
                 ),
-            voice = EvaConfiguration.Voice(app.settings.voiceLookupRetries, app.settings.quietHangUpSeconds),
+            voice =
+                EvaConfiguration.Voice(
+                    app.settings.voiceLookupRetries,
+                    app.settings.quietHangUpSeconds,
+                    app.settings.callEndings.value
+                        .mapValues { it.value.wire },
+                ),
             appearance = EvaConfiguration.Appearance(app.appearance.dynamicColor),
             capabilities = EvaConfiguration.Capabilities(app.capabilities.screenControlEnabled, app.capabilities.deviceTask),
-            messaging = EvaConfiguration.Messaging(messaging.enabled, replies),
+            messaging = EvaConfiguration.Messaging(messaging.enabled, replies, messaging.bridges),
             prompt = EvaConfiguration.Prompt(prompt.source, prompt.config.components),
             packages = packages.configuration(),
             services = EvaConfiguration.Services(packages.httpServices),
@@ -728,6 +740,7 @@ class EvaConfigurationManager(
     private fun retainedCredentials(
         observed: List<SecretReference>,
         packages: PortablePackageSettings,
+        bridges: Map<String, MessagingBridgeDefinition>,
     ): List<SecretReference> {
         val changes = synchronized(changedCredentials) { changedCredentials.toSet() }
         val current = observed.associateBy { it.id }
@@ -750,6 +763,13 @@ class EvaConfigurationManager(
         retained.keys
             .filter { (it.startsWith("package/") || it.startsWith("service/")) && it !in serviceIds }
             .forEach(retained::remove)
+        // A bridge's token reference always travels with the bridge, whether or not this device holds the token.
+        val bridgeIds = bridges.keys.map(EvaConfigurationCodec::messagingSecretId).toSet()
+        retained.keys.filter { it.startsWith("messaging/") && it !in bridgeIds }.forEach(retained::remove)
+        bridges.forEach { (name, bridge) ->
+            val id = EvaConfigurationCodec.messagingSecretId(name)
+            retained[id] = SecretReference(id, "http-bearer", bridge.origin)
+        }
         return retained.values.sortedBy { it.id }
     }
 
@@ -764,6 +784,7 @@ class EvaConfigurationManager(
         app.settings.saveVoiceReasoningEffort(configuration.models.voiceReasoningEffort)
         app.settings.saveVoiceLookupRetries(configuration.voice.lookupRetries)
         app.settings.saveQuietHangUpSeconds(configuration.voice.quietHangUpSeconds)
+        app.settings.saveCallEndings(configuration.voice.callEndings())
         app.appearance.saveDynamicColor(configuration.appearance.dynamicColor)
         app.capabilities.saveScreenControl(configuration.capabilities.screenControl)
         app.capabilities.saveDeviceTask(configuration.capabilities.deviceTask)
@@ -777,7 +798,9 @@ class EvaConfigurationManager(
     private fun restoreMessaging(configuration: EvaConfiguration.Messaging): Set<String> {
         val available = availableMessagingReplies()
         val desiredReplies = configuration.replies.toSet()
-        app.messagingSettings.replace(MessagingPreferences(configuration.enabled, desiredReplies.intersect(available)))
+        app.messagingSettings.replace(
+            MessagingPreferences(configuration.enabled, desiredReplies.intersect(available), configuration.bridges),
+        )
         return desiredReplies - available
     }
 
@@ -815,7 +838,12 @@ class EvaConfigurationManager(
                         }
 
                         else -> {
-                            reference.id !in app.packageSettings.missingCredentials(configuration.packages.portable(configuration.services))
+                            if (reference.id.startsWith("messaging/")) {
+                                reference.id !in app.messagingSettings.missingBridgeCredentials(configuration.messaging.bridges)
+                            } else {
+                                reference.id !in
+                                    app.packageSettings.missingCredentials(configuration.packages.portable(configuration.services))
+                            }
                         }
                     }
                 if (!available) add("Provision local credential ${reference.id}${reference.endpoint?.let { " for $it" }.orEmpty()}.")
@@ -929,6 +957,7 @@ class EvaConfigurationManager(
         attempt("voice reasoning effort") { app.settings.saveVoiceReasoningEffort(before.models.voiceReasoningEffort) }
         attempt("voice lookup retries") { app.settings.saveVoiceLookupRetries(before.voice.lookupRetries) }
         attempt("quiet hang-up") { app.settings.saveQuietHangUpSeconds(before.voice.quietHangUpSeconds) }
+        attempt("voice call endings") { app.settings.saveCallEndings(before.voice.callEndings()) }
         attempt("appearance") { app.appearance.saveDynamicColor(before.appearance.dynamicColor) }
         attempt("capabilities") {
             app.capabilities.saveScreenControl(before.capabilities.screenControl)
@@ -971,3 +1000,5 @@ class EvaConfigurationManager(
         const val SPOTIFY_REF = "provider/spotify-account"
     }
 }
+
+private fun EvaConfiguration.Voice.callEndings() = endCallAfter.mapValues { CallEnding.of(it.value) ?: CallEnding.NEVER }

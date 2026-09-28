@@ -125,6 +125,7 @@ class CapabilityRegistry(
         const val SMS_SEND = "eva.android.messages.send"
         const val DIAL = "eva.android.phone.dial"
         const val OPEN_APP = "eva.android.app.open"
+        const val LOCATION_CURRENT = "eva.android.location.current"
         const val CONTACTS_SEARCH = "eva.android.contacts.search"
         const val CONVERSATIONS_SEARCH = "eva.android.messages.conversations"
         const val CONVERSATION_READ = "eva.android.messages.history"

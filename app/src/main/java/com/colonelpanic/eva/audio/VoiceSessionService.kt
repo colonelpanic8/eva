@@ -15,6 +15,7 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.colonelpanic.eva.ForegroundServiceGate
 import com.colonelpanic.eva.MainActivity
+import com.colonelpanic.eva.adapters.android.CurrentLocationBackend
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -108,7 +109,17 @@ class VoiceSessionService : Service() {
                     } else {
                         ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
                     }
-                startForeground(NOTIFICATION_ID, notification, type)
+                // The location type lets the current-location tool answer while another app has the
+                // screen. It is optional: a refusal must not cost the session its audio.
+                val located =
+                    CurrentLocationBackend.isGranted(this) &&
+                        try {
+                            startForeground(NOTIFICATION_ID, notification, type or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+                            true
+                        } catch (_: SecurityException) {
+                            false
+                        }
+                if (!located) startForeground(NOTIFICATION_ID, notification, type)
             }
 
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q -> {

@@ -125,7 +125,9 @@ Some catalog packages are useful enough on stock Android that EVA installs and
 approves them without a browse step. The current defaults are
 [Google Maps](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/google-maps.json)
 (map search through `geo:`, turn-by-turn navigation through `google.navigation:`
-with a travel mode), [Web](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/web.json)
+with a travel mode), [OpenStreetMap places](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/openstreetmap-places.json)
+(nearby places from the public Nominatim search, kept separate so it can be
+turned off without losing Maps), [Web](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/web.json)
 (web search, open an http/https page),
 [Email](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/email.json)
 (a `mailto:` draft), [Calendar](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/calendar.json)
@@ -133,11 +135,15 @@ with a travel mode), [Web](https://github.com/colonelpanic8/eva-extensions/blob/
 [Settings](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/settings.json)
 (open a settings screen, a quick panel, or one app's own page), and
 [Clock](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/clock.json)
-(alarms and timers through Android's standard intents), and
+(alarms and timers through Android's standard intents),
+[Waze](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/waze.json)
+(driving navigation through `waze.com/ul` links pinned to Waze, to coordinates, a
+search, or the Home or Work saved in Waze), and
 [Paseo](https://github.com/colonelpanic8/eva-extensions/blob/main/packages/paseo.json)
-(project, workspace, agent, and message lookups plus link fallbacks). Paseo's default is conditional:
-it installs only once the `sh.paseo.assistant` provider resolves, and until then it
-stays out of `appliedDefaults` so a later Paseo install still gets it. `adapters/declarative/DefaultPackages.kt` lists each default
+(project, workspace, agent, and message lookups plus link fallbacks). The Waze and
+Paseo defaults are conditional: Waze installs only once the `com.waze` app is
+installed, and Paseo only once the `sh.paseo.assistant` provider resolves. Until
+then each stays out of `appliedDefaults`, so a later install still gets it. `adapters/declarative/DefaultPackages.kt` lists each default
 with a byte-identical copy of the catalog file under `app/src/main/assets/packages/`
 and a fixed, name-derived instance ID. After the desired configuration is attached
 at startup, EVA installs each default whose package ID is not yet in
@@ -294,7 +300,11 @@ Each capability contains `tool`, `execution`, `binding`, and optionally
 arrays in a closed object.
 
 Execution has required `mode` (`synchronous` or `handoff`) and `requiresForeground`
-(boolean); `maxWaitMillis` is an optional positive integer or null. Intent bindings require handoff plus foreground; HTTP and content
+(boolean); `maxWaitMillis` is an optional positive integer or null. Optional `endsVoiceCall`
+(`never`, the default; `after_reply`; or `immediately`) says whether a successful call of this
+action ends a voice call, as for an action that hands the phone's audio or screen to another app;
+the user's configuration can override it per action, and it grants nothing. Installed-provider
+descriptors accept the same field. Intent bindings require handoff plus foreground; HTTP and content
 bindings require synchronous mode. An intent capability may set optional `requiresUnlock: true` when its target
 can do nothing while waiting behind the lock screen, as Maps navigation can't. On a locked phone showing
 EVA's own screen, EVA then asks Android to unlock (`requestDismissKeyguard`) and opens the target only
@@ -1033,6 +1043,14 @@ instance in the portable `packages.autoEnabled` map, so it stays off on every
 device that restores the configuration, until the user turns it back on. Debug
 builds and same-named apps with another signer get nothing automatically. The
 provider's own caller check (section 9) is unchanged.
+
+**An app's own extension speaks for that app.** When a discovered provider has a
+descriptor, a declarative package that lists the provider's package in
+`androidPackages` (such as the catalog's Mova package) withholds every action whose
+name the provider also offers, and the Extensions screen shows the package's
+remaining actions inside the provider's row instead of as a second extension.
+Grants are unchanged, so the withheld actions return if the provider is removed
+or stops describing itself.
 
 The Extensions screen can enable all actions in one step. This grants claimed
 reads and every write, handoff, or unknown-effect action in the current
