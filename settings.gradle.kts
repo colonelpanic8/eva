@@ -19,3 +19,4 @@ include(":app")
 
 include(":device-control-core")
 include(":device-control-portal")
+include(":keyword-core")
