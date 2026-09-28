@@ -316,6 +316,21 @@ A bridge saved by EVA 0.41 or 0.42 under Messaging no longer routes messages. Th
 Messaging screen lists it with its origin until **Forget old bridges**, which also
 clears its old token.
 
+To check the package's read-only lookups against a real bridge without the phone,
+run the opt-in live test. It never sends or starts a chat and prints only counts and
+field names:
+
+```sh
+EVA_LIVE_BRIDGE_ORIGIN=https://bridge.example.ts.net:8444 \
+EVA_LIVE_BRIDGE_TOKEN="$(pass show services/bridge/api-token)" \
+direnv exec . ./gradlew :app:testDebugUnitTest \
+  --tests 'com.colonelpanic.eva.adapters.declarative.MessagingBridgeLiveTest' --rerun
+```
+
+On 2026-09-28 it passed against the WhatsApp bridge instance: conversations,
+message history, and contacts returned every declared field. Sending through the
+package has not been exercised live.
+
 The extension path has JVM tests against a scripted bridge: package parsing,
 settings, durable operations and their outcomes, chat creation, idempotency key
 stability, grant enforcement, and the configuration round trip. It has not been
