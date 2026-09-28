@@ -223,47 +223,77 @@ agents and sends prompts without its UI. General MCP adapters remain future work
 register capabilities through the same execution boundary. Routine phone
 actions must not depend on a remote coding agent or on automating Paseo's Android UI.
 
-### Device-control backend boundary
+### Device-control tasks and backend boundary
 
-`device-control-core` ports voice-device-agent's Kotlin protocol v1 revision 1
-observations, actions, results and errors. Copied protocol examples round-trip in
-JVM tests, including legacy link envelopes retained as wire types only. The
-compact text table preserves indices, hierarchy, bounds, state flags, truncation
-and password redaction. `DeviceBackend` exposes only `observe()` and
-`perform(action)`; `TaskAgent` defines goal/progress/terminal-result and independent
-revision/cancellation methods. A scripted fake backend is available to JVM tests.
-No task-agent implementation is registered yet. Both `:device-control-core` and
-`:device-control-portal` are plain Kotlin/JVM libraries without Android types; a
-JVM host can consume them as-is, using a forwarded loopback Portal port. The
-worker/model contract implementation remains to be added in JVM code. EVA's
-existing OpenAI Responses provider remains in `:app`; extracting its HTTP/SSE
-transport and injecting subscription credentials is still needed for a JVM host.
+`:device-control-core` is a plain Kotlin/JVM library containing the protocol v1
+revision 1 types, compact observation renderer, `DeviceBackend`, `TaskAgent`,
+`WorkerModel`, `TextTaskAgent`, and a shared execution lease. Protocol fixtures
+round-trip on the JVM. `:device-control-portal` is also JVM-only: OkHttp transport,
+tree mapping, target rechecks, action planning, quiet-window settling, launch
+verification, and text read-back all run unchanged on a JVM host over a forwarded
+loopback port. Both modules can be consumed by `:device-control-host` as-is.
 
-The Portal backend talks to the unmodified Mobilerun Portal app at
-`http://127.0.0.1:<port>` with a runtime-supplied bearer token. It reuses the
-companion's tree mapper and primitive planner, and ports the Python adapter's
-fresh-target recheck, gesture delay, quiet-window settling, degraded-read retry,
-launch postcondition and text read-back. It supports all protocol actions:
-launch, activate, replace/append text, scroll, back, home, scoped point tap and
-swipe, long press, screenshot, IME action, URL and notifications (plus lock).
-IME actions run as Enter and report that fact. Password text stays in private
-read-back state; observations and result details redact it. PNGs are returned in
-screenshot details, without a worker/model attachment path yet.
+Portal on the same phone is the default task backend. Its full typed action set
+includes Unicode replace/append text, password redaction, screenshot PNGs, Enter
+for IME actions, URLs, and notifications. Mutating HTTP requests are not retried;
+loss after dispatch remains uncertain. A cancelled input drains its bounded
+request/settle exchange before releasing device ownership. The Shizuku adapter
+uses EVA's existing helper for observation, activation and verified replacement
+of non-password text. Other actions, append and password entry return
+`unsupported`; none silently succeeds. Shizuku task-adapter verification is JVM
+coverage, not a claim of device parity with Portal.
 
-Mutating HTTP calls are never retried and redirects are disabled. Each backend
-instance serializes its I/O and rejects duplicate action IDs or stale observation
-references. A cancellation does not release an issued request early; it waits for
-that bounded exchange and prevents later inputs, including typing after a focus
-tap. Transport loss after dispatch remains an unknown outcome. These are backend
-execution semantics, not an approval/risk/evidence/injection subsystem.
+The text-first worker executes one primitive per model turn, asks for missing or
+ambiguous choices, reports scroll progress, restricts reversals, detects repeated
+or unchanged actions and repeated refusals, and bounds steps, active time,
+screenshots and retained context. Append context preserves a cacheable prefix
+until its screen limit or a revision rebuilds it from the goal, corrections and
+recent step summaries. Screenshots are limited model attachments and are not
+journaled. There is no approval, risk classification, evidence gate or injection
+subsystem. A future vision-first agent can implement `TaskAgent` independently.
 
-The Portal backend is currently exercised through tests, not offered as an EVA
-capability. Backend selection/token provisioning in portable configuration, the
-text-first worker, a device-wide lease across EVA's existing launches, immediate
-conversation corrections/stop, the assistant Stop fix, and the Shizuku adapter
-for this interface remain integration work. Ordinary voice/tool behavior is
-unchanged. See [device-control acceptance](operations.md#device-control-parity)
-for the executable backend check and remaining end-to-end criteria.
+`eva.device.task` is one native capability admitted and journaled by
+`CapabilityDispatcher`. It counts once against the outer turn's tool budget.
+Primitives execute inside that admitted task under the device lease, rather than
+being independently dispatched. The ordinary failed/unknown-mutation barrier
+remains in `ThreadController`; it does not block recovery attempts inside the
+worker. An unresolved primitive effect remains UNKNOWN at terminal task receipt,
+even if later actions succeed. The task uses neither `BudgetedBackend` nor
+`BoundedExecution`, returns no startup handoff, and holds its lease until terminal
+completion/drain. Its one receipt includes task/revision identity, effects, and
+per-step kind, result and observation/model/action timings. A stop before any
+completed effect is NOT_EXECUTED; known partial work is FAILED; unresolved work is
+UNKNOWN. Journal recovery never replays a task.
+
+`DeviceTaskCoordinator` owns the task's thread and turn independently of its
+voice/provider attachment. Admission rejects competing tasks; dispatcher
+execution guards ordinary mutations and direct UI reads, and Android intent
+launches also recheck whether a task is running. Progress reaches the owning
+thread independently of the pending tool result. Typed corrections go straight
+to the running task's mailbox; voice speech-item identities bind transcripts to
+the owner captured when speech began. Speech pauses new dispatch until resolved.
+Revision bumps and stop latches are synchronous, bypassing the turn mutex and
+provider result queue. Obsolete inference is cancelled and its plan discarded;
+revision forces fresh observation. Provider speech `cancelled` does not complete
+a running device task. Controller stop, explicit stop/cancel input and assistant
+panel Stop use this control path before asynchronous persistence/cleanup.
+
+`OpenAiWorkerModel` is a thin app adapter using the existing subscription/API-key
+selection and shared Responses HTTP/SSE transport. Default model/effort are
+`gpt-6-sol`/`low`. The shared transport explicitly calls `OkHttp Call.cancel()` on
+coroutine cancellation, including while reading SSE. It still resides in `:app`;
+extracting that transport, access contracts and credential injection remains the
+OpenAI-client branch's work before a JVM host can use this adapter.
+
+Backend, local Portal port, credential reference, model/effort and worker/context
+budgets live in portable `capabilities.deviceTask`. Settings edit that model;
+Portal's bearer token is Keystore-backed and excluded from shared configuration.
+Restore retains `device/portal` and reports local provisioning. Worker instructions,
+notices and tool descriptions are injected from followed `eva-wording.yaml`, with
+the shipped baseline as fallback. Ordinary requests retain direct tool calling;
+the task capability explicitly requests the worker subsystem. See
+[device-control acceptance](operations.md#device-control-parity) for device results
+and remaining verification limits.
 
 ### Background execution and locked devices
 
@@ -526,7 +556,7 @@ The schema separates these groups:
 | Group | Settings |
 | --- | --- |
 | `models`, `voice` | Text/realtime models, per-leg reasoning effort, lookup retry count, quiet hang-up delay |
-| `appearance`, `capabilities` | Dynamic color and optional capability switches |
+| `appearance`, `capabilities` | Dynamic color, optional capability switches, and device-task backend/model/budgets |
 | `messaging` | Notification-read opt-in and exact app-installation reply identities |
 | `prompt` | Source URL and complete ordered component list |
 | `packages` | Repository, imported package bytes and origins, wait budgets, service bindings, applied shipped defaults |

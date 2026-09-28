@@ -293,9 +293,10 @@ adb -s emulator-5592 shell rm /data/local/tmp/eva-portal-token
 ```
 
 The token is temporary test provisioning. It is never an instrumentation argument
-or portable configuration value. Production token provisioning and backend
-selection must be added to EVA's configuration/credential-reference model when
-the device-task capability is wired.
+or portable configuration value. Production backend selection is `capabilities.deviceTask.backend`;
+Portal tokens are provisioned in Screen control settings and kept in SecretStore.
+Portable configuration contains only the `device/portal` credential reference,
+local port and model/worker tuning. Restore reports missing local credentials.
 
 The dedicated AVD has passed this backend test with all 13 required action kinds
 (27.414 seconds, zero failures or skips; optional lock excluded). Median standalone
@@ -311,12 +312,9 @@ milliseconds; repeated actions use medians. There was no model call in this test
 | screenshot | 0 | 433 | 0 |
 | open_url | 0 | 15 | 1173 |
 
-An initial fixture failure exposed Android's `setSingleLine` resetting password
-input flags; the fixture now sets password type last, and backend tests cover a
-field becoming password-marked after focus. A later fixture failure assumed Back
-only dismissed a keyboard; Portal's IME was already hidden, so Back correctly
-exited the Activity. The test relaunches before scrolling. Neither failure was a
-task-eval result; the four worker evals below have not run through EVA yet.
+The fixture sets password type after `setSingleLine`, which otherwise resets
+password flags. Back may exit the Activity when Portal's IME is already hidden;
+the test relaunches before scrolling.
 
 Acceptance for the complete slice:
 
@@ -336,7 +334,7 @@ Acceptance for the complete slice:
   immediately; issued input settles before the device lease is released. Existing
   UI tools and launches cannot interleave. Assistant-panel Stop stops work.
   Backend/model tuning and token references survive configuration composition and
-  restore. No capability integration is implemented by the backend test alone.
+  restore. The separate `DeviceTaskEvalTest` exercises native task admission and terminal journaling.
 - End-to-end: run `settings.wifi_scanning_off.baseline`,
   `settings.ble_scanning_off.deep`, `chrome_read.closing_time.baseline`, and
   `chrome_read.pool_hours.scrolling` through EVA's device task. Serve the
@@ -344,10 +342,153 @@ Acceptance for the complete slice:
   `0.0.0.0` on a fresh random high port; the emulator uses `10.0.2.2:<port>`.
   Compare any failing case with `vda eval run ... --driver worker` on the same
   emulator, with the same initial state. Record observation/model/action timing
-  separately. These task evals remain pending until worker/capability wiring.
+  separately. These task evals use the admitted EVA task capability on emulator-5592; see results below.
 - Shizuku: adapt existing observe/tap/set_text to `DeviceBackend`; every other
   unsupported action must return the protocol's `unsupported`, never succeed as
-  a no-op. Its adapter remains separate from Portal parity acceptance.
+  a no-op. Its adapter has focused JVM tests; device verification is separate from Portal parity acceptance.
+
+Task eval results on emulator-5592 (Android 17/API 37, `sdk_gphone64_x86_64`),
+unmodified Portal 0.7.25, `gpt-6-sol`, low
+reasoning effort, append context (six screens): all four cases passed. Settings
+checks independently read `0`; answer checks matched 9 p.m. and 4:30 p.m.
+Every run stayed within its original case step/time limits. No failed case
+required a Python-prototype comparison.
+
+| Case | Steps | Wall seconds | Observation ms | Model ms | Action ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| settings.wifi_scanning_off.baseline | 23 | 124.364 | 2330 | 75143 | 46463 |
+| settings.ble_scanning_off.deep | 14 | 61.184 | 54 | 39802 | 20994 |
+| chrome_read.closing_time.baseline | 4 | 10.415 | 51 | 8661 | 1416 |
+| chrome_read.pool_hours.scrolling | 6 | 31.291 | 146 | 23547 | 7327 |
+
+Observation is standalone capture (including explicit `observe` turns); action
+includes target recheck, HTTP and post-action settling/capture. Model is inference
+wall time. Table sums exclude setup and bookkeeping overhead. Zero observation
+time means that turn reused the previous action’s returned screen.
+
+
+`settings.wifi_scanning_off.baseline`
+
+| Step | Kind | Result | Observation ms | Model ms | Action ms |
+| ---: | --- | --- | ---: | ---: | ---: |
+| 1 | launch_app | ok | 96 | 3962 | 4163 |
+| 2 | activate_element | ok | 0 | 2020 | 5289 |
+| 3 | set_text | ok | 0 | 2035 | 1852 |
+| 4 | observe | ok | 779 | 2315 | 0 |
+| 5 | ime_action | ok | 0 | 12645 | 2095 |
+| 6 | back | ok | 0 | 2146 | 3128 |
+| 7 | activate_element | ok | 0 | 3535 | 4482 |
+| 8 | observe | ok | 76 | 5828 | 0 |
+| 9 | activate_element | ok | 0 | 2964 | 5052 |
+| 10 | observe | ok | 1379 | 1882 | 0 |
+| 11 | activate_element | ok | 0 | 4497 | 3251 |
+| 12 | back | ok | 0 | 2556 | 1934 |
+| 13 | activate_element | ok | 0 | 2026 | 2058 |
+| 14 | back | ok | 0 | 2709 | 1693 |
+| 15 | back | ok | 0 | 1527 | 2215 |
+| 16 | back | ok | 0 | 2184 | 1226 |
+| 17 | scroll | ok | 0 | 2371 | 1475 |
+| 18 | scroll | ok | 0 | 5337 | 1407 |
+| 19 | activate_element | ok | 0 | 2004 | 1585 |
+| 20 | activate_element | ok | 0 | 4513 | 1508 |
+| 21 | activate_element | ok | 0 | 1909 | 1432 |
+| 22 | activate_element | ok | 0 | 2088 | 618 |
+| 23 | finish | completed | 0 | 2090 | 0 |
+
+`settings.ble_scanning_off.deep`
+
+| Step | Kind | Result | Observation ms | Model ms | Action ms |
+| ---: | --- | --- | ---: | ---: | ---: |
+| 1 | back | ok | 54 | 2406 | 1636 |
+| 2 | launch_app | ok | 0 | 6508 | 1428 |
+| 3 | activate_element | ok | 0 | 2358 | 1650 |
+| 4 | activate_element | ok | 0 | 3025 | 1478 |
+| 5 | activate_element | ok | 0 | 2074 | 1434 |
+| 6 | launch_app | ok | 0 | 1687 | 448 |
+| 7 | back | ok | 0 | 2512 | 957 |
+| 8 | back | ok | 0 | 2147 | 1071 |
+| 9 | back | ok | 0 | 1680 | 1405 |
+| 10 | activate_element | ok | 0 | 2085 | 1954 |
+| 11 | set_text | ok | 0 | 2480 | 2648 |
+| 12 | activate_element | ok | 0 | 5387 | 1270 |
+| 13 | activate_element | ok | 0 | 2766 | 3615 |
+| 14 | finish | completed | 0 | 2687 | 0 |
+
+`chrome_read.closing_time.baseline`
+
+| Step | Kind | Result | Observation ms | Model ms | Action ms |
+| ---: | --- | --- | ---: | ---: | ---: |
+| 1 | activate_element | ok | 51 | 2228 | 973 |
+| 2 | activate_element | NotActionable | 0 | 1693 | 19 |
+| 3 | screenshot | ok | 0 | 2075 | 424 |
+| 4 | finish | completed | 0 | 2665 | 0 |
+
+`chrome_read.pool_hours.scrolling`
+
+| Step | Kind | Result | Observation ms | Model ms | Action ms |
+| ---: | --- | --- | ---: | ---: | ---: |
+| 1 | scroll | ok | 146 | 3674 | 1665 |
+| 2 | scroll | ok | 0 | 10036 | 1468 |
+| 3 | scroll | ok | 0 | 2399 | 1597 |
+| 4 | scroll | ok | 0 | 2343 | 1513 |
+| 5 | scroll | ok | 0 | 2110 | 1084 |
+| 6 | finish | completed | 0 | 2985 | 0 |
+
+
+Interruption probes also passed on emulator-5592. Inference stop latched in
+367 µs and returned NOT_EXECUTED with zero effects (0.465 s total test wall time).
+A stop 100 ms into the launch action latched in 343 µs; the lease remained held
+until the issued launch drained. The terminal receipt was FAILED/CANCELLED with
+one known partial effect, not a false “nothing happened.” That step measured
+121 ms observation, 2456 ms model, and 2655 ms action including settling; total
+test wall time was 5.587 s. These are single-run measurements, not latency bounds.
+The local JVM HTTP/SSE cancellation test independently verifies `Call.cancel()`
+while the response body remains open.
+
+Task configuration is a nested portable value, for example:
+
+```yaml
+capabilities:
+  deviceTask:
+    backend: portal
+    portalPort: 8080
+    credential: device/portal
+    model: gpt-6-sol
+    reasoningEffort: low
+    maxSteps: 30
+    maxMillis: 300000
+    modelTimeoutMillis: 120000
+    maxScreens: 6
+    historyLines: 30
+    maxRefusals: 4
+    maxScreenshots: 3
+```
+
+The live task test is opt-in (`evaDeviceEval=true`) and emulator-only. It takes
+`goal`, `case`, optional `answerContains` and `interruptAt` (THINKING or ACTING),
+and `credentialPort`. The latter is an ephemeral emulator loopback port reversed
+to a host test credential endpoint; credentials are supplied at runtime and saved
+only to EVA's encrypted store. Do not put tokens in instrumentation arguments,
+logs or portable files. Wait for configuration/catalog readiness before admission.
+The test executes the application-owned coordinator through `CapabilityDispatcher`
+and SQLite journal, without a second outer conversational model. It verifies the
+worker/capability path; it is not a text-UI or acoustic voice test. Controller
+correlation, correction, stop and provider-cancelled races have focused JVM tests.
+
+Catalog mirror required before publishing this feature: copy the shipped
+`app/src/main/resources/eva-wording.yaml` byte-for-byte to
+`colonelpanic8/eva-instructions/eva-wording.yaml`. Added tool keys are
+`eva.device.task` and `device-worker.{observe,launch_app,activate_element,set_text,
+scroll,back,home,tap_point,swipe,long_press,screenshot,ime_action,open_url,
+open_notifications,ask_user,finish}`. Added message keys are
+`device-worker.{system,task,screen,one_call,invalid_call,scroll_reversal,scroll_end,
+scrolled,screenshot_limit,result,text_result}`. No other catalog files changed;
+no external catalog repository was modified or pushed in this worktree.
+
+After this slice, extract the OpenAI client for the JVM host runner and eval CLI,
+then add a native accessibility backend with the same action/eval checks. Compare
+a vision-first `TaskAgent` against the text worker using identical initial states,
+budgets and timing capture; no vision-first implementation is included here.
 
 ### Messaging setup and verification
 
