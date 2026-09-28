@@ -260,6 +260,95 @@ adb -s "$EVA_TEST_DEVICE" shell "am instrument -w \
 adb -s "$EVA_TEST_DEVICE" logcat -d -s EvaExtensionDevice:I
 ```
 
+### Device-control parity
+
+The backend acceptance test is
+`com.colonelpanic.eva.devicecontrol.PortalBackendDeviceTest`. It runs from EVA's
+Android process against unmodified Portal 0.7.25 on the same emulator at
+`127.0.0.1:8080`; no adb-forward transport is used by the Kotlin backend.
+`PortalFixtureActivity` exists only in the instrumentation APK and provides
+repeatable controls, editable/password fields, scroll content and a URL handler.
+The test is opt-in and skips non-emulators. Check for assumption skips as well as
+failures; an `OK` instrumentation summary alone is insufficient.
+
+Use only the dedicated AVD `eva-device-slice1`, port **5592**. Do not use
+emulator-5554/5580/5586 or a physical phone. The prototype's `scripts/emulator.sh`
+can create/start it with `--name eva-device-slice1 --port 5592` inside that
+repository's Android Nix shell; set `VDA_LOCAL_DIR` to a separate directory outside
+the prototype. Copy its pinned Portal APK into that directory's `portal/`, then
+run `scripts/portal.sh setup emulator-5592` with the same environment. Neither
+repository needs to be modified for setup.
+
+```sh
+direnv exec . ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
+adb -s emulator-5592 install -r app/build/outputs/apk/debug/app-debug.apk
+adb -s emulator-5592 install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+# EVA_PORTAL_TOKEN_FILE is the path printed by Portal setup, never the token itself.
+adb -s emulator-5592 push "$EVA_PORTAL_TOKEN_FILE" /data/local/tmp/eva-portal-token
+adb -s emulator-5592 shell am instrument -w -r \
+  -e class com.colonelpanic.eva.devicecontrol.PortalBackendDeviceTest \
+  -e evaPortalParity true \
+  com.colonelpanic.eva.debug.test/androidx.test.runner.AndroidJUnitRunner
+adb -s emulator-5592 shell rm /data/local/tmp/eva-portal-token
+```
+
+The token is temporary test provisioning. It is never an instrumentation argument
+or portable configuration value. Production token provisioning and backend
+selection must be added to EVA's configuration/credential-reference model when
+the device-task capability is wired.
+
+The dedicated AVD has passed this backend test with all 13 required action kinds
+(27.414 seconds, zero failures or skips; optional lock excluded). Median standalone
+observation time was 26 ms across 34 reads. Selected action measurements below are
+milliseconds; repeated actions use medians. There was no model call in this test.
+
+| Action | Target recheck | HTTP | Settle |
+| --- | ---: | ---: | ---: |
+| launch_app | 0 | 29 | 2586 |
+| activate_element | 36 | 12 | 831 |
+| set_text | 36 | 144 | 1056 |
+| scroll | 19 | 13 | 1563 |
+| screenshot | 0 | 433 | 0 |
+| open_url | 0 | 15 | 1173 |
+
+An initial fixture failure exposed Android's `setSingleLine` resetting password
+input flags; the fixture now sets password type last, and backend tests cover a
+field becoming password-marked after focus. A later fixture failure assumed Back
+only dismissed a keyboard; Portal's IME was already hidden, so Back correctly
+exited the Activity. The test relaunches before scrolling. Neither failure was a
+task-eval result; the four worker evals below have not run through EVA yet.
+
+Acceptance for the complete slice:
+
+- Protocol: every copied `protocol/v1/examples/*.json` round-trips; the compact
+  observation table matches the Python renderer (without its policy instruction).
+- Backend: launch_app, activate_element, set_text (replace and append, Unicode,
+  verified read-back and password redaction), scroll, back, home, tap_point,
+  swipe, long_press, screenshot, ime_action, open_url and open_notifications
+  execute against same-phone Portal. Lock is optional and excluded from the
+  instrumentation test. Retain separate recheck/HTTP/settle timings.
+- Worker: ask-first ambiguity, one action per turn, scroll progress and reversal
+  rules, loop/refusal limits, bounded append-mode context/cache prefix, and
+  revision/cancellation get scripted-model JVM tests. No approval, risk,
+  evidence-validation or injection subsystem is part of this slice.
+- Integration: one capability waits for a terminal receipt; progress and
+  corrections retain the owning thread/turn. Stop reaches inference and input
+  immediately; issued input settles before the device lease is released. Existing
+  UI tools and launches cannot interleave. Assistant-panel Stop stops work.
+  Backend/model tuning and token references survive configuration composition and
+  restore. No capability integration is implemented by the backend test alone.
+- End-to-end: run `settings.wifi_scanning_off.baseline`,
+  `settings.ble_scanning_off.deep`, `chrome_read.closing_time.baseline`, and
+  `chrome_read.pool_hours.scrolling` through EVA's device task. Serve the
+  prototype's `evals/fixtures/web/` with `python -m http.server` bound to
+  `0.0.0.0` on a fresh random high port; the emulator uses `10.0.2.2:<port>`.
+  Compare any failing case with `vda eval run ... --driver worker` on the same
+  emulator, with the same initial state. Record observation/model/action timing
+  separately. These task evals remain pending until worker/capability wiring.
+- Shizuku: adapt existing observe/tap/set_text to `DeviceBackend`; every other
+  unsupported action must return the protocol's `unsupported`, never succeed as
+  a no-op. Its adapter remains separate from Portal parity acceptance.
+
 ### Messaging setup and verification
 
 Ivan reporteda verified real SMS send on 2026-09-14. That verifies direct

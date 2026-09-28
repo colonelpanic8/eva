@@ -105,6 +105,8 @@ ktlint {
 }
 
 dependencies {
+    implementation(project(":device-control-core"))
+    implementation(project(":device-control-portal"))
     coreLibraryDesugaring(libs.desugar.jdk.libs.nio)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)

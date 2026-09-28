@@ -9,6 +9,9 @@ contracts. [Operations](operations.md) owns build, release, and verification ste
 
 EVA is a native Kotlin/Compose Android app. Most code lives in one `:app` module;
 packages separate responsibilities without requiring a module for every interface.
+`device-control-core` holds the Android-free device protocol and task/backend contracts.
+`device-control-portal` implements same-phone Portal HTTP input independently of Android
+framework types; the app includes it for instrumented backend verification.
 
 ```text
 Launcher / Android assistant surface / Compose UI
@@ -219,6 +222,48 @@ links. Paseo's installed extension service (in development, see below) creates
 agents and sends prompts without its UI. General MCP adapters remain future work. They should
 register capabilities through the same execution boundary. Routine phone
 actions must not depend on a remote coding agent or on automating Paseo's Android UI.
+
+### Device-control backend boundary
+
+`device-control-core` ports voice-device-agent's Kotlin protocol v1 revision 1
+observations, actions, results and errors. Copied protocol examples round-trip in
+JVM tests, including legacy link envelopes retained as wire types only. The
+compact text table preserves indices, hierarchy, bounds, state flags, truncation
+and password redaction. `DeviceBackend` exposes only `observe()` and
+`perform(action)`; `TaskAgent` defines goal/progress/terminal-result and independent
+revision/cancellation methods. A scripted fake backend is available to JVM tests.
+No task-agent implementation is registered yet. Both `:device-control-core` and
+`:device-control-portal` are plain Kotlin/JVM libraries without Android types; a
+JVM host can consume them as-is, using a forwarded loopback Portal port. The
+worker/model contract implementation remains to be added in JVM code. EVA's
+existing OpenAI Responses provider remains in `:app`; extracting its HTTP/SSE
+transport and injecting subscription credentials is still needed for a JVM host.
+
+The Portal backend talks to the unmodified Mobilerun Portal app at
+`http://127.0.0.1:<port>` with a runtime-supplied bearer token. It reuses the
+companion's tree mapper and primitive planner, and ports the Python adapter's
+fresh-target recheck, gesture delay, quiet-window settling, degraded-read retry,
+launch postcondition and text read-back. It supports all protocol actions:
+launch, activate, replace/append text, scroll, back, home, scoped point tap and
+swipe, long press, screenshot, IME action, URL and notifications (plus lock).
+IME actions run as Enter and report that fact. Password text stays in private
+read-back state; observations and result details redact it. PNGs are returned in
+screenshot details, without a worker/model attachment path yet.
+
+Mutating HTTP calls are never retried and redirects are disabled. Each backend
+instance serializes its I/O and rejects duplicate action IDs or stale observation
+references. A cancellation does not release an issued request early; it waits for
+that bounded exchange and prevents later inputs, including typing after a focus
+tap. Transport loss after dispatch remains an unknown outcome. These are backend
+execution semantics, not an approval/risk/evidence/injection subsystem.
+
+The Portal backend is currently exercised through tests, not offered as an EVA
+capability. Backend selection/token provisioning in portable configuration, the
+text-first worker, a device-wide lease across EVA's existing launches, immediate
+conversation corrections/stop, the assistant Stop fix, and the Shizuku adapter
+for this interface remain integration work. Ordinary voice/tool behavior is
+unchanged. See [device-control acceptance](operations.md#device-control-parity)
+for the executable backend check and remaining end-to-end criteria.
 
 ### Background execution and locked devices
 

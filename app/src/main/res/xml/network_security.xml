@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  EVA reaches its development broker over a loopback socket forwarded by adb.
+  EVA reaches its development broker and the same-phone Portal backend over loopback.
   Cleartext stays prohibited everywhere else, including every remote host.
 -->
 <network-security-config>
