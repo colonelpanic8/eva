@@ -18,3 +18,4 @@ rootProject.name = "EVA"
 include(":app")
 
 include(":device-control-core")
+include(":device-control-portal")

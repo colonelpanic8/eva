@@ -9,7 +9,7 @@ icons:
 
 # Run formatting checks, Android lint, unit tests, and a debug build.
 check:
-    ./gradlew --no-daemon ktlintCheck :app:lintDebug :device-control-core:test :app:testDebugUnitTest :app:assembleDebug
+    ./gradlew --no-daemon ktlintCheck :app:lintDebug :device-control-core:test :device-control-portal:test :app:testDebugUnitTest :app:assembleDebug
 
 # Apply Kotlin formatting.
 format:
@@ -25,7 +25,7 @@ lint:
 
 # Run local JVM tests.
 test:
-    ./gradlew --no-daemon :device-control-core:test :app:testDebugUnitTest
+    ./gradlew --no-daemon :device-control-core:test :device-control-portal:test :app:testDebugUnitTest
 
 # Build the debug APK.
 build:
