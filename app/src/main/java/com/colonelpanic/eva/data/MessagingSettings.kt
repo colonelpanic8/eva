@@ -35,6 +35,13 @@ class MessagingSettings(
         )
     val state = mutable.asStateFlow()
 
+    /**
+     * Bumped whenever a bridge token is saved or removed. A token alone changes nothing in [state],
+     * so screens that show whether a token is present key on this instead of reading secrets each frame.
+     */
+    private val mutableCredentialRevision = MutableStateFlow(0L)
+    val credentialRevision = mutableCredentialRevision.asStateFlow()
+
     fun enable(value: Boolean) {
         replace(mutable.value.copy(enabled = value))
     }
@@ -70,6 +77,7 @@ class MessagingSettings(
         replace(mutable.value.copy(bridges = mutable.value.bridges + (service to MessagingBridgeDefinition(title, approved))))
         if (credential != null) {
             secrets.write(secretKey(reference), credential.encode())
+            mutableCredentialRevision.value++
             onCredentialChanged(reference)
         }
     }
@@ -77,6 +85,7 @@ class MessagingSettings(
     fun removeBridge(name: String) {
         val reference = EvaConfigurationCodec.messagingSecretId(name)
         secrets.clear(secretKey(reference))
+        mutableCredentialRevision.value++
         replace(mutable.value.copy(bridges = mutable.value.bridges - name))
         onCredentialChanged(reference)
     }

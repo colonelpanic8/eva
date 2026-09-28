@@ -250,6 +250,7 @@ class MainActivity : ComponentActivity() {
         val account by eva.chatGpt.account.collectAsStateWithLifecycle()
         val signIn by eva.signIn.state.collectAsStateWithLifecycle()
         val messaging by eva.messagingSettings.state.collectAsStateWithLifecycle()
+        val bridgeCredentialRevision by eva.messagingSettings.credentialRevision.collectAsStateWithLifecycle()
         val messagingApps by eva.notificationMessages.apps.collectAsStateWithLifecycle()
         val messagingBridgeChecks by eva.bridgeMessaging.checks.collectAsStateWithLifecycle()
         val rememberedNumbers by eva.chosenNumbers.count.collectAsStateWithLifecycle()
@@ -271,7 +272,7 @@ class MainActivity : ComponentActivity() {
             messagingPermissions = messagingPermissions,
             messagingBridgeChecks = messagingBridgeChecks,
             messagingBridgesNeedingToken =
-                remember(messaging) {
+                remember(messaging.bridges, bridgeCredentialRevision) {
                     eva.messagingSettings
                         .missingBridgeCredentials(messaging.bridges)
                         .map { it.split('/')[1] }
