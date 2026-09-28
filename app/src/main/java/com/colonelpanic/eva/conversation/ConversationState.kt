@@ -29,6 +29,7 @@ data class ConversationEntry(
     val destination: String? = null,
     val capabilityId: String? = null,
     val actionTitle: String? = null,
+    val arguments: Map<String, String> = emptyMap(),
     /** The turn this action ran inside, so it can be shown under that request. */
     val parentId: String? = null,
 )

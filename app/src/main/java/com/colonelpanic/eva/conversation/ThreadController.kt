@@ -307,7 +307,8 @@ class ThreadController(
             mutableState.update { it.copy(threadId = null, entries = emptyList(), working = false) }
             return
         }
-        val items = store.items(id)
+        // Every turn is listed, so every item is too; a window would strip older turns of their actions.
+        val items = store.items(id, limit = Int.MAX_VALUE)
         val entries = projectEntries(store.turns(id), items, receipts(items))
         mutableState.update { it.copy(threadId = id, entries = entries, working = activeTask(id) != null) }
     }
@@ -947,6 +948,7 @@ class ThreadController(
                         )
                         try {
                             val result = dispatcher.execute(proposal, rejection ?: argumentError)
+                            refresh()
                             val changesPhone = definition?.readOnly == false && !definition.bookkeeping
                             if (changesPhone &&
                                 (result.status == InvocationStatus.COMPLETED || result.status == InvocationStatus.HANDED_OFF)

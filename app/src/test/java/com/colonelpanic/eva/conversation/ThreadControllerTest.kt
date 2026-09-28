@@ -741,6 +741,32 @@ class ThreadControllerTest {
         }
 
     @Test
+    fun `an early action stays under its turn after the thread outgrows the history window`() =
+        runTest {
+            val provider = FakeProvider()
+            val controller = controller(provider)
+            advanceUntilIdle()
+            controller.connect("unused")
+            advanceUntilIdle()
+            controller.submit("Please show me the park")
+            advanceUntilIdle()
+            provider.call("first", action.id, "place" to "Park")
+            advanceUntilIdle()
+            val turn = latestTurn(controller)
+            provider.channel.send(ProviderEvent.ResponseEnded(provider.input.id, "completed"))
+            advanceUntilIdle()
+            val threadId = controller.state.value.threadId!!
+            repeat(ConversationStore.DEFAULT_ITEM_LIMIT) {
+                store.append(ThreadItem.Notice("n$it", threadId, null, it.toLong(), NoticeKind.SESSION_STARTED, "Text session"))
+            }
+            advanceUntilIdle()
+            val call = entry(controller, "provider:session:first")
+            assertEquals(turn, call.parentId)
+            assertEquals(EntryStatus.HANDED_OFF, call.status)
+            assertEquals(mapOf("place" to "Park"), call.arguments)
+        }
+
+    @Test
     fun `resuming a thread seeds the session with what was said`() =
         runTest {
             val provider = FakeProvider()

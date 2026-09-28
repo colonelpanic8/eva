@@ -56,6 +56,7 @@ fun projectEntries(
                         destination = receipt?.destination,
                         capabilityId = item.capabilityId,
                         actionTitle = item.title,
+                        arguments = item.arguments,
                         parentId = turnId,
                     )
             }
