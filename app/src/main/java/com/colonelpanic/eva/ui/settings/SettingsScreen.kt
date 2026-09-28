@@ -37,6 +37,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.colonelpanic.eva.adapters.android.DeviceControlHost
 import com.colonelpanic.eva.conversation.prompt.VoiceCallMode
 import com.colonelpanic.eva.providers.openai.OpenAiModels
 import com.colonelpanic.eva.providers.openai.SignInState
@@ -383,9 +384,21 @@ private fun ScreenControlSection(
             checked = state.screenControlEnabled,
             onCheckedChange = actions.onScreenControlChange,
         )
+        if (state.canControlScreen && state.shizukuAccess != null) {
+            SettingsBlock {
+                Text(
+                    state.shizukuAccess,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (state.shizukuAccess != DeviceControlHost.ALLOWED) {
+                    TextButton(onClick = actions.onAllowShizuku) { Text("Allow Shizuku access") }
+                }
+            }
+        }
         SettingsSwitchRow(
             title = "Use Portal for device tasks",
-            supporting = "Portal runs on this phone. Off uses the Shizuku backend with its supported actions.",
+            supporting = "Portal runs on this phone. Off uses EVA's Shizuku helper, which needs no other app.",
             checked = state.deviceTask.backend == "portal",
             onCheckedChange = { actions.onDeviceTaskChange(state.deviceTask.copy(backend = if (it) "portal" else "shizuku")) },
         )

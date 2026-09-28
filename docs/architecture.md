@@ -221,10 +221,12 @@ for concrete identity, schema, waiting, and authorization rules.
   locked-device voice verification is
   pending. Assistant selection does not confer unrestricted
   background launch or device access.
-- Optional Shizuku adapters implement Settings AppFunctions and bounded UI observation,
-  text replacement, and taps. UI mutations consume a recent observation and recheck
-  target identity. Existing Shizuku grants allow device-setting actions without
-  EVA's main activity; that activity is needed only to request a missing grant.
+- Optional Shizuku adapters implement Settings AppFunctions, bounded UI observation,
+  text replacement and taps, and the device-task backend described below. UI
+  mutations consume a recent observation and recheck target identity. Existing
+  Shizuku grants allow device-setting and screen actions without EVA's main
+  activity; that activity is needed only to request a missing grant, which Screen
+  control settings can do ahead of time.
   Contact and SMS Android permission checks likewise reuse existing grants from
   the assistant without requiring the main activity. Platform restrictions on
   locked-device actions still apply. General AppFunctions discovery/execution and broader device
@@ -255,11 +257,16 @@ Portal on the same phone is the default task backend. Its full typed action set
 includes Unicode replace/append text, password redaction, screenshot PNGs, Enter
 for IME actions, URLs, and notifications. Mutating HTTP requests are not retried;
 loss after dispatch remains uncertain. A cancelled input drains its bounded
-request/settle exchange before releasing device ownership. The Shizuku adapter
-uses EVA's existing helper for observation, activation and verified replacement
-of non-password text. Other actions, append and password entry return
-`unsupported`; none silently succeeds. Shizuku task-adapter verification is JVM
-coverage, not a claim of device parity with Portal.
+request/settle exchange before releasing device ownership. The Shizuku backend is
+the same `PortalBackend` over `ShizukuPortalTransport`: EVA's shell-UID helper
+serves Portal's state shape from UiAutomation and executes the same fixed
+primitives (touch gestures, global actions, Enter/Move-End keys, focused-field text,
+launcher/VIEW `am start` with validated arguments, and screenshots streamed over a
+pipe). Rechecks, settling, read-back and receipts are therefore shared. Append into a
+password field types characters with the virtual key map, so it rejects characters
+that map has no keys for. The helper keeps one UiAutomation connection across
+consecutive calls and releases it after 20 idle seconds. Both backends are checked
+for availability before a task is admitted.
 
 The text-first worker executes one primitive per model turn, asks for missing or
 ambiguous choices, reports scroll progress, restricts reversals, detects repeated

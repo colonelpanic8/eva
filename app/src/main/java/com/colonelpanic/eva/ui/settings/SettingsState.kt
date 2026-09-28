@@ -67,6 +67,7 @@ data class SettingsUiState(
     val isDeviceAssistant: Boolean = false,
     val canSeeMediaSessions: Boolean = false,
     val canControlScreen: Boolean = false,
+    val shizukuAccess: String? = null,
     val screenControlEnabled: Boolean = true,
     val deviceTask: com.colonelpanic.eva.data.configuration.DeviceTaskConfiguration =
         com.colonelpanic.eva.data.configuration
@@ -139,6 +140,7 @@ data class SettingsActions(
     val onScreenControlChange: (Boolean) -> Unit = {},
     val onDeviceTaskChange: (com.colonelpanic.eva.data.configuration.DeviceTaskConfiguration) -> Unit = {},
     val onPortalToken: (String) -> Unit = {},
+    val onAllowShizuku: () -> Unit = {},
     val onSaveSpotifyClientId: (String) -> String? = { null },
     val onConnectSpotify: () -> String? = { null },
     val onCancelSpotifyConnect: () -> Unit = {},

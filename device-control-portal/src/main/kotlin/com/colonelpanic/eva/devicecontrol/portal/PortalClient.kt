@@ -30,15 +30,15 @@ interface PortalTransport {
     suspend fun screenshot(): ByteArray
 }
 
-internal class PortalCommandFailure(
+class PortalCommandFailure(
     val detail: String,
 ) : Exception("Portal refused the command")
 
 internal class DegradedSnapshot : Exception("Portal returned a cached tree")
 
-internal class NoActiveWindow : Exception("No active window")
+class NoActiveWindow : Exception("No active window")
 
-internal class CaptureRejected(
+class CaptureRejected(
     val secure: Boolean,
 ) : Exception("Portal refused the screenshot")
 

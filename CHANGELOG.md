@@ -4,6 +4,10 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Screen tasks no longer need the Portal app. With Shizuku running, turning off **Use Portal for device tasks** gives EVA every action Portal offers: launching apps, tapping, long pressing, typing, scrolling, swiping, back, home, notifications, links and screenshots. Screen control settings show whether Shizuku has allowed EVA and can ask for access up front, so voice requests do not stop to say "open EVA once".
+
 ## [0.43.0] - 2026-09-28
 
 ### Added

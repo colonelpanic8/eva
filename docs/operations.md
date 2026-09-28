@@ -228,6 +228,7 @@ Recorded checks from 2026-09-14:
 | Direct subscription voice, Pixel | Synthetic speech, expected transcripts, decoded output audio; timer handoff and connection survival | Does not measure acoustic quality, echo, Bluetooth, or natural barge-in |
 | Assistant role, Pixel API 37, signed `0.13.0` candidate | System assist event opened overlay, voice connected, panel/scrim behavior checked | Keyguard, activity handoff, and delegated recognition still need device verification |
 | Shizuku device control, Android 16/API 36 emulator | Observation, Unicode replacement, tap, post-action observation, service restart | Does not establish Android 17 physical-device compatibility |
+| Shizuku device-task backend, dedicated API 37 `sdk_gphone64_x86_64` emulator (port 5612), Shizuku 13.6.0 started over adb, 2026-09-28 | `everyRequiredActionRunsThroughShizuku` passed all 13 required action kinds against `PortalFixtureActivity`; access was granted through the new Screen control button | Emulator only; no model-driven task, physical phone or Wireless-debugging start |
 | Installed-extension transport, API 36 `google_apis` emulator, 2026-09-23, EVA `locked-extension-eva` debug re-signed with Mova's debug key, Mova `locked-extension-mova` debug | From EVA's UID, `InstalledExtensionDeviceTest` described Mova and executed `find_todos` and `create_todo` (keyguard showing, PIN set, no Mova process), and did the same with Mova force-stopped and never launched. Each bind took about 0.5 s; replies decoded as `not_executed/not_configured` because Mova was not logged in | No server write, no EVA voice or assistant session; before-first-unlock was not rebooted into |
 | Phone calls, API 36 `google_apis` emulator, 2026-09-23, EVA `phone-calls` debug | `PhoneCallDeviceTest` from EVA's process with the keyguard showing: `placeCall` produced Telecom call `TC@1` (`CONNECTING`, outgoing, non-emergency) on the SIM phone account; the test call was then ended | Emulator modem; no physical device, real network, or voice session |
 | Mova 7.2.1 release candidate, API 35 emulator (Mova agent), org-agenda-api container at production's revision | Keyguard showing and Mova force-stopped before each call: from EVA's UID, a cold describe took about 560 ms, and find, create, update, complete, and delete completed and were confirmed in the org file. Offline create returned `not_sent`; shell callers were refused | Emulator and test server; no physical device |
@@ -343,9 +344,9 @@ Acceptance for the complete slice:
   Compare any failing case with `vda eval run ... --driver worker` on the same
   emulator, with the same initial state. Record observation/model/action timing
   separately. These task evals use the admitted EVA task capability on emulator-5592; see results below.
-- Shizuku: adapt existing observe/tap/set_text to `DeviceBackend`; every other
-  unsupported action must return the protocol's `unsupported`, never succeed as
-  a no-op. Its adapter has focused JVM tests; device verification is separate from Portal parity acceptance.
+- Shizuku: the same backend test, run as `everyRequiredActionRunsThroughShizuku` with
+  `-e evaShizukuParity true` and EVA already allowed in Shizuku (Screen control
+  settings, **Allow Shizuku access**). No Portal token is needed.
 
 Task eval results on emulator-5592 (Android 17/API 37, `sdk_gphone64_x86_64`),
 unmodified Portal 0.7.25, `gpt-6-sol`, low

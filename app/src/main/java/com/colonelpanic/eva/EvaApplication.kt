@@ -247,8 +247,27 @@ class EvaApplication :
 
     val deviceTasks by lazy {
         com.colonelpanic.eva.devicecontrol
-            .DeviceTaskCoordinator { createDeviceTaskAgent() }
+            .DeviceTaskCoordinator(unavailable = ::deviceTaskUnavailableReason) { createDeviceTaskAgent() }
     }
+
+    private suspend fun deviceTaskUnavailableReason(): String? =
+        when {
+            !capabilities.screenControlEnabled -> {
+                "Screen control is switched off in EVA's settings."
+            }
+
+            capabilities.deviceTask.backend == "shizuku" -> {
+                deviceControlHost?.unavailableReason() ?: if (deviceControlHost == null) SCREEN_CONTROL_API else null
+            }
+
+            capabilities.portalToken() == null -> {
+                "Provision the Portal token in EVA's Screen control settings."
+            }
+
+            else -> {
+                null
+            }
+        }
 
     internal fun createDeviceTaskAgent(
         onDeviceTiming: (com.colonelpanic.eva.devicecontrol.portal.ActionTiming) -> Unit = {},
@@ -272,10 +291,13 @@ class EvaApplication :
                 }
 
                 "shizuku" -> {
-                    val host = checkNotNull(deviceControlHost) { "Screen control requires Android 11 or newer." }
-                    com.colonelpanic.eva.devicecontrol.ShizukuDeviceBackend(
-                        read = { host.observe(15_000L) },
-                        input = { request -> host.act(request, 15_000L) },
+                    val host = checkNotNull(deviceControlHost) { SCREEN_CONTROL_API }
+                    com.colonelpanic.eva.devicecontrol.portal.PortalBackend(
+                        com.colonelpanic.eva.devicecontrol
+                            .ShizukuPortalTransport(host),
+                        launchAliases = options.launchAliases,
+                        timing = onDeviceTiming,
+                        backend = "shizuku",
                     )
                 }
 
@@ -710,3 +732,5 @@ class EvaApplication :
         }
     }
 }
+
+private const val SCREEN_CONTROL_API = "Screen control requires Android 11 or newer."

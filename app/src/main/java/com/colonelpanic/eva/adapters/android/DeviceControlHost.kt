@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.IBinder
+import android.os.ParcelFileDescriptor
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.Lifecycle
 import kotlinx.coroutines.CompletableDeferred
@@ -92,6 +93,28 @@ class DeviceControlHost(
             }
         }
 
+    /** Settings status line; [ALLOWED] once EVA may start the helper. */
+    suspend fun accessStatus(): String =
+        withContext(Dispatchers.Main.immediate) {
+            when {
+                !isShizukuInstalled() -> NOT_INSTALLED
+                !runCatching { rikka.shizuku.Shizuku.pingBinder() }.getOrDefault(false) -> SERVER_STOPPED
+                permissionGranted() -> ALLOWED
+                else -> NOT_ALLOWED
+            }
+        }
+
+    /** Asks Shizuku from EVA's own screen, so later voice and background requests need no prompt. */
+    suspend fun requestAccess(): String =
+        withContext(Dispatchers.Main.immediate) {
+            try {
+                requireService()
+                ALLOWED
+            } catch (error: ShizukuUnavailableException) {
+                error.message ?: accessStatus()
+            }
+        }
+
     suspend fun observe(timeoutMillis: Long): String {
         val helper = withContext(Dispatchers.Main.immediate) { requireService() }
         return withContext(Dispatchers.IO) { helper.observe(timeoutMillis) }
@@ -103,6 +126,40 @@ class DeviceControlHost(
     ): String {
         val helper = withContext(Dispatchers.Main.immediate) { requireService() }
         return withContext(Dispatchers.IO) { helper.act(request.toString(), timeoutMillis) }
+    }
+
+    suspend fun state(timeoutMillis: Long): String {
+        val helper = withContext(Dispatchers.Main.immediate) { requireService() }
+        return withContext(Dispatchers.IO) { helper.state(timeoutMillis) }
+    }
+
+    suspend fun command(
+        method: String,
+        params: JsonObject,
+        timeoutMillis: Long,
+    ): String {
+        val helper = withContext(Dispatchers.Main.immediate) { requireService() }
+        return withContext(Dispatchers.IO) { helper.command(method, params.toString(), timeoutMillis) }
+    }
+
+    suspend fun screenshot(
+        timeoutMillis: Long,
+        maxBytes: Long,
+    ): ByteArray {
+        val helper = withContext(Dispatchers.Main.immediate) { requireService() }
+        return withContext(Dispatchers.IO) {
+            ParcelFileDescriptor.AutoCloseInputStream(helper.screenshot(timeoutMillis)).use { stream ->
+                val bytes = java.io.ByteArrayOutputStream()
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    val read = stream.read(buffer)
+                    if (read < 0) break
+                    bytes.write(buffer, 0, read)
+                    check(bytes.size() <= maxBytes) { "The screenshot exceeds the byte limit" }
+                }
+                bytes.toByteArray()
+            }
+        }
     }
 
     private suspend fun requireService(): IDeviceControl {
@@ -158,6 +215,8 @@ class DeviceControlHost(
         const val SERVER_STOPPED = "Shizuku is not running. Start it before asking EVA to use the screen."
         const val PERMISSION_DENIED = "Shizuku access was denied. Allow EVA in Shizuku before trying again."
         const val SURFACE_REQUIRED = "Open EVA once to allow Shizuku access before it can use the screen."
+        const val ALLOWED = "Shizuku is running and EVA is allowed."
+        const val NOT_ALLOWED = "Shizuku is running, but EVA has not been allowed yet."
 
         private const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
         private const val PERMISSION_REQUEST_CODE = 62118

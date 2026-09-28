@@ -57,6 +57,7 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val voice: VoiceAccessModel by viewModels()
+    private val shizukuAccess = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
     private var surface: Launch
         get() = voice.surface
         set(value) {
@@ -263,6 +264,8 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(Unit) { runCatching { eva.memories.load() } }
         val deviceTask by eva.capabilities.deviceTaskFlow.collectAsStateWithLifecycle()
         val screenControl by eva.capabilities.screenControlFlow.collectAsStateWithLifecycle()
+        val shizuku by shizukuAccess.collectAsStateWithLifecycle()
+        LaunchedEffect(Unit) { eva.deviceControlHost?.let { shizukuAccess.value = it.accessStatus() } }
         val extensions by eva.extensions.settings.collectAsStateWithLifecycle()
         val plugins by eva.pluginBrowser.state.collectAsStateWithLifecycle()
         val packages by eva.packageSettings.state.collectAsStateWithLifecycle()
@@ -321,6 +324,7 @@ class MainActivity : ComponentActivity() {
             isDeviceAssistant = deviceAssistant,
             canSeeMediaSessions = mediaControlAccess,
             canControlScreen = eva.deviceControlHost != null,
+            shizukuAccess = shizuku,
             screenControlEnabled = screenControl,
             deviceTask = deviceTask,
             spotifyClientId = spotifyClientId,
@@ -465,6 +469,9 @@ class MainActivity : ComponentActivity() {
                 onScreenControlChange = eva.capabilities::saveScreenControl,
                 onDeviceTaskChange = eva.capabilities::saveDeviceTask,
                 onPortalToken = eva.capabilities::savePortalToken,
+                onAllowShizuku = {
+                    eva.deviceControlHost?.let { host -> lifecycleScope.launch { shizukuAccess.value = host.requestAccess() } }
+                },
                 onSaveSpotifyClientId = { clientId -> save { eva.spotify.saveClientId(clientId) } },
                 onConnectSpotify = {
                     eva.spotifyConnect.begin(

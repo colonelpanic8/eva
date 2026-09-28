@@ -81,6 +81,7 @@ class PortalBackend(
     private val sleep: suspend (Long) -> Unit = { delay(it) },
     private val timing: (ActionTiming) -> Unit = {},
     private val launchAliases: Map<String, List<String>> = com.colonelpanic.eva.devicecontrol.worker.DEFAULT_LAUNCH_ALIASES,
+    private val backend: String = "portal",
 ) : DeviceBackend {
     private val lock = Mutex()
     private val session = UUID.randomUUID().toString()
@@ -99,7 +100,7 @@ class PortalBackend(
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {
-                throw ObservationFailure(BackendUnavailable(backend = "portal", executionStatus = ExecutionStatus.NOT_DISPATCHED))
+                throw ObservationFailure(BackendUnavailable(backend = backend, executionStatus = ExecutionStatus.NOT_DISPATCHED))
             }
         }
 
@@ -125,7 +126,7 @@ class PortalBackend(
             if (bound == null || bound.observation.observationId != action.boundObservationId) {
                 return@withLock refused(StaleObservation(action.actionId, action.boundObservationId, bound?.observation?.observationId))
             }
-            if (!valid(action)) return@withLock refused(Unsupported(action.actionId, action.boundObservationId, action.kind, "portal"))
+            if (!valid(action)) return@withLock refused(Unsupported(action.actionId, action.boundObservationId, action.kind, backend))
             var dispatched = false
             var recheckMillis = 0L
             var httpMillis = 0L
@@ -180,7 +181,7 @@ class PortalBackend(
                     }
                     caller.ensureActive()
                     val plan =
-                        when (val planned = PrimitivePlanner.plan(action, before.observation, "portal")) {
+                        when (val planned = PrimitivePlanner.plan(action, before.observation, backend)) {
                             is Planned.Refused -> return@withContext refused(planned.error)
                             is Planned.Ready -> planned.plan
                         }
@@ -210,7 +211,7 @@ class PortalBackend(
                                             ?: BackendUnavailable(
                                                 action.actionId,
                                                 action.boundObservationId,
-                                                "portal",
+                                                backend,
                                                 ExecutionStatus.NOT_DISPATCHED,
                                             ),
                                     )
@@ -242,7 +243,7 @@ class PortalBackend(
                             ) {
                                 failure =
                                     if (launchError) {
-                                        BackendUnavailable(action.actionId, action.boundObservationId, "portal")
+                                        BackendUnavailable(action.actionId, action.boundObservationId, backend)
                                     } else {
                                         AppNotFound(action.actionId, action.boundObservationId, expected, ExecutionStatus.EXECUTED)
                                     }
@@ -352,7 +353,7 @@ class PortalBackend(
                         started,
                         timestamp(),
                         after,
-                        error = BackendUnavailable(action.actionId, action.boundObservationId, "portal", status),
+                        error = BackendUnavailable(action.actionId, action.boundObservationId, backend, status),
                         executionStatus = status,
                         postObservationFailure = if (after == null) "Portal could not read the screen." else null,
                     )
@@ -406,7 +407,7 @@ class PortalBackend(
         val id = "portal-$session-${++sequence}"
         while (true) {
             try {
-                return PortalScreenMapper.map(client.state(), id, timestamp(), "portal", sequence).also { geometry = it.observation.screen }
+                return PortalScreenMapper.map(client.state(), id, timestamp(), backend, sequence).also { geometry = it.observation.screen }
             } catch (error: DegradedSnapshot) {
                 if (clock() - start >= policy.readBudgetMillis) throw error
                 sleep(policy.pollMillis)
@@ -416,7 +417,7 @@ class PortalBackend(
                     Observation(
                         id,
                         timestamp(),
-                        "portal",
+                        backend,
                         screen = screen,
                         sequence = sequence,
                         contentUnavailable = true,

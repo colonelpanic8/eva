@@ -16,6 +16,7 @@ import kotlinx.serialization.json.put
 
 /** Application ownership survives provider/audio attachment changes. */
 class DeviceTaskCoordinator(
+    private val unavailable: suspend () -> String? = { null },
     private val create: () -> TextTaskAgent,
 ) : ExecutionBackend {
     private val monitor = Any()
@@ -61,7 +62,7 @@ class DeviceTaskCoordinator(
             true
         }
 
-    override suspend fun unavailableReason(): String? = null
+    override suspend fun unavailableReason(): String? = unavailable()
 
     override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome =
         ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "A device task needs an owning conversation turn.")
