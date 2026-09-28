@@ -1,0 +1,312 @@
+{
+  "observe": {
+    "type": "object",
+    "properties": {},
+    "required": [],
+    "additionalProperties": false
+  },
+  "launch_app": {
+    "type": "object",
+    "properties": {
+      "package": {
+        "type": "string"
+      },
+      "activity": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "intent": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "package",
+      "activity",
+      "intent"
+    ],
+    "additionalProperties": false
+  },
+  "activate_element": {
+    "type": "object",
+    "properties": {
+      "element": {
+        "type": "integer"
+      },
+      "intent": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "element",
+      "intent"
+    ],
+    "additionalProperties": false
+  },
+  "set_text": {
+    "type": "object",
+    "properties": {
+      "element": {
+        "type": "integer"
+      },
+      "text": {
+        "type": "string"
+      },
+      "replace": {
+        "type": "boolean"
+      },
+      "intent": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "element",
+      "text",
+      "replace",
+      "intent"
+    ],
+    "additionalProperties": false
+  },
+  "scroll": {
+    "type": "object",
+    "properties": {
+      "direction": {
+        "type": "string",
+        "enum": [
+          "up",
+          "down",
+          "left",
+          "right"
+        ]
+      },
+      "element": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "intent": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "direction",
+      "element",
+      "intent"
+    ],
+    "additionalProperties": false
+  },
+  "back": {
+    "type": "object",
+    "properties": {
+      "intent": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "intent"
+    ],
+    "additionalProperties": false
+  },
+  "home": {
+    "type": "object",
+    "properties": {
+      "intent": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "intent"
+    ],
+    "additionalProperties": false
+  },
+  "tap_point": {
+    "type": "object",
+    "properties": {
+      "x": {
+        "type": "integer"
+      },
+      "y": {
+        "type": "integer"
+      },
+      "within": {
+        "type": "integer"
+      },
+      "intent": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "x",
+      "y",
+      "within",
+      "intent"
+    ],
+    "additionalProperties": false
+  },
+  "swipe": {
+    "type": "object",
+    "properties": {
+      "start_x": {
+        "type": "integer"
+      },
+      "start_y": {
+        "type": "integer"
+      },
+      "end_x": {
+        "type": "integer"
+      },
+      "end_y": {
+        "type": "integer"
+      },
+      "within": {
+        "type": "integer"
+      },
+      "duration_ms": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "intent": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "start_x",
+      "start_y",
+      "end_x",
+      "end_y",
+      "within",
+      "duration_ms",
+      "intent"
+    ],
+    "additionalProperties": false
+  },
+  "long_press": {
+    "type": "object",
+    "properties": {
+      "element": {
+        "type": "integer"
+      },
+      "intent": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "element",
+      "intent"
+    ],
+    "additionalProperties": false
+  },
+  "screenshot": {
+    "type": "object",
+    "properties": {
+      "intent": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "intent"
+    ],
+    "additionalProperties": false
+  },
+  "ime_action": {
+    "type": "object",
+    "properties": {
+      "element": {
+        "type": "integer"
+      },
+      "action": {
+        "type": "string",
+        "enum": [
+          "enter",
+          "search",
+          "done",
+          "go",
+          "send",
+          "next",
+          "previous"
+        ]
+      },
+      "intent": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "element",
+      "action",
+      "intent"
+    ],
+    "additionalProperties": false
+  },
+  "open_url": {
+    "type": "object",
+    "properties": {
+      "url": {
+        "type": "string"
+      },
+      "package": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "intent": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "url",
+      "package",
+      "intent"
+    ],
+    "additionalProperties": false
+  },
+  "open_notifications": {
+    "type": "object",
+    "properties": {
+      "intent": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "intent"
+    ],
+    "additionalProperties": false
+  },
+  "ask_user": {
+    "type": "object",
+    "properties": {
+      "question": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "question"
+    ],
+    "additionalProperties": false
+  },
+  "finish": {
+    "type": "object",
+    "properties": {
+      "status": {
+        "type": "string",
+        "enum": [
+          "completed",
+          "failed",
+          "blocked"
+        ]
+      },
+      "summary": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "summary"
+    ],
+    "additionalProperties": false
+  }
+}
