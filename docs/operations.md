@@ -4,7 +4,7 @@
 
 Run project commands through `direnv exec . <command>` or
 `nix develop .#android --command <command>`. The supported baseline is JDK 17,
-Android SDK 37, Gradle 9.7.1, AGP 9.4.1, and Kotlin 2.4.20. AGP supplies built-in
+Android SDK 37, Gradle 9.8.0, AGP 9.4.1, and Kotlin 2.4.20. AGP supplies built-in
 Kotlin; do not add `kotlin-android`. Minimum Android SDK is 23.
 
 ```sh
