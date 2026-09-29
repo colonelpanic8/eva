@@ -17,13 +17,9 @@ class VoiceControlsTest {
     private val live = MediaControls(focus = AudioFocusState.HELD)
 
     @Test
-    fun `status labels distinguish transport, provider audio, focus, and failure`() {
+    fun `status labels distinguish transport, provider audio, mute, and failure`() {
         assertEquals("Voice connected, no provider audio yet", voiceStatusLabel(RealtimeMediaState.Connected(false), live))
         assertEquals("Voice connected", voiceStatusLabel(RealtimeMediaState.Connected(true), live))
-        assertEquals(
-            "Voice paused: another app has audio",
-            voiceStatusLabel(RealtimeMediaState.Connected(true), live.copy(focus = AudioFocusState.LOST)),
-        )
         assertEquals("Voice connected, mic muted", voiceStatusLabel(RealtimeMediaState.Connected(true), live.copy(microphoneMuted = true)))
         assertEquals(
             MediaFailure.MicrophonePermissionRequired.message,

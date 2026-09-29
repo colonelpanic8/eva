@@ -27,9 +27,10 @@ internal class AndroidAudioRoute(
             AudioManager.OnAudioFocusChangeListener { change ->
                 onFocusChange(
                     when (change) {
-                        AudioManager.AUDIOFOCUS_GAIN -> AudioFocusState.HELD
-                        AudioManager.AUDIOFOCUS_LOSS -> AudioFocusState.LOST
-                        else -> AudioFocusState.TRANSIENT_LOSS
+                        // A duck request, such as a notification sound, is too brief to end the call over.
+                        AudioManager.AUDIOFOCUS_GAIN, AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> AudioFocusState.HELD
+
+                        else -> AudioFocusState.LOST
                     },
                 )
             }

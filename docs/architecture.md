@@ -102,7 +102,9 @@ focus, and teardown handling. The session owns its audible edges: a rising cue w
 the transport connects and a falling one when it is torn down, played once per
 session so a reconnection inside the disconnect grace period stays quiet. Cues use
 sonification attributes rather than the call route, which the session has already
-handed back by the time it ends. Text and voice share capability execution. Realtime
+handed back by the time it ends. Losing audio focus to another app, such as a phone
+call or music EVA just started, ends the call instead of pausing it; a duck request
+such as a notification sound does not. Text and voice share capability execution. Realtime
 input identity must survive late transcripts and asynchronous tool events:
 transcript arrival order alone cannot establish which request owns an action.
 Tool correlation carries connection/session, input, generation, turn, catalog,
@@ -194,7 +196,7 @@ for concrete identity, schema, waiting, and authorization rules.
   screen. The receipt is `HANDED_OFF`: EVA does not observe whether the call
   connects. Without the permission, or for an emergency number (only the dialer app
   may place those), the dialer opens with the number and the user presses call. The
-  call takes audio focus, which pauses EVA's microphone and playback until it ends.
+  call takes audio focus, which ends EVA's voice call.
   An API 36 emulator placed a call from EVA's process with the keyguard showing;
   physical-device verification is pending.
 - `eva.android.location.current` reads the phone's location from `LocationManager`

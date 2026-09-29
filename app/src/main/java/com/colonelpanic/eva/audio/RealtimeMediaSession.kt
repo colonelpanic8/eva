@@ -60,7 +60,8 @@ sealed interface RealtimeMediaState {
     data object Closed : RealtimeMediaState
 }
 
-enum class AudioFocusState { NONE, HELD, TRANSIENT_LOSS, LOST }
+/** [LOST] is another app taking audio, even briefly; the call ends rather than waiting for it back. */
+enum class AudioFocusState { NONE, HELD, LOST }
 
 data class MediaControls(
     val microphoneMuted: Boolean = false,

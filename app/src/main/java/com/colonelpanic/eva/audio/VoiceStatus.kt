@@ -26,7 +26,6 @@ private fun connectedLabel(
     controls: MediaControls,
 ): String =
     when {
-        controls.focus != AudioFocusState.HELD -> "Voice paused: another app has audio"
         !state.remoteAudio -> "Voice connected, no provider audio yet"
         controls.playbackMuted -> "Voice connected, speaker stopped"
         controls.microphoneMuted -> "Voice connected, mic muted"

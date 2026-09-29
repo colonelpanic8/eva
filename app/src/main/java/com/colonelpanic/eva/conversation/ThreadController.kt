@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.conversation
 
+import com.colonelpanic.eva.audio.AudioFocusState
 import com.colonelpanic.eva.audio.RealtimeMediaSession
 import com.colonelpanic.eva.audio.RealtimeMediaState
 import com.colonelpanic.eva.capability.CallEnding
@@ -446,7 +447,10 @@ class ThreadController(
                             media = audio
                             launch {
                                 audio.controls.collect { controls ->
-                                    if (thisAttempt == attempt) mutableState.update { it.copy(mediaControls = controls) }
+                                    if (thisAttempt == attempt) {
+                                        mutableState.update { it.copy(mediaControls = controls) }
+                                        if (controls.focus == AudioFocusState.LOST) hangUp(ENDED_AUDIO_TAKEN)
+                                    }
                                 }
                             }
                             launch {
@@ -1389,6 +1393,7 @@ class ThreadController(
         private const val ENDED_AFTER_REQUEST = "ended by EVA: the request was done and the line went quiet"
         private const val ENDED_AFTER_ACTION = "ended by EVA after an action that hands the phone to something else"
         private const val ENDED_FOR_NEW_SESSION = "ended for a new session"
+        private const val ENDED_AUDIO_TAKEN = "ended: another app took the audio"
 
         /**
          * Hangs up rather than acting on the phone, so it bypasses the dispatcher and journal. Its

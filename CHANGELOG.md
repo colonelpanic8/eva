@@ -4,6 +4,10 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- When another app takes the audio, such as a phone call or music EVA started, the voice call ends instead of sitting paused until the audio comes back. Notification sounds do not end it.
+
 ## [0.45.0] - 2026-09-28
 
 ### Changed

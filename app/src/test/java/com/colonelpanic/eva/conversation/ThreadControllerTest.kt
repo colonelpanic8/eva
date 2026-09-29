@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.conversation
 
+import com.colonelpanic.eva.audio.AudioFocusState
 import com.colonelpanic.eva.audio.MediaControls
 import com.colonelpanic.eva.audio.MediaTimeline
 import com.colonelpanic.eva.audio.RealtimeMediaSession
@@ -1509,6 +1510,31 @@ class ThreadControllerTest {
             advanceUntilIdle()
             assertEquals(1, modelHangUps)
             modelWatcher.cancel()
+        }
+
+    @Test
+    fun `another app taking the audio ends the call instead of pausing it`() =
+        runTest {
+            val provider = FakeProvider()
+            val media = VoiceMedia()
+            val controller = controller(provider, media = { media })
+            advanceUntilIdle()
+            var hangUps = 0
+            val watcher = launch { controller.hangUps.collect { hangUps++ } }
+            runCurrent()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            media.controls.value = MediaControls(focus = AudioFocusState.HELD)
+            advanceUntilIdle()
+            assertEquals(ProviderStatus.CONNECTED, controller.state.value.providerStatus)
+
+            media.controls.value = MediaControls(focus = AudioFocusState.LOST)
+            advanceUntilIdle()
+            assertTrue(media.closed)
+            assertEquals(ProviderStatus.DISCONNECTED, controller.state.value.providerStatus)
+            assertEquals("Call ended: another app took the audio", sessionNotices(controller).last())
+            assertEquals(1, hangUps)
+            watcher.cancel()
         }
 
     private class FakeProvider(
