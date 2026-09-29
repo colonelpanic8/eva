@@ -4,6 +4,10 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- The assistant panel is now a small floating card at the bottom of the screen instead of a sheet over a dimmed app. It shows only the current request, its actions, and the answer, above one row of icon controls, so the app you were in stays visible.
+
 ## [0.44.0] - 2026-09-28
 
 ### Changed

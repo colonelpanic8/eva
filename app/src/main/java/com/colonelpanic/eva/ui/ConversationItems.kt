@@ -274,7 +274,7 @@ private fun SessionDivider(label: String) {
 }
 
 @Composable
-private fun StatusIndicator(status: StatusPresentation) {
+internal fun StatusIndicator(status: StatusPresentation) {
     if (status.inProgress) {
         CircularProgressIndicator(
             modifier = Modifier.size(12.dp),
@@ -287,7 +287,7 @@ private fun StatusIndicator(status: StatusPresentation) {
 }
 
 @Composable
-private fun StatusLine(status: StatusPresentation) {
+internal fun StatusLine(status: StatusPresentation) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -302,13 +302,13 @@ private fun StatusLine(status: StatusPresentation) {
     }
 }
 
-private class StatusPresentation(
+internal class StatusPresentation(
     val label: String,
     val inProgress: Boolean,
     val color: @Composable () -> Color,
 )
 
-private fun EntryStatus.presentation(): StatusPresentation =
+internal fun EntryStatus.presentation(): StatusPresentation =
     when (this) {
         EntryStatus.ANSWER, EntryStatus.SESSION -> {
             StatusPresentation("", false) { MaterialTheme.colorScheme.onSurface }
