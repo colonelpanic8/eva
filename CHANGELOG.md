@@ -6,6 +6,7 @@ All notable changes to EVA will be documented here.
 
 ### Changed
 
+- When voice hands a request to the text model, the conversation shows that handoff as its own block inside the turn: what the text model was asked, the actions it ran, and on request the full prompt it was given. The block stays open while the text model works and collapses when it finishes. The same block marks a request that finished in text after a call ended.
 - When another app takes the audio, such as a phone call or music EVA started, the voice call ends instead of sitting paused until the audio comes back. Notification sounds do not end it.
 
 ## [0.45.0] - 2026-09-28

@@ -60,7 +60,13 @@ continue-in-text session tool. The text leg receives a fresh catalog from the
 same capability registry, including enabled extensions, and retains the turn's
 action claims and receipts. Turn IDs belong to the store rather than a provider's session-local
 counter. The SQLite journal links requests, tool calls, receipts, and responses.
-The UI projects these records into grouped turns and session notices.
+Each text leg is its own thread item recording the delegated task, the exact
+instructions it was opened with, and how many history items seeded it; the calls
+it proposes carry its ID. Every delegation opens a fresh leg seeded from thread
+history rather than resuming an earlier leg, so the thread stays the one source
+of context. The UI projects these records into grouped turns and session notices,
+and shows each text leg as a collapsible block inside its turn, open while it works,
+holding the leg's own actions and its prompt.
 
 One attachment is live at a time. Background work can coexist with it.
 `VoiceSessionService` owns foreground voice lifetime; `TurnWorkService` covers

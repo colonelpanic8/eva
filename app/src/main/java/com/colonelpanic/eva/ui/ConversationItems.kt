@@ -1,6 +1,7 @@
 package com.colonelpanic.eva.ui
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -35,12 +37,16 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import com.colonelpanic.eva.conversation.ConversationEntry
+import com.colonelpanic.eva.conversation.EntryGroup
 import com.colonelpanic.eva.conversation.EntryStatus
+import com.colonelpanic.eva.conversation.TextLegDetails
+import com.colonelpanic.eva.conversation.TurnStatus
 
 internal fun Constraints.withMaxWidthFraction(fraction: Float): Constraints {
     if (!hasBoundedWidth) return this
@@ -124,10 +130,14 @@ internal fun StorageErrorBanner(message: String) {
 @Composable
 internal fun ConversationEntryItem(
     entry: ConversationEntry,
-    actions: List<ConversationEntry> = emptyList(),
+    children: List<EntryGroup> = emptyList(),
 ) {
     if (entry.status == EntryStatus.SESSION) {
         SessionDivider(entry.response)
+        return
+    }
+    entry.textLeg?.let {
+        TextLegBlock(entry, it, children.map(EntryGroup::entry))
         return
     }
     if (entry.capabilityId != null && entry.request.isBlank()) {
@@ -157,7 +167,16 @@ internal fun ConversationEntryItem(
                 }
             }
         }
-        if (actions.isNotEmpty()) ActionBranch(actions)
+        if (children.isNotEmpty()) {
+            ActionBranch {
+                children.forEach { child ->
+                    key(child.entry.id) {
+                        val leg = child.entry.textLeg
+                        if (leg == null) ActionRow(child.entry) else TextLegBlock(child.entry, leg, child.actions)
+                    }
+                }
+            }
+        }
         if (entry.response.isNotBlank()) ResponseBubble(entry)
     }
 }
@@ -183,14 +202,102 @@ private fun ResponseBubble(entry: ConversationEntry) {
 
 /** Actions hang off a rail under the request, so what the model did reads as a branch of the turn. */
 @Composable
-private fun ActionBranch(actions: List<ConversationEntry>) {
+private fun ActionBranch(content: @Composable () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(start = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Box(modifier = Modifier.width(2.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outlineVariant))
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) { content() }
+    }
+}
+
+/**
+ * Work a separate text model did for the turn: what it was asked, the actions it ran, and on
+ * request the exact instructions it was opened with. Open while it works unless toggled.
+ */
+@Composable
+private fun TextLegBlock(
+    entry: ConversationEntry,
+    leg: TextLegDetails,
+    actions: List<ConversationEntry>,
+) {
+    var toggled by rememberSaveable(entry.id) { mutableStateOf<Boolean?>(null) }
+    val expanded = toggled ?: (leg.status == TurnStatus.OPEN)
+    var showPrompt by rememberSaveable(entry.id + ":prompt") { mutableStateOf(false) }
+    val status = leg.presentation()
+    val task = leg.task ?: "Finish the request after the call ended"
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier =
+            Modifier
+                .maxWidthFraction(0.96f)
+                .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" }
+                .animateContentSize(),
+    ) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            actions.forEach { action -> key(action.id) { ActionRow(action) } }
+            Surface(onClick = { toggled = !expanded }, color = Color.Transparent) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        StatusIndicator(status)
+                        Text(
+                            text =
+                                "Text agent" +
+                                    if (actions.isEmpty()) "" else " · ${actions.size} ${if (actions.size == 1) "action" else "actions"}",
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        Text(text = status.label, style = MaterialTheme.typography.labelMedium, color = status.color())
+                    }
+                    Text(
+                        text = task,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = if (expanded) Int.MAX_VALUE else 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(bottom = if (expanded) 0.dp else 8.dp),
+                    )
+                }
+            }
+            if (expanded) {
+                if (actions.isNotEmpty()) {
+                    Box(modifier = Modifier.padding(end = 12.dp)) {
+                        ActionBranch { actions.forEach { action -> key(action.id) { ActionRow(action) } } }
+                    }
+                }
+                Surface(onClick = { showPrompt = !showPrompt }, color = Color.Transparent) {
+                    Text(
+                        text = if (showPrompt) "Hide prompt" else "Show prompt",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
+                }
+                if (showPrompt) {
+                    Column(
+                        modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        DetailText("Instructions, followed by the last ${leg.historyItems} conversation items:")
+                        SelectionContainer {
+                            Text(
+                                text = leg.instructions,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -307,6 +414,14 @@ internal class StatusPresentation(
     val inProgress: Boolean,
     val color: @Composable () -> Color,
 )
+
+internal fun TextLegDetails.presentation(): StatusPresentation =
+    when (status) {
+        TurnStatus.OPEN -> StatusPresentation("Working", inProgress = true) { MaterialTheme.colorScheme.tertiary }
+        TurnStatus.ANSWERED -> StatusPresentation("Done", inProgress = false) { MaterialTheme.colorScheme.primary }
+        TurnStatus.INTERRUPTED -> StatusPresentation("Interrupted", inProgress = false) { MaterialTheme.colorScheme.onSurfaceVariant }
+        TurnStatus.FAILED -> StatusPresentation("Failed", inProgress = false) { MaterialTheme.colorScheme.error }
+    }
 
 internal fun EntryStatus.presentation(): StatusPresentation =
     when (this) {

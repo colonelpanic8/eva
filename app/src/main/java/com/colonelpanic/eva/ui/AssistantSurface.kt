@@ -57,6 +57,7 @@ import com.colonelpanic.eva.audio.isActive
 import com.colonelpanic.eva.audio.voiceStatusLabel
 import com.colonelpanic.eva.conversation.ConversationEntry
 import com.colonelpanic.eva.conversation.ConversationState
+import com.colonelpanic.eva.conversation.EntryGroup
 import com.colonelpanic.eva.conversation.EntryStatus
 import com.colonelpanic.eva.conversation.groups
 import com.colonelpanic.eva.ui.theme.EvaTheme
@@ -150,7 +151,7 @@ fun AssistantSurface(
 private fun LatestTurn(entries: List<ConversationEntry>) {
     val group = groups(entries).lastOrNull { it.entry.status != EntryStatus.SESSION } ?: return
     val entry = group.entry
-    val actions = if (entry.capabilityId != null && entry.request.isBlank()) listOf(entry) else group.actions
+    val children = if (entry.capabilityId != null && entry.request.isBlank()) listOf(EntryGroup(entry)) else group.children
     val scroll = rememberScrollState()
     LaunchedEffect(scroll.maxValue) { scroll.scrollTo(scroll.maxValue) }
     Column(
@@ -171,8 +172,16 @@ private fun LatestTurn(entries: List<ConversationEntry>) {
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        actions.forEach { action -> CompactAction(action) }
-        if (entry.response.isNotBlank() && entry !in actions) {
+        children.forEach { child ->
+            val leg = child.entry.textLeg
+            if (leg == null) {
+                CompactAction(child.entry)
+            } else {
+                CompactRow("Text agent", leg.presentation())
+                child.actions.forEach { action -> Box(Modifier.padding(start = 16.dp)) { CompactAction(action) } }
+            }
+        }
+        if (entry.response.isNotBlank() && children.none { it.entry == entry }) {
             if (entry.status != EntryStatus.ANSWER) StatusLine(entry.status.presentation())
             Text(text = entry.response, style = MaterialTheme.typography.bodyLarge)
         }
@@ -180,12 +189,18 @@ private fun LatestTurn(entries: List<ConversationEntry>) {
 }
 
 @Composable
-private fun CompactAction(action: ConversationEntry) {
-    val status = action.status.presentation()
+private fun CompactAction(action: ConversationEntry) =
+    CompactRow(action.actionTitle ?: action.capabilityId ?: "Action", action.status.presentation())
+
+@Composable
+private fun CompactRow(
+    title: String,
+    status: StatusPresentation,
+) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         StatusIndicator(status)
         Text(
-            text = action.actionTitle ?: action.capabilityId ?: "Action",
+            text = title,
             style = MaterialTheme.typography.labelLarge,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

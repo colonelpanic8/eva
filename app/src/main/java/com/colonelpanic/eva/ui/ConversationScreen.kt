@@ -170,7 +170,7 @@ internal fun ConversationScreen(
                     }
                 }
                 items(groups.asReversed(), key = { it.entry.id }) { group ->
-                    ConversationEntryItem(group.entry, group.actions)
+                    ConversationEntryItem(group.entry, group.children)
                 }
             }
         }
