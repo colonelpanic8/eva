@@ -4,6 +4,8 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.46.0] - 2026-09-29
+
 ### Changed
 
 - When voice hands a request to the text model, the conversation shows that handoff as its own block inside the turn: what the text model was asked, the actions it ran, and on request the full prompt it was given. The block stays open while the text model works and collapses when it finishes. The same block marks a request that finished in text after a call ended.
