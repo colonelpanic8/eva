@@ -60,6 +60,23 @@ sealed interface ThreadItem {
         val capabilityId: String,
         val title: String,
         val arguments: Map<String, String>,
+        /** The [TextLeg] that proposed this call; null for the turn's own connection. */
+        val legId: String? = null,
+    ) : ThreadItem
+
+    /**
+     * A turn continued on a background text leg: delegated by voice with [task], or re-homed
+     * after its connection ended when [task] is null. [instructions] are exactly what the leg
+     * was opened with; it was also seeded with [historyItems] items of thread history.
+     */
+    data class TextLeg(
+        override val id: String,
+        override val threadId: String,
+        override val turnId: String?,
+        override val createdAtMillis: Long,
+        val task: String?,
+        val instructions: String,
+        val historyItems: Int,
     ) : ThreadItem
 
     data class Notice(

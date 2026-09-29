@@ -667,6 +667,12 @@ class ThreadControllerTest {
             background.call("send", paseoSend.id, "place" to "agent")
             advanceUntilIdle()
             assertEquals("Prompt opened", background.results.last().message)
+            val items = store.items(controller.state.value.threadId!!)
+            val leg = items.filterIsInstance<ThreadItem.TextLeg>().single()
+            assertEquals("Find the EVA workspace and read recent messages", leg.task)
+            assertEquals(background.request.instructions, leg.instructions)
+            assertEquals(background.request.history.size, leg.historyItems)
+            assertEquals(listOf(leg.id, leg.id), items.filterIsInstance<ThreadItem.ActionCall>().map { it.legId })
             background.channel.send(ProviderEvent.AssistantText(turn, "The agent reported its latest changes.", false))
             background.channel.send(ProviderEvent.ResponseEnded(turn, "completed"))
             advanceUntilIdle()
@@ -758,9 +764,13 @@ class ThreadControllerTest {
             assertEquals("The park is open.", entry(controller, turn).response)
             assertEquals("The park is open.", answers.single().answer)
             assertEquals(1, background.closes)
-            assertTrue(
+            val leg =
                 controller.state.value.entries
-                    .any { it.status == EntryStatus.SESSION && it.response.contains("Continuing") },
+                    .single { it.textLeg != null }
+            assertEquals(turn, leg.parentId)
+            assertEquals(
+                TextLegDetails(null, background.request.instructions, background.request.history.size, TurnStatus.ANSWERED),
+                leg.textLeg,
             )
         }
 

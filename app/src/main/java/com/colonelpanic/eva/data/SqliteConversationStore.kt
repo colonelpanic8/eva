@@ -224,6 +224,14 @@ class SqliteConversationStore(
                     put("capability_id", capabilityId)
                     put("title", title)
                     put("arguments", Json.encodeToString(arguments))
+                    put("leg_id", legId)
+                }
+
+                is ThreadItem.TextLeg -> {
+                    put("type", TEXT_LEG)
+                    put("text", task)
+                    put("instructions", instructions)
+                    put("history_items", historyItems)
                 }
 
                 is ThreadItem.Notice -> {
@@ -275,7 +283,12 @@ class SqliteConversationStore(
                     string("capability_id"),
                     string("title"),
                     Json.decodeFromString(string("arguments")),
+                    nullableString("leg_id"),
                 )
+            }
+
+            TEXT_LEG -> {
+                ThreadItem.TextLeg(id, threadId, turnId, createdAt, nullableString("text"), string("instructions"), int("history_items"))
             }
 
             NOTICE -> {
@@ -306,6 +319,8 @@ class SqliteConversationStore(
 
     private fun Cursor.long(column: String) = getLong(getColumnIndexOrThrow(column))
 
+    private fun Cursor.int(column: String) = getInt(getColumnIndexOrThrow(column))
+
     private fun Cursor.boolean(column: String) = getInt(getColumnIndexOrThrow(column)) != 0
 
     companion object {
@@ -314,5 +329,6 @@ class SqliteConversationStore(
         private const val ASSISTANT_MESSAGE = "ASSISTANT_MESSAGE"
         private const val ACTION_CALL = "ACTION_CALL"
         private const val NOTICE = "NOTICE"
+        private const val TEXT_LEG = "TEXT_LEG"
     }
 }

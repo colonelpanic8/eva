@@ -83,4 +83,52 @@ class JournalDatabaseMigrationTest {
                 context.deleteDatabase(name)
             }
         }
+
+    @Test
+    fun `version six keeps its items and gains text legs`() =
+        runBlocking {
+            val context = RuntimeEnvironment.getApplication()
+            val name = "migration-${UUID.randomUUID()}.db"
+            var helper: JournalDatabase? = null
+            try {
+                context.openOrCreateDatabase(name, 0, null).use { db ->
+                    db.execSQL(
+                        "CREATE TABLE invocations (call_id TEXT PRIMARY KEY NOT NULL, fingerprint TEXT NOT NULL, " +
+                            "request TEXT NOT NULL, destination TEXT, status TEXT NOT NULL, message TEXT NOT NULL, " +
+                            "created_at INTEGER NOT NULL, capability_id TEXT NOT NULL, catalog_revision TEXT NOT NULL, " +
+                            "title TEXT, thread_id TEXT, turn_id TEXT, arguments_json TEXT, provenance_json TEXT, data_json TEXT)",
+                    )
+                    db.execSQL(
+                        "CREATE TABLE threads (id TEXT PRIMARY KEY NOT NULL, title TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
+                    )
+                    db.execSQL(
+                        "CREATE TABLE turns (id TEXT PRIMARY KEY NOT NULL, thread_id TEXT NOT NULL, request TEXT NOT NULL, " +
+                            "status TEXT NOT NULL, created_at INTEGER NOT NULL, side_effect_call_id TEXT)",
+                    )
+                    db.execSQL(
+                        "CREATE TABLE items (id TEXT PRIMARY KEY NOT NULL, thread_id TEXT NOT NULL, turn_id TEXT, " +
+                            "created_at INTEGER NOT NULL, type TEXT NOT NULL, text TEXT, spoken INTEGER, truncated INTEGER, " +
+                            "call_id TEXT, capability_id TEXT, title TEXT, arguments TEXT, notice_kind TEXT)",
+                    )
+                    db.execSQL("INSERT INTO threads VALUES ('thread','Old',1,1)")
+                    db.execSQL(
+                        "INSERT INTO items (id, thread_id, turn_id, created_at, type, call_id, capability_id, title, arguments) " +
+                            "VALUES ('old','thread','turn',1,'ACTION_CALL','call-1','eva.test','Old action','{}')",
+                    )
+                    db.version = 6
+                }
+
+                helper = JournalDatabase(context, name)
+                val store = SqliteConversationStore(helper)
+                val old = ThreadItem.ActionCall("old", "thread", "turn", 1, "call-1", "eva.test", "Old action", emptyMap())
+                val leg = ThreadItem.TextLeg("leg", "thread", "turn", 2, "Finish in text", "Instructions", 4)
+                val legAction = old.copy(id = "new", createdAtMillis = 3, callId = "call-2", legId = "leg")
+                store.append(leg)
+                store.append(legAction)
+                assertEquals(listOf(old, leg, legAction), store.items("thread"))
+            } finally {
+                helper?.close()
+                context.deleteDatabase(name)
+            }
+        }
 }

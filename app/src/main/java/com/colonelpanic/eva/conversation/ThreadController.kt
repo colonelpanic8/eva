@@ -1012,7 +1012,10 @@ class ThreadController(
         var active = true
             private set
 
-        fun dispatch(event: ProviderEvent.ToolCallReady) {
+        fun dispatch(
+            event: ProviderEvent.ToolCallReady,
+            legId: String? = null,
+        ) {
             val context = tools
             val definition = context.snapshot.definitions[event.capabilityId]
             val id = "provider:${event.call.providerSessionId}:${event.call.callId}"
@@ -1083,6 +1086,7 @@ class ThreadController(
                                 event.capabilityId,
                                 definition?.title ?: event.capabilityId,
                                 proposal.arguments,
+                                legId,
                             ),
                         )
                         try {
@@ -1289,32 +1293,33 @@ class ThreadController(
             stranded = false
             inputId = turnId
             try {
-                store.append(
-                    notice(
-                        threadId,
-                        turnId,
-                        NoticeKind.REHOMED,
-                        if (instruction == null) "Continuing after the call ended" else "Continuing in text",
-                    ),
-                )
                 val items = store.items(threadId)
                 awaitCapabilities()
                 val assembled = assemble(voice = false)
                 val snapshot = registry.snapshot
                 val catalog = catalogOf(assembled.apply(phoneTools(snapshot, false)), snapshot.revision)
                 tools = ConnectionTools(snapshot, catalog, false)
+                val instructions =
+                    assembled.instructions + extensionGuidance(snapshot, catalog) + "\n\n" +
+                        (
+                            instruction?.let { "The voice assistant delegated this request to text. Finish it: $it" }
+                                ?: wording().message(Wording.CONTINUATION)
+                        )
+                val history = projectHistory(items, receipts(items))
+                val textLeg =
+                    ThreadItem.TextLeg(
+                        UUID.randomUUID().toString(),
+                        threadId,
+                        turnId,
+                        nowMillis(),
+                        instruction,
+                        instructions,
+                        history.size,
+                    )
+                store.append(textLeg)
                 val opened =
                     backgroundProviderFactory().open(
-                        SessionOpenRequest(
-                            assembled.instructions + extensionGuidance(snapshot, catalog) + "\n\n" +
-                                (
-                                    instruction?.let { "The voice assistant delegated this request to text. Finish it: $it" }
-                                        ?: wording().message(Wording.CONTINUATION)
-                                ),
-                            catalog,
-                            history = projectHistory(items, receipts(items)),
-                            continuation = Continuation(turnId),
-                        ),
+                        SessionOpenRequest(instructions, catalog, history = history, continuation = Continuation(turnId)),
                     )
                 background = opened
                 leg = opened
@@ -1329,7 +1334,7 @@ class ThreadController(
                                 }
 
                                 is ProviderEvent.ToolCallReady -> {
-                                    if (event.call.inputId == turnId) dispatch(event)
+                                    if (event.call.inputId == turnId) dispatch(event, textLeg.id)
                                 }
 
                                 is ProviderEvent.AssistantText -> {

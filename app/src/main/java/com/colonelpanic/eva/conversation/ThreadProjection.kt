@@ -58,7 +58,21 @@ fun projectEntries(
                         actionTitle = item.title,
                         arguments = item.arguments,
                         result = receipt?.message,
+                        parentId = item.legId ?: turnId,
+                    )
+            }
+
+            is ThreadItem.TextLeg -> {
+                place(item.id)
+                val status = byTurn[turnId]?.status ?: TurnStatus.ANSWERED
+                built[item.id] =
+                    ConversationEntry(
+                        item.id,
+                        "",
+                        item.task.orEmpty(),
+                        if (status == TurnStatus.OPEN) EntryStatus.PENDING else EntryStatus.ANSWER,
                         parentId = turnId,
+                        textLeg = TextLegDetails(item.task, item.instructions, item.historyItems, status),
                     )
             }
 
@@ -143,6 +157,10 @@ fun projectHistory(
 
                 is ThreadItem.Notice -> {
                     HistoryItem.Note(item.text)
+                }
+
+                is ThreadItem.TextLeg -> {
+                    HistoryItem.Note(item.task?.let { "Continued in text: $it" } ?: "Continued after the call ended")
                 }
             }
         }

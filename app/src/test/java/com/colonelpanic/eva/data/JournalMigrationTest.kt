@@ -53,7 +53,7 @@ class JournalMigrationTest {
                     }
                     val database = JournalDatabase(context, name)
                     try {
-                        assertEquals(6, database.readableDatabase.version)
+                        assertEquals(JournalDatabase.VERSION, database.readableDatabase.version)
                         database.readableDatabase.rawQuery("SELECT data_json FROM invocations", null).use {
                             check(it.moveToFirst())
                             assertTrue(it.isNull(0))

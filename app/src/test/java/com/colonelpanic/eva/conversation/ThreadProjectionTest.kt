@@ -90,6 +90,28 @@ class ThreadProjectionTest {
     }
 
     @Test
+    fun `a text leg holds the actions it ran apart from the turn's own and reports the turn's progress`() {
+        val turns = listOf(Turn("turn-1", thread, "What happened in Paseo?", TurnStatus.OPEN, 1))
+        val items =
+            listOf(
+                user("turn-1", "What happened in Paseo?", 1),
+                call("turn-1", "voice-call", 2),
+                ThreadItem.TextLeg("leg", thread, "turn-1", 3, "Read recent Paseo messages", "Instructions", 2),
+                call("turn-1", "text-call", 4).copy(legId = "leg"),
+            )
+        val group = groups(projectEntries(turns, items, emptyMap())).single()
+
+        assertEquals(listOf("voice-call", "leg"), group.actions.map { it.id })
+        val leg = group.children.last()
+        assertEquals(TextLegDetails("Read recent Paseo messages", "Instructions", 2, TurnStatus.OPEN), leg.entry.textLeg)
+        assertEquals(listOf("text-call"), leg.actions.map { it.id })
+        assertEquals(
+            HistoryItem.Note("Continued in text: Read recent Paseo messages"),
+            projectHistory(items, emptyMap())[2],
+        )
+    }
+
+    @Test
     fun `history is bounded from the end and attributes receipts as evidence`() {
         val items = (1..45).map { user("turn-$it", "message $it", it.toLong()) } + call("turn-45", "call-1", 46)
         val history = projectHistory(items, mapOf("call-1" to receipt("call-1", InvocationStatus.COMPLETED, "Done")))

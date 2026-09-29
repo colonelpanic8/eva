@@ -48,7 +48,10 @@ abstract class ConversationStoreContract {
                             "Test action",
                             linkedMapOf("quote" to "a \"value\"", "line" to "one\ntwo"),
                         ),
-                        ThreadItem.Notice("notice", first.id, null, 4, NoticeKind.REHOMED, "Moved to background"),
+                        ThreadItem.TextLeg("leg", first.id, turn.id, 4, "Finish in text", "Full\ninstructions", 3),
+                        ThreadItem.TextLeg("rehomed", first.id, turn.id, 5, null, "Continue", 0),
+                        ThreadItem.ActionCall("leg-action", first.id, turn.id, 6, "call-2", "eva.test", "Test action", emptyMap(), "leg"),
+                        ThreadItem.Notice("notice", first.id, null, 7, NoticeKind.REHOMED, "Moved to background"),
                     )
                 expected.forEach { fixture.store.append(it) }
 

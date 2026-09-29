@@ -56,6 +56,13 @@ class JournalDatabase(
         )
         db.execSQL("DROP TABLE invocations_legacy")
         createConversationTables(db)
+        val itemColumns =
+            db.rawQuery("PRAGMA table_info(items)", null).use { cursor ->
+                buildSet { while (cursor.moveToNext()) add(cursor.getString(cursor.getColumnIndexOrThrow("name"))) }
+            }
+        ITEM_COLUMNS_SINCE_V7.filterKeys { it !in itemColumns }.forEach { (name, type) ->
+            db.execSQL("ALTER TABLE items ADD COLUMN $name $type")
+        }
     }
 
     private fun createInvocations(db: SQLiteDatabase) {
@@ -79,13 +86,15 @@ class JournalDatabase(
         db.execSQL(
             "CREATE TABLE IF NOT EXISTS items (id TEXT PRIMARY KEY NOT NULL, thread_id TEXT NOT NULL, turn_id TEXT, " +
                 "created_at INTEGER NOT NULL, type TEXT NOT NULL, text TEXT, spoken INTEGER, truncated INTEGER, " +
-                "call_id TEXT, capability_id TEXT, title TEXT, arguments TEXT, notice_kind TEXT)",
+                "call_id TEXT, capability_id TEXT, title TEXT, arguments TEXT, notice_kind TEXT, " +
+                ITEM_COLUMNS_SINCE_V7.entries.joinToString { (name, type) -> "$name $type" } + ")",
         )
         db.execSQL("CREATE INDEX IF NOT EXISTS turns_thread_id ON turns(thread_id)")
         db.execSQL("CREATE INDEX IF NOT EXISTS items_thread_id ON items(thread_id)")
     }
 
     companion object {
-        const val VERSION = 6
+        const val VERSION = 7
+        private val ITEM_COLUMNS_SINCE_V7 = linkedMapOf("leg_id" to "TEXT", "instructions" to "TEXT", "history_items" to "INTEGER")
     }
 }

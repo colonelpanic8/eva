@@ -37,26 +37,38 @@ data class ConversationEntry(
     val arguments: Map<String, String> = emptyMap(),
     /** An action's own result, without the provenance header [response] carries. */
     val result: String? = null,
-    /** The turn this action ran inside, so it can be shown under that request. */
+    /** The turn or text leg this ran inside, so it can be shown under it. */
     val parentId: String? = null,
+    /** Set when this entry is a text leg rather than an action. */
+    val textLeg: TextLegDetails? = null,
 )
 
-/** One turn and the actions the model took inside it, in arrival order. */
+data class TextLegDetails(
+    /** What voice delegated; null when the turn moved to text because its connection ended. */
+    val task: String?,
+    val instructions: String,
+    val historyItems: Int,
+    val status: TurnStatus,
+)
+
+/** One turn and what ran inside it, in arrival order; a text leg holds its own actions. */
 data class EntryGroup(
     val entry: ConversationEntry,
-    val actions: List<ConversationEntry> = emptyList(),
-)
+    val children: List<EntryGroup> = emptyList(),
+) {
+    val actions: List<ConversationEntry> get() = children.map { it.entry }
+}
 
 /**
- * Nests each action under the turn that produced it. An action whose turn is not listed,
- * such as restored history or a turn that aged out of the window, stands on its own.
+ * Nests each action under the turn or text leg that produced it. An entry whose parent is not
+ * listed, such as restored history or a turn that aged out of the window, stands on its own.
  */
 fun groups(entries: List<ConversationEntry>): List<EntryGroup> {
-    val turns = entries.map { it.id }.toSet()
-    val nested = entries.filter { it.parentId in turns }.groupBy { checkNotNull(it.parentId) }
-    return entries
-        .filter { it.parentId !in turns }
-        .map { EntryGroup(it, nested[it.id].orEmpty()) }
+    val ids = entries.map { it.id }.toSet()
+    val nested = entries.filter { it.parentId in ids }.groupBy { checkNotNull(it.parentId) }
+
+    fun group(entry: ConversationEntry): EntryGroup = EntryGroup(entry, nested[entry.id].orEmpty().map(::group))
+    return entries.filter { it.parentId !in ids }.map(::group)
 }
 
 enum class ProviderStatus { DISCONNECTED, CONNECTING, CONNECTED }
