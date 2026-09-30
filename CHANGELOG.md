@@ -4,6 +4,8 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.47.0] - 2026-09-30
+
 ### Changed
 
 - Screen actions no longer refuse to overlap. A request made while a device task runs waits its turn and runs after it, and lookups are answered right away. In voice, EVA decides whether what you say corrects or stops the running task or is a new request.
