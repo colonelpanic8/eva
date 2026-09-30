@@ -331,9 +331,9 @@ namespace, so one kept in conversation history cannot name a screen recorded aft
 restart. A tap activates a clickable element and touches anything else at its centre,
 so a label inside a row presses the row while the backend rechecks the label that
 was named. A scroll without an element binds to the largest scrollable one; with
-none, it proceeds only while the same app and activity are in front. The Shizuku
-helper reports editable fields' text in full (up to 10,000 characters) so long
-entries read back. `navigate` binds to a screen read in the same call. Each tool is its own
+none, it proceeds only while the screen still matches the one the model saw, and
+otherwise returns the new screen. The Shizuku helper reports the focused field's
+text in full (up to 10,000 characters) so long entries read back. `navigate` binds to a screen read in the same call. Each tool is its own
 dispatched, journaled capability under the device lease and turn budget: a delivered
 input is COMPLETED only when the backend reports success, delivered input that did
 not take effect, such as text that does not read back, is

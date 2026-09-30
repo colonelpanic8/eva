@@ -37,7 +37,10 @@ internal object PortalState {
     private const val MAX_DEPTH = 60
     private const val MAX_TEXT_CHARS = 500
 
-    /** A field's whole value, up to the longest text entry the backend accepts, so read-back can confirm it. */
+    /**
+     * The focused field's whole value, up to the longest text entry the backend accepts, so read-back
+     * can confirm it. Only one node is focused, which keeps the reply within Binder's limit.
+     */
     private const val MAX_FIELD_CHARS = 10_000
     private const val POLL_MILLIS = 100L
 
@@ -95,7 +98,7 @@ internal object PortalState {
                 node.text
                     ?.toString()
                     .orEmpty()
-                    .take(if (node.isEditable) MAX_FIELD_CHARS else MAX_TEXT_CHARS),
+                    .take(if (node.isEditable && node.isFocused) MAX_FIELD_CHARS else MAX_TEXT_CHARS),
             )
             put(
                 "contentDescription",

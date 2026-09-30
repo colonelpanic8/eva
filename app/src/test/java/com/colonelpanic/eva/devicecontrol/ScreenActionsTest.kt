@@ -30,7 +30,7 @@ import org.junit.Test
 class ScreenActionsTest {
     private class Phone : DeviceBackend {
         var sequence = 0
-        var packageName = "com.example"
+        var header = "Header"
         var scrollable = false
         val performed = mutableListOf<Action>()
         var next: (Action, Observation) -> ActionResult = { action, after -> result(action, after) }
@@ -40,7 +40,7 @@ class ScreenActionsTest {
                 "obs-${++sequence}",
                 "2026-01-01T00:00:00Z",
                 "fake",
-                packageName = packageName,
+                packageName = "com.example",
                 screen = Screen(1080, 1920, Orientation.PORTRAIT),
                 elements =
                     listOf(
@@ -48,7 +48,7 @@ class ScreenActionsTest {
                         Element(1, Role.OTHER, bounds = Bounds(0, 100, 1080, 200), clickable = true, depth = 1, parentIndex = 0),
                         Element(2, Role.TEXT, "Battery", bounds = Bounds(40, 120, 400, 180), depth = 2, parentIndex = 1),
                         Element(3, Role.EDIT_TEXT, "", bounds = Bounds(0, 300, 1080, 400), editable = true, depth = 1, parentIndex = 0),
-                        Element(4, Role.TEXT, "Header", bounds = Bounds(0, 0, 1080, 90), depth = 1, parentIndex = 0),
+                        Element(4, Role.TEXT, header, bounds = Bounds(0, 0, 1080, 90), depth = 1, parentIndex = 0),
                     ),
             )
 
@@ -107,14 +107,18 @@ class ScreenActionsTest {
     }
 
     @Test
-    fun `a scroll with nothing scrollable refuses when a different app has come to the front`() {
-        val ref = reference(call(Operation.OBSERVE).message)
-        phone.packageName = "com.other"
+    fun `a scroll with nothing scrollable proceeds only on the screen the model saw`() {
+        var ref = reference(call(Operation.OBSERVE).message)
+        call(Operation.SCROLL, "observationRef" to ref, "direction" to "down")
+        assertEquals("obs-2", (phone.performed.single() as Scroll).boundObservationId)
 
+        ref = reference(call(Operation.OBSERVE).message)
+        phone.header = "Another page"
         val outcome = call(Operation.SCROLL, "observationRef" to ref, "direction" to "down")
 
         assertEquals(InvocationStatus.NOT_EXECUTED, outcome.status)
-        assertTrue(phone.performed.isEmpty())
+        assertTrue(outcome.message.contains("\"Another page\""))
+        assertEquals(1, phone.performed.size)
     }
 
     @Test

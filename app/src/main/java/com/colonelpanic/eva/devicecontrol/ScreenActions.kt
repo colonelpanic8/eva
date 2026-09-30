@@ -78,7 +78,7 @@ class ScreenActions(
      * References never repeat: the counter spans sessions, and the namespace differs per process, so
      * a reference kept in conversation history cannot name a screen recorded after a restart.
      */
-    private val namespace = UUID.randomUUID().toString().take(6)
+    private val namespace = UUID.randomUUID().toString().replace("-", "")
     private var issued = 0
 
     /** Forgets recorded screens, so references issued before something else drove the device are refused. */
@@ -203,10 +203,10 @@ class ScreenActions(
                     val target = element ?: mainScrollable(observation)
                     if (target == null) {
                         val now = session.backend.observe()
-                        if (now.packageName != observation.packageName || now.activity != observation.activity) {
+                        if (fingerprint(now) != fingerprint(observation)) {
                             return ExecutionOutcome(
                                 InvocationStatus.NOT_EXECUTED,
-                                "Nothing was sent: the screen changed since that observation. Look at it again.",
+                                "Nothing was sent: the screen changed since that observation.\n${project(session, now)}",
                             )
                         }
                         Scroll(id, TASK, 0, now.observationId, direction) to "Scrolled the screen ${direction.name.lowercase()}."
@@ -237,6 +237,10 @@ class ScreenActions(
         val center = target.bounds.center()
         return TapPoint(id, TASK, 0, bound, center.x, center.y, target.index)
     }
+
+    private fun fingerprint(observation: Observation) =
+        listOf(observation.packageName, observation.activity) +
+            observation.elements.map { listOf(it.role, it.text, it.contentDescription, it.resourceId, it.bounds) }
 
     /** The element the backend would scroll by default: the largest scrollable one. */
     private fun mainScrollable(observation: Observation): Element? =
