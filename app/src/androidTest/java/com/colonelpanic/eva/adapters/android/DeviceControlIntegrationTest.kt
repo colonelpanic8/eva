@@ -45,7 +45,7 @@ class DeviceControlIntegrationTest {
             val first = observe.execute(emptyMap())
             assertEquals(first.message, InvocationStatus.COMPLETED, first.status)
             val firstReference = reference(first.message)
-            val input = element(first.message, "Probe text")
+            val input = element(first.message, "probe-input")
             val textResult =
                 setText.execute(
                     mapOf(

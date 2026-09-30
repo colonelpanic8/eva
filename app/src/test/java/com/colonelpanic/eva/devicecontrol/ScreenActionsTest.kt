@@ -15,6 +15,7 @@ import com.colonelpanic.eva.devicecontrol.proto.Observation
 import com.colonelpanic.eva.devicecontrol.proto.Orientation
 import com.colonelpanic.eva.devicecontrol.proto.Role
 import com.colonelpanic.eva.devicecontrol.proto.Screen
+import com.colonelpanic.eva.devicecontrol.proto.Scroll
 import com.colonelpanic.eva.devicecontrol.proto.SetText
 import com.colonelpanic.eva.devicecontrol.proto.SetTextDetails
 import com.colonelpanic.eva.devicecontrol.proto.StaleObservation
@@ -29,6 +30,8 @@ import org.junit.Test
 class ScreenActionsTest {
     private class Phone : DeviceBackend {
         var sequence = 0
+        var packageName = "com.example"
+        var scrollable = false
         val performed = mutableListOf<Action>()
         var next: (Action, Observation) -> ActionResult = { action, after -> result(action, after) }
 
@@ -37,11 +40,11 @@ class ScreenActionsTest {
                 "obs-${++sequence}",
                 "2026-01-01T00:00:00Z",
                 "fake",
-                packageName = "com.example",
+                packageName = packageName,
                 screen = Screen(1080, 1920, Orientation.PORTRAIT),
                 elements =
                     listOf(
-                        Element(0, Role.OTHER, bounds = Bounds(0, 0, 1080, 1920), depth = 0),
+                        Element(0, Role.OTHER, bounds = Bounds(0, 0, 1080, 1920), scrollable = scrollable, depth = 0),
                         Element(1, Role.OTHER, bounds = Bounds(0, 100, 1080, 200), clickable = true, depth = 1, parentIndex = 0),
                         Element(2, Role.TEXT, "Battery", bounds = Bounds(40, 120, 400, 180), depth = 2, parentIndex = 1),
                         Element(3, Role.EDIT_TEXT, "", bounds = Bounds(0, 300, 1080, 400), editable = true, depth = 1, parentIndex = 0),
@@ -68,28 +71,62 @@ class ScreenActionsTest {
         vararg arguments: Pair<String, String>,
     ) = runBlocking { actions.backend(operation).execute(arguments.toMap()) }
 
-    private fun reference(text: String) = Regex("observation (screen-\\d+)").find(text)!!.groupValues[1]
+    private fun reference(text: String) = Regex("observation (screen-[\\w-]+)").find(text)!!.groupValues[1]
 
     @Test
-    fun `a completed tap on a label activates its clickable row and returns the next screen`() {
+    fun `a completed tap activates a clickable element and returns the next screen`() {
         val ref = reference(call(Operation.OBSERVE).message)
 
-        val outcome = call(Operation.TAP, "observationRef" to ref, "node" to "2")
+        val outcome = call(Operation.TAP, "observationRef" to ref, "node" to "1")
 
         assertEquals(InvocationStatus.COMPLETED, outcome.status)
         assertEquals(1, (phone.performed.single() as ActivateElement).element)
-        assertTrue(outcome.message.startsWith("Tapped [2] text \"Battery\"."))
         assertTrue(reference(outcome.message) != ref)
     }
 
     @Test
-    fun `an element with no clickable ancestor is tapped where it is`() {
+    fun `a label inside a clickable row is touched where it is so the label itself is rechecked`() {
         val ref = reference(call(Operation.OBSERVE).message)
 
-        call(Operation.TAP, "observationRef" to ref, "node" to "4")
+        val outcome = call(Operation.TAP, "observationRef" to ref, "node" to "2")
 
         val tap = phone.performed.single() as TapPoint
-        assertEquals(listOf(540, 45, 4), listOf(tap.x, tap.y, tap.within))
+        assertEquals(listOf(220, 150, 2), listOf(tap.x, tap.y, tap.within))
+        assertTrue(outcome.message.startsWith("Tapped [2] text \"Battery\"."))
+    }
+
+    @Test
+    fun `a scroll without an element binds to the main scrollable one`() {
+        phone.scrollable = true
+        val ref = reference(call(Operation.OBSERVE).message)
+
+        call(Operation.SCROLL, "observationRef" to ref, "direction" to "down")
+
+        val scroll = phone.performed.single() as Scroll
+        assertEquals(listOf<Any?>(0, "obs-1"), listOf(scroll.element, scroll.boundObservationId))
+    }
+
+    @Test
+    fun `a scroll with nothing scrollable refuses when a different app has come to the front`() {
+        val ref = reference(call(Operation.OBSERVE).message)
+        phone.packageName = "com.other"
+
+        val outcome = call(Operation.SCROLL, "observationRef" to ref, "direction" to "down")
+
+        assertEquals(InvocationStatus.NOT_EXECUTED, outcome.status)
+        assertTrue(phone.performed.isEmpty())
+    }
+
+    @Test
+    fun `references from another instance never resolve`() {
+        val ref = reference(call(Operation.OBSERVE).message)
+        val restarted = ScreenActions({ true }, { choice }, { now })
+        runBlocking { restarted.backend(Operation.OBSERVE).execute(emptyMap()) }
+
+        val outcome = runBlocking { restarted.backend(Operation.TAP).execute(mapOf("observationRef" to ref, "node" to "1")) }
+
+        assertEquals(ScreenActions.UNUSABLE_REFERENCE, outcome.message)
+        assertTrue(phone.performed.isEmpty())
     }
 
     @Test

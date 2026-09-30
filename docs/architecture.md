@@ -326,9 +326,14 @@ the other backend when only that one is. Element inputs name an observation
 reference and element number from a projection of at most 60 addressable elements
 and 3,500 characters; a reference serves one input, expires after three minutes,
 and is dropped when a device task starts or the backend configuration changes, and
-the backend itself accepts only its latest screen. A tap on a label inside a
-clickable row activates the row; an element with no clickable ancestor is tapped at
-its centre. `navigate` binds to a screen read in the same call. Each tool is its own
+the backend itself accepts only its latest screen. References carry a per-process
+namespace, so one kept in conversation history cannot name a screen recorded after a
+restart. A tap activates a clickable element and touches anything else at its centre,
+so a label inside a row presses the row while the backend rechecks the label that
+was named. A scroll without an element binds to the largest scrollable one; with
+none, it proceeds only while the same app and activity are in front. The Shizuku
+helper reports editable fields' text in full (up to 10,000 characters) so long
+entries read back. `navigate` binds to a screen read in the same call. Each tool is its own
 dispatched, journaled capability under the device lease and turn budget: a delivered
 input is COMPLETED only when the backend reports success, delivered input that did
 not take effect, such as text that does not read back, is

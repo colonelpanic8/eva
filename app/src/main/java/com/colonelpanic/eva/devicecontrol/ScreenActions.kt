@@ -74,7 +74,11 @@ class ScreenActions(
     private val lock = Mutex()
     private var session: Session? = null
 
-    /** Never restarts, so a reference from a replaced session cannot name a screen of the new one. */
+    /**
+     * References never repeat: the counter spans sessions, and the namespace differs per process, so
+     * a reference kept in conversation history cannot name a screen recorded after a restart.
+     */
+    private val namespace = UUID.randomUUID().toString().take(6)
     private var issued = 0
 
     /** Forgets recorded screens, so references issued before something else drove the device are refused. */
@@ -195,8 +199,21 @@ class ScreenActions(
                     val direction =
                         ScrollDirection.entries.firstOrNull { it.name.equals(arguments["direction"], ignoreCase = true) }
                             ?: return ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "Choose up, down, left, or right.")
-                    Scroll(id, TASK, 0, bound, direction, element?.index) to
-                        "Scrolled ${element?.let(::describe) ?: "the screen"} ${direction.name.lowercase()}."
+                    // An element index makes the backend recheck the screen; a bare scroll would not.
+                    val target = element ?: mainScrollable(observation)
+                    if (target == null) {
+                        val now = session.backend.observe()
+                        if (now.packageName != observation.packageName || now.activity != observation.activity) {
+                            return ExecutionOutcome(
+                                InvocationStatus.NOT_EXECUTED,
+                                "Nothing was sent: the screen changed since that observation. Look at it again.",
+                            )
+                        }
+                        Scroll(id, TASK, 0, now.observationId, direction) to "Scrolled the screen ${direction.name.lowercase()}."
+                    } else {
+                        Scroll(id, TASK, 0, bound, direction, target.index) to
+                            "Scrolled ${describe(target)} ${direction.name.lowercase()}."
+                    }
                 }
 
                 else -> {
@@ -206,21 +223,30 @@ class ScreenActions(
         return outcome(session, session.backend.perform(action), label)
     }
 
-    /** A label inside a clickable row activates the row; anything else visible is tapped where it is. */
+    /**
+     * A clickable element is activated; anything else is touched at its centre, so a label inside a
+     * clickable row presses the row while the backend still rechecks the label that was named.
+     */
     private fun tap(
         observation: Observation,
         target: Element,
         id: String,
     ): Action {
         val bound = observation.observationId
-        var candidate: Element? = target
-        while (candidate != null) {
-            if (candidate.clickable || candidate.checkable) return ActivateElement(id, TASK, 0, bound, candidate.index)
-            candidate = candidate.parentIndex?.let(observation.elements::getOrNull)
-        }
+        if (target.clickable || target.checkable) return ActivateElement(id, TASK, 0, bound, target.index)
         val center = target.bounds.center()
         return TapPoint(id, TASK, 0, bound, center.x, center.y, target.index)
     }
+
+    /** The element the backend would scroll by default: the largest scrollable one. */
+    private fun mainScrollable(observation: Observation): Element? =
+        observation.elements
+            .filter { it.scrollable && it.bounds.right > it.bounds.left }
+            .maxWithOrNull(
+                compareBy<Element> {
+                    (it.bounds.right - it.bounds.left).toLong() * (it.bounds.bottom - it.bounds.top)
+                }.thenByDescending { it.index },
+            )
 
     private fun outcome(
         session: Session,
@@ -261,7 +287,7 @@ class ScreenActions(
         session: Session,
         observation: Observation,
     ): String {
-        val reference = "screen-${++issued}"
+        val reference = "screen-$namespace-${++issued}"
         session.refs[reference] = Recorded(observation, elapsedMillis())
         while (session.refs.size > MAX_REFERENCES) session.refs.remove(session.refs.keys.first())
         return observation.renderCompact(reference)
