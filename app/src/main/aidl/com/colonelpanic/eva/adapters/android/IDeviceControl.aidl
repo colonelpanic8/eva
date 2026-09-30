@@ -1,13 +1,12 @@
 package com.colonelpanic.eva.adapters.android;
 
 /**
- * Screen observation and bounded input, executed by a Shizuku user service running as shell.
+ * Screen state and fixed input primitives, executed by a Shizuku user service running as shell.
  * Payloads are bounded JSON; commands are a fixed set of named operations, never shell text.
  */
 interface IDeviceControl {
     void destroy() = 16777114;
-    String observe(long timeoutMillis) = 1;
-    String act(String request, long timeoutMillis) = 2;
+    // Transactions 1 and 2 carried the retired element observe/act protocol; do not reuse them.
     /** Portal-shaped screen state for the device-task backend. */
     String state(long timeoutMillis) = 3;
     /** One Portal-shaped primitive command; returns {"ok":…, "detail":…}. */

@@ -6,6 +6,9 @@ import android.os.SystemClock
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.colonelpanic.eva.capability.InvocationStatus
+import com.colonelpanic.eva.devicecontrol.ScreenActions
+import com.colonelpanic.eva.devicecontrol.ShizukuPortalTransport
+import com.colonelpanic.eva.devicecontrol.portal.PortalBackend
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -33,10 +36,11 @@ class DeviceControlIntegrationTest {
             SystemClock.sleep(500)
 
             assertEquals(null, host.unavailableReason())
-            val observations = ObservationStore(SystemClock::elapsedRealtime)
-            val observe = UiControlBackend(host, observations, UiControlBackend.Operation.OBSERVE)
-            val setText = UiControlBackend(host, observations, UiControlBackend.Operation.SET_TEXT)
-            val tap = UiControlBackend(host, observations, UiControlBackend.Operation.TAP)
+            val backend = PortalBackend(ShizukuPortalTransport(host), backend = "shizuku")
+            val actions = ScreenActions({ true }, { ScreenActions.Choice.Ready("shizuku") { backend } }, SystemClock::elapsedRealtime)
+            val observe = actions.backend(ScreenActions.Operation.OBSERVE)
+            val setText = actions.backend(ScreenActions.Operation.SET_TEXT)
+            val tap = actions.backend(ScreenActions.Operation.TAP)
 
             val first = observe.execute(emptyMap())
             assertEquals(first.message, InvocationStatus.COMPLETED, first.status)

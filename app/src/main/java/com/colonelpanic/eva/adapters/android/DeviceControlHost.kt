@@ -115,19 +115,6 @@ class DeviceControlHost(
             }
         }
 
-    suspend fun observe(timeoutMillis: Long): String {
-        val helper = withContext(Dispatchers.Main.immediate) { requireService() }
-        return withContext(Dispatchers.IO) { helper.observe(timeoutMillis) }
-    }
-
-    suspend fun act(
-        request: JsonObject,
-        timeoutMillis: Long,
-    ): String {
-        val helper = withContext(Dispatchers.Main.immediate) { requireService() }
-        return withContext(Dispatchers.IO) { helper.act(request.toString(), timeoutMillis) }
-    }
-
     suspend fun state(timeoutMillis: Long): String {
         val helper = withContext(Dispatchers.Main.immediate) { requireService() }
         return withContext(Dispatchers.IO) { helper.state(timeoutMillis) }
