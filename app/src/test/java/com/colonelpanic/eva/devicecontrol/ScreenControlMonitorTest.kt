@@ -7,7 +7,7 @@ import org.junit.Test
 
 class ScreenControlMonitorTest {
     @Test
-    fun showsBackendsInPreferenceOrderAndShizukuForDirectTools() =
+    fun showsBackendsInPreferenceOrder() =
         runTest {
             var enabled = true
             var backends = listOf("portal", "shizuku")
@@ -27,7 +27,7 @@ class ScreenControlMonitorTest {
             assertEquals(1, both.preferred)
 
             backends = listOf("portal")
-            assertEquals(listOf("Portal", "Shizuku"), monitor.refresh().routes.map { it.name })
+            assertEquals(listOf("Portal"), monitor.refresh().routes.map { it.name })
 
             backends = listOf("shizuku", "portal")
             assertEquals(listOf("Shizuku", "Portal"), monitor.refresh().routes.map { it.name })

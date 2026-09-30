@@ -273,7 +273,7 @@ Admission skips backends that are not ready: Portal is probed with an authentica
 when none is ready, with each backend's reason. `PreferredDeviceBackend` also falls
 back when the chosen backend cannot read the screen, but only until the first action;
 after that the task stays on that backend, so no mutation is repeated elsewhere. The
-conversation bar shows each backend's readiness, plus Shizuku for direct screen tools,
+conversation bar shows each backend's readiness, which direct screen tools share,
 refreshed every five seconds while EVA is in front, and a running task's phase.
 
 Portal on the same phone is the first default backend. Its full typed action set
@@ -321,8 +321,8 @@ The conversation model can also act on the screen itself, one input per call,
 without the worker: `eva.device.observe`, `tap`, `set_text`, `scroll`, `press_enter`,
 and `navigate` (Back, Home, notification shade). They run through
 `devicecontrol/ScreenActions.kt` on the same `PortalBackend` as tasks, so rechecks,
-settling and text read-back are shared: the task backend when it is ready, otherwise
-the other backend when only that one is. Element inputs name an observation
+settling and text read-back are shared. They use the first ready backend in the same
+order as tasks, without a task's mid-call fallback. Element inputs name an observation
 reference and element number from a projection of at most 60 addressable elements
 and 3,500 characters; a reference serves one input, expires after three minutes,
 and is dropped when a device task starts or the backend configuration changes, and

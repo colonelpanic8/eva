@@ -347,6 +347,7 @@ class EvaApplication :
             }
             problems += "${backendLabel(name)}: $problem"
         }
+        if (problems.isEmpty()) return ScreenActions.Choice.Unavailable("Every screen control backend is turned off in EVA's settings.")
         return ScreenActions.Choice.Unavailable("No screen control backend is ready. ${problems.joinToString(" ")}")
     }
 
