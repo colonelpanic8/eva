@@ -80,10 +80,10 @@ class DeviceControlIntegrationTest {
                 Shizuku.checkSelfPermission(),
             )
             val host = DeviceControlHost(context)
-            val first = host.state(STATE_TIMEOUT_MILLIS)
+            val first = host.state(STATE_TIMEOUT_MILLIS, MAX_STATE_BYTES)
             assertTrue(first, first.contains("\"ok\":true"))
             SystemClock.sleep(PAST_IDLE_RELEASE_MILLIS)
-            val second = host.state(STATE_TIMEOUT_MILLIS)
+            val second = host.state(STATE_TIMEOUT_MILLIS, MAX_STATE_BYTES)
             assertTrue(second, second.contains("\"ok\":true"))
         }
 
@@ -100,6 +100,7 @@ class DeviceControlIntegrationTest {
     private companion object {
         const val FIXTURE_PACKAGE = "com.colonelpanic.eva.devicefixture"
         const val STATE_TIMEOUT_MILLIS = 10_000L
+        const val MAX_STATE_BYTES = 32L * 1024 * 1024
         const val PAST_IDLE_RELEASE_MILLIS = 22_000L
     }
 }

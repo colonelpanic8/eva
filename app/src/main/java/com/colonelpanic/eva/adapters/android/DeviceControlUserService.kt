@@ -49,13 +49,16 @@ class DeviceControlUserService : IDeviceControl.Stub() {
     }
 
     @Synchronized
-    override fun state(timeoutMillis: Long): String =
-        session(timeoutMillis) { automation, deadline ->
-            buildJsonObject {
-                put("ok", true)
-                put("state", PortalState.capture(automation, minOf(deadline, SystemClock.elapsedRealtime() + ROOT_WAIT_MILLIS)))
+    override fun state(timeoutMillis: Long): ParcelFileDescriptor {
+        val reply =
+            session(timeoutMillis) { automation, deadline ->
+                buildJsonObject {
+                    put("ok", true)
+                    put("state", PortalState.capture(automation, minOf(deadline, SystemClock.elapsedRealtime() + ROOT_WAIT_MILLIS)))
+                }
             }
-        }
+        return stream(reply.toByteArray(Charsets.UTF_8), "eva-device-control-state")
+    }
 
     @Synchronized
     override fun command(
@@ -79,10 +82,17 @@ class DeviceControlUserService : IDeviceControl.Stub() {
                 bitmap.recycle()
             }
         }
+        return stream(png.toByteArray(), "eva-device-control-screenshot")
+    }
+
+    private fun stream(
+        bytes: ByteArray,
+        name: String,
+    ): ParcelFileDescriptor {
         val (read, write) = ParcelFileDescriptor.createPipe()
         Thread({
-            ParcelFileDescriptor.AutoCloseOutputStream(write).use { png.writeTo(it) }
-        }, "eva-device-control-screenshot").start()
+            ParcelFileDescriptor.AutoCloseOutputStream(write).use { it.write(bytes) }
+        }, name).start()
         return read
     }
 

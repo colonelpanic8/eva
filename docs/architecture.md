@@ -333,8 +333,9 @@ so a label inside a row presses the row while the backend rechecks the label tha
 was named. A scroll without an element binds to the largest scrollable one; with
 none, it proceeds only while the screen still matches the one the model saw, and
 otherwise returns the new screen. The Shizuku helper reports editable fields' text in
-full (up to 10,000 characters each, 60,000 across the screen) so long entries read
-back even after focus moves. `navigate` binds to a screen read in the same call. Each tool is its own
+full (up to 10,000 characters) and streams its screen state through a pipe, as it
+does screenshots, so long entries read back and a large tree cannot exceed Binder's
+reply limit. `navigate` binds to a screen read in the same call. Each tool is its own
 dispatched, journaled capability under the device lease and turn budget: a delivered
 input is COMPLETED only when the backend reports success, delivered input that did
 not take effect, such as text that does not read back, is
