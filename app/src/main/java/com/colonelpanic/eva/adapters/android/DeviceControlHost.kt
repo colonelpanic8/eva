@@ -36,7 +36,7 @@ class DeviceControlHost(
             .daemon(false)
             .processNameSuffix("device_control")
             .tag("eva-device-control")
-            .version(2)
+            .version(3)
 
     private val permissionListener =
         rikka.shizuku.Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
@@ -115,22 +115,12 @@ class DeviceControlHost(
             }
         }
 
-    suspend fun observe(timeoutMillis: Long): String {
-        val helper = withContext(Dispatchers.Main.immediate) { requireService() }
-        return withContext(Dispatchers.IO) { helper.observe(timeoutMillis) }
-    }
-
-    suspend fun act(
-        request: JsonObject,
+    suspend fun state(
         timeoutMillis: Long,
+        maxBytes: Long,
     ): String {
         val helper = withContext(Dispatchers.Main.immediate) { requireService() }
-        return withContext(Dispatchers.IO) { helper.act(request.toString(), timeoutMillis) }
-    }
-
-    suspend fun state(timeoutMillis: Long): String {
-        val helper = withContext(Dispatchers.Main.immediate) { requireService() }
-        return withContext(Dispatchers.IO) { helper.state(timeoutMillis) }
+        return withContext(Dispatchers.IO) { read(helper.state(timeoutMillis), maxBytes, "The screen state").toString(Charsets.UTF_8) }
     }
 
     suspend fun command(
@@ -147,20 +137,25 @@ class DeviceControlHost(
         maxBytes: Long,
     ): ByteArray {
         val helper = withContext(Dispatchers.Main.immediate) { requireService() }
-        return withContext(Dispatchers.IO) {
-            ParcelFileDescriptor.AutoCloseInputStream(helper.screenshot(timeoutMillis)).use { stream ->
-                val bytes = java.io.ByteArrayOutputStream()
-                val buffer = ByteArray(64 * 1024)
-                while (true) {
-                    val read = stream.read(buffer)
-                    if (read < 0) break
-                    bytes.write(buffer, 0, read)
-                    check(bytes.size() <= maxBytes) { "The screenshot exceeds the byte limit" }
-                }
-                bytes.toByteArray()
-            }
-        }
+        return withContext(Dispatchers.IO) { read(helper.screenshot(timeoutMillis), maxBytes, "The screenshot") }
     }
+
+    private fun read(
+        pipe: ParcelFileDescriptor,
+        maxBytes: Long,
+        what: String,
+    ): ByteArray =
+        ParcelFileDescriptor.AutoCloseInputStream(pipe).use { stream ->
+            val bytes = java.io.ByteArrayOutputStream()
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val read = stream.read(buffer)
+                if (read < 0) break
+                bytes.write(buffer, 0, read)
+                check(bytes.size() <= maxBytes) { "$what exceeds the byte limit" }
+            }
+            bytes.toByteArray()
+        }
 
     private suspend fun requireService(): IDeviceControl {
         if (!isShizukuInstalled()) throw ShizukuUnavailableException(NOT_INSTALLED)

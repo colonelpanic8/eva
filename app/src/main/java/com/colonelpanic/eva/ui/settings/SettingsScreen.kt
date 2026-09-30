@@ -396,7 +396,7 @@ private fun ScreenControlSection(
         SettingsSwitchRow(
             title = "Let EVA read and tap the screen",
             supporting =
-                "Device tasks use the backends below. Direct screen tools use Shizuku. " +
+                "Device tasks and direct screen actions use the first ready backend below. " +
                     "Off removes screen control from the model’s tool catalog.",
             checked = state.screenControlEnabled,
             onCheckedChange = actions.onScreenControlChange,

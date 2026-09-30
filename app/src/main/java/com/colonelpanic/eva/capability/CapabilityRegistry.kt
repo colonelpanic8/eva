@@ -140,9 +140,12 @@ class CapabilityRegistry(
         const val UI_OBSERVE = "eva.device.observe"
         const val UI_TAP = "eva.device.tap"
         const val UI_SET_TEXT = "eva.device.set_text"
+        const val UI_SCROLL = "eva.device.scroll"
+        const val UI_PRESS_ENTER = "eva.device.press_enter"
+        const val UI_NAVIGATE = "eva.device.navigate"
 
         /** Reading and driving another app's screen, which the user can withhold as a group. */
-        val SCREEN_CONTROL = setOf(UI_OBSERVE, UI_TAP, UI_SET_TEXT, DEVICE_TASK)
+        val SCREEN_CONTROL = setOf(UI_OBSERVE, UI_TAP, UI_SET_TEXT, UI_SCROLL, UI_PRESS_ENTER, UI_NAVIGATE, DEVICE_TASK)
         const val MAX_DESTINATION_LENGTH = 500
     }
 }

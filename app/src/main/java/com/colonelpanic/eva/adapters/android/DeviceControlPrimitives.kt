@@ -36,6 +36,9 @@ internal object PortalState {
     private const val MAX_NODES = 800
     private const val MAX_DEPTH = 60
     private const val MAX_TEXT_CHARS = 500
+
+    /** A field's whole value, up to the longest text entry the backend accepts, so read-back can confirm it. */
+    private const val MAX_FIELD_CHARS = 10_000
     private const val POLL_MILLIS = 100L
 
     fun capture(
@@ -92,7 +95,7 @@ internal object PortalState {
                 node.text
                     ?.toString()
                     .orEmpty()
-                    .take(MAX_TEXT_CHARS),
+                    .take(if (node.isEditable) MAX_FIELD_CHARS else MAX_TEXT_CHARS),
             )
             put(
                 "contentDescription",

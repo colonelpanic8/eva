@@ -63,3 +63,68 @@ fun Element.flagLetters(): String =
         if (selected) append('v')
         if (password) append('p')
     }
+
+/**
+ * A short projection for a conversation model that acts directly: only elements worth addressing,
+ * keeping their original indices, within a character budget.
+ */
+fun Observation.renderCompact(
+    reference: String,
+    maxElements: Int = 60,
+    maxChars: Int = 3_500,
+    maxText: Int = 80,
+): String {
+    require(maxElements >= 0 && maxChars > 0 && maxText >= 1)
+    val header =
+        buildString {
+            append("screen ${packageName ?: "unknown"} ${screen.width}x${screen.height} (observation $reference)")
+            if (keyboardShown) append(" · keyboard shown")
+            if (locked) append(" · locked")
+            if (!screenOn) append(" · screen off")
+        }
+    if (contentUnavailable) return "$header\nThis screen is protected or exposes no readable content; it is not empty."
+    val addressable = elements.filter { it.isAddressable() }
+    if (addressable.isEmpty()) return "$header\nNo labelled or interactive elements were readable."
+
+    fun quote(text: String) =
+        JsonPrimitive(
+            if (text.codePointCount(0, text.length) <= maxText) {
+                text
+            } else {
+                text.substring(0, text.offsetByCodePoints(0, maxText - 1)) + "…"
+            },
+        ).toString()
+    val truncated = "\n… more elements were not shown; scroll or narrow the screen first."
+    val body = StringBuilder(header)
+    var shown = 0
+    for (element in addressable) {
+        if (shown >= maxElements) break
+        val parts = mutableListOf("[${element.index}]", element.role.name.lowercase())
+        if (element.password) {
+            parts += "<password>"
+        } else {
+            element.label()?.let { parts += quote(it) }
+        }
+        buildList {
+            if (element.editable) add("editable")
+            if (element.clickable) add("clickable")
+            if (element.longClickable) add("long-clickable")
+            if (element.scrollable) add("scrollable")
+            if (element.checkable) add(if (element.checked) "checked" else "unchecked")
+            if (element.selected) add("selected")
+            if (element.focused) add("focused")
+            if (!element.enabled) add("disabled")
+        }.let(parts::addAll)
+        with(element.bounds) { parts += "at ($left,$top)-($right,$bottom)" }
+        val line = "\n" + parts.joinToString(" ")
+        if (body.length + line.length > maxChars - truncated.length) break
+        body.append(line)
+        shown++
+    }
+    if (shown < addressable.size) body.append(truncated)
+    return body.toString()
+}
+
+private fun Element.label(): String? = text?.takeIf { it.isNotBlank() } ?: contentDescription?.takeIf { it.isNotBlank() }
+
+private fun Element.isAddressable() = clickable || longClickable || editable || scrollable || checkable || label() != null

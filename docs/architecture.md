@@ -236,9 +236,8 @@ for concrete identity, schema, waiting, and authorization rules.
   locked-device voice verification is
   pending. Assistant selection does not confer unrestricted
   background launch or device access.
-- Optional Shizuku adapters implement Settings AppFunctions, bounded UI observation,
-  text replacement and taps, and the device-task backend described below. UI
-  mutations consume a recent observation and recheck target identity. Existing
+- Optional Shizuku adapters implement Settings AppFunctions and a screen-control
+  backend shared by device tasks and the direct screen tools described below. Existing
   Shizuku grants allow device-setting and screen actions without EVA's main
   activity; that activity is needed only to request a missing grant, which Screen
   control settings can do ahead of time.
@@ -274,7 +273,7 @@ Admission skips backends that are not ready: Portal is probed with an authentica
 when none is ready, with each backend's reason. `PreferredDeviceBackend` also falls
 back when the chosen backend cannot read the screen, but only until the first action;
 after that the task stays on that backend, so no mutation is repeated elsewhere. The
-conversation bar shows each backend's readiness, plus Shizuku for direct screen tools,
+conversation bar shows each backend's readiness, which direct screen tools share,
 refreshed every five seconds while EVA is in front, and a running task's phase.
 
 Portal on the same phone is the first default backend. Its full typed action set
@@ -317,6 +316,32 @@ completion/drain. Its one receipt includes task/revision identity, effects, and
 per-step kind, result and observation/model/action timings. A stop before any
 completed effect is NOT_EXECUTED; known partial work is FAILED; unresolved work is
 UNKNOWN. Journal recovery never replays a task.
+
+The conversation model can also act on the screen itself, one input per call,
+without the worker: `eva.device.observe`, `tap`, `set_text`, `scroll`, `press_enter`,
+and `navigate` (Back, Home, notification shade). They run through
+`devicecontrol/ScreenActions.kt` on the same `PortalBackend` as tasks, so rechecks,
+settling and text read-back are shared. They use the first ready backend in the same
+order as tasks, without a task's mid-call fallback. Element inputs name an observation
+reference and element number from a projection of at most 60 addressable elements
+and 3,500 characters; a reference serves one input, expires after three minutes,
+and is dropped when a device task starts or the backend configuration changes, and
+the backend itself accepts only its latest screen. References carry a per-process
+namespace, so one kept in conversation history cannot name a screen recorded after a
+restart. A tap activates a clickable element and touches anything else at its centre,
+so a label inside a row presses the row while the backend rechecks the label that
+was named. A scroll without an element binds to the largest scrollable one; with
+none, it proceeds only while the screen still matches the one the model saw, and
+otherwise returns the new screen. The Shizuku helper reports editable fields' text in
+full (up to 10,000 characters) and streams its screen state through a pipe, as it
+does screenshots, so long entries read back and a large tree cannot exceed Binder's
+reply limit. `navigate` binds to a screen read in the same call. Each tool is its own
+dispatched, journaled capability under the device lease and turn budget: a delivered
+input is COMPLETED only when the backend reports success, delivered input that did
+not take effect, such as text that does not read back, is
+FAILED, refusal before dispatch is NOT_EXECUTED, and a lost exchange is UNKNOWN. The
+wording steers a few visible steps to these tools and longer searches or multi-screen
+work to `eva.device.task`, which keeps the realtime context small.
 
 `DeviceTaskCoordinator` owns the task's thread and turn independently of its
 voice/provider attachment. Competing tasks, ordinary mutations and direct UI
@@ -384,7 +409,7 @@ Why a locked action can still fail, and what helps:
 | EVA refuses locked-device notification reads and replies on purpose | Unlock. Keep this refusal unless the security model changes |
 | A provider's keystore key requires an unlocked device | The provider reports `needs_unlock`; avoid unlock-bound keys for background writes |
 | Foreground-service start or promotion is rejected | Reported, not crashed (below); start voice from a visible assistant session |
-| Shizuku UI observation and taps can't reach UI behind the keyguard | Prefer AppFunctions or a service route |
+| Screen observation and input can't reach UI behind the keyguard | Prefer AppFunctions or a service route |
 | Target app or OEM restrictions | Test on devices, and record the result in [device verification](operations.md#device-verification) |
 
 Verify locked behavior with the keyguard showing and a PIN set, and say which

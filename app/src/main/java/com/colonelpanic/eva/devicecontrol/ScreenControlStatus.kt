@@ -18,7 +18,7 @@ data class ScreenControlStatus(
     val preferred get() = routes.indexOfFirst { it.problem == null }.takeIf { it >= 0 }
 }
 
-/** Direct screen tools always use Shizuku, so it is shown even when device tasks leave it out. */
+/** Device tasks and direct screen tools share the backend order, so the status shows that order. */
 class ScreenControlMonitor(
     private val enabled: () -> Boolean,
     private val backends: () -> List<String>,
@@ -33,7 +33,7 @@ class ScreenControlMonitor(
             if (!enabled()) {
                 ScreenControlStatus()
             } else {
-                ScreenControlStatus((backends() + "shizuku").distinct().map { ScreenControlStatus.Route(label(it), problem(it)) })
+                ScreenControlStatus(backends().distinct().map { ScreenControlStatus.Route(label(it), problem(it)) })
             }
         mutableStatus.value = status
         return status

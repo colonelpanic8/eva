@@ -6,6 +6,9 @@ import android.os.SystemClock
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.colonelpanic.eva.capability.InvocationStatus
+import com.colonelpanic.eva.devicecontrol.ScreenActions
+import com.colonelpanic.eva.devicecontrol.ShizukuPortalTransport
+import com.colonelpanic.eva.devicecontrol.portal.PortalBackend
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -33,15 +36,16 @@ class DeviceControlIntegrationTest {
             SystemClock.sleep(500)
 
             assertEquals(null, host.unavailableReason())
-            val observations = ObservationStore(SystemClock::elapsedRealtime)
-            val observe = UiControlBackend(host, observations, UiControlBackend.Operation.OBSERVE)
-            val setText = UiControlBackend(host, observations, UiControlBackend.Operation.SET_TEXT)
-            val tap = UiControlBackend(host, observations, UiControlBackend.Operation.TAP)
+            val backend = PortalBackend(ShizukuPortalTransport(host), backend = "shizuku")
+            val actions = ScreenActions({ true }, { ScreenActions.Choice.Ready("shizuku") { backend } }, SystemClock::elapsedRealtime)
+            val observe = actions.backend(ScreenActions.Operation.OBSERVE)
+            val setText = actions.backend(ScreenActions.Operation.SET_TEXT)
+            val tap = actions.backend(ScreenActions.Operation.TAP)
 
             val first = observe.execute(emptyMap())
             assertEquals(first.message, InvocationStatus.COMPLETED, first.status)
             val firstReference = reference(first.message)
-            val input = element(first.message, "Probe text")
+            val input = element(first.message, "probe-input")
             val textResult =
                 setText.execute(
                     mapOf(
@@ -76,10 +80,10 @@ class DeviceControlIntegrationTest {
                 Shizuku.checkSelfPermission(),
             )
             val host = DeviceControlHost(context)
-            val first = host.state(STATE_TIMEOUT_MILLIS)
+            val first = host.state(STATE_TIMEOUT_MILLIS, MAX_STATE_BYTES)
             assertTrue(first, first.contains("\"ok\":true"))
             SystemClock.sleep(PAST_IDLE_RELEASE_MILLIS)
-            val second = host.state(STATE_TIMEOUT_MILLIS)
+            val second = host.state(STATE_TIMEOUT_MILLIS, MAX_STATE_BYTES)
             assertTrue(second, second.contains("\"ok\":true"))
         }
 
@@ -96,6 +100,7 @@ class DeviceControlIntegrationTest {
     private companion object {
         const val FIXTURE_PACKAGE = "com.colonelpanic.eva.devicefixture"
         const val STATE_TIMEOUT_MILLIS = 10_000L
+        const val MAX_STATE_BYTES = 32L * 1024 * 1024
         const val PAST_IDLE_RELEASE_MILLIS = 22_000L
     }
 }

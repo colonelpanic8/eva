@@ -18,7 +18,7 @@ class ShizukuPortalTransport(
     private val capture: suspend () -> ByteArray,
 ) : PortalTransport {
     constructor(host: DeviceControlHost) : this(
-        { host.state(TIMEOUT_MILLIS) },
+        { host.state(TIMEOUT_MILLIS, MAX_STATE_BYTES) },
         { method, params -> host.command(method, params, TIMEOUT_MILLIS) },
         { host.screenshot(TIMEOUT_MILLIS, MAX_SCREENSHOT_BYTES) },
     )
@@ -45,5 +45,6 @@ class ShizukuPortalTransport(
     private companion object {
         const val TIMEOUT_MILLIS = 15_000L
         const val MAX_SCREENSHOT_BYTES = 24L * 1024 * 1024
+        const val MAX_STATE_BYTES = 32L * 1024 * 1024
     }
 }
