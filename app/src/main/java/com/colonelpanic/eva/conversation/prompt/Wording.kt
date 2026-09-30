@@ -55,6 +55,10 @@ data class Wording(
         const val ENDS_CALL_IMMEDIATELY = "ends-call-immediately"
         const val ENDS_CALL_AFTER_REPLY = "ends-call-after-reply"
         const val MESSAGING_BRIDGES = "messaging-bridges"
+        const val DEVICE_TASK_REVISED = "device-task-revised"
+        const val DEVICE_TASK_STOPPING = "device-task-stopping"
+        const val DEVICE_TASK_NONE = "device-task-none"
+        const val DEVICE_TASK_INVALID = "device-task-invalid"
 
         private val yaml = Yaml(configuration = YamlConfiguration(encodeDefaults = false))
 

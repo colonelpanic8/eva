@@ -115,6 +115,13 @@ input identity must survive late transcripts and asynchronous tool events:
 transcript arrival order alone cannot establish which request owns an action.
 Tool correlation carries connection/session, input, generation, turn, catalog,
 and call identity; stale calls cannot gain authority through reconnection.
+Realtime asks for a spoken follow-up once every call from the same model response
+has resolved, not once all calls in the session have, so a quick lookup is answered
+while a device task from an earlier response still runs. A follow-up requested while
+another response is active waits for it to finish. A native tool that declares a
+boolean `quiet` parameter (screen tap and text entry) lets the model skip the
+follow-up: a COMPLETED quiet call ends the input silently, while any other status
+is still reported for the model to explain.
 
 Provider-independent history preserves action provenance and distinguishes
 external tool content from EVA's outcome envelope. Provider output is not proof
@@ -302,12 +309,19 @@ completed effect is NOT_EXECUTED; known partial work is FAILED; unresolved work 
 UNKNOWN. Journal recovery never replays a task.
 
 `DeviceTaskCoordinator` owns the task's thread and turn independently of its
-voice/provider attachment. Admission rejects competing tasks; dispatcher
-execution guards ordinary mutations and direct UI reads, and Android intent
-launches also recheck whether a task is running. Progress reaches the owning
-thread independently of the pending tool result. Typed corrections go straight
-to the running task's mailbox; voice speech-item identities bind transcripts to
-the owner captured when speech began. Speech pauses new dispatch until resolved.
+voice/provider attachment. Competing tasks, ordinary mutations and direct UI
+reads queue in arrival order for the device lease rather than being rejected;
+one cancelled while queued is journaled NOT_EXECUTED. Android intent launches
+also recheck whether a task is running. Within a turn, mutations run one at a
+time in proposal order, while read-only calls run without waiting behind them, so
+the voice model can look things up during a long task. Progress reaches the
+owning thread independently of the pending tool result. Typed corrections go
+straight to the running task's mailbox. In voice, the model routes new speech:
+the intercepted `eva.device.task.revise` and `eva.device.task.stop` tools revise
+or stop the running task (stop leaves queued work in place), and anything else
+becomes its own queued action. Only two cases bypass the model: a spoken answer
+that began while the worker waited on `ask_user`, bound to the owner captured when
+speech began, and a bare stop/cancel utterance.
 Revision bumps and stop latches are synchronous, bypassing the turn mutex and
 provider result queue. Obsolete inference is cancelled and its plan discarded;
 revision forces fresh observation. Provider speech `cancelled` does not complete

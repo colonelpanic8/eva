@@ -15,7 +15,8 @@ class WordingTest {
                     com.colonelpanic.eva.devicecontrol.worker.WorkerSchemas.schemas.map { (name, schema) ->
                         "device-worker.$name" to schema
                     } +
-                    (PromptDefaults.END_CONVERSATION_ID to ThreadController.END_CONVERSATION.inputSchema)
+                    (PromptDefaults.END_CONVERSATION_ID to ThreadController.END_CONVERSATION.inputSchema) +
+                    listOf(ThreadController.DEVICE_TASK_REVISE, ThreadController.DEVICE_TASK_STOP).map { it.capabilityId to it.inputSchema }
             ).toMap()
         Wording.bundled.tools.forEach { (id, text) ->
             val schema = tools[id]
@@ -26,6 +27,9 @@ class WordingTest {
         BundledCapabilities.definitions.forEach { assertTrue("${it.id} has no description", it.description.isNotBlank()) }
         assertTrue(Wording.bundled.message(Wording.CONTINUATION).isNotBlank())
         assertTrue(Wording.bundled.message(Wording.HANG_UP_DEFERRED).isNotBlank())
+        listOf(Wording.DEVICE_TASK_REVISED, Wording.DEVICE_TASK_STOPPING, Wording.DEVICE_TASK_NONE, Wording.DEVICE_TASK_INVALID)
+            .forEach { assertTrue(Wording.bundled.message(it).isNotBlank()) }
+        assertTrue(ThreadController.DEVICE_TASK_REVISE.description.isNotBlank())
     }
 
     @Test

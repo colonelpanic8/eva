@@ -262,16 +262,17 @@ class ThreadControllerTest {
                 coordinator.running.value!!
                     .agent.revision,
             )
+            // Speech while the task is not waiting on the user is the voice model's to route.
             provider.channel.send(ProviderEvent.Transcript("user", "Use Settings", "correction-1"))
             runCurrent()
             assertEquals(
-                1L,
+                0L,
                 coordinator.running.value!!
                     .agent.revision,
             )
             controller.submit("Actually open Bluetooth settings")
             assertEquals(
-                2L,
+                1L,
                 coordinator.running.value!!
                     .agent.revision,
             )
@@ -290,6 +291,161 @@ class ThreadControllerTest {
             assertNull(coordinator.lease.owner)
             assertEquals(InvocationStatus.NOT_EXECUTED, repository.history().single().status)
             assertEquals(TurnStatus.INTERRUPTED, store.turns(controller.state.value.threadId!!).single().status)
+        }
+
+    private fun waitingPhone() =
+        object : com.colonelpanic.eva.devicecontrol.DeviceBackend {
+            override suspend fun observe() =
+                com.colonelpanic.eva.devicecontrol.proto.Observation(
+                    "o",
+                    "now",
+                    "fake",
+                    screen =
+                        com.colonelpanic.eva.devicecontrol.proto.Screen(
+                            100,
+                            200,
+                            com.colonelpanic.eva.devicecontrol.proto.Orientation.PORTRAIT,
+                        ),
+                )
+
+            override suspend fun perform(action: com.colonelpanic.eva.devicecontrol.proto.Action) = error("No action expected")
+        }
+
+    @Test
+    fun `voice looks things up and revises or stops a running device task without waiting for it`() =
+        runTest {
+            val entered = CompletableDeferred<Unit>()
+            var requests = 0
+            val coordinator =
+                com.colonelpanic.eva.devicecontrol.DeviceTaskCoordinator {
+                    com.colonelpanic.eva.devicecontrol.worker.TextTaskAgent(
+                        waitingPhone(),
+                        {
+                            if (requests++ == 0) {
+                                com.colonelpanic.eva.devicecontrol.worker.WorkerReply(
+                                    listOf(
+                                        com.colonelpanic.eva.devicecontrol.worker.WorkerCall(
+                                            "ask",
+                                            "ask_user",
+                                            buildJsonObject { put("question", "Home or work network?") },
+                                        ),
+                                    ),
+                                )
+                            } else {
+                                entered.complete(Unit)
+                                kotlinx.coroutines.awaitCancellation()
+                            }
+                        },
+                        com.colonelpanic.eva.devicecontrol
+                            .workerWording(Wording.bundled),
+                    )
+                }
+            val registry =
+                CapabilityRegistry(
+                    mapOf(
+                        CapabilityRegistry.DEVICE_TASK to coordinator,
+                        lookup.id to backend { ExecutionOutcome(InvocationStatus.COMPLETED, "Found ${it.getValue("query")}") },
+                    ),
+                    BundledCapabilities.definitions.filter { it.id == CapabilityRegistry.DEVICE_TASK } + lookup,
+                )
+            val voice = FakeProvider()
+            val controller = controller(voice, registry = registry, deviceTasks = coordinator, media = { VoiceMedia() })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            val offered =
+                voice.request.catalog.tools
+                    .map { it.capabilityId }
+            assertTrue(ThreadController.DEVICE_TASK_REVISE.capabilityId in offered)
+            assertTrue(ThreadController.DEVICE_TASK_STOP.capabilityId in offered)
+            voice.input = ConversationInput("voice:turn-1", "")
+            voice.channel.send(ProviderEvent.ResponseStarted("voice:turn-1", "voice:turn-1"))
+            voice.call("task", CapabilityRegistry.DEVICE_TASK, "goal" to "Open Wi-Fi settings")
+            runCurrent()
+            // An answer to the task's own question goes straight to it.
+            assertEquals(
+                com.colonelpanic.eva.devicecontrol.TaskPhase.NEEDS_INPUT,
+                coordinator.running.value!!
+                    .progress
+                    ?.phase,
+            )
+            voice.channel.send(ProviderEvent.SpeechInputStarted("answer"))
+            voice.channel.send(ProviderEvent.Transcript("user", "The home one", "answer"))
+            runCurrent()
+            entered.await()
+
+            voice.call("look", lookup.id, "query" to "weather")
+            runCurrent()
+            assertEquals("Found weather", voice.results.single().message)
+
+            voice.call("fix", ThreadController.DEVICE_TASK_REVISE.capabilityId, "correction" to "Bluetooth, not Wi-Fi")
+            runCurrent()
+            assertEquals("COMPLETED", voice.results.last().status)
+            assertEquals(
+                2L,
+                coordinator.running.value!!
+                    .agent.revision,
+            )
+
+            voice.call("halt", ThreadController.DEVICE_TASK_STOP.capabilityId)
+            advanceUntilIdle()
+            assertNull(coordinator.running.value)
+            val task = voice.results.single { it.call.callId == "task" }
+            assertEquals("NOT_EXECUTED", task.status)
+            assertTrue(controller.state.value.working)
+        }
+
+    @Test
+    fun `a quiet screen action skips the spoken follow-up only when it completes`() =
+        runTest {
+            val tap = BundledCapabilities.definitions.single { it.id == CapabilityRegistry.UI_TAP }
+            var outcome = InvocationStatus.COMPLETED
+            val registry =
+                CapabilityRegistry(
+                    mapOf(tap.id to backend { ExecutionOutcome(outcome, "Tapped") }),
+                    listOf(tap),
+                )
+            val voice = FakeProvider()
+            val controller = controller(voice, registry = registry, media = { VoiceMedia() })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            voice.input = ConversationInput("voice:turn-1", "")
+            voice.channel.send(ProviderEvent.ResponseStarted("voice:turn-1", "voice:turn-1"))
+
+            suspend fun tap(
+                id: String,
+                quiet: Boolean,
+            ) = voice.channel.send(
+                ProviderEvent.ToolCallReady(
+                    CallIdentity(
+                        voice.connectionEpoch,
+                        "session",
+                        "voice:turn-1",
+                        "voice:turn-1",
+                        "turn",
+                        voice.request.catalog.revision,
+                        id,
+                    ),
+                    tap.id,
+                    buildJsonObject {
+                        put("observationRef", "obs")
+                        put("node", 3)
+                        put("quiet", quiet)
+                    },
+                ),
+            )
+            tap("quiet", true)
+            advanceUntilIdle()
+            assertFalse(voice.results.last().respond)
+            tap("spoken", false)
+            advanceUntilIdle()
+            assertTrue(voice.results.last().respond)
+            outcome = InvocationStatus.FAILED
+            tap("failed", true)
+            advanceUntilIdle()
+            assertEquals("FAILED", voice.results.last().status)
+            assertTrue(voice.results.last().respond)
         }
 
     // ---- text ----

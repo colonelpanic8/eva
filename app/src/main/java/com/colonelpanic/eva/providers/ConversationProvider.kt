@@ -86,6 +86,8 @@ data class CorrelatedToolResult(
     val message: String,
     val data: JsonObject? = null,
     val provenance: ReceiptProvenance? = null,
+    /** False when the model asked for no spoken follow-up; a provider that cannot skip one ignores it. */
+    val respond: Boolean = true,
 )
 
 sealed interface ProviderEvent {

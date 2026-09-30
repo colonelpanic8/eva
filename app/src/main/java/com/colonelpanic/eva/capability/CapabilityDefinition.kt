@@ -317,7 +317,8 @@ object BundledCapabilities {
                     """
                 {"type":"object","properties":{
                 "observationRef":{"type":"string","minLength":1,"maxLength":64},
-                "node":{"type":"integer","minimum":0,"maximum":199}},
+                "node":{"type":"integer","minimum":0,"maximum":199},
+                "quiet":{"type":"boolean"}},
                 "required":["observationRef","node"],"additionalProperties":false}
             """,
                 ),
@@ -330,7 +331,8 @@ object BundledCapabilities {
                 {"type":"object","properties":{
                 "observationRef":{"type":"string","minLength":1,"maxLength":64},
                 "node":{"type":"integer","minimum":0,"maximum":199},
-                "text":{"type":"string","maxLength":2000}},
+                "text":{"type":"string","maxLength":2000},
+                "quiet":{"type":"boolean"}},
                 "required":["observationRef","node","text"],"additionalProperties":false}
             """,
                 ),

@@ -19,6 +19,7 @@ import com.colonelpanic.eva.devicecontrol.worker.WorkerReply
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -39,51 +40,67 @@ class DeviceTaskCoordinatorTest {
     private fun proposal(id: String = "call") =
         ToolProposal(id, CapabilityRegistry.DEVICE_TASK, mapOf("goal" to "goal"), "goal", "catalog", "thread", "turn")
 
-    @Test fun taskHoldsLeaseUntilTerminalAndControlsBypassItsPendingCall() =
+    private fun finishing(entered: CompletableDeferred<Unit>): () -> TextTaskAgent {
+        var requests = 0
+        return {
+            TextTaskAgent(
+                phone,
+                WorkerModel {
+                    if (requests++ == 0) {
+                        entered.complete(Unit)
+                        awaitCancellation()
+                    }
+                    WorkerReply(
+                        listOf(
+                            WorkerCall(
+                                "finish",
+                                "finish",
+                                Json.parseToJsonElement("""{"status":"completed","summary":"done"}""").jsonObject,
+                            ),
+                        ),
+                    )
+                },
+                workerWording(Wording.bundled),
+            )
+        }
+    }
+
+    @Test fun actionsQueueBehindARunningTaskAndControlsBypassIt() =
         runTest {
             val entered = CompletableDeferred<Unit>()
-            var requests = 0
-            val coordinator =
-                DeviceTaskCoordinator {
-                    TextTaskAgent(
-                        phone,
-                        WorkerModel {
-                            if (requests++ == 0) {
-                                entered.complete(Unit)
-                                awaitCancellation()
-                            }
-                            WorkerReply(
-                                listOf(
-                                    WorkerCall(
-                                        "finish",
-                                        "finish",
-                                        Json.parseToJsonElement("""{"status":"completed","summary":"done"}""").jsonObject,
-                                    ),
-                                ),
-                            )
-                        },
-                        workerWording(Wording.bundled),
-                    )
-                }
+            val coordinator = DeviceTaskCoordinator(create = finishing(entered))
             val result = async { coordinator.execute(proposal()) }
             entered.await()
-            assertFalse(result.isCompleted)
-            assertEquals(InvocationStatus.NOT_EXECUTED, coordinator.execute(proposal("other")).status)
-            var ordinaryRan = false
+            val order = mutableListOf<String>()
             val ordinary =
                 object : ExecutionBackend {
                     override suspend fun unavailableReason(): String? = null
 
                     override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome {
-                        ordinaryRan = true
+                        order += "ordinary"
+                        assertNull(coordinator.running.value)
                         return ExecutionOutcome(InvocationStatus.COMPLETED, "done")
                     }
                 }
-            assertEquals(
-                InvocationStatus.NOT_EXECUTED,
-                coordinator.executeAdmitted(proposal().copy(capabilityId = CapabilityRegistry.OPEN_APP), ordinary, true).status,
-            )
-            assertFalse(ordinaryRan)
+            val queued =
+                async { coordinator.executeAdmitted(proposal("ordinary").copy(capabilityId = CapabilityRegistry.OPEN_APP), ordinary, true) }
+            var abandonedOutcome: ExecutionOutcome? = null
+            val abandoned =
+                launch {
+                    abandonedOutcome =
+                        coordinator.executeAdmitted(
+                            proposal("abandoned").copy(capabilityId = CapabilityRegistry.OPEN_APP),
+                            ordinary,
+                            true,
+                        )
+                }
+            testScheduler.runCurrent()
+            assertFalse(queued.isCompleted)
+            abandoned.cancel()
+            testScheduler.runCurrent()
+            // Returned rather than thrown, so the dispatcher journals it as not run instead of uncertain.
+            assertEquals(InvocationStatus.NOT_EXECUTED, abandonedOutcome?.status)
+            assertEquals(emptyList<String>(), order)
             assertTrue(coordinator.revise("thread", "corrected"))
             assertEquals(
                 1L,
@@ -91,7 +108,30 @@ class DeviceTaskCoordinatorTest {
                     .agent.revision,
             )
             assertEquals(InvocationStatus.COMPLETED, result.await().status)
+            assertEquals(InvocationStatus.COMPLETED, queued.await().status)
+            assertEquals(listOf("ordinary"), order)
             assertNull(coordinator.lease.owner)
+        }
+
+    @Test fun aSecondTaskRunsAfterTheFirstIsStopped() =
+        runTest {
+            val first = CompletableDeferred<Unit>()
+            val second = CompletableDeferred<Unit>()
+            var created = 0
+            val coordinator =
+                DeviceTaskCoordinator {
+                    finishing(if (created++ == 0) first else second)()
+                }
+            val firstResult = async { coordinator.execute(proposal("first")) }
+            first.await()
+            val secondResult = async { coordinator.execute(proposal("second")) }
+            testScheduler.runCurrent()
+            assertEquals(1, created)
+            assertTrue(coordinator.stopRunning("thread"))
+            assertEquals(InvocationStatus.NOT_EXECUTED, firstResult.await().status)
+            second.await()
+            assertTrue(coordinator.revise("thread", "go on"))
+            assertEquals(InvocationStatus.COMPLETED, secondResult.await().status)
         }
 
     @Test fun stopBeforeAdmissionLatchesAndCannotStartWorkerLater() =

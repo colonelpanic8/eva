@@ -17,7 +17,9 @@ tools:
   device-worker.open_notifications: {"description": "Open the notification shade.", "parameters": {"intent": "A few words: what this action should achieve."}}
   device-worker.ask_user: {"description": "Ask the user one short question and wait for the answer. Use when the request is ambiguous or a needed detail is missing.", "parameters": {"question": "One short question the user can answer by voice."}}
   device-worker.finish: {"description": "End the task. `completed` only when the current screen shows the goal is done. `blocked` when the screen or app prevents progress. `failed` otherwise.", "parameters": {"status": "Outcome.", "summary": "What was done or found, or why not; spoken to the user."}}
-  eva.device.task: {"description": "Run an explicit device-control task. Use when the user asks to control the screen or operate an app. Waits until the task ends; do not start a second device task.", "parameters": {"goal": "The complete device task, including user constraints."}}
+  eva.device.task: {"description": "Run a multi-step device-control task: navigating an app, finding something, or several screen actions in sequence. A single tap or text entry on something already visible is faster with the direct screen tools. Waits until the task ends. While it runs, change or cancel it with the task's revise and stop tools; other actions, including another task, wait their turn and run after it.", "parameters": {"goal": "The complete device task, including user constraints."}}
+  eva.device.task.revise: {"description": "Change the running device task's goal when the user corrects, narrows, or adds to what it is doing. Not for an unrelated request, which should be its own action and runs after the task. An answer to a question the task showed on screen reaches it without this tool.", "parameters": {"correction": "The user's correction, in their words, with any detail needed to apply it."}}
+  eva.device.task.stop: {"description": "Stop the running device task when the user wants it to stop or has changed their mind. Actions queued after it still run. The task's own result reports what it did before stopping."}
 
   eva.session.end:
     description: >-
@@ -186,11 +188,20 @@ tools:
       confirmation, even when it sends, buys, or deletes; ask if the target or requested effect
       is unclear. Success means the touch was delivered and returns the screen that followed;
       read that screen to judge whether the task actually advanced.
+    parameters:
+      quiet: >-
+        true when the user will see the result and needs no spoken reply, such as pressing a
+        button they named. A delivered tap then ends your turn silently; a failure is still
+        reported for you to explain. Leave it false when the tap is a step toward more work.
   eva.device.set_text:
     description: >-
       Replace the entire contents of one numbered editable field from a screen observation. This
       overwrites whatever the field held; it does not insert at the cursor. Give the observation
       reference and element number exactly as they were returned.
+    parameters:
+      quiet: >-
+        true when the user will see the text and needs no spoken reply. Delivered text then ends
+        your turn silently; a failure is still reported. Leave it false when more steps follow.
   eva.memory.search:
     description: >-
       Look up context remembered across conversations: notes the user asked EVA to keep, and
@@ -227,6 +238,13 @@ tools:
       returned by memory search. This removes the note, not prior conversations or action
       history containing it.
 messages:
+  device-task-revised: >-
+    The running device task received the correction and continues from the current screen. Its
+    own result arrives when it ends.
+  device-task-stopping: >-
+    The device task is stopping. Its own result arrives next and says what it did before stopping.
+  device-task-none: No device task is running in this conversation. Nothing was changed.
+  device-task-invalid: Give the correction as 1 to 4,000 characters. Nothing was changed.
   device-worker.system: "You operate an Android device for the user through the tools provided.\n\nEach turn shows the task, earlier steps with their results, and the CURRENT screen as\nan indexed element table: the last screen shown. Earlier screens are history. Element\nindices refer to the current table only; they can change after every action.\n\nRules:\n- Call exactly one tool per turn. Do not reply in plain text; use ask_user or finish.\n- If the request is ambiguous or a needed detail is missing, call ask_user with one\n  short question before acting or answering, naming the concrete options you found on\n  screen (\"The Riverside or the Hillcrest branch?\"). It is ambiguous when it names one\n  thing and the screen shows several that fit (two branches, two contacts), or when a\n  vague word (\"darker\", \"louder\") could mean more than one setting. Do not pick one\n  yourself, and do not answer for all of them.\n- After set_text, check the reported read-back. If it does not match, fix the field\n  before doing anything else. Prefer activate_element on an explicit button (Send,\n  Search, Go) over ime_action: the keyboard key can send or submit whatever the field\n  is for.\n- Prefer the element table. Call screenshot only when the table cannot answer.\n  An ellipsis marks truncated text; if the answer lies beyond it, use screenshot to read it.\n  Do not infer text that is not shown.\n- When scrolling to find something, keep scrolling the same way until it appears or the\n  result says nothing new appeared. Reverse only to go back to something you saw.\n- If the screen is protected or unreadable, the app is missing, or an action is\n  unsupported, and there is no other way forward, call finish with status \"blocked\"\n  and say why. Do not try to work around OS protections.\n- Call finish with status \"completed\" only when the current screen shows the goal is\n  achieved: for a setting, its switch in the new state; for a question, the answer read\n  from the screen. Never claim success you have not seen. Use \"failed\" if you cannot do it.\n- Toggling settings, navigating, scrolling, and reading need no confirmation.\n- Keep `intent` to a few words.\n"
   device-worker.task: "Task: {goal}"
   device-worker.screen: "Screen at step {step} (observation {observation_id}):"

@@ -21,6 +21,7 @@ import com.colonelpanic.eva.conversation.prompt.PromptContext
 import com.colonelpanic.eva.conversation.prompt.PromptDefaults
 import com.colonelpanic.eva.conversation.prompt.VoiceCallMode
 import com.colonelpanic.eva.conversation.prompt.Wording
+import com.colonelpanic.eva.devicecontrol.TaskPhase
 import com.colonelpanic.eva.providers.CallIdentity
 import com.colonelpanic.eva.providers.Continuation
 import com.colonelpanic.eva.providers.ConversationInput
@@ -59,6 +60,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonObject
 import java.security.MessageDigest
 import java.util.UUID
@@ -100,7 +102,14 @@ class ThreadController(
     private val nowMillis: () -> Long = System::currentTimeMillis,
     private val deviceTasks: com.colonelpanic.eva.devicecontrol.DeviceTaskCoordinator? = null,
 ) {
-    private val deviceSpeechOwners = mutableMapOf<String, Pair<String, String>>()
+    private val deviceSpeechOwners = mutableMapOf<String, DeviceSpeech>()
+
+    /** Speech that began while a device task ran; [answering] when the task was waiting on the user's answer. */
+    private data class DeviceSpeech(
+        val threadId: String,
+        val turnId: String,
+        val answering: Boolean,
+    )
 
     data class BackgroundAnswer(
         val threadId: String,
@@ -430,12 +439,19 @@ class ThreadController(
                     // which tools are offered and what they say.
                     val snapshot = registry.snapshot
                     val endings = if (voice) callEndings(snapshot) else emptyMap()
+                    val phone = phoneTools(snapshot, voice)
+                    val deviceControls =
+                        if (voice && phone.any { it.capabilityId == CapabilityRegistry.DEVICE_TASK }) {
+                            listOf(DEVICE_TASK_REVISE, DEVICE_TASK_STOP).map(wording()::describe)
+                        } else {
+                            emptyList()
+                        }
                     val connectionCatalog =
                         catalogOf(
                             assembled
                                 .apply(
                                     (if (voice) listOf(wording().describe(END_CONVERSATION), DEFER_TO_TEXT) else emptyList()) +
-                                        phoneTools(snapshot, voice),
+                                        deviceControls + phone,
                                 ).map { tool -> endingNote(bridgeNote(tool), endings[tool.capabilityId]) },
                             snapshot.revision,
                         )
@@ -573,13 +589,15 @@ class ThreadController(
                 val task = activeTask(threadId)
                 if (event.role == "user") {
                     val owner = event.itemId?.let { deviceSpeechOwners.remove(opened.connectionEpoch + ":" + it) }
-                    if (owner != null && deviceTasks?.owns(owner.second) == true) {
+                    // Other speech is the voice model's to route: it may revise or stop the task, or
+                    // ask for something else, which queues behind it.
+                    if (owner != null && deviceTasks?.owns(owner.turnId) == true) {
                         if (event.text.trim().lowercase() in
                             setOf("stop", "cancel", "stop device task", "cancel device task")
                         ) {
                             stopDeviceTask()
-                        } else {
-                            deviceTasks.revise(owner.first, event.text)
+                        } else if (owner.answering) {
+                            deviceTasks.revise(owner.threadId, event.text)
                         }
                     }
                     task?.request = event.text
@@ -631,6 +649,8 @@ class ThreadController(
                     } else {
                         task.delegateToText(instruction, event.call)
                     }
+                } else if (voice && event.capabilityId in DEVICE_CONTROLS) {
+                    controlDeviceTask(event, opened, threadId)
                 } else {
                     if (voice) actionResponses += event.call.generationId
                     taskFor(opened, event.call.inputId)?.dispatch(event) ?: rejectUnowned(event, opened, threadId, voice)
@@ -640,8 +660,8 @@ class ThreadController(
             is ProviderEvent.SpeechInputStarted -> {
                 val owner = deviceTasks?.running?.value?.takeIf { it.threadId == threadId }
                 if (owner != null) {
-                    deviceSpeechOwners[opened.connectionEpoch + ":" + event.itemId] = owner.threadId to owner.turnId
-                    deviceTasks?.pause(threadId)
+                    deviceSpeechOwners[opened.connectionEpoch + ":" + event.itemId] =
+                        DeviceSpeech(owner.threadId, owner.turnId, owner.progress?.phase == TaskPhase.NEEDS_INPUT)
                 }
             }
 
@@ -691,6 +711,47 @@ class ThreadController(
 
             ProviderEvent.Closed -> {}
         }
+    }
+
+    /**
+     * Revises or stops a running device task on the voice model's judgment. Like the panel's
+     * controls, this latches straight into the task instead of queuing behind its pending call.
+     */
+    private suspend fun controlDeviceTask(
+        event: ProviderEvent.ToolCallReady,
+        opened: ConversationSession,
+        threadId: String,
+    ) {
+        val offered = connectionTools[opened]?.catalog?.tools?.any { it.capabilityId == event.capabilityId } == true
+        val correction = (event.arguments["correction"] as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim()
+        val owner = deviceTasks?.running?.value?.takeIf { it.threadId == threadId }
+        val (status, key) =
+            when {
+                !offered || owner == null -> {
+                    "NOT_EXECUTED" to Wording.DEVICE_TASK_NONE
+                }
+
+                event.capabilityId == DEVICE_TASK_STOP.capabilityId && deviceTasks.stopRunning(threadId) -> {
+                    "COMPLETED" to Wording.DEVICE_TASK_STOPPING
+                }
+
+                event.capabilityId == DEVICE_TASK_STOP.capabilityId -> {
+                    "NOT_EXECUTED" to Wording.DEVICE_TASK_NONE
+                }
+
+                correction.isNullOrEmpty() || correction.length > 4000 -> {
+                    "NOT_EXECUTED" to Wording.DEVICE_TASK_INVALID
+                }
+
+                deviceTasks.revise(threadId, correction) -> {
+                    "COMPLETED" to Wording.DEVICE_TASK_REVISED
+                }
+
+                else -> {
+                    "NOT_EXECUTED" to Wording.DEVICE_TASK_NONE
+                }
+            }
+        opened.submitToolResult(CorrelatedToolResult(event.call, status, wording().message(key)))
     }
 
     /**
@@ -999,6 +1060,7 @@ class ThreadController(
             private set
         private var readOnlyCalls = 0
         private val dispatchLock = Mutex()
+        private val mutationLock = Mutex()
         private val admittedCalls = mutableSetOf<String>()
 
         /** Every call proposed for this turn, so an ending action can tell whether it was proposed alone. */
@@ -1041,10 +1103,16 @@ class ThreadController(
                     interactionMode = if (context.voice) InteractionMode.VOICE else InteractionMode.TYPED,
                     onWaiting = { mutableState.update { it.copy(providerMessage = "Still waiting for the action…") } },
                 )
-            val job =
-                taskScope.launch {
+            // A native tool that offers `quiet` lets the model skip the spoken follow-up to a completed call.
+            val quiet =
+                context.voice && definition?.source == null &&
+                    (definition?.inputSchema?.get("properties") as? JsonObject)?.containsKey("quiet") == true &&
+                    (event.arguments["quiet"] as? JsonPrimitive)?.booleanOrNull == true
+
+            suspend fun run() {
+                val rejection =
                     dispatchLock.withLock {
-                        if (!active) return@withLock
+                        if (!active) return
                         val rejection =
                             when {
                                 event.call.catalogRevision != context.catalog.revision || definition == null ||
@@ -1089,48 +1157,59 @@ class ThreadController(
                                 legId,
                             ),
                         )
-                        try {
-                            val result = dispatcher.execute(proposal, rejection ?: argumentError)
-                            requestRefresh()
-                            val changesPhone = definition?.readOnly == false && !definition.bookkeeping
-                            if (changesPhone &&
-                                (result.status == InvocationStatus.COMPLETED || result.status == InvocationStatus.HANDED_OFF)
-                            ) {
-                                actionServiced = true
-                            }
-                            if (changesPhone &&
-                                result.status in setOf(InvocationStatus.UNKNOWN, InvocationStatus.FAILED)
-                            ) {
-                                mutationUncertain = true
-                            }
-                            val succeeded = result.status == InvocationStatus.COMPLETED || result.status == InvocationStatus.HANDED_OFF
-                            val ending = context.endings[event.capabilityId].takeIf { succeeded }
-                            val delivered: suspend () -> Unit = {
-                                deliver(event.call, result.status.name, result.message, result.provenance, result.data)
-                            }
-                            when (ending) {
-                                CallEnding.IMMEDIATELY -> {
-                                    endWith(event.call, delivered)
-                                }
+                        rejection
+                    }
+                try {
+                    val result = dispatcher.execute(proposal, rejection ?: argumentError)
+                    requestRefresh()
+                    val changesPhone = definition?.readOnly == false && !definition.bookkeeping
+                    if (changesPhone &&
+                        (result.status == InvocationStatus.COMPLETED || result.status == InvocationStatus.HANDED_OFF)
+                    ) {
+                        actionServiced = true
+                    }
+                    if (changesPhone &&
+                        result.status in setOf(InvocationStatus.UNKNOWN, InvocationStatus.FAILED)
+                    ) {
+                        mutationUncertain = true
+                    }
+                    val succeeded = result.status == InvocationStatus.COMPLETED || result.status == InvocationStatus.HANDED_OFF
+                    val ending = context.endings[event.capabilityId].takeIf { succeeded }
+                    val delivered: suspend () -> Unit = {
+                        deliver(
+                            event.call,
+                            result.status.name,
+                            result.message,
+                            result.provenance,
+                            result.data,
+                            respond = !(quiet && result.status == InvocationStatus.COMPLETED),
+                        )
+                    }
+                    when (ending) {
+                        CallEnding.IMMEDIATELY -> {
+                            endWith(event.call, delivered)
+                        }
 
-                                CallEnding.AFTER_REPLY -> {
-                                    delivered()
-                                    leg?.let(::hangUpAfterReply)
-                                }
+                        CallEnding.AFTER_REPLY -> {
+                            delivered()
+                            leg?.let(::hangUpAfterReply)
+                        }
 
-                                else -> {
-                                    delivered()
-                                }
-                            }
-                        } catch (error: ProposalRejectedException) {
-                            deliver(event.call, "NOT_EXECUTED", error.message.orEmpty())
-                        } catch (error: InvocationPersistenceException) {
-                            mutableState.update { it.copy(errorMessage = SessionController.STORAGE_ERROR) }
-                            interrupt("Action history could not be saved.")
-                            end("ended: action history could not be saved")
+                        else -> {
+                            delivered()
                         }
                     }
+                } catch (error: ProposalRejectedException) {
+                    deliver(event.call, "NOT_EXECUTED", error.message.orEmpty())
+                } catch (error: InvocationPersistenceException) {
+                    mutableState.update { it.copy(errorMessage = SessionController.STORAGE_ERROR) }
+                    interrupt("Action history could not be saved.")
+                    end("ended: action history could not be saved")
                 }
+            }
+            // Changes run one at a time in proposal order, so each sees whether the last left the
+            // phone uncertain; lookups need not wait behind a long device task.
+            val job = taskScope.launch { if (definition?.readOnly == true) run() else mutationLock.withLock { run() } }
             dispatches += job
         }
 
@@ -1160,6 +1239,7 @@ class ThreadController(
             message: String,
             provenance: com.colonelpanic.eva.capability.ReceiptProvenance? = null,
             data: JsonObject? = null,
+            respond: Boolean = true,
         ) {
             val current = leg
             if (current == null || call.connectionEpoch != current.connectionEpoch) {
@@ -1168,7 +1248,7 @@ class ThreadController(
                 return
             }
             try {
-                current.submitToolResult(CorrelatedToolResult(call, status, message, data, provenance))
+                current.submitToolResult(CorrelatedToolResult(call, status, message, data, provenance, respond))
                 awaitingFollowUp = true
             } catch (error: CancellationException) {
                 throw error
@@ -1414,6 +1494,34 @@ class ThreadController(
                 ),
             )
         }
+
+        /** Control a running device task directly, bypassing the dispatcher like the panel's Stop. */
+        val DEVICE_TASK_REVISE by lazy {
+            Wording.bundled.describe(
+                ProviderToolDefinition(
+                    "eva.device.task.revise",
+                    "Correct the device task",
+                    "",
+                    Json
+                        .parseToJsonElement(
+                            """{"type":"object","properties":{"correction":{"type":"string","minLength":1,"maxLength":4000}},"required":["correction"],"additionalProperties":false}""",
+                        ).jsonObject,
+                ),
+            )
+        }
+
+        val DEVICE_TASK_STOP by lazy {
+            Wording.bundled.describe(
+                ProviderToolDefinition(
+                    "eva.device.task.stop",
+                    "Stop the device task",
+                    "",
+                    Json.parseToJsonElement("""{"type":"object","properties":{},"required":[],"additionalProperties":false}""").jsonObject,
+                ),
+            )
+        }
+
+        private val DEVICE_CONTROLS = setOf("eva.device.task.revise", "eva.device.task.stop")
 
         val DEFER_TO_TEXT =
             ProviderToolDefinition(

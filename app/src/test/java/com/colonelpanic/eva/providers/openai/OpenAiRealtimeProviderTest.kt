@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -449,6 +450,96 @@ class OpenAiRealtimeProviderTest {
             runCurrent()
             assertEquals("voice:resp_1", events.filterIsInstance<ProviderEvent.ResponseEnded>().single().inputId)
             assertEquals("Timer started.", events.filterIsInstance<ProviderEvent.AssistantText>().single().text)
+            collector.cancel()
+        }
+
+    private fun TestScope.openSession(media: FakeMedia) =
+        OpenAiRealtimeProvider(
+            ApiKeyAccess("sk-test", "https://example.test"),
+            media,
+            client = client,
+            ioDispatcher = StandardTestDispatcher(testScheduler),
+        )
+
+    private fun functionCall(callId: String) =
+        """{"type":"response.output_item.done","item":{"type":"function_call","name":"eva_tool_0","call_id":"$callId","arguments":"{\"seconds\":180}"}}"""
+
+    private fun FakeMedia.responseCreates() =
+        sent.count {
+            Json
+                .parseToJsonElement(it)
+                .jsonObject["type"]
+                ?.jsonPrimitive
+                ?.content ==
+                "response.create"
+        }
+
+    @Test
+    fun `a quiet result ends the input without asking the model to speak`() =
+        runTest {
+            val media = FakeMedia()
+            val session = openSession(media).open(SessionOpenRequest("You are EVA.", catalog))
+            val events = mutableListOf<ProviderEvent>()
+            val collector = launch { session.events.collect { events += it } }
+            media.incoming.send("""{"type":"session.created","session":{"id":"sess_1"}}""")
+            media.incoming.send("""{"type":"response.created","response":{"id":"resp_1"}}""")
+            media.incoming.send(functionCall("call_1"))
+            media.incoming.send("""{"type":"response.done","response":{"id":"resp_1","status":"completed"}}""")
+            runCurrent()
+            val first = events.filterIsInstance<ProviderEvent.ToolCallReady>().single()
+            session.submitToolResult(CorrelatedToolResult(first.call, "COMPLETED", "Tapped.", respond = false))
+            runCurrent()
+            assertEquals(0, media.responseCreates())
+            assertEquals("voice:resp_1", events.filterIsInstance<ProviderEvent.ResponseEnded>().single().inputId)
+
+            // Resolved before its response finished, a quiet call ends the input at response.done.
+            media.incoming.send("""{"type":"response.created","response":{"id":"resp_2"}}""")
+            media.incoming.send(functionCall("call_2"))
+            runCurrent()
+            val second = events.filterIsInstance<ProviderEvent.ToolCallReady>().last()
+            session.submitToolResult(CorrelatedToolResult(second.call, "COMPLETED", "Tapped.", respond = false))
+            runCurrent()
+            assertEquals(1, events.count { it is ProviderEvent.ResponseEnded })
+            media.incoming.send("""{"type":"response.done","response":{"id":"resp_2","status":"completed"}}""")
+            runCurrent()
+            assertEquals(0, media.responseCreates())
+            assertEquals("voice:resp_2", events.filterIsInstance<ProviderEvent.ResponseEnded>().last().inputId)
+            collector.cancel()
+        }
+
+    @Test
+    fun `a later call is answered while an earlier one runs and follow-ups wait for the active response`() =
+        runTest {
+            val media = FakeMedia()
+            val session = openSession(media).open(SessionOpenRequest("You are EVA.", catalog))
+            val events = mutableListOf<ProviderEvent>()
+            val collector = launch { session.events.collect { events += it } }
+            media.incoming.send("""{"type":"session.created","session":{"id":"sess_1"}}""")
+            media.incoming.send("""{"type":"response.created","response":{"id":"resp_1"}}""")
+            media.incoming.send(functionCall("long"))
+            media.incoming.send("""{"type":"response.done","response":{"id":"resp_1","status":"completed"}}""")
+            // The user speaks while the long call runs; turn detection starts a response that calls another tool.
+            media.incoming.send("""{"type":"response.created","response":{"id":"resp_2"}}""")
+            media.incoming.send(functionCall("short"))
+            media.incoming.send("""{"type":"response.done","response":{"id":"resp_2","status":"completed"}}""")
+            runCurrent()
+            val (long, short) = events.filterIsInstance<ProviderEvent.ToolCallReady>()
+            session.submitToolResult(CorrelatedToolResult(short.call, "COMPLETED", "Done."))
+            assertEquals(1, media.responseCreates())
+
+            media.incoming.send("""{"type":"response.created","response":{"id":"resp_3"}}""")
+            runCurrent()
+            session.submitToolResult(CorrelatedToolResult(long.call, "COMPLETED", "Task finished."))
+            assertEquals(1, media.responseCreates())
+            media.incoming.send("""{"type":"response.done","response":{"id":"resp_3","status":"completed"}}""")
+            runCurrent()
+            assertEquals(2, media.responseCreates())
+            assertTrue(events.none { it is ProviderEvent.ResponseEnded })
+
+            media.incoming.send("""{"type":"response.created","response":{"id":"resp_4"}}""")
+            media.incoming.send("""{"type":"response.done","response":{"id":"resp_4","status":"completed"}}""")
+            runCurrent()
+            assertEquals("voice:resp_1", events.filterIsInstance<ProviderEvent.ResponseEnded>().single().inputId)
             collector.cancel()
         }
 

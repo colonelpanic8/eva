@@ -6,6 +6,7 @@ import com.colonelpanic.eva.capability.ExecutionOutcome
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.ToolProposal
 import com.colonelpanic.eva.devicecontrol.worker.TextTaskAgent
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -45,19 +46,18 @@ class DeviceTaskCoordinator(
             true
         }
 
-    fun pause(threadId: String) =
-        synchronized(monitor) {
-            mutableRunning.value
-                ?.takeIf { it.threadId == threadId }
-                ?.agent
-                ?.pauseForCorrection()
-            Unit
-        }
-
     fun stop(turnId: String? = null): Boolean =
         synchronized(monitor) {
             if (turnId != null) stoppedTurns += turnId
             val task = mutableRunning.value?.takeIf { turnId == null || it.turnId == turnId } ?: return false
+            task.agent.cancel()
+            true
+        }
+
+    /** Stops the task running for [threadId] without latching its turn, so actions queued behind it still run. */
+    fun stopRunning(threadId: String): Boolean =
+        synchronized(monitor) {
+            val task = mutableRunning.value?.takeIf { it.threadId == threadId } ?: return false
             task.agent.cancel()
             true
         }
@@ -70,14 +70,13 @@ class DeviceTaskCoordinator(
     override suspend fun execute(proposal: ToolProposal): ExecutionOutcome {
         val thread = proposal.threadId ?: return execute(proposal.arguments)
         val turn = proposal.turnId ?: return execute(proposal.arguments)
+        if (synchronized(monitor) { turn in stoppedTurns }) return stoppedBeforeDispatch()
+        awaitLease(proposal.callId)?.let { return it }
         val agent =
             synchronized(monitor) {
-                if (turn in stoppedTurns) return ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "Stopped before device-task dispatch.")
-                if (!lease.acquire(
-                        proposal.callId,
-                    )
-                ) {
-                    return ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "Another device operation is running.")
+                if (turn in stoppedTurns) {
+                    lease.release(proposal.callId)
+                    return stoppedBeforeDispatch()
                 }
                 try {
                     create().also { mutableRunning.value = Running(thread, turn, it) }
@@ -157,21 +156,27 @@ class DeviceTaskCoordinator(
         }
     }
 
+    private fun stoppedBeforeDispatch() = ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "Stopped before device-task dispatch.")
+
+    /**
+     * Queues behind whatever holds the device. Cancellation while queued is reported as not run
+     * rather than propagated, because the dispatcher would otherwise journal it as uncertain.
+     */
+    private suspend fun awaitLease(callId: String): ExecutionOutcome? =
+        try {
+            lease.acquire(callId)
+            null
+        } catch (_: CancellationException) {
+            ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "Cancelled while waiting for an earlier device action to finish.")
+        }
+
     suspend fun executeAdmitted(
         proposal: ToolProposal,
         backend: ExecutionBackend,
         needsDevice: Boolean,
     ): ExecutionOutcome {
         if (proposal.capabilityId == CapabilityRegistry.DEVICE_TASK || !needsDevice) return backend.execute(proposal)
-        if (!lease.acquire(
-                proposal.callId,
-            )
-        ) {
-            return ExecutionOutcome(
-                InvocationStatus.NOT_EXECUTED,
-                "A device task is running. Stop it before using other device controls.",
-            )
-        }
+        awaitLease(proposal.callId)?.let { return it }
         return try {
             backend.execute(proposal)
         } finally {

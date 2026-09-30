@@ -1,15 +1,25 @@
 package com.colonelpanic.eva.devicecontrol
 
-import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.sync.Mutex
 
-/** One application-wide lease shared by task execution and ordinary UI-changing operations. */
+/**
+ * One application-wide lease shared by task execution and ordinary UI-changing operations.
+ * Waiters queue in arrival order; a waiter cancelled before its turn never holds the lease.
+ */
 class DeviceExecutionLease {
-    private val holder = AtomicReference<String?>(null)
-    val owner: String? get() = holder.get()
+    private val mutex = Mutex()
 
-    fun acquire(owner: String): Boolean = holder.compareAndSet(null, owner)
+    @Volatile private var holder: String? = null
+    val owner: String? get() = holder
+
+    suspend fun acquire(owner: String) {
+        mutex.lock()
+        holder = owner
+    }
 
     fun release(owner: String) {
-        check(holder.compareAndSet(owner, null))
+        check(holder == owner)
+        holder = null
+        mutex.unlock()
     }
 }

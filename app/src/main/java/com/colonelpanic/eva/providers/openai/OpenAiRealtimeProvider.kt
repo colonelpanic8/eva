@@ -18,6 +18,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
@@ -143,8 +144,20 @@ private class OpenAiRealtimeSession(
     private var pendingTypedInput: ConversationInput? = null
     private var activeInput: String? = null
     private var activeResponse: String? = null
-    private var awaitingTool = false
+
+    /** The server allows one response at a time, whether EVA or its turn detection started it. */
+    private var responseActive = false
+
+    /** A tool follow-up was requested and its response has not started yet. */
+    private var followUpExpected = false
+    private var followUpDeferred = false
     private val pending = mutableMapOf<String, CallIdentity>()
+
+    /** Responses with a resolved call that wants the model to speak once all of its calls resolve. */
+    private val replyWanted = mutableSetOf<String>()
+
+    /** Events raised by EVA's own calls rather than by the server. */
+    private val local = Channel<ProviderEvent>(Channel.UNLIMITED)
     private val seedItems = history.flatMap { it.toOpenAiMessages().map(::realtimeSeedItem) }
     private val pendingSeedItemIds = seedItems.mapTo(mutableSetOf()) { it.id }
     private var seedReady = seedItems.isEmpty()
@@ -156,6 +169,7 @@ private class OpenAiRealtimeSession(
     override val events: Flow<ProviderEvent> =
         channelFlow {
             send(ProviderEvent.Account(accountLabel))
+            val forward = launch { for (event in local) send(event) }
             try {
                 media.events.collect { raw ->
                     val message = runCatching { json.parseToJsonElement(raw).jsonObject }.getOrNull() ?: return@collect
@@ -213,7 +227,8 @@ private class OpenAiRealtimeSession(
                                 return@collect
                             }
                             activeResponse = id
-                            awaitingTool = false
+                            responseActive = true
+                            followUpExpected = false
                             if (activeInput == null) {
                                 // A spoken turn has no typed input; the response is the input, mirroring the
                                 // delegated-turn convention. A follow-up after a tool result keeps its input.
@@ -265,7 +280,6 @@ private class OpenAiRealtimeSession(
                                     callId,
                                 )
                             pending[callId] = identity
-                            awaitingTool = true
                             send(ProviderEvent.ToolCallReady(identity, tool.capabilityId, arguments))
                         }
 
@@ -281,7 +295,14 @@ private class OpenAiRealtimeSession(
 
                         "response.done" -> {
                             val response = message.obj("response") ?: return@collect
-                            if (response.str("id") != activeResponse || awaitingTool || pending.isNotEmpty()) return@collect
+                            if (response.str("id") != activeResponse) return@collect
+                            responseActive = false
+                            if (followUpDeferred) {
+                                followUpDeferred = false
+                                media.send(responseCreate())
+                                return@collect
+                            }
+                            if (followUpExpected || pending.isNotEmpty()) return@collect
                             val input = activeInput ?: return@collect
                             val status = response.str("status") ?: "completed"
                             activeInput = null
@@ -292,12 +313,19 @@ private class OpenAiRealtimeSession(
                         "error" -> {
                             val error = message.obj("error")
                             if (error?.str("code") == "response_cancel_not_active") return@collect
+                            // Turn detection started a response just before EVA's follow-up; retry after it.
+                            if (error?.str("code") == "conversation_already_has_active_response" && followUpExpected) {
+                                responseActive = true
+                                followUpDeferred = true
+                                return@collect
+                            }
                             send(ProviderEvent.Failure(error?.str("message") ?: "The provider reported an error."))
                         }
                     }
                 }
             } finally {
                 seedTimeout?.cancel()
+                forward.cancel()
             }
             send(ProviderEvent.Closed)
         }
@@ -336,7 +364,7 @@ private class OpenAiRealtimeSession(
                 )
             }.toString(),
         )
-        media.send(buildJsonObject { put("type", "response.create") }.toString())
+        media.send(responseCreate())
     }
 
     override suspend fun submitToolResult(result: CorrelatedToolResult) {
@@ -356,7 +384,19 @@ private class OpenAiRealtimeSession(
             }.toString(),
         )
         pending.remove(result.call.callId)
-        if (pending.isEmpty()) media.send(buildJsonObject { put("type", "response.create") }.toString())
+        val origin = result.call.providerTurnId
+        if (result.respond) replyWanted += origin
+        if (pending.values.any { it.providerTurnId == origin }) return
+        if (replyWanted.remove(origin)) {
+            followUpExpected = true
+            if (responseActive) followUpDeferred = true else media.send(responseCreate())
+        } else if (pending.isEmpty() && !responseActive && !followUpExpected) {
+            // Every call asked for no spoken follow-up and the response that made them is over.
+            val input = activeInput ?: return
+            activeInput = null
+            activeResponse = null
+            local.send(ProviderEvent.ResponseEnded(input, "completed"))
+        }
     }
 
     override suspend fun close() = Unit
@@ -398,6 +438,8 @@ private fun realtimeSeedItem(message: OpenAiHistoryMessage): RealtimeSeedItem {
         }
     return RealtimeSeedItem(id, event.toString())
 }
+
+private fun responseCreate(): String = buildJsonObject { put("type", "response.create") }.toString()
 
 private fun responseCancel(responseId: String): String =
     buildJsonObject {
