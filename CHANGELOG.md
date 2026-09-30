@@ -4,6 +4,12 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.49.1] - 2026-10-01
+
+### Fixed
+
+- Voice starts again when the tool catalog is full. Voice now reserves slots for the device-task revise and stop controls; before, a full catalog offered too many tools and voice failed with only "Failed requirement." Tool-limit and request-length errors now say what the limit is.
+
 ## [0.49.0] - 2026-10-01
 
 ### Changed
