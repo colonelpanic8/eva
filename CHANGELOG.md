@@ -4,6 +4,10 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Shizuku screen control keeps working after a pause. Once the helper sat idle for 20 seconds, every later screen read or action failed until EVA restarted.
+
 ## [0.48.0] - 2026-10-01
 
 ### Changed

@@ -6,12 +6,14 @@ import android.app.UiAutomation
 import android.graphics.Bitmap
 import android.graphics.Point
 import android.graphics.Rect
+import android.os.Binder
 import android.os.Bundle
 import android.os.HandlerThread
 import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.os.Process
 import android.os.SystemClock
+import android.util.Log
 import android.view.Display
 import android.view.InputDevice
 import android.view.MotionEvent
@@ -26,6 +28,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import java.io.ByteArrayOutputStream
+import java.lang.reflect.InvocationTargetException
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
@@ -127,7 +130,11 @@ class DeviceControlUserService : IDeviceControl.Stub() {
             }
         }.toString()
 
-    /** One UiAutomation connection serves consecutive calls; it is released after a short idle period. */
+    /**
+     * One UiAutomation connection serves consecutive calls; it is released after a short idle period.
+     * The connection trusts only the UID that connected it, so every call, including the idle
+     * reaper's disconnect, runs as shell rather than as the calling EVA process.
+     */
     private fun <T> withAutomation(
         timeoutMillis: Long,
         block: (UiAutomation, Long) -> T,
@@ -136,6 +143,7 @@ class DeviceControlUserService : IDeviceControl.Stub() {
         require(timeoutMillis in 1..MAX_TIMEOUT_MILLIS) { "Invalid timeout" }
         val deadline = SystemClock.elapsedRealtime() + timeoutMillis
         pendingRelease?.cancel(false)
+        val identity = Binder.clearCallingIdentity()
         try {
             val current = connection ?: open().also { connection = it }
             return block(current.automation, deadline)
@@ -143,6 +151,7 @@ class DeviceControlUserService : IDeviceControl.Stub() {
             if (error !is PortalCommands.Failure) release()
             throw error
         } finally {
+            Binder.restoreCallingIdentity(identity)
             pendingRelease = reaper.schedule({ synchronized(this) { release() } }, IDLE_MILLIS, TimeUnit.MILLISECONDS)
         }
     }
@@ -162,6 +171,7 @@ class DeviceControlUserService : IDeviceControl.Stub() {
         val current = connection ?: return
         connection = null
         runCatching { UiAutomation::class.java.getMethod("disconnect").invoke(current.automation) }
+            .onFailure { Log.w(TAG, "UiAutomation did not disconnect", it) }
         current.thread.quitSafely()
     }
 
@@ -173,9 +183,13 @@ class DeviceControlUserService : IDeviceControl.Stub() {
             UiAutomation::class.java
                 .getConstructor(Looper::class.java, connectionType)
                 .newInstance(looper, connection)
-        UiAutomation::class.java
-            .getMethod("connect", Int::class.javaPrimitiveType)
-            .invoke(automation, FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
+        try {
+            UiAutomation::class.java
+                .getMethod("connect", Int::class.javaPrimitiveType)
+                .invoke(automation, FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
+        } catch (error: InvocationTargetException) {
+            throw error.targetException
+        }
         automation.serviceInfo =
             automation.serviceInfo.apply {
                 flags = flags or AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
@@ -418,6 +432,7 @@ class DeviceControlUserService : IDeviceControl.Stub() {
     }
 
     private companion object {
+        const val TAG = "EvaDeviceControl"
         const val SHELL_UID = 2000
         const val MAX_TIMEOUT_MILLIS = 30_000L
         const val MAX_NODES = 200

@@ -280,7 +280,9 @@ launcher/VIEW `am start` with validated arguments, and screenshots streamed over
 pipe). Rechecks, settling, read-back and receipts are therefore shared. Append into a
 password field types characters with the virtual key map, so it rejects characters
 that map has no keys for. The helper keeps one UiAutomation connection across
-consecutive calls and releases it after 20 idle seconds. Both backends are checked
+consecutive calls and releases it after 20 idle seconds. It connects and calls as shell,
+not as EVA's calling UID, because the platform lets only the connecting UID disconnect;
+a leaked connection blocks every later one. Both backends are checked
 for availability before a task is admitted.
 
 The text-first worker executes one primitive per model turn, asks for missing or

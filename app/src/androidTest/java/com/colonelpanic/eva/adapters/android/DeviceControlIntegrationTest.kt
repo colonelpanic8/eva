@@ -66,6 +66,23 @@ class DeviceControlIntegrationTest {
             assertTrue(tapResult.message.contains("Count: 1"))
         }
 
+    @Test
+    fun helperReadsTheScreenAgainAfterItsIdleRelease() =
+        runBlocking {
+            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            assertEquals(
+                "Grant EVA access in Shizuku before running this device test",
+                PackageManager.PERMISSION_GRANTED,
+                Shizuku.checkSelfPermission(),
+            )
+            val host = DeviceControlHost(context)
+            val first = host.state(STATE_TIMEOUT_MILLIS)
+            assertTrue(first, first.contains("\"ok\":true"))
+            SystemClock.sleep(PAST_IDLE_RELEASE_MILLIS)
+            val second = host.state(STATE_TIMEOUT_MILLIS)
+            assertTrue(second, second.contains("\"ok\":true"))
+        }
+
     private fun reference(projection: String): String = checkNotNull(Regex("\\(observation ([^)]+)\\)").find(projection)).groupValues[1]
 
     private fun element(
@@ -78,5 +95,7 @@ class DeviceControlIntegrationTest {
 
     private companion object {
         const val FIXTURE_PACKAGE = "com.colonelpanic.eva.devicefixture"
+        const val STATE_TIMEOUT_MILLIS = 10_000L
+        const val PAST_IDLE_RELEASE_MILLIS = 22_000L
     }
 }

@@ -36,7 +36,7 @@ class DeviceControlHost(
             .daemon(false)
             .processNameSuffix("device_control")
             .tag("eva-device-control")
-            .version(1)
+            .version(2)
 
     private val permissionListener =
         rikka.shizuku.Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
