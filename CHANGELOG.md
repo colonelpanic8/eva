@@ -4,6 +4,10 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Typed conversations default to `gpt-6.1-sol` instead of `gpt-6-sol`. It was verified live on the ChatGPT subscription backend at the `low` through `max` text reasoning efforts, including tool calls. It rejects `none`, so pick another effort or keep `gpt-6-sol` if you rely on it. An installation or configuration that already names a text model keeps it; choose the new one under Settings or set `models.text` in the configuration. Device tasks still use `gpt-6-sol`.
+
 ## [0.47.0] - 2026-09-30
 
 ### Changed
