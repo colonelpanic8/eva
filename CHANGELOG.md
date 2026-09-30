@@ -4,6 +4,8 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.48.2] - 2026-10-01
+
 ### Added
 
 - The conversation bar always shows whether each screen control backend is ready, and a spinner while a device task runs. Tap it to open Screen control settings, which show each backend's problem.
