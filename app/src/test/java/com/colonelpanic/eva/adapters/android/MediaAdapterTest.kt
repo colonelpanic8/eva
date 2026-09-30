@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.adapters.android
 
+import com.colonelpanic.eva.capability.BundledCapabilities
 import com.colonelpanic.eva.capability.CapabilityDispatcher
 import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.capability.ExecutionBackend
@@ -158,7 +159,7 @@ class MediaAdapterTest {
     fun `a media app is admitted and granted operation by operation like any extension`() =
         runTest {
             val adapter = adapter(FakeSource(listOf(youtube)))
-            val registry = CapabilityRegistry(emptyMap())
+            val registry = CapabilityRegistry(emptyMap(), BundledCapabilities.definitions)
             val runtime = ExtensionRuntime(registry, adapter, ExtensionGrants(MemoryGrantPersistence()), backgroundScope)
             runCurrent()
             assertTrue(registry.catalog.isEmpty())

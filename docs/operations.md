@@ -479,7 +479,7 @@ worker/capability path; it is not a text-UI or acoustic voice test. Controller
 correlation, correction, stop and provider-cancelled races have focused JVM tests.
 
 Catalog mirror required before publishing this feature: copy the shipped
-`app/src/main/resources/eva-wording.yaml` byte-for-byte to
+`eva-core/src/main/resources/eva-wording.yaml` byte-for-byte to
 `colonelpanic8/eva-instructions/eva-wording.yaml`. Added tool keys are
 `eva.device.task` and `device-worker.{observe,launch_app,activate_element,set_text,
 scroll,back,home,tap_point,swipe,long_press,screenshot,ime_action,open_url,
@@ -622,7 +622,7 @@ artifacts above. The earlier on-device stop measurements predate this WebSocket
 change; its cancellation/reuse/late-frame behavior has JVM coverage, not a new
 on-device interruption measurement in this capped audit.
 
-The catalog mirror is still exactly `app/src/main/resources/eva-wording.yaml`
+The catalog mirror is still exactly `eva-core/src/main/resources/eva-wording.yaml`
 → `colonelpanic8/eva-instructions/eva-wording.yaml`, byte-for-byte. This audit
 changes tool keys `device-worker.ime_action` and `device-worker.finish`; updates
 message keys `device-worker.{system,task,one_call,scroll_reversal,scroll_end,

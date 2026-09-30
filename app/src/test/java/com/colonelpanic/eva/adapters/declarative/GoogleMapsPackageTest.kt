@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Intent
 import com.colonelpanic.eva.adapters.android.AndroidDeclarativeHost
 import com.colonelpanic.eva.capability.BoundedExecution
+import com.colonelpanic.eva.capability.BundledCapabilities
 import com.colonelpanic.eva.capability.CapabilityDispatcher
 import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.capability.ExecutionOutcome
@@ -95,7 +96,7 @@ class GoogleMapsPackageTest {
                         this.json = json
                     }
                 }
-            val registry = CapabilityRegistry(emptyMap())
+            val registry = CapabilityRegistry(emptyMap(), BundledCapabilities.definitions)
             val runtime = ExtensionRuntime(registry, adapter, ExtensionGrants(disk), backgroundScope)
             runCurrent()
             assertTrue(registry.catalog.isEmpty())

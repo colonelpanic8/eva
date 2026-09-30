@@ -86,7 +86,7 @@ class ClockPackageTest {
             PackageAdapter({ packages }, { host }, BoundedExecution(backgroundScope)) { _, _, p ->
                 WaitBudget(p.interactionMode, 30_000, null, null)
             }
-        val registry = CapabilityRegistry(emptyMap())
+        val registry = CapabilityRegistry(emptyMap(), BundledCapabilities.definitions)
         return registry to ExtensionRuntime(registry, adapter, ExtensionGrants(disk), backgroundScope)
     }
 

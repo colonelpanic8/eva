@@ -6,6 +6,7 @@ import android.os.Bundle
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.colonelpanic.eva.EvaApplication
+import com.colonelpanic.eva.capability.BundledCapabilities
 import com.colonelpanic.eva.capability.CapabilityDispatcher
 import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.capability.InvocationStatus
@@ -93,7 +94,7 @@ class DeviceTaskEvalTest {
                         }
                     }
                 }
-            val registry = CapabilityRegistry(mapOf(CapabilityRegistry.DEVICE_TASK to coordinator))
+            val registry = CapabilityRegistry(mapOf(CapabilityRegistry.DEVICE_TASK to coordinator), BundledCapabilities.definitions)
             val goal = checkNotNull(args.getString("goal"))
             val id = UUID.randomUUID().toString()
             val reporter =

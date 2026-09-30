@@ -7,8 +7,15 @@ contracts. [Operations](operations.md) owns build, release, and verification ste
 
 ## Runtime and ownership
 
-EVA is a native Kotlin/Compose Android app. Most code lives in one `:app` module;
-packages separate responsibilities without requiring a module for every interface.
+EVA is a native Kotlin/Compose Android app. Platform-neutral code lives in the
+Kotlin/JVM `:eva-core` module: capability registry, dispatcher, grants and extension
+runtime, declarative packages, conversation threads and turns, prompt and wording,
+model providers, memory, and direct screen actions. `:app` holds everything that needs
+Android: activities and UI, voice media, the assistant surface, native phone adapters,
+the Android extension transport, persistence, and settings. It supplies the native
+tool definitions (`BundledCapabilities`) and storage to the core. Package names are
+the same in both modules; a class's module follows from whether it needs Android.
+Another host, such as a desktop app, builds on `:eva-core` the same way.
 `device-control-core` holds the Android-free device protocol and task/backend contracts.
 `device-control-portal` implements same-phone Portal HTTP input independently of Android
 framework types; the app includes it for instrumented backend verification.

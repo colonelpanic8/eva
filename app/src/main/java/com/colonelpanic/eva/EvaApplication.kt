@@ -247,7 +247,10 @@ class EvaApplication :
 
     val memories by lazy {
         com.colonelpanic.eva.data
-            .MemoryStore(this)
+            .MemoryStore(
+                com.colonelpanic.eva.data
+                    .AndroidMemoryFiles(filesDir),
+            )
     }
 
     val deviceTasks by lazy {
@@ -484,6 +487,7 @@ class EvaApplication :
                     CapabilityRegistry.UI_NAVIGATE to ScreenActions.Operation.NAVIGATE,
                 ).forEach { (id, operation) -> put(id, screenActions.backend(operation)) }
             },
+            com.colonelpanic.eva.capability.BundledCapabilities.definitions,
         )
     }
     private val extensionScope =

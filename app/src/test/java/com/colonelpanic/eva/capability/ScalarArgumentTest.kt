@@ -15,6 +15,7 @@ class ScalarArgumentTest {
     private val registry =
         CapabilityRegistry(
             BundledCapabilities.definitions.associate { it.id to RecordingBackend() },
+            BundledCapabilities.definitions,
         )
 
     private fun proposal(
