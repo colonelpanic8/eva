@@ -49,7 +49,9 @@ class OpenAiResponsesProvider(
      * the credentials work and the chosen model exists before anything is claimed.
      */
     override suspend fun open(request: SessionOpenRequest): ConversationSession {
-        require(request.catalog.tools.size <= CatalogAdmission.LIMIT)
+        require(request.catalog.tools.size <= CatalogAdmission.LIMIT) {
+            "The session offers ${request.catalog.tools.size} tools, but at most ${CatalogAdmission.LIMIT} are allowed."
+        }
         request.catalog.tools.forEach { ToolSchema.check(it.inputSchema) }
         val known = catalog.load(access).values.flatten()
         check(known.isEmpty() || model in known) {
@@ -236,7 +238,7 @@ private class OpenAiResponsesSession(
 
     override suspend fun submit(input: ConversationInput) {
         check(buffered == null)
-        require(input.text.isNotBlank() && input.text.length <= 4000)
+        require(input.text.isNotBlank() && input.text.length <= 4000) { "A request must be 1 to 4,000 characters." }
         buffered = input
     }
 

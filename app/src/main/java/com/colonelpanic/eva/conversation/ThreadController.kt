@@ -192,18 +192,24 @@ class ThreadController(
     private fun phoneTools(
         snapshot: CapabilityRegistry.Snapshot,
         voice: Boolean,
-    ) = com.colonelpanic.eva.capability.CatalogAdmission
-        .select(
-            snapshot.catalog.filterNot {
-                it.id in hiddenCapabilities()
-            },
-            if (voice) 2 else 0,
-        ).admitted
-        .map { definition ->
-            val tool = ProviderToolDefinition(definition.id, definition.title, definition.modelDescription(), definition.inputSchema)
-            // An extension's own words are untrusted data; only EVA's tools take followed wording.
-            if (definition.source == null) wording().describe(tool) else tool
-        }
+    ): List<ProviderToolDefinition> {
+        val offered = snapshot.catalog.filterNot { it.id in hiddenCapabilities() }
+        val controls =
+            if (voice) {
+                com.colonelpanic.eva.capability.CatalogAdmission
+                    .voiceControls(offered)
+            } else {
+                0
+            }
+        return com.colonelpanic.eva.capability.CatalogAdmission
+            .select(offered, controls)
+            .admitted
+            .map { definition ->
+                val tool = ProviderToolDefinition(definition.id, definition.title, definition.modelDescription(), definition.inputSchema)
+                // An extension's own words are untrusted data; only EVA's tools take followed wording.
+                if (definition.source == null) wording().describe(tool) else tool
+            }
+    }
 
     /**
      * What each source offering tools on this connection says about how they fit together. It is
