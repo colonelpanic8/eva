@@ -250,24 +250,62 @@ class EvaApplication :
             .DeviceTaskCoordinator(unavailable = ::deviceTaskUnavailableReason) { createDeviceTaskAgent() }
     }
 
-    private suspend fun deviceTaskUnavailableReason(): String? =
-        when {
-            !capabilities.screenControlEnabled -> {
-                "Screen control is switched off in EVA's settings."
-            }
+    private suspend fun deviceTaskUnavailableReason(): String? {
+        if (!capabilities.screenControlEnabled) return "Screen control is switched off in EVA's settings."
+        val problems = mutableListOf<String>()
+        for (backend in capabilities.deviceTask.backends) {
+            val problem = backendProblem(backend) ?: return null
+            problems += "${backendLabel(backend)}: $problem"
+        }
+        return "No device-task backend is ready. ${problems.joinToString(" ")}"
+    }
 
-            capabilities.deviceTask.backend == "shizuku" -> {
-                deviceControlHost?.unavailableReason() ?: if (deviceControlHost == null) SCREEN_CONTROL_API else null
-            }
+    private suspend fun backendProblem(backend: String): String? =
+        when (backend) {
+            "portal" -> portalProblem()
+            else -> deviceControlHost?.unavailableReason() ?: if (deviceControlHost == null) SCREEN_CONTROL_API else null
+        }
 
-            capabilities.portalToken() == null -> {
-                "Provision the Portal token in EVA's Screen control settings."
-            }
+    private fun backendLabel(backend: String) = if (backend == "portal") "Portal" else "Shizuku"
 
-            else -> {
+    private val portalHttp by lazy { okhttp3.OkHttpClient() }
+
+    private suspend fun portalProblem(): String? {
+        val token = capabilities.portalToken() ?: return "Provision the Portal token in EVA's Screen control settings."
+        val health =
+            com.colonelpanic.eva.devicecontrol.portal
+                .PortalClient(capabilities.deviceTask.portalPort, { token }, portalHttp)
+                .health()
+        return when (health) {
+            com.colonelpanic.eva.devicecontrol.portal.PortalHealth.READY -> {
                 null
             }
+
+            com.colonelpanic.eva.devicecontrol.portal.PortalHealth.UNAUTHORIZED -> {
+                "Portal rejected EVA's token. Save Portal's current token in EVA's Screen control settings."
+            }
+
+            com.colonelpanic.eva.devicecontrol.portal.PortalHealth.UNREACHABLE -> {
+                "Portal is not running. Turn on Portal's accessibility service."
+            }
         }
+    }
+
+    val screenControl by lazy {
+        com.colonelpanic.eva.devicecontrol.ScreenControlMonitor(
+            enabled = { capabilities.screenControlEnabled },
+            backends = { capabilities.deviceTask.backends },
+            problem = { backend ->
+                if (backend == "portal") {
+                    portalProblem()
+                } else {
+                    val host = deviceControlHost
+                    if (host == null) SCREEN_CONTROL_API else host.accessStatus().takeUnless { it == DeviceControlHost.ALLOWED }
+                }
+            },
+            label = ::backendLabel,
+        )
+    }
 
     internal fun createDeviceTaskAgent(
         onDeviceTiming: (com.colonelpanic.eva.devicecontrol.portal.ActionTiming) -> Unit = {},
@@ -277,34 +315,33 @@ class EvaApplication :
     ): com.colonelpanic.eva.devicecontrol.worker.TextTaskAgent {
         check(capabilities.screenControlEnabled) { "Screen control is disabled." }
         val options = capabilities.deviceTask
-        val backend: com.colonelpanic.eva.devicecontrol.DeviceBackend =
-            when (options.backend) {
-                "portal" -> {
-                    com.colonelpanic.eva.devicecontrol.portal.PortalBackend(
-                        com.colonelpanic.eva.devicecontrol.portal.PortalClient(
-                            port = options.portalPort,
-                            token = { capabilities.portalToken() ?: error("Provision the Portal token in settings.") },
-                        ),
-                        launchAliases = options.launchAliases,
-                        timing = onDeviceTiming,
-                    )
-                }
-
-                "shizuku" -> {
-                    val host = checkNotNull(deviceControlHost) { SCREEN_CONTROL_API }
-                    com.colonelpanic.eva.devicecontrol.portal.PortalBackend(
-                        com.colonelpanic.eva.devicecontrol
-                            .ShizukuPortalTransport(host),
-                        launchAliases = options.launchAliases,
-                        timing = onDeviceTiming,
-                        backend = "shizuku",
-                    )
-                }
-
-                else -> {
-                    error("Unknown device backend.")
-                }
-            }
+        val backend =
+            com.colonelpanic.eva.devicecontrol.PreferredDeviceBackend(
+                options.backends.map { name ->
+                    com.colonelpanic.eva.devicecontrol.PreferredDeviceBackend.Candidate(
+                        backendLabel(name),
+                        problem = { backendProblem(name) },
+                    ) {
+                        val transport =
+                            if (name == "portal") {
+                                com.colonelpanic.eva.devicecontrol.portal.PortalClient(
+                                    port = options.portalPort,
+                                    token = { capabilities.portalToken() ?: error("Provision the Portal token in settings.") },
+                                )
+                            } else {
+                                com.colonelpanic.eva.devicecontrol.ShizukuPortalTransport(
+                                    checkNotNull(deviceControlHost) { SCREEN_CONTROL_API },
+                                )
+                            }
+                        com.colonelpanic.eva.devicecontrol.portal.PortalBackend(
+                            transport,
+                            launchAliases = options.launchAliases,
+                            timing = onDeviceTiming,
+                            backend = name,
+                        )
+                    }
+                },
+            )
         return com.colonelpanic.eva.devicecontrol.worker.TextTaskAgent(
             backend,
             decorateModel(

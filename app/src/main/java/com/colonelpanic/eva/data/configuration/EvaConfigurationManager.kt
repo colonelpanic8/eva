@@ -581,9 +581,7 @@ class EvaConfigurationManager(
         val messaging = app.messagingSettings.state.value
         val observedCredentialRefs =
             buildList {
-                if (app.capabilities.deviceTask.backend ==
-                    "portal"
-                ) {
+                if ("portal" in app.capabilities.deviceTask.backends) {
                     add(SecretReference("device/portal", "portal-bearer", "http://127.0.0.1:${app.capabilities.deviceTask.portalPort}"))
                 }
                 if (app.settings.apiKey() != null) add(SecretReference(OPENAI_REF, "openai-api-key"))

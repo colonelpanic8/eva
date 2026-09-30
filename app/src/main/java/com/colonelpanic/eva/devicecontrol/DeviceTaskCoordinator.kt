@@ -86,7 +86,7 @@ class DeviceTaskCoordinator(
                     lease.release(proposal.callId)
                     return ExecutionOutcome(
                         InvocationStatus.NOT_EXECUTED,
-                        "Device-task setup is unavailable. Check backend and model credentials.",
+                        "Device-task setup is unavailable: ${e.message ?: e.javaClass.simpleName}",
                     )
                 }
             }

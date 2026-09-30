@@ -474,7 +474,7 @@ class ConfigurationCompositionTest {
                     screenControl = false,
                     deviceTask =
                         DeviceTaskConfiguration(
-                            backend = "shizuku",
+                            backends = listOf("shizuku"),
                             portalPort = 8123,
                             model = "worker-test",
                             maxSteps = 17,

@@ -101,6 +101,27 @@ class PortalClientTest {
                 server.stop(0)
             }
         }
+
+    @Test
+    fun healthSeparatesAStoppedServiceFromARejectedToken() =
+        runBlocking {
+            val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+            server.createContext("/version") { exchange ->
+                val authorized = exchange.requestHeaders.getFirst("Authorization") == "Bearer good"
+                val bytes = (if (authorized) """{"status":"success","result":"0.7.25"}""" else """{"status":"error"}""").toByteArray()
+                exchange.sendResponseHeaders(if (authorized) 200 else 401, bytes.size.toLong())
+                exchange.responseBody.use { it.write(bytes) }
+            }
+            server.start()
+            val port = server.address.port
+            try {
+                assertEquals(PortalHealth.READY, PortalClient(port, { "good" }).health())
+                assertEquals(PortalHealth.UNAUTHORIZED, PortalClient(port, { "stale" }).health())
+            } finally {
+                server.stop(0)
+            }
+            assertEquals(PortalHealth.UNREACHABLE, PortalClient(port, { "good" }).health())
+        }
 }
 
 private fun PrimitivePlanner.keyForTest() = PortalCommand("keyboard/key", buildJsonObject { put("key_code", 66) })

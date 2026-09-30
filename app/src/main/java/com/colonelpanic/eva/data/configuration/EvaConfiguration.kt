@@ -975,7 +975,8 @@ object EvaConfigurationCodec {
 
 @Serializable
 data class DeviceTaskConfiguration(
-    val backend: String = "portal",
+    /** Preference order; a task uses the first that is ready and falls back before its first action. */
+    val backends: List<String> = BACKENDS,
     val portalPort: Int = 8080,
     val credential: String = "device/portal",
     val model: String = "gpt-6-sol",
@@ -990,7 +991,9 @@ data class DeviceTaskConfiguration(
     val launchAliases: Map<String, List<String>> = com.colonelpanic.eva.devicecontrol.worker.DEFAULT_LAUNCH_ALIASES,
 ) {
     init {
-        require(backend in setOf("portal", "shizuku"))
+        require(backends.isNotEmpty() && backends.distinct() == backends && backends.all { it in BACKENDS }) {
+            "Device task backends must be a non-empty list drawn from ${BACKENDS.joinToString()}."
+        }
         require(portalPort in 1..65535 && credential == "device/portal")
         require(model.isNotBlank() && model.length <= 100 && reasoningEffort in setOf("low", "medium", "high"))
         require(maxSteps in 1..200 && maxMillis in 1..600_000)
@@ -1004,5 +1007,9 @@ data class DeviceTaskConfiguration(
             maxScreenshots,
             launchAliases,
         )
+    }
+
+    companion object {
+        val BACKENDS = listOf("portal", "shizuku")
     }
 }

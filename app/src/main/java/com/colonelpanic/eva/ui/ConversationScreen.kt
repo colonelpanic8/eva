@@ -53,6 +53,7 @@ import com.colonelpanic.eva.R
 import com.colonelpanic.eva.conversation.ConversationState
 import com.colonelpanic.eva.conversation.ProviderStatus
 import com.colonelpanic.eva.conversation.groups
+import com.colonelpanic.eva.devicecontrol.ScreenControlStatus
 
 /**
  * The conversation, and almost nothing else. Configuration lives in settings, a live
@@ -77,6 +78,8 @@ internal fun ConversationScreen(
     denial: MicrophoneDenial?,
     onRetryMicrophone: () -> Unit,
     onDismissDenial: () -> Unit,
+    screenControl: ScreenControlStatus = ScreenControlStatus(),
+    onOpenScreenControl: () -> Unit = {},
 ) {
     var draft by rememberSaveable { mutableStateOf("") }
     val storageFailed = state.errorMessage != null
@@ -107,6 +110,7 @@ internal fun ConversationScreen(
                     }
                 },
                 navigationIcon = { MenuButton(onOpenDrawer) },
+                actions = { ScreenControlChip(screenControl, state.deviceTaskActive, onOpenScreenControl) },
                 colors = evaTopAppBarColors(),
             )
         },
@@ -125,7 +129,7 @@ internal fun ConversationScreen(
                     )
                 }
                 state.providerMessage?.let { ProviderMessage(it) }
-                if (state.working) WorkingRow(onStop = onStopTask)
+                if (state.working) WorkingRow(onStop = onStopTask, progress = state.deviceTaskProgress)
                 if (!inSession) {
                     ConnectBar(
                         state = state,

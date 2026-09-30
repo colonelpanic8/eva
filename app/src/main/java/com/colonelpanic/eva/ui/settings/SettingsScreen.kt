@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
@@ -27,11 +28,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -59,7 +64,17 @@ fun SettingsScreen(
     state: SettingsUiState,
     actions: SettingsActions,
     onOpenDrawer: () -> Unit,
+    showScreenControl: Boolean = false,
+    onScreenControlShown: () -> Unit = {},
 ) {
+    val scroll = rememberScrollState()
+    var screenControlTop by remember { mutableIntStateOf(-1) }
+    LaunchedEffect(showScreenControl, screenControlTop) {
+        if (showScreenControl && screenControlTop >= 0) {
+            scroll.animateScrollTo(screenControlTop)
+            onScreenControlShown()
+        }
+    }
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
@@ -75,7 +90,7 @@ fun SettingsScreen(
                 Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
-                    .verticalScroll(rememberScrollState()),
+                    .verticalScroll(scroll),
         ) {
             ConfigurationSection(state, actions)
             SettingsDivider()
@@ -86,7 +101,9 @@ fun SettingsScreen(
             AssistantSection(state, actions)
             SettingsDivider()
             MediaSection(state, actions)
-            ScreenControlSection(state, actions)
+            Box(Modifier.onGloballyPositioned { screenControlTop = it.positionInParent().y.toInt() }) {
+                ScreenControlSection(state, actions)
+            }
             SettingsDivider()
             SpotifySection(state, actions)
             SettingsDivider()
@@ -379,28 +396,25 @@ private fun ScreenControlSection(
         SettingsSwitchRow(
             title = "Let EVA read and tap the screen",
             supporting =
-                "Device tasks use the selected backend. Direct screen tools use Shizuku. " +
+                "Device tasks use the backends below. Direct screen tools use Shizuku. " +
                     "Off removes screen control from the model’s tool catalog.",
             checked = state.screenControlEnabled,
             onCheckedChange = actions.onScreenControlChange,
         )
-        if (state.canControlScreen && state.shizukuAccess != null) {
+        if (state.canControlScreen && state.shizukuAccess != null && state.shizukuAccess != DeviceControlHost.ALLOWED) {
             SettingsBlock {
                 Text(
                     state.shizukuAccess,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (state.shizukuAccess != DeviceControlHost.ALLOWED) {
-                    TextButton(onClick = actions.onAllowShizuku) { Text("Allow Shizuku access") }
-                }
+                TextButton(onClick = actions.onAllowShizuku) { Text("Allow Shizuku access") }
             }
         }
-        SettingsSwitchRow(
-            title = "Use Portal for device tasks",
-            supporting = "Portal runs on this phone. Off uses EVA's Shizuku helper, which needs no other app.",
-            checked = state.deviceTask.backend == "portal",
-            onCheckedChange = { actions.onDeviceTaskChange(state.deviceTask.copy(backend = if (it) "portal" else "shizuku")) },
+        DeviceTaskBackendList(
+            backends = state.deviceTask.backends,
+            problems = state.screenControlStatus.routes.associate { it.name to it.problem },
+            onChange = { actions.onDeviceTaskChange(state.deviceTask.copy(backends = it)) },
         )
         var token by remember { mutableStateOf("") }
         OutlinedTextField(

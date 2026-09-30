@@ -113,6 +113,7 @@ internal fun ConnectBar(
 internal fun WorkingRow(
     onStop: () -> Unit,
     modifier: Modifier = Modifier,
+    progress: String? = null,
 ) {
     Row(
         modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp),
@@ -120,7 +121,7 @@ internal fun WorkingRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
-            text = "EVA is working on the last request",
+            text = progress ?: "EVA is working on the last request",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f),

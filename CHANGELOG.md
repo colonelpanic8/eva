@@ -4,6 +4,16 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Added
+
+- The conversation bar always shows whether each screen control backend is ready, and a spinner while a device task runs. Tap it to open Screen control settings, which show each backend's problem.
+- Device tasks take an ordered list of backends instead of one. EVA uses the first ready backend and falls back to the next if one cannot read the screen, as long as no action has run. Reorder or disable backends in Screen control settings, or set `capabilities.deviceTask.backends`, which replaces `backend`.
+
+### Fixed
+
+- A device task that cannot run now says why. Examples: Portal is not running, Portal rejected the token, or the real error behind a failure. Before, it reported only `worker_error`.
+- The red phase label, such as "THINKING", no longer stays after a device task ends. Task progress now appears in the working row.
+
 ## [0.48.1] - 2026-10-01
 
 ### Fixed

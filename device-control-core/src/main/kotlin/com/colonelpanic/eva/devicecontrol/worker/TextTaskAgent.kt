@@ -474,8 +474,9 @@ class TextTaskAgent(
         } catch (e: CancellationException) {
             currentCoroutineContext().ensureActive()
             return result(if (isStopped) TaskStatus.CANCELLED else TaskStatus.FAILED, if (isStopped) "cancelled" else "timeout")
-        } catch (_: Exception) {
-            return result(TaskStatus.FAILED, "worker_error")
+        } catch (e: Exception) {
+            val cause = e.message?.takeIf { it.isNotBlank() }?.let { "${e.javaClass.simpleName}: $it" } ?: e.javaClass.simpleName
+            return result(TaskStatus.FAILED, "worker_error: ${cause.take(MAX_ERROR_CHARS)}")
         } finally {
             model.close()
         }
@@ -566,6 +567,7 @@ class TextTaskAgent(
     )
 
     companion object {
+        private const val MAX_ERROR_CHARS = 200
         private val FILLER =
             "the and you your for with was are has have this that from not but its will been is on in at of to a an it i my me what when where who which how does did time tell find according page open chrome app screen phone please can"
                 .split(

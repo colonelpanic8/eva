@@ -38,13 +38,15 @@ internal class DegradedSnapshot : Exception("Portal returned a cached tree")
 
 class NoActiveWindow : Exception("No active window")
 
+enum class PortalHealth { READY, UNAUTHORIZED, UNREACHABLE }
+
 class CaptureRejected(
     val secure: Boolean,
 ) : Exception("Portal refused the screenshot")
 
 /** Same-phone HTTP only; credentials are read at request time and never appear in a URL. */
 class PortalClient(
-    port: Int = 8080,
+    private val port: Int = 8080,
     private val token: () -> String,
     client: OkHttpClient = OkHttpClient(),
 ) : PortalTransport {
@@ -63,6 +65,54 @@ class PortalClient(
             .readTimeout(10, TimeUnit.SECONDS)
             .callTimeout(12, TimeUnit.SECONDS)
             .build()
+
+    /** A short authenticated read, so a stopped service or rejected token shows before a task starts. */
+    suspend fun health(): PortalHealth {
+        val credential = token().trim()
+        if (credential.isBlank()) return PortalHealth.UNAUTHORIZED
+        val probe =
+            http
+                .newBuilder()
+                .connectTimeout(HEALTH_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
+                .callTimeout(HEALTH_TIMEOUT_MILLIS * 2, TimeUnit.MILLISECONDS)
+                .build()
+        val call =
+            probe.newCall(
+                Request
+                    .Builder()
+                    .url(checkNotNull(origin.resolve("/version")))
+                    .header("Authorization", "Bearer $credential")
+                    .build(),
+            )
+        return suspendCancellableCoroutine { continuation ->
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(
+                object : Callback {
+                    override fun onFailure(
+                        call: Call,
+                        e: IOException,
+                    ) {
+                        continuation.resumeWith(Result.success(PortalHealth.UNREACHABLE))
+                    }
+
+                    override fun onResponse(
+                        call: Call,
+                        response: Response,
+                    ) {
+                        val health =
+                            response.use {
+                                when {
+                                    it.isSuccessful -> PortalHealth.READY
+                                    it.code == 401 || it.code == 403 -> PortalHealth.UNAUTHORIZED
+                                    else -> PortalHealth.UNREACHABLE
+                                }
+                            }
+                        continuation.resumeWith(Result.success(health))
+                    }
+                },
+            )
+        }
+    }
 
     override suspend fun state(): JsonObject {
         val value =
@@ -136,7 +186,7 @@ class PortalClient(
                         call: Call,
                         e: IOException,
                     ) {
-                        continuation.resumeWithException(IOException("Portal transport failed"))
+                        continuation.resumeWithException(IOException("Portal did not respond on port $port (${e.javaClass.simpleName})"))
                     }
 
                     override fun onResponse(
@@ -161,6 +211,7 @@ class PortalClient(
 
     internal companion object {
         const val MAX_RESPONSE_BYTES = 24L * 1024 * 1024
+        const val HEALTH_TIMEOUT_MILLIS = 750L
         val PNG_SIGNATURE = byteArrayOf(-119, 80, 78, 71, 13, 10, 26, 10)
 
         /** Portal 0.7.25 reads Content-Length as characters, so request bodies must be ASCII. */
