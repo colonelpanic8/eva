@@ -88,6 +88,31 @@ the extension result limit, so provider truncation notes survive. Structured dat
 that would not fit is omitted whole rather than cut. Receipts persist the data
 beside the text, and a resumed conversation replays both.
 
+## Relationship to MCP
+
+EVA's extension formats are MCP plus an EVA profile, not a separate tool ecosystem.
+MCP supplies the vocabulary: every capability's `tool` is an MCP tool object, and
+results carry MCP `content` and `structuredContent`. EVA adds only what MCP does
+not express and what the assistant needs to act safely:
+
+| EVA addition | Why MCP alone is not enough |
+| --- | --- |
+| `effects` and grants bound to an approved contract digest | MCP annotations are hints for clients; EVA needs an authority for what may run without asking |
+| Receipt states (`handed_off`, `not_executed`, `unknown`) and no retry after uncertainty | An MCP result is success or `isError`; a launched intent, a refused call, and a lost reply are different outcomes |
+| Declarative bindings (intent, content provider, HTTP) | MCP assumes someone writes a server; bindings reach existing app interfaces without new code |
+| The installed-app AIDL transport | Android apps cannot spawn each other over stdio, background localhost servers are killed, and neither identifies the caller; Binder identifies both sides and starts the provider cold |
+
+Bindings and the AIDL service are therefore platform transports that produce
+MCP-shaped tools under EVA's execution semantics. That is the current contract.
+
+The intended direction, not yet implemented, is to publish those semantics as a
+profile under a documented `_meta` namespace that any MCP server could adopt, and to
+add a general MCP client adapter. A plain MCP server's tools would be treated as
+`effects: unknown`, so each needs its own grant, with its annotations kept as hints.
+A non-Android host would use that MCP client as its main extension path and supply
+its own transports (such as URL handlers, D-Bus, or command-line bindings) where
+Android uses intents and content providers.
+
 ## Declarative packages
 
 Packages are single JSON files. A catalog is a Git repository whose `packages/`
