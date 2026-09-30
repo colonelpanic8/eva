@@ -32,5 +32,9 @@ class CatalogAdmissionTest {
         assertTrue(reasons.getValue(extensions[37].id).contains("Available in typed"))
         assertTrue(reasons.getValue(extensions[38].id).startsWith("Unavailable:"))
         assertTrue(CatalogAdmission.overflowReasons((bundled + extensions).take(62)).isEmpty())
+
+        val withTasks = listOf(definition(CapabilityRegistry.DEVICE_TASK)) + bundled + extensions
+        assertEquals(4, CatalogAdmission.voiceControls(withTasks))
+        assertTrue(CatalogAdmission.overflowReasons(withTasks).getValue(extensions[34].id).contains("4 of 64"))
     }
 }

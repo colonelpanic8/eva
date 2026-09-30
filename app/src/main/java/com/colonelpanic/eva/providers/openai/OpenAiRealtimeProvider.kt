@@ -55,7 +55,9 @@ class OpenAiRealtimeProvider(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ConversationProvider {
     override suspend fun open(request: SessionOpenRequest): ConversationSession {
-        require(request.catalog.tools.size <= CatalogAdmission.LIMIT)
+        require(request.catalog.tools.size <= CatalogAdmission.LIMIT) {
+            "The session offers ${request.catalog.tools.size} tools, but at most ${CatalogAdmission.LIMIT} are allowed."
+        }
         require(
             request.catalog.tools
                 .map { it.capabilityId }
@@ -332,7 +334,7 @@ private class OpenAiRealtimeSession(
 
     override suspend fun submit(input: ConversationInput) {
         check(sessionId != null && buffered == null && activeInput == null)
-        require(input.text.isNotBlank() && input.text.length <= 4000)
+        require(input.text.isNotBlank() && input.text.length <= 4000) { "A request must be 1 to 4,000 characters." }
         buffered = input
     }
 

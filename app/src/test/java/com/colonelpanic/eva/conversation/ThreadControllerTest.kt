@@ -11,6 +11,7 @@ import com.colonelpanic.eva.capability.CapabilityDefinition
 import com.colonelpanic.eva.capability.CapabilityDispatcher
 import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.capability.CapabilitySource
+import com.colonelpanic.eva.capability.CatalogAdmission
 import com.colonelpanic.eva.capability.ExecutionBackend
 import com.colonelpanic.eva.capability.ExecutionOutcome
 import com.colonelpanic.eva.capability.InvocationStatus
@@ -312,6 +313,39 @@ class ThreadControllerTest {
                 )
 
             override suspend fun perform(action: com.colonelpanic.eva.devicecontrol.proto.Action) = error("No action expected")
+        }
+
+    @Test
+    fun `a full catalog leaves room for every voice control`() =
+        runTest {
+            val extensions =
+                List(CatalogAdmission.LIMIT) { index ->
+                    com.colonelpanic.eva.capability.CapabilityDefinition(
+                        "extension.example.action_${index.toString().padStart(2, '0')}",
+                        "Action $index",
+                        "Action $index",
+                        com.colonelpanic.eva.capability.extensions.extensionSchema,
+                    )
+                }
+            val coordinator =
+                com.colonelpanic.eva.devicecontrol
+                    .DeviceTaskCoordinator { error("No task expected") }
+            val registry =
+                CapabilityRegistry(
+                    mapOf(CapabilityRegistry.DEVICE_TASK to coordinator) +
+                        extensions.associate { it.id to backend { ExecutionOutcome(InvocationStatus.COMPLETED, "done") } },
+                    BundledCapabilities.definitions.filter { it.id == CapabilityRegistry.DEVICE_TASK } + extensions,
+                )
+            val voice = FakeProvider()
+            val controller = controller(voice, registry = registry, deviceTasks = coordinator, media = { VoiceMedia() })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            val offered =
+                voice.request.catalog.tools
+                    .map { it.capabilityId }
+            assertEquals(CatalogAdmission.LIMIT, offered.size)
+            assertTrue(offered.containsAll(listOf(CapabilityRegistry.DEVICE_TASK, "eva.device.task.revise", "eva.device.task.stop")))
         }
 
     @Test

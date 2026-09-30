@@ -33,7 +33,9 @@ class BrokerConversationProvider(
 ) : ConversationProvider {
     override suspend fun open(request: SessionOpenRequest): ConversationSession {
         check(request.continuation == null) { "The paired host does not support continuing a turn." }
-        require(request.catalog.tools.size <= CatalogAdmission.LIMIT)
+        require(request.catalog.tools.size <= CatalogAdmission.LIMIT) {
+            "The session offers ${request.catalog.tools.size} tools, but at most ${CatalogAdmission.LIMIT} are allowed."
+        }
         require(
             request.catalog.tools
                 .map { it.capabilityId }
@@ -272,7 +274,9 @@ private class BrokerSession(
 
     override suspend fun submit(input: ConversationInput) {
         check(sessionId != null && !closed.get() && buffered == null && active == null)
-        require(input.text.isNotBlank() && input.text.length <= 1000 && input.id.length in 1..128)
+        require(input.text.isNotBlank() && input.text.length <= 1000 && input.id.length in 1..128) {
+            "A request must be 1 to 1,000 characters."
+        }
         buffered = input
     }
 
