@@ -38,10 +38,12 @@ internal object PortalState {
     private const val MAX_TEXT_CHARS = 500
 
     /**
-     * The focused field's whole value, up to the longest text entry the backend accepts, so read-back
-     * can confirm it. Only one node is focused, which keeps the reply within Binder's limit.
+     * Editable fields report their whole value, up to the longest text entry the backend accepts, so
+     * read-back can confirm it even after focus moves on. The shared budget keeps a form of many long
+     * fields within Binder's reply limit; fields past it are cut like other text.
      */
     private const val MAX_FIELD_CHARS = 10_000
+    const val FIELD_BUDGET_CHARS = 60_000
     private const val POLL_MILLIS = 100L
 
     fun capture(
@@ -55,7 +57,7 @@ internal object PortalState {
         }
         val (width, height) = screenSize(root)
         return buildJsonObject {
-            if (root != null) put("a11y_tree", node(root, 0, intArrayOf(0)))
+            if (root != null) put("a11y_tree", node(root, 0, intArrayOf(0), intArrayOf(FIELD_BUDGET_CHARS)))
             put(
                 "phone_state",
                 buildJsonObject {
@@ -83,23 +85,30 @@ internal object PortalState {
         }
     }
 
+    internal fun reportedText(
+        text: String,
+        editable: Boolean,
+        fieldBudget: IntArray,
+    ): String {
+        if (!editable || text.length <= MAX_TEXT_CHARS || text.length > minOf(MAX_FIELD_CHARS, fieldBudget[0])) {
+            return text.take(MAX_TEXT_CHARS)
+        }
+        fieldBudget[0] -= text.length
+        return text
+    }
+
     private fun node(
         node: AccessibilityNodeInfo,
         depth: Int,
         count: IntArray,
+        fieldBudget: IntArray,
     ): JsonObject {
         count[0]++
         val bounds = Rect()
         node.getBoundsInScreen(bounds)
         return buildJsonObject {
             put("className", node.className?.toString().orEmpty())
-            put(
-                "text",
-                node.text
-                    ?.toString()
-                    .orEmpty()
-                    .take(if (node.isEditable && node.isFocused) MAX_FIELD_CHARS else MAX_TEXT_CHARS),
-            )
+            put("text", reportedText(node.text?.toString().orEmpty(), node.isEditable, fieldBudget))
             put(
                 "contentDescription",
                 node.contentDescription
@@ -142,7 +151,7 @@ internal object PortalState {
                     if (depth < MAX_DEPTH) {
                         for (index in 0 until node.childCount) {
                             if (count[0] >= MAX_NODES) break
-                            node.getChild(index)?.let { add(node(it, depth + 1, count)) }
+                            node.getChild(index)?.let { add(node(it, depth + 1, count, fieldBudget)) }
                         }
                     }
                 }

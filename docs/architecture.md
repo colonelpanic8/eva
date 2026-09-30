@@ -332,8 +332,9 @@ restart. A tap activates a clickable element and touches anything else at its ce
 so a label inside a row presses the row while the backend rechecks the label that
 was named. A scroll without an element binds to the largest scrollable one; with
 none, it proceeds only while the screen still matches the one the model saw, and
-otherwise returns the new screen. The Shizuku helper reports the focused field's
-text in full (up to 10,000 characters) so long entries read back. `navigate` binds to a screen read in the same call. Each tool is its own
+otherwise returns the new screen. The Shizuku helper reports editable fields' text in
+full (up to 10,000 characters each, 60,000 across the screen) so long entries read
+back even after focus moves. `navigate` binds to a screen read in the same call. Each tool is its own
 dispatched, journaled capability under the device lease and turn budget: a delivered
 input is COMPLETED only when the backend reports success, delivered input that did
 not take effect, such as text that does not read back, is
