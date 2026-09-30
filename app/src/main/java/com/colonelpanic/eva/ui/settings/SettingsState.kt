@@ -69,6 +69,9 @@ data class SettingsUiState(
     val canControlScreen: Boolean = false,
     val shizukuAccess: String? = null,
     val screenControlEnabled: Boolean = true,
+    val screenControlStatus: com.colonelpanic.eva.devicecontrol.ScreenControlStatus =
+        com.colonelpanic.eva.devicecontrol
+            .ScreenControlStatus(),
     val deviceTask: com.colonelpanic.eva.data.configuration.DeviceTaskConfiguration =
         com.colonelpanic.eva.data.configuration
             .DeviceTaskConfiguration(),

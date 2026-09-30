@@ -74,6 +74,20 @@ class TextTaskAgentTest {
             assertTrue(phone.actions.isEmpty())
         }
 
+    @Test fun backendFailureReportsItsCause() =
+        runTest {
+            val unreachable =
+                object : com.colonelpanic.eva.devicecontrol.DeviceBackend {
+                    override suspend fun observe(): Observation =
+                        throw java.io.IOException("Portal did not respond on port 8080 (ConnectException)")
+
+                    override suspend fun perform(action: com.colonelpanic.eva.devicecontrol.proto.Action): ActionResult = error("unused")
+                }
+            val result = TextTaskAgent(unreachable, WorkerModel { finish() }, wording).run("goal") {}
+            assertEquals(TaskStatus.FAILED, result.status)
+            assertEquals("worker_error: IOException: Portal did not respond on port 8080 (ConnectException)", result.summary)
+        }
+
     @Test fun stopCancelsInferenceBeforeAnyAction() =
         runTest {
             val entered = CompletableDeferred<Unit>()

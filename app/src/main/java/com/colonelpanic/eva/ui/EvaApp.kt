@@ -65,6 +65,7 @@ fun EvaApp(
     onDismissDenial: () -> Unit = {},
 ) {
     var destination by rememberSaveable { mutableStateOf(EvaDestination.CONVERSATION) }
+    var showScreenControl by rememberSaveable { mutableStateOf(false) }
     val uriHandler = LocalUriHandler.current
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -119,6 +120,11 @@ fun EvaApp(
                     denial = denial,
                     onRetryMicrophone = onRetryMicrophone,
                     onDismissDenial = onDismissDenial,
+                    screenControl = settings.screenControlStatus,
+                    onOpenScreenControl = {
+                        showScreenControl = true
+                        destination = EvaDestination.SETTINGS
+                    },
                 )
             }
 
@@ -147,6 +153,8 @@ fun EvaApp(
                     state = settings,
                     actions = settingsActions,
                     onOpenDrawer = { openDrawer() },
+                    showScreenControl = showScreenControl,
+                    onScreenControlShown = { showScreenControl = false },
                 )
             }
 

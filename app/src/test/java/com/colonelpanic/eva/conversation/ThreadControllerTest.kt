@@ -244,6 +244,8 @@ class ThreadControllerTest {
             provider.call("device", CapabilityRegistry.DEVICE_TASK, "goal" to "Open settings")
             runCurrent()
             entered.await()
+            runCurrent()
+            assertEquals(progressLabel(com.colonelpanic.eva.devicecontrol.TaskPhase.THINKING), controller.state.value.deviceTaskProgress)
             provider.channel.send(ProviderEvent.ResponseEnded(provider.input.id, "cancelled"))
             runCurrent()
             assertTrue(controller.state.value.working)
@@ -289,6 +291,7 @@ class ThreadControllerTest {
             )
             advanceUntilIdle()
             assertNull(coordinator.lease.owner)
+            assertNull(controller.state.value.deviceTaskProgress)
             assertEquals(InvocationStatus.NOT_EXECUTED, repository.history().single().status)
             assertEquals(TurnStatus.INTERRUPTED, store.turns(controller.state.value.threadId!!).single().status)
         }

@@ -268,7 +268,16 @@ same modules: `observe`, `act`, and an eval runner that reads voice-device-agent
 case files and applies the same resets and independent checkers. Its `--agent worker`
 mode waits for the OpenAI client to be extracted into a JVM module.
 
-Portal on the same phone is the default task backend. Its full typed action set
+Task backends are an ordered preference list, `[portal, shizuku]` by default.
+Admission skips backends that are not ready: Portal is probed with an authenticated
+`/version` request, and Shizuku with its binder and EVA's grant. A task is refused only
+when none is ready, with each backend's reason. `PreferredDeviceBackend` also falls
+back when the chosen backend cannot read the screen, but only until the first action;
+after that the task stays on that backend, so no mutation is repeated elsewhere. The
+conversation bar shows each backend's readiness, plus Shizuku for direct screen tools,
+refreshed every five seconds while EVA is in front, and a running task's phase.
+
+Portal on the same phone is the first default backend. Its full typed action set
 includes Unicode replace/append text, password redaction, screenshot PNGs, Enter
 for IME actions, URLs, and notifications. Mutating HTTP requests are not retried;
 loss after dispatch remains uncertain. A cancelled input drains its bounded
@@ -282,8 +291,7 @@ password field types characters with the virtual key map, so it rejects characte
 that map has no keys for. The helper keeps one UiAutomation connection across
 consecutive calls and releases it after 20 idle seconds. It connects and calls as shell,
 not as EVA's calling UID, because the platform lets only the connecting UID disconnect;
-a leaked connection blocks every later one. Both backends are checked
-for availability before a task is admitted.
+a leaked connection blocks every later one.
 
 The text-first worker executes one primitive per model turn, asks for missing or
 ambiguous choices, reports scroll progress, restricts reversals, detects repeated
@@ -340,7 +348,7 @@ the task ends. Both transports still reside in `:app`;
 extracting that transport, access contracts and credential injection remains the
 OpenAI-client branch's work before a JVM host can use this adapter.
 
-Backend, local Portal port, credential reference, launch aliases, model/effort and worker/context
+Backend preference, local Portal port, credential reference, launch aliases, model/effort and worker/context
 budgets live in portable `capabilities.deviceTask`. Settings edit that model;
 Portal's bearer token is Keystore-backed and excluded from shared configuration.
 Restore retains `device/portal` and reports local provisioning. Worker instructions,

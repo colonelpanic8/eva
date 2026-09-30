@@ -10,6 +10,8 @@ data class ConversationState(
     /** A turn task is running on the shown thread, attached or not. */
     val working: Boolean = false,
     val deviceTaskActive: Boolean = false,
+    /** The shown thread's running device task phase or step note; cleared when the task ends. */
+    val deviceTaskProgress: String? = null,
     val isLoading: Boolean = true,
     val isSubmitting: Boolean = false,
     val errorMessage: String? = null,

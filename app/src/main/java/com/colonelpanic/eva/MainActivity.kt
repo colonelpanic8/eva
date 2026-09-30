@@ -23,8 +23,10 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.colonelpanic.eva.adapters.android.ContentProviderAccess
 import com.colonelpanic.eva.adapters.android.EvaNotificationListener
 import com.colonelpanic.eva.adapters.android.MediaControlAccess
@@ -52,6 +54,7 @@ import com.colonelpanic.eva.ui.settings.PermissionStatus
 import com.colonelpanic.eva.ui.settings.SettingsActions
 import com.colonelpanic.eva.ui.settings.SettingsUiState
 import com.colonelpanic.eva.ui.theme.EvaTheme
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -266,6 +269,15 @@ class MainActivity : ComponentActivity() {
         val screenControl by eva.capabilities.screenControlFlow.collectAsStateWithLifecycle()
         val shizuku by shizukuAccess.collectAsStateWithLifecycle()
         LaunchedEffect(Unit) { eva.deviceControlHost?.let { shizukuAccess.value = it.accessStatus() } }
+        val screenControlStatus by eva.screenControl.status.collectAsStateWithLifecycle()
+        LaunchedEffect(screenControl, deviceTask, shizuku) {
+            repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                while (true) {
+                    eva.screenControl.refresh()
+                    delay(SCREEN_CONTROL_REFRESH_MILLIS)
+                }
+            }
+        }
         val extensions by eva.extensions.settings.collectAsStateWithLifecycle()
         val plugins by eva.pluginBrowser.state.collectAsStateWithLifecycle()
         val packages by eva.packageSettings.state.collectAsStateWithLifecycle()
@@ -326,6 +338,7 @@ class MainActivity : ComponentActivity() {
             canControlScreen = eva.deviceControlHost != null,
             shizukuAccess = shizuku,
             screenControlEnabled = screenControl,
+            screenControlStatus = screenControlStatus,
             deviceTask = deviceTask,
             spotifyClientId = spotifyClientId,
             spotifyAccount = spotifyAccount?.description,
@@ -468,7 +481,10 @@ class MainActivity : ComponentActivity() {
                 onOpenMediaControlSettings = ::openMediaControlSettings,
                 onScreenControlChange = eva.capabilities::saveScreenControl,
                 onDeviceTaskChange = eva.capabilities::saveDeviceTask,
-                onPortalToken = eva.capabilities::savePortalToken,
+                onPortalToken = { token ->
+                    eva.capabilities.savePortalToken(token)
+                    lifecycleScope.launch { eva.screenControl.refresh() }
+                },
                 onAllowShizuku = {
                     eva.deviceControlHost?.let { host -> lifecycleScope.launch { shizukuAccess.value = host.requestAccess() } }
                 },
@@ -586,3 +602,5 @@ class MainActivity : ComponentActivity() {
         super.onPause()
     }
 }
+
+private const val SCREEN_CONTROL_REFRESH_MILLIS = 5_000L

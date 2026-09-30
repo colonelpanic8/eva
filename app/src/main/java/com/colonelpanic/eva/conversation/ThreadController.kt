@@ -281,7 +281,7 @@ class ThreadController(
                 mutableState.update {
                     it.copy(
                         deviceTaskActive = owned != null,
-                        providerMessage = if (owned != null) owned.progress?.message ?: owned.progress?.phase?.name else it.providerMessage,
+                        deviceTaskProgress = owned?.progress?.let { progress -> progress.message ?: progressLabel(progress.phase) },
                     )
                 }
             }
@@ -1552,3 +1552,12 @@ class ThreadController(
         )
     }
 }
+
+internal fun progressLabel(phase: TaskPhase): String =
+    when (phase) {
+        TaskPhase.OBSERVING -> "Reading the screen…"
+        TaskPhase.THINKING -> "Deciding the next step…"
+        TaskPhase.ACTING -> "Acting on the screen…"
+        TaskPhase.NEEDS_INPUT -> "Waiting for your answer…"
+        TaskPhase.PROGRESS -> "Working on the screen…"
+    }

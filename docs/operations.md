@@ -230,6 +230,7 @@ Recorded checks from 2026-09-14:
 | Shizuku device control, Android 16/API 36 emulator | Observation, Unicode replacement, tap, post-action observation, service restart | Does not establish Android 17 physical-device compatibility |
 | Shizuku device-task backend, dedicated API 37 `sdk_gphone64_x86_64` emulator (port 5612), Shizuku 13.6.0 started over adb, 2026-09-28 | `everyRequiredActionRunsThroughShizuku` passed all 13 required action kinds against `PortalFixtureActivity`; access was granted through the new Screen control button | Emulator only; no model-driven task, physical phone or Wireless-debugging start |
 | Shizuku helper idle release, Pixel 11 Pro Fold API 37, Shizuku 13.6.0, EVA debug, 2026-10-01 | `helperReadsTheScreenAgainAfterItsIdleRelease` read the screen, waited past the 20 s idle release and read it again. Before the fix the second read failed: the idle disconnect ran as shell while the connection belonged to EVA's UID, so its UiAutomation stayed registered and every later connection was refused | Screen reads only; no model-driven task or input on the phone |
+| Screen control status and backend fallback, Pixel 11 Pro Fold API 37, signed 0.48.2 candidate, Portal 0.7.25, Shizuku 13.6.0, 2026-10-01 | The chip showed Portal and Shizuku ready. After Portal's accessibility service was turned off, it flagged Portal within one refresh and opened Screen control with the reason. With only `[portal]` usable, a task returned `Not run` with that reason. With `[portal, shizuku]` and Portal off, a typed "open the Clock app" task finished through the Shizuku helper. No phase label stayed after tasks ended | Fallback after the Portal probe passes but the first read fails is covered only by JVM tests |
 | Installed-extension transport, API 36 `google_apis` emulator, 2026-09-23, EVA `locked-extension-eva` debug re-signed with Mova's debug key, Mova `locked-extension-mova` debug | From EVA's UID, `InstalledExtensionDeviceTest` described Mova and executed `find_todos` and `create_todo` (keyguard showing, PIN set, no Mova process), and did the same with Mova force-stopped and never launched. Each bind took about 0.5 s; replies decoded as `not_executed/not_configured` because Mova was not logged in | No server write, no EVA voice or assistant session; before-first-unlock was not rebooted into |
 | Phone calls, API 36 `google_apis` emulator, 2026-09-23, EVA `phone-calls` debug | `PhoneCallDeviceTest` from EVA's process with the keyguard showing: `placeCall` produced Telecom call `TC@1` (`CONNECTING`, outgoing, non-emergency) on the SIM phone account; the test call was then ended | Emulator modem; no physical device, real network, or voice session |
 | Mova 7.2.1 release candidate, API 35 emulator (Mova agent), org-agenda-api container at production's revision | Keyguard showing and Mova force-stopped before each call: from EVA's UID, a cold describe took about 560 ms, and find, create, update, complete, and delete completed and were confirmed in the org file. Offline create returned `not_sent`; shell callers were refused | Emulator and test server; no physical device |
@@ -295,7 +296,7 @@ adb -s emulator-5592 shell rm /data/local/tmp/eva-portal-token
 ```
 
 The token is temporary test provisioning. It is never an instrumentation argument
-or portable configuration value. Production backend selection is `capabilities.deviceTask.backend`;
+or portable configuration value. Production backend preference is the ordered `capabilities.deviceTask.backends` list;
 Portal tokens are provisioned in Screen control settings and kept in SecretStore.
 Portable configuration contains only the `device/portal` credential reference,
 local port and model/worker tuning. Restore reports missing local credentials.
@@ -452,7 +453,7 @@ Task configuration is a nested portable value, for example:
 ```yaml
 capabilities:
   deviceTask:
-    backend: portal
+    backends: [portal, shizuku]
     portalPort: 8080
     credential: device/portal
     model: gpt-6-sol
