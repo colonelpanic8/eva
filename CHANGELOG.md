@@ -4,6 +4,8 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.49.0] - 2026-10-01
+
 ### Changed
 
 - The voice and text assistant can scroll, press Back or Home, open notifications, and press Enter in a field itself, alongside tapping and typing, so a short screen request no longer needs a multi-step device task.
