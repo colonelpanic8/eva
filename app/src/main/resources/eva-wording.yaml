@@ -17,7 +17,7 @@ tools:
   device-worker.open_notifications: {"description": "Open the notification shade.", "parameters": {"intent": "A few words: what this action should achieve."}}
   device-worker.ask_user: {"description": "Ask the user one short question and wait for the answer. Use when the request is ambiguous or a needed detail is missing.", "parameters": {"question": "One short question the user can answer by voice."}}
   device-worker.finish: {"description": "End the task. `completed` only when the current screen shows the goal is done. `blocked` when the screen or app prevents progress. `failed` otherwise.", "parameters": {"status": "Outcome.", "summary": "What was done or found, or why not; spoken to the user."}}
-  eva.device.task: {"description": "Run a multi-step device-control task: navigating an app, finding something, or several screen actions in sequence. A single tap or text entry on something already visible is faster with the direct screen tools. Waits until the task ends. While it runs, change or cancel it with the task's revise and stop tools; other actions, including another task, wait their turn and run after it.", "parameters": {"goal": "The complete device task, including user constraints."}}
+  eva.device.task: {"description": "Run a multi-step device-control task: working through several screens, searching an app or a long list, or anything likely to take more than a few screen actions. A few actions you can see how to do, such as a tap, text entry, scroll, Back, or Home, are faster with the direct screen tools. Waits until the task ends. While it runs, change or cancel it with the task's revise and stop tools; other actions, including another task, wait their turn and run after it.", "parameters": {"goal": "The complete device task, including user constraints."}}
   eva.device.task.revise: {"description": "Change the running device task's goal when the user corrects, narrows, or adds to what it is doing. Not for an unrelated request, which should be its own action and runs after the task. An answer to a question the task showed on screen reaches it without this tool.", "parameters": {"correction": "The user's correction, in their words, with any detail needed to apply it."}}
   eva.device.task.stop: {"description": "Stop the running device task when the user wants it to stop or has changed their mind. Actions queued after it still run. The task's own result reports what it did before stopping."}
 
@@ -178,16 +178,17 @@ tools:
     description: >-
       Read what is currently on the phone screen, including the app in front and its numbered
       elements. Use this only when no dedicated action fits the request, because the dedicated
-      actions are more reliable and state exactly what they did. Every screen action needs a
-      fresh look first: this returns an observation reference and element numbers that the tap
-      and text actions require.
+      actions are more reliable and state exactly what they did. The tap, text, scroll, and Enter
+      actions need an observation reference and element numbers from a fresh look; each
+      reference serves one action, and every action returns the next screen with a new one.
   eva.device.tap:
     description: >-
       Tap one numbered element from a screen observation, giving the observation reference and
-      element number exactly as they were returned. A clearly requested tap needs no additional
-      confirmation, even when it sends, buys, or deletes; ask if the target or requested effect
-      is unclear. Success means the touch was delivered and returns the screen that followed;
-      read that screen to judge whether the task actually advanced.
+      element number exactly as they were returned. A label inside a clickable row taps the row.
+      A clearly requested tap needs no additional confirmation, even when it sends, buys, or
+      deletes; ask if the target or requested effect is unclear. Success means the touch was
+      delivered and returns the screen that followed; read that screen to judge whether the task
+      actually advanced.
     parameters:
       quiet: >-
         true when the user will see the result and needs no spoken reply, such as pressing a
@@ -197,11 +198,42 @@ tools:
     description: >-
       Replace the entire contents of one numbered editable field from a screen observation. This
       overwrites whatever the field held; it does not insert at the cursor. Give the observation
-      reference and element number exactly as they were returned.
+      reference and element number exactly as they were returned. The result says whether the
+      field reads back the requested text.
     parameters:
       quiet: >-
         true when the user will see the text and needs no spoken reply. Delivered text then ends
         your turn silently; a failure is still reported. Leave it false when more steps follow.
+  eva.device.scroll:
+    description: >-
+      Scroll the screen, or one numbered scrollable element, from a screen observation. `down`
+      reveals content further down. Returns the screen that followed; to find something that
+      may be many pages away, prefer a device task.
+    parameters:
+      node: A scrollable element's number, or omit it for the main scrolling area.
+      direction: The direction to move through the content.
+      quiet: >-
+        true when the user asked to scroll and needs no spoken reply. Leave it false when you
+        are scrolling to find or read something.
+  eva.device.press_enter:
+    description: >-
+      Press the keyboard's Enter key in one numbered text field from a screen observation, as
+      when submitting a search. It does whatever the field's own action is, which may send, so
+      prefer tapping an explicit button such as Search or Send when one is shown.
+    parameters:
+      quiet: >-
+        true when the user will see the result and needs no spoken reply. Leave it false when
+        more steps follow.
+  eva.device.navigate:
+    description: >-
+      Press the system Back or Home button, or open the notification shade. Needs no screen
+      observation first. Returns the screen that followed. To open an app, use the app action
+      instead.
+    parameters:
+      button: back, home, or notifications.
+      quiet: >-
+        true when the user asked for this and needs no spoken reply. Leave it false when it is a
+        step toward more work.
   eva.memory.search:
     description: >-
       Look up context remembered across conversations: notes the user asked EVA to keep, and

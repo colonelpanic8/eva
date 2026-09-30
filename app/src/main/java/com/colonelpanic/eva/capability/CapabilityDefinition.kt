@@ -317,7 +317,7 @@ object BundledCapabilities {
                     """
                 {"type":"object","properties":{
                 "observationRef":{"type":"string","minLength":1,"maxLength":64},
-                "node":{"type":"integer","minimum":0,"maximum":199},
+                "node":{"type":"integer","minimum":0,"maximum":999},
                 "quiet":{"type":"boolean"}},
                 "required":["observationRef","node"],"additionalProperties":false}
             """,
@@ -330,7 +330,7 @@ object BundledCapabilities {
                     """
                 {"type":"object","properties":{
                 "observationRef":{"type":"string","minLength":1,"maxLength":64},
-                "node":{"type":"integer","minimum":0,"maximum":199},
+                "node":{"type":"integer","minimum":0,"maximum":999},
                 "text":{"type":"string","maxLength":2000},
                 "quiet":{"type":"boolean"}},
                 "required":["observationRef","node","text"],"additionalProperties":false}
@@ -344,6 +344,45 @@ object BundledCapabilities {
                     null
                 }
             },
+            tool(
+                CapabilityRegistry.UI_SCROLL,
+                "Scroll the screen",
+                schema(
+                    """
+                {"type":"object","properties":{
+                "observationRef":{"type":"string","minLength":1,"maxLength":64},
+                "node":{"type":"integer","minimum":0,"maximum":999},
+                "direction":{"type":"string","enum":["up","down","left","right"]},
+                "quiet":{"type":"boolean"}},
+                "required":["observationRef","direction"],"additionalProperties":false}
+            """,
+                ),
+            ),
+            tool(
+                CapabilityRegistry.UI_PRESS_ENTER,
+                "Press Enter in a field on screen",
+                schema(
+                    """
+                {"type":"object","properties":{
+                "observationRef":{"type":"string","minLength":1,"maxLength":64},
+                "node":{"type":"integer","minimum":0,"maximum":999},
+                "quiet":{"type":"boolean"}},
+                "required":["observationRef","node"],"additionalProperties":false}
+            """,
+                ),
+            ),
+            tool(
+                CapabilityRegistry.UI_NAVIGATE,
+                "Press Back or Home, or open notifications",
+                schema(
+                    """
+                {"type":"object","properties":{
+                "button":{"type":"string","enum":["back","home","notifications"]},
+                "quiet":{"type":"boolean"}},
+                "required":["button"],"additionalProperties":false}
+            """,
+                ),
+            ),
         ) + MemoryCapabilities.definitions
 
     private fun List<String>.quoted() = joinToString(",", "[", "]") { "\"$it\"" }

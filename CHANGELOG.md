@@ -4,6 +4,12 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- The voice and text assistant can scroll, press Back or Home, open notifications, and press Enter in a field itself, alongside tapping and typing, so a short screen request no longer needs a multi-step device task.
+- Direct screen actions now work with Portal as well as Shizuku. They use the first ready backend in the device-task list and share its target rechecks and text read-back.
+- A direct tap or text entry that was delivered but did not take effect, such as text that did not read back, is reported as failed instead of done.
+
 ## [0.48.2] - 2026-10-01
 
 ### Added

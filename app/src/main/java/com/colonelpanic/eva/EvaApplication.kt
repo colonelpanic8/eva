@@ -28,11 +28,9 @@ import com.colonelpanic.eva.adapters.android.MessageTargets
 import com.colonelpanic.eva.adapters.android.MessagingReadBackend
 import com.colonelpanic.eva.adapters.android.MessagingStore
 import com.colonelpanic.eva.adapters.android.NativeIntents
-import com.colonelpanic.eva.adapters.android.ObservationStore
 import com.colonelpanic.eva.adapters.android.ShizukuShellHost
 import com.colonelpanic.eva.adapters.android.SmsSendBackend
 import com.colonelpanic.eva.adapters.android.SpotifyQueueProvider
-import com.colonelpanic.eva.adapters.android.UiControlBackend
 import com.colonelpanic.eva.adapters.android.observeExtensionPackages
 import com.colonelpanic.eva.audio.RealtimeMediaConfig
 import com.colonelpanic.eva.audio.VoiceSessionHost
@@ -65,6 +63,7 @@ import com.colonelpanic.eva.data.SpotifyAccountStore
 import com.colonelpanic.eva.data.SqliteConversationStore
 import com.colonelpanic.eva.data.SqliteInvocationRepository
 import com.colonelpanic.eva.data.configuration.EvaConfigurationManager
+import com.colonelpanic.eva.devicecontrol.ScreenActions
 import com.colonelpanic.eva.messaging.MessagingBackend
 import com.colonelpanic.eva.messaging.NotificationMessages
 import com.colonelpanic.eva.providers.BrokerConversationProvider
@@ -100,7 +99,13 @@ class EvaApplication :
 
     /** Screen control needs Shizuku too, but not Android 17: its helper only needs UiAutomation. */
     val deviceControlHost by lazy { if (Build.VERSION.SDK_INT >= 30) DeviceControlHost(this) else null }
-    private val observations by lazy { ObservationStore(elapsedMillis = SystemClock::elapsedRealtime) }
+    private val screenActions by lazy {
+        ScreenActions(
+            enabled = { capabilities.screenControlEnabled },
+            select = ::screenActionBackend,
+            elapsedMillis = SystemClock::elapsedRealtime,
+        )
+    }
 
     private fun intent(
         success: String,
@@ -307,6 +312,44 @@ class EvaApplication :
         )
     }
 
+    private fun deviceBackend(
+        name: String,
+        onDeviceTiming: (com.colonelpanic.eva.devicecontrol.portal.ActionTiming) -> Unit = {},
+    ): com.colonelpanic.eva.devicecontrol.DeviceBackend {
+        val options = capabilities.deviceTask
+        val transport =
+            if (name == "portal") {
+                com.colonelpanic.eva.devicecontrol.portal.PortalClient(
+                    port = options.portalPort,
+                    token = { capabilities.portalToken() ?: error("Provision the Portal token in settings.") },
+                )
+            } else {
+                com.colonelpanic.eva.devicecontrol.ShizukuPortalTransport(
+                    checkNotNull(deviceControlHost) { SCREEN_CONTROL_API },
+                )
+            }
+        return com.colonelpanic.eva.devicecontrol.portal.PortalBackend(
+            transport,
+            launchAliases = options.launchAliases,
+            timing = onDeviceTiming,
+            backend = name,
+        )
+    }
+
+    /** Direct screen tools use the first ready backend in the device-task order. */
+    private suspend fun screenActionBackend(): ScreenActions.Choice {
+        val options = capabilities.deviceTask
+        val problems = mutableListOf<String>()
+        for (name in options.backends) {
+            val problem = backendProblem(name)
+            if (problem == null) {
+                return ScreenActions.Choice.Ready("$name:${options.portalPort}:${options.launchAliases}") { deviceBackend(name) }
+            }
+            problems += "${backendLabel(name)}: $problem"
+        }
+        return ScreenActions.Choice.Unavailable("No screen control backend is ready. ${problems.joinToString(" ")}")
+    }
+
     internal fun createDeviceTaskAgent(
         onDeviceTiming: (com.colonelpanic.eva.devicecontrol.portal.ActionTiming) -> Unit = {},
         decorateModel: (
@@ -321,27 +364,10 @@ class EvaApplication :
                     com.colonelpanic.eva.devicecontrol.PreferredDeviceBackend.Candidate(
                         backendLabel(name),
                         problem = { backendProblem(name) },
-                    ) {
-                        val transport =
-                            if (name == "portal") {
-                                com.colonelpanic.eva.devicecontrol.portal.PortalClient(
-                                    port = options.portalPort,
-                                    token = { capabilities.portalToken() ?: error("Provision the Portal token in settings.") },
-                                )
-                            } else {
-                                com.colonelpanic.eva.devicecontrol.ShizukuPortalTransport(
-                                    checkNotNull(deviceControlHost) { SCREEN_CONTROL_API },
-                                )
-                            }
-                        com.colonelpanic.eva.devicecontrol.portal.PortalBackend(
-                            transport,
-                            launchAliases = options.launchAliases,
-                            timing = onDeviceTiming,
-                            backend = name,
-                        )
-                    }
+                    ) { deviceBackend(name, onDeviceTiming) }
                 },
             )
+        screenActions.reset()
         return com.colonelpanic.eva.devicecontrol.worker.TextTaskAgent(
             backend,
             decorateModel(
@@ -448,12 +474,14 @@ class EvaApplication :
                         AppFunctionsBackend(host, AppFunctionsBackend.Operation.METADATA),
                     )
                 }
-                deviceControlHost?.let { host ->
-                    val exposed = { capabilities.screenControlEnabled }
-                    put(CapabilityRegistry.UI_OBSERVE, UiControlBackend(host, observations, UiControlBackend.Operation.OBSERVE, exposed))
-                    put(CapabilityRegistry.UI_TAP, UiControlBackend(host, observations, UiControlBackend.Operation.TAP, exposed))
-                    put(CapabilityRegistry.UI_SET_TEXT, UiControlBackend(host, observations, UiControlBackend.Operation.SET_TEXT, exposed))
-                }
+                listOf(
+                    CapabilityRegistry.UI_OBSERVE to ScreenActions.Operation.OBSERVE,
+                    CapabilityRegistry.UI_TAP to ScreenActions.Operation.TAP,
+                    CapabilityRegistry.UI_SET_TEXT to ScreenActions.Operation.SET_TEXT,
+                    CapabilityRegistry.UI_SCROLL to ScreenActions.Operation.SCROLL,
+                    CapabilityRegistry.UI_PRESS_ENTER to ScreenActions.Operation.PRESS_ENTER,
+                    CapabilityRegistry.UI_NAVIGATE to ScreenActions.Operation.NAVIGATE,
+                ).forEach { (id, operation) -> put(id, screenActions.backend(operation)) }
             },
         )
     }

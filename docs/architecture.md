@@ -236,9 +236,8 @@ for concrete identity, schema, waiting, and authorization rules.
   locked-device voice verification is
   pending. Assistant selection does not confer unrestricted
   background launch or device access.
-- Optional Shizuku adapters implement Settings AppFunctions, bounded UI observation,
-  text replacement and taps, and the device-task backend described below. UI
-  mutations consume a recent observation and recheck target identity. Existing
+- Optional Shizuku adapters implement Settings AppFunctions and a screen-control
+  backend shared by device tasks and the direct screen tools described below. Existing
   Shizuku grants allow device-setting and screen actions without EVA's main
   activity; that activity is needed only to request a missing grant, which Screen
   control settings can do ahead of time.
@@ -318,6 +317,25 @@ per-step kind, result and observation/model/action timings. A stop before any
 completed effect is NOT_EXECUTED; known partial work is FAILED; unresolved work is
 UNKNOWN. Journal recovery never replays a task.
 
+The conversation model can also act on the screen itself, one input per call,
+without the worker: `eva.device.observe`, `tap`, `set_text`, `scroll`, `press_enter`,
+and `navigate` (Back, Home, notification shade). They run through
+`devicecontrol/ScreenActions.kt` on the same `PortalBackend` as tasks, so rechecks,
+settling and text read-back are shared: the task backend when it is ready, otherwise
+the other backend when only that one is. Element inputs name an observation
+reference and element number from a projection of at most 60 addressable elements
+and 3,500 characters; a reference serves one input, expires after three minutes,
+and is dropped when a device task starts or the backend configuration changes, and
+the backend itself accepts only its latest screen. A tap on a label inside a
+clickable row activates the row; an element with no clickable ancestor is tapped at
+its centre. `navigate` binds to a screen read in the same call. Each tool is its own
+dispatched, journaled capability under the device lease and turn budget: a delivered
+input is COMPLETED only when the backend reports success, delivered input that did
+not take effect, such as text that does not read back, is
+FAILED, refusal before dispatch is NOT_EXECUTED, and a lost exchange is UNKNOWN. The
+wording steers a few visible steps to these tools and longer searches or multi-screen
+work to `eva.device.task`, which keeps the realtime context small.
+
 `DeviceTaskCoordinator` owns the task's thread and turn independently of its
 voice/provider attachment. Competing tasks, ordinary mutations and direct UI
 reads queue in arrival order for the device lease rather than being rejected;
@@ -384,7 +402,7 @@ Why a locked action can still fail, and what helps:
 | EVA refuses locked-device notification reads and replies on purpose | Unlock. Keep this refusal unless the security model changes |
 | A provider's keystore key requires an unlocked device | The provider reports `needs_unlock`; avoid unlock-bound keys for background writes |
 | Foreground-service start or promotion is rejected | Reported, not crashed (below); start voice from a visible assistant session |
-| Shizuku UI observation and taps can't reach UI behind the keyguard | Prefer AppFunctions or a service route |
+| Screen observation and input can't reach UI behind the keyguard | Prefer AppFunctions or a service route |
 | Target app or OEM restrictions | Test on devices, and record the result in [device verification](operations.md#device-verification) |
 
 Verify locked behavior with the keyguard showing and a PIN set, and say which
