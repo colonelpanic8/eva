@@ -18,14 +18,15 @@ import com.colonelpanic.eva.MainActivity
 
 /** The application supplies the controller so the service can interrupt work Android will not let it finish. */
 interface TurnWorkHost {
-    /** Interrupt only dependent work; recheck live voice/text attachments before stopping any turn. */
+    fun needsWorkCoverage(): Boolean
+
+    /** Interrupt only dependent work after Android refuses coverage. */
     fun interruptWork(reason: String)
 }
 
 /**
- * Keeps the process alive while a turn finishes with nothing attached to its thread: after a
- * call was hung up, or a text connection dropped. Android's short-service time limit can
- * interrupt work that depends on this service; a live voice turn has its own service.
+ * Covers text and detached turns, including work delegated during a call. Renews short-service
+ * coverage when Android permits it; only a live voice turn has another service of its own.
  */
 class TurnWorkService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
@@ -35,6 +36,15 @@ class TurnWorkService : Service() {
         flags: Int,
         startId: Int,
     ): Int {
+        if (!promote()) {
+            foregroundRejected()
+            return START_NOT_STICKY
+        }
+        if (gate.foregrounded()) stopCoverage()
+        return START_NOT_STICKY
+    }
+
+    private fun promote(): Boolean {
         WorkNotifications.channels(this)
         val notification =
             NotificationCompat
@@ -54,17 +64,11 @@ class TurnWorkService : Service() {
                 startForeground(NOTIFICATION_ID, notification)
             }
         } catch (_: SecurityException) {
-            foregroundRejected()
-            return START_NOT_STICKY
+            return false
         } catch (_: IllegalStateException) {
-            foregroundRejected()
-            return START_NOT_STICKY
+            return false
         }
-        if (gate.foregrounded()) {
-            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
-            stopSelf()
-        }
-        return START_NOT_STICKY
+        return true
     }
 
     private fun foregroundRejected() {
@@ -79,7 +83,15 @@ class TurnWorkService : Service() {
     }
 
     override fun onTimeout(startId: Int) {
-        (application as? TurnWorkHost)?.interruptWork("EVA ran out of background time before this request finished.")
+        val host = application as? TurnWorkHost
+        if (host?.needsWorkCoverage() == true) {
+            if (promote()) return
+            host.interruptWork(START_DENIED)
+        }
+        stopCoverage()
+    }
+
+    private fun stopCoverage() {
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
     }

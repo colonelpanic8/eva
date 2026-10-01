@@ -78,12 +78,14 @@ holding the leg's own actions and its prompt.
 One attachment is live at a time. Several turn tasks can be active in the same
 thread: a delegated text turn and a later foreground voice turn own their calls
 independently. Ownership follows the provider leg and input ID, never whichever
-turn happens to be first in the thread. Voice transcripts follow that voice input
-(or remain thread-level if no voice turn owns them), never a delegated text turn.
+turn happens to be first in the thread. User transcripts follow the current voice
+input (or remain thread-level if no voice turn owns them). A late assistant reply
+from the handoff response keeps its original turn ID, even after text work finishes.
 A pending device task retains its original turn and device lease; Realtime keeps
 that input while its call is pending, so device corrections and Stop remain live.
-The UI Stop targets the shown thread's foreground task first, then its latest
-active background task; it cannot stop another thread's device task. Working
+The UI Stop targets a running device task on the shown thread first, then its
+foreground task, then its latest active background task. It cannot stop another
+thread's device task. Working
 indicators stay on until the thread's last active task finishes.
 
 A voice-to-text handoff reports `HANDED_OFF` with the durable turn ID as `taskId`
@@ -92,12 +94,18 @@ bounded to 15 seconds; a missing connection, rejected response submission, or
 startup failure returns `NOT_EXECUTED`. Sibling calls retain their original voice
 result sink during handoff, including calls arriving after text starts, so moving
 the turn never strands their receipts. Text continuation is one-shot and never
-retries an uncertain mutation.
+retries an uncertain mutation. Mutations serialize across turns on the same thread;
+an UNKNOWN or FAILED mutation in any still-running turn blocks further mutations
+while that turn remains active. Read-only tools remain available for verification.
 
 Voice offers `eva.session.background_status` (no arguments) and
 `eva.session.background_cancel` (`taskId`). Status lists this thread's background
-and delegated tasks plus any running device task, with task text, action count,
-last action receipt status, and `CONNECTING`, `WORKING`, `ANSWERED`, `FAILED`, or
+and delegated tasks plus any running device task, followed by up to five recently
+finished tasks from the last 512 thread items. It includes task text, action count,
+last action status, and three recent attributed receipts (call ID, capability,
+arguments, status, and message) for verification. The result stays below the model
+result budget; `tasksOmitted` and `historyLimited` expose omitted or partial history.
+Task states are `CONNECTING`, `WORKING`, `ANSWERED`, `FAILED`, or
 `INTERRUPTED` state. Cancel requests interruption of exactly that active task,
 including its owned device task; unknown, finished, or other-thread IDs return
 `NOT_EXECUTED`. Cancellation does not undo actions already started; their receipts
@@ -107,15 +115,21 @@ action succeeded.
 When a background turn answers, fails, or is interrupted, EVA sends a lifecycle
 note to a voice attachment on the same thread with its task ID and terminal state.
 Answers, partial findings, and failure reasons are JSON-quoted data under EVA's
-followed wording. Realtime inserts a system message and requests speech only when
-no response, pending tool follow-up, user speech, or assistant audio is active.
-Queued notes do not interrupt a foreground response. Providers that do not support
+followed wording. Findings are bounded to the model result text budget. Realtime
+puts the trusted instruction in a system item and the attributed JSON in a separate
+assistant item. It requests an announcement with `tool_choice: none`; the controller
+also marks that turn announce-only and answers stray calls by asking for a user
+request. The next spoken request has the normal tools. Announcements wait until no
+response, pending tool follow-up, user speech, or assistant audio is active; speech
+ending waits for the server VAD response to finish. Startup failures return only
+the handoff refusal, without a duplicate spoken lifecycle note. Queued notes do
+not interrupt a foreground response. Providers that do not support
 `submitContext` (currently Responses and Broker), and threads without voice,
 retain the notification fallback. Failed or interrupted notifications and thread
 notices retain accumulated partial answers and identify the interruption.
 
 `VoiceSessionService` owns foreground voice lifetime; `TurnWorkService` covers
-short background turn work when voice is absent. Android can interrupt background
+text and detached turns, including delegated work while voice is attached. Android can interrupt background
 work, so persistence supports recovery and explicit interrupted outcomes, not a
 promise of uninterrupted execution across process death.
 
@@ -493,13 +507,17 @@ execution remains independent of Activity lifetime.
 Foreground-service start or promotion rejection reports the restriction rather
 than crashing or silently losing its service observer. Voice rejection ends the
 attachment and permits accepted work to continue in text; rejection of the
-background-work service rechecks current ownership and interrupts only turns without
-a live voice or text attachment. It stops a device task only by the affected turn's
-ID, leaving unrelated device work alone. Coverage loss is terminal interruption,
-not another attempt to re-home; partial answers remain in the notice and notification.
+background-work service rechecks ownership and interrupts only turns without live
+voice coverage. A text attachment relies on the work service too. It stops a device
+task only by the affected turn's ID. Coverage refusal is terminal interruption,
+with partial answers in the notice and notification; it never retries an action.
 `interruptAll` remains the separate controller-shutdown path used by `drain()`.
-The service still uses Android's `shortService` type and its existing start/stop
-policy; longer-running service coverage is not implemented here. Voice and
+The work service remains active while any non-voice turn needs coverage. On Android's
+`shortService` timeout it calls `startForeground` again to renew coverage when Android
+allows it (a visible app or a foreground-start exemption), independently of changes
+to the working-thread set. Only actual promotion/start refusal interrupts dependent
+work; completed work simply stops coverage. The type and permissions are unchanged;
+renewal is subject to Android eligibility, not guaranteed indefinite execution. Voice and
 background work remain non-sticky; force-stop and process death do not trigger action replay. The assistant launch fallback and unlock UI
 require physical-device verification; JVM checks cannot establish OEM behavior.
 
