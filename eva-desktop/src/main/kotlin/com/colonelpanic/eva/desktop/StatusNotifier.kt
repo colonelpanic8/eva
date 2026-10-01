@@ -11,6 +11,8 @@ import org.freedesktop.dbus.interfaces.DBusInterface
 import org.freedesktop.dbus.interfaces.Properties
 import org.freedesktop.dbus.types.Variant
 import java.awt.image.BufferedImage
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /** The tray side of the StatusNotifierItem protocol, which Wayland and modern X11 panels host over D-Bus. */
 @DBusInterfaceName("org.kde.StatusNotifierItem")
@@ -71,30 +73,38 @@ class StatusNotifier private constructor(
 
     override fun visible(): Boolean = acceptedBy != null && runCatching { bus.GetNameOwner(WATCHER) }.getOrNull() == acceptedBy
 
-    /** Registers with the panel's watcher, which forgets items whenever the panel restarts. */
-    private fun register() {
-        acceptedBy =
-            runCatching {
-                val owner = bus.GetNameOwner(WATCHER)
-                connection
-                    .getRemoteObject(
-                        WATCHER,
-                        WATCHER_PATH,
-                        StatusNotifierWatcher::class.java,
-                        true,
-                    ).registerStatusNotifierItem(service)
-                owner
-            }.getOrNull()
+    /** Registers with [owner], the watcher's current unique name; false if it refused or is not ready. */
+    private fun register(owner: String): Boolean =
+        runCatching {
+            connection
+                .getRemoteObject(owner, WATCHER_PATH, StatusNotifierWatcher::class.java, true)
+                .registerStatusNotifierItem(service)
+        }.onSuccess { acceptedBy = owner }
+            .isSuccess
+
+    private val retries =
+        Executors.newSingleThreadScheduledExecutor { runnable -> Thread(runnable, "eva-tray-registration").apply { isDaemon = true } }
+
+    /**
+     * Registers with a watcher that just took the name, retrying with backoff: a restarting panel
+     * may own the name before it exports the watcher object. Stops once accepted, or when the name
+     * passes to someone else.
+     */
+    private fun follow(
+        owner: String,
+        delayMillis: Long = FIRST_RETRY_MILLIS,
+    ) {
+        retries.schedule({
+            val current = runCatching { bus.GetNameOwner(WATCHER) }.getOrNull()
+            if (current == owner && !register(owner) && delayMillis < LAST_RETRY_MILLIS) follow(owner, delayMillis * 2)
+        }, delayMillis, TimeUnit.MILLISECONDS)
     }
 
-    private fun follow() {
+    private fun watchOwnership() {
         connection.addSigHandler(DBus.NameOwnerChanged::class.java) { signal ->
             if (signal.name == WATCHER) {
-                if (signal.newOwner.isEmpty()) {
-                    acceptedBy = null
-                } else {
-                    register()
-                }
+                acceptedBy = null
+                if (signal.newOwner.isNotEmpty()) follow(signal.newOwner, delayMillis = 0)
             }
         }
     }
@@ -147,12 +157,17 @@ class StatusNotifier private constructor(
 
     override fun GetAll(iface: String): Map<String, Variant<*>> = properties
 
-    override fun close() = connection.close()
+    override fun close() {
+        retries.shutdownNow()
+        connection.close()
+    }
 
     companion object {
         private const val PATH = "/StatusNotifierItem"
         private const val WATCHER = "org.kde.StatusNotifierWatcher"
         private const val WATCHER_PATH = "/StatusNotifierWatcher"
+        private const val FIRST_RETRY_MILLIS = 100L
+        private const val LAST_RETRY_MILLIS = 10_000L
 
         /** Shows the icon, or fails when no panel hosts one, as on a desktop without a StatusNotifierWatcher. */
         fun show(
@@ -166,9 +181,9 @@ class StatusNotifier private constructor(
                     val item = StatusNotifier(connection, service, onActivate)
                     connection.requestBusName(service)
                     connection.exportObject(PATH, item)
-                    item.follow()
-                    item.register()
-                    check(item.acceptedBy != null) { "No StatusNotifierWatcher accepted the icon." }
+                    item.watchOwnership()
+                    val owner = runCatching { item.bus.GetNameOwner(WATCHER) }.getOrNull()
+                    check(owner != null && item.register(owner)) { "No StatusNotifierWatcher accepted the icon." }
                     item
                 } catch (failure: Exception) {
                     connection.close()

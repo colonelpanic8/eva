@@ -4,6 +4,7 @@ import org.freedesktop.dbus.bin.EmbeddedDBusDaemon
 import org.freedesktop.dbus.connections.impl.DBusConnectionBuilder
 import org.freedesktop.dbus.interfaces.Properties
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -68,7 +69,10 @@ class StatusNotifierTest {
 
                 DBusConnectionBuilder.forAddress(address).withShared(false).build().use { restarted ->
                     val watcher = Watcher()
+                    // A restarting panel can own the name before it serves the watcher object.
                     restarted.requestBusName("org.kde.StatusNotifierWatcher")
+                    Thread.sleep(700)
+                    assertFalse(item.visible())
                     restarted.exportObject(watcher.objectPath, watcher)
                     awaitVisible(item, true)
                     assertEquals(1, watcher.registered.size)
@@ -81,7 +85,7 @@ class StatusNotifierTest {
         item: StatusNotifier,
         expected: Boolean,
     ) {
-        val deadline = System.nanoTime() + 5_000_000_000
+        val deadline = System.nanoTime() + 15_000_000_000
         while (item.visible() != expected) {
             check(System.nanoTime() < deadline) { "The icon never became visible=$expected" }
             Thread.sleep(50)
