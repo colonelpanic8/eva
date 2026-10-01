@@ -363,7 +363,13 @@ class RealtimeTurnOwnershipTest {
             advanceTimeBy(1_001)
             runCurrent()
             assertEquals(1, notes())
-            assertEquals("none", f.acceptRequest("still-working").getValue("tool_choice").jsonPrimitive.content)
+            assertEquals(
+                "none",
+                f
+                    .acceptRequest("still-working")
+                    .getValue("tool_choice")
+                    .jsonPrimitive.content,
+            )
             f.done("still-working")
             advanceTimeBy(30_000)
             runCurrent()
@@ -1096,9 +1102,11 @@ class RealtimeTurnOwnershipTest {
         lateinit var voice: ConversationSession
         private lateinit var request: SessionOpenRequest
         val acknowledged = mutableSetOf<String>()
+        private val ids = listOf("test.read", "test.lookup", "test.wait", "test.mutate", "test.tap", CapabilityRegistry.DEVICE_TASK)
+        private val blocking = setOf("test.wait", "test.lookup", "test.tap", CapabilityRegistry.DEVICE_TASK)
         private val registry =
             CapabilityRegistry(
-                listOf("test.read", "test.lookup", "test.wait", "test.mutate", "test.tap", CapabilityRegistry.DEVICE_TASK).associateWith { id ->
+                ids.associateWith { id ->
                     object : ExecutionBackend {
                         override fun usesDeviceUi(proposal: ToolProposal): Boolean = id == "test.tap"
 
@@ -1106,12 +1114,12 @@ class RealtimeTurnOwnershipTest {
 
                         override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome {
                             executions += id
-                            if (id == "test.wait" || id == "test.lookup" || id == "test.tap" || id == CapabilityRegistry.DEVICE_TASK) gate.await()
+                            if (id in blocking) gate.await()
                             return ExecutionOutcome(InvocationStatus.COMPLETED, "Done")
                         }
                     }
                 },
-                listOf("test.read", "test.lookup", "test.wait", "test.mutate", "test.tap", CapabilityRegistry.DEVICE_TASK).map {
+                ids.map {
                     CapabilityDefinition(
                         it,
                         it,

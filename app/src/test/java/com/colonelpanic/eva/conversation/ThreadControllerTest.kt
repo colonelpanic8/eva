@@ -1325,7 +1325,11 @@ class ThreadControllerTest {
             assertEquals(1, executions)
             assertEquals(InvocationStatus.HANDED_OFF, repository.history().single().status)
             assertTrue(background.responseRequests.isEmpty())
-            assertTrue(controller.state.value.providerMessage.orEmpty().contains("Call is not pending"))
+            assertTrue(
+                controller.state.value.providerMessage
+                    .orEmpty()
+                    .contains("Call is not pending"),
+            )
 
             provider.resultFailure = java.io.IOException("Socket closed")
             provider.call("lost", action.id, "place" to "Home")
