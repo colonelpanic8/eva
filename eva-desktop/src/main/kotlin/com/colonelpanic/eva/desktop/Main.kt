@@ -2,8 +2,10 @@ package com.colonelpanic.eva.desktop
 
 import com.colonelpanic.eva.conversation.ConversationEntry
 import com.colonelpanic.eva.conversation.ConversationState
+import com.colonelpanic.eva.conversation.EntryGroup
 import com.colonelpanic.eva.conversation.EntryStatus
 import com.colonelpanic.eva.conversation.ProviderStatus
+import com.colonelpanic.eva.conversation.groups
 import com.colonelpanic.eva.providers.openai.ChatGptLogin
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -78,14 +80,25 @@ private suspend fun chat(
         System.err.println(it)
         return 1
     }
-    withContext(ui) {
-        when {
-            options.firstOrNull() == "--thread" -> controller.showThread(requireNotNull(options.getOrNull(1)) { "--thread needs an ID" })
-            options.firstOrNull() == "--continue" -> Unit
-            else -> controller.newThread()
+    // Thread changes land asynchronously; connecting first would attach to the thread shown before.
+    val previous = loaded.threadId
+    when {
+        options.firstOrNull() == "--thread" -> {
+            val id = requireNotNull(options.getOrNull(1)) { "--thread needs an ID" }
+            withContext(ui) { controller.showThread(id) }
+            controller.state.first { it.threadId == id }
         }
-        controller.connect("")
+
+        options.firstOrNull() == "--continue" -> {
+            Unit
+        }
+
+        else -> {
+            withContext(ui) { controller.newThread() }
+            controller.state.first { it.threadId != null && it.threadId != previous }
+        }
     }
+    withContext(ui) { controller.connect("") }
     val connected =
         withTimeoutOrNull(CONNECT_TIMEOUT_MILLIS) {
             controller.state.first {
@@ -114,7 +127,9 @@ private suspend fun chat(
             }
 
             line == "/new" -> {
+                val shownBefore = controller.state.value.threadId
                 withContext(ui) { controller.newThread() }
+                controller.state.first { it.threadId != shownBefore }
                 println("New thread.")
                 continue
             }
@@ -150,24 +165,27 @@ private class Printed {
     private val seen = mutableMapOf<String, ConversationEntry>()
     val ids: Set<String> get() = seen.keys
 
-    fun print(state: ConversationState) {
-        for (entry in state.entries) {
-            if (seen[entry.id] == entry) continue
-            seen[entry.id] = entry
-            when {
-                entry.capabilityId != null -> {
-                    println(
-                        "  · ${entry.actionTitle ?: entry.capabilityId}: ${label(entry.status)}${entry.result?.let { " — $it" }.orEmpty()}",
-                    )
-                }
+    fun print(state: ConversationState) = groups(state.entries).forEach(::print)
 
-                entry.status == EntryStatus.SESSION -> {
-                    println("  (${entry.response})")
-                }
+    /** A turn's actions come before its answer, the order they happened in. */
+    private fun print(group: EntryGroup) {
+        group.children.forEach(::print)
+        val entry = group.entry
+        if (seen[entry.id] == entry) return
+        seen[entry.id] = entry
+        when {
+            entry.capabilityId != null -> {
+                println(
+                    "  · ${entry.actionTitle ?: entry.capabilityId}: ${label(entry.status)}${entry.result?.let { " — $it" }.orEmpty()}",
+                )
+            }
 
-                entry.response.isNotBlank() -> {
-                    println("eva> ${entry.response}")
-                }
+            entry.status == EntryStatus.SESSION -> {
+                println("  (${entry.response})")
+            }
+
+            entry.response.isNotBlank() -> {
+                println("eva> ${entry.response}")
             }
         }
     }
