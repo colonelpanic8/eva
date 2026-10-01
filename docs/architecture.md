@@ -138,10 +138,19 @@ work, and undoing a remote action are distinct operations.
 ## Capability execution
 
 Adapters contribute capabilities to a registry snapshot. Admission is deterministic
-and bounded to 64 model-facing tools, reserving two voice session controls and bundled tools
-before sorted extension tools. Unavailable or excess entries remain explainable
-in the UI. New tools reach the model on the next connection; revocation blocks new
-execution immediately even if the model still sees an older catalog. For packages
+and bounded by EVA's shared 128-tool budget, including session controls. Voice
+reserves four base session controls (end, defer, background status, background cancel),
+plus device-task revise/stop when `eva.device.task` is offered. Bundled native tools
+come first, then whole installed-service extension groups, then remaining whole
+extension/package/media groups sorted by stable source identity (capability ID prefix
+when source metadata is absent). Tools within each group are sorted by ID. Installed
+services therefore precede declarative link/intent packages, including packages for
+the same app. A group that cannot fit is skipped and smaller later groups are tried;
+admission never splits an extension or package instance's offered workflow. Overflow
+reasons report typed and voice admission separately, since skipping a larger group
+can leave room for a smaller group in only one mode. Unavailable or excess entries
+remain explainable in the UI. New tools reach the model on the next connection;
+revocation blocks new execution immediately even if the model still sees an older catalog. For packages
 refreshed from a followed repository, newly named actions are granted when that
 package's auto-enable switch is on; explicitly disabled actions remain disabled.
 Manual imports do not gain new grants this way. Installed Android providers do not
@@ -151,6 +160,15 @@ with every action unless the user turned them off. See
 An app's own installed extension takes over same-named actions from declarative
 packages that target that app; the package's other actions stay available and are
 listed under the app.
+
+The budget is an EVA policy, not a verified published maximum for both APIs. The
+[Responses reference](https://developers.openai.com/api/reference/python/resources/responses/methods/create)
+and [Realtime session reference](https://developers.openai.com/api/reference/resources/realtime/subresources/client_secrets/methods/create)
+describe function tools without publishing a numeric tool-count ceiling. Responses
+subscription requests with 100 and 128 dummy functions completed successfully using
+EVA's `originator` header. This checks catalog acceptance, not tool-selection quality;
+public API-key Responses and Realtime acceptance at 128 tools remain unverified.
+Prompt-component `hide` still runs after admission and can leave reserved slots unused.
 
 The dispatcher validates identity, arguments, binding revision, availability, and
 grants, then journals a claim before dispatch. Duplicate call IDs cannot execute

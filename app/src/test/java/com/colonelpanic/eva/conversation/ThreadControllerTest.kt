@@ -321,7 +321,7 @@ class ThreadControllerTest {
             val extensions =
                 List(CatalogAdmission.LIMIT) { index ->
                     com.colonelpanic.eva.capability.CapabilityDefinition(
-                        "extension.example.action_${index.toString().padStart(2, '0')}",
+                        "extension.example.app_${index.toString().padStart(3, '0')}.action",
                         "Action $index",
                         "Action $index",
                         com.colonelpanic.eva.capability.extensions.extensionSchema,
@@ -344,7 +344,11 @@ class ThreadControllerTest {
             val offered =
                 voice.request.catalog.tools
                     .map { it.capabilityId }
-            assertEquals(CatalogAdmission.LIMIT, offered.size)
+            assertTrue(offered.size <= CatalogAdmission.LIMIT)
+            assertEquals(
+                CatalogAdmission.LIMIT - CatalogAdmission.voiceControls(registry.snapshot.catalog) - 1,
+                offered.count { it.startsWith("extension.") },
+            )
             assertTrue(offered.containsAll(listOf(CapabilityRegistry.DEVICE_TASK, "eva.device.task.revise", "eva.device.task.stop")))
         }
 

@@ -1102,10 +1102,14 @@ replacement. Removal, disabling, revocation, and invalidated bindings block new
 execution immediately even if a model still sees the old catalog. Temporary bind
 failure means unavailable without catalog revision churn.
 
-The model-facing limit is 64 tools including controls. Reserve session controls,
-then bundled tools, then extensions sorted by fully qualified capability ID.
-Overflow remains discovered and is shown unavailable with an explanation; it
-never silently evicts bundled tools or crashes the conversation.
+EVA's model-facing budget is 128 tools including controls. Reserve session controls,
+then bundled tools, then whole installed-service groups, then remaining whole
+extension/package/media groups in stable source-identity order. A group that cannot
+fit is skipped while smaller later groups can still be admitted. Overflow remains
+discovered and is shown unavailable with an explanation for typed and voice modes;
+it never silently evicts bundled tools or splits an offered extension workflow. See
+[capability execution](architecture.md#capability-execution) for voice reservations
+and the provider-limit evidence and verification boundaries.
 
 **Bounded multi-action requests.** `ThreadController` admits up to 32 calls per
 turn, including at most 24 reads, and executes them sequentially. Reads and
