@@ -37,6 +37,18 @@
       };
       androidHome = "${androidComposition.androidsdk}/libexec/android-sdk";
       aapt2 = "${androidHome}/build-tools/${buildToolsVersion}/aapt2";
+      # Native libraries Compose Desktop's Skia loads; kept out of LD_LIBRARY_PATH for the Android tools.
+      desktopLibraryPath = pkgs.lib.makeLibraryPath (with pkgs; [
+        fontconfig
+        freetype
+        libGL
+        stdenv.cc.cc.lib
+        xorg.libX11
+        xorg.libXext
+        xorg.libXi
+        xorg.libXrender
+        xorg.libXtst
+      ]);
       androidShell = pkgs.mkShell {
         packages = with pkgs; [
           androidComposition.androidsdk
@@ -51,6 +63,7 @@
         ANDROID_SDK_ROOT = androidHome;
         GRADLE_OPTS = "-Dorg.gradle.project.android.aapt2FromMavenOverride=${aapt2}";
         JAVA_HOME = pkgs.jdk17.home;
+        EVA_DESKTOP_LIBRARY_PATH = desktopLibraryPath;
         LC_ALL = "en_US.UTF-8";
         LANG = "en_US.UTF-8";
         shellHook = ''
