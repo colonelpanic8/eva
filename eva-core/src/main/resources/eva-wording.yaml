@@ -377,6 +377,7 @@ messages:
     This tool call has an unknown origin. Nothing was executed. Ask the user to
     make a new request so the action can be tied to that request.
   unowned-action: No request is active to run this action. Nothing was executed.
+  turn-force-stopped: "Force-stopped by you; actions already started may have had effects"
   turn-stop-requested: Stopped.
   response-failed: The model could not complete this response.
   background-connection-ended: The connection ended before the response completed.

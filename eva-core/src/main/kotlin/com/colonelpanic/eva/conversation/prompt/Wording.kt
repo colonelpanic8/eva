@@ -75,6 +75,7 @@ data class Wording(
         const val MUTATION_UNCERTAIN = "mutation-uncertain"
         const val UNKNOWN_ORIGIN = "unknown-origin"
         const val UNOWNED_ACTION = "unowned-action"
+        const val TURN_FORCE_STOPPED = "turn-force-stopped"
         const val TURN_STOP_REQUESTED = "turn-stop-requested"
         const val RESPONSE_FAILED = "response-failed"
         const val BACKGROUND_CONNECTION_ENDED = "background-connection-ended"

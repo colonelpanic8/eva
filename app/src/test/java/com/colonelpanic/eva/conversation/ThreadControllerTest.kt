@@ -123,12 +123,17 @@ class ThreadControllerTest {
         deviceTasks: com.colonelpanic.eva.devicecontrol.DeviceTaskCoordinator? = null,
         callEndings: () -> Map<String, CallEnding> = { emptyMap() },
         messagingBridges: () -> Map<String, String> = { emptyMap() },
+        now: () -> Long = System::currentTimeMillis,
+        conversationStore: ConversationStore = store,
+        accepted: suspend () -> Unit = {},
     ) = ThreadController(
         registry = registry,
+        nowMillis = now,
+        onWorkAccepted = accepted,
         deviceTasks = deviceTasks,
         dispatcher = CapabilityDispatcher(registry, repository),
         repository = repository,
-        store = store,
+        store = conversationStore,
         scope = liveScope(),
         providerFactory = { provider },
         mediaFactory = media,
@@ -142,6 +147,298 @@ class ThreadControllerTest {
         prompt = prompt,
         onBackgroundAnswer = { answers += it },
     )
+
+    @Test
+    fun `handoff rechecks coverage while voice remains attached before accepting background work`() =
+        runTest {
+            var admissions = 0
+            val promoted = CompletableDeferred<Unit>()
+            val voice = FakeProvider()
+            val background = FakeProvider(epoch = "background")
+            val controller =
+                controller(voice, background = background, media = { VoiceMedia() }, accepted = {
+                    if (++admissions == 2) promoted.await()
+                })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            voice.startVoice("first", "Research")
+            runCurrent()
+            voice.call("delegate", ThreadController.DEFER_TO_TEXT.capabilityId, "task" to "Research")
+            runCurrent()
+            assertEquals(2, admissions)
+            assertTrue(controller.state.value.voiceMode)
+            assertTrue(background.responseRequests.isEmpty())
+            promoted.complete(Unit)
+            runCurrent()
+            assertEquals(1, background.responseRequests.size)
+            assertEquals("HANDED_OFF", voice.results.last().status)
+            controller.stopAllTasks()
+            advanceUntilIdle()
+        }
+
+    @Test
+    fun `voice background status reads the same stalled and recovering task snapshots`() =
+        runTest {
+            var now = 1_000L
+            val voice = FakeProvider()
+            val background = FakeProvider(epoch = "background")
+            val controller = controller(voice, background = background, media = { VoiceMedia() }, now = { now })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            voice.startVoice("first", "Research")
+            voice.call("delegate", ThreadController.DEFER_TO_TEXT.capabilityId, "task" to "Research")
+            advanceUntilIdle()
+            val task = controller.taskSnapshots.value.single()
+            now += 180_001
+            controller.refreshTaskSnapshots()
+            voice.startVoice("second", "Check progress")
+            voice.call("stalled", ThreadController.BACKGROUND_STATUS.capabilityId)
+            runCurrent()
+            val stalled =
+                voice.results
+                    .last()
+                    .data!!
+                    .getValue("tasks")
+                    .jsonArray
+                    .single()
+                    .jsonObject
+            assertEquals("LOOKS_STUCK", stalled.getValue("state").jsonPrimitive.content)
+            assertEquals(
+                controller.taskSnapshots.value
+                    .single { it.taskId == task.taskId }
+                    .state.name,
+                stalled.getValue("state").jsonPrimitive.content,
+            )
+            background.channel.send(ProviderEvent.AssistantText(task.taskId, "New findings", false))
+            runCurrent()
+            voice.call("progress", ThreadController.BACKGROUND_STATUS.capabilityId)
+            runCurrent()
+            assertEquals(
+                "WORKING",
+                voice.results
+                    .last()
+                    .data!!
+                    .getValue("tasks")
+                    .jsonArray
+                    .single()
+                    .jsonObject
+                    .getValue("state")
+                    .jsonPrimitive.content,
+            )
+            controller.stopAllTasks()
+            advanceUntilIdle()
+        }
+
+    @Test
+    fun `force stop wins over an answer journal write already in progress`() =
+        runTest {
+            val writing = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val blockingStore =
+                object : ConversationStore by store {
+                    override suspend fun closeTurn(
+                        turnId: String,
+                        status: TurnStatus,
+                    ) {
+                        if (status == TurnStatus.ANSWERED) {
+                            writing.complete(Unit)
+                            release.await()
+                        }
+                        store.closeTurn(turnId, status)
+                    }
+                }
+            val provider = FakeProvider()
+            val controller = controller(provider, conversationStore = blockingStore)
+            advanceUntilIdle()
+            controller.connect("test")
+            advanceUntilIdle()
+            controller.submit("Finish this")
+            advanceUntilIdle()
+            val task = controller.taskSnapshots.value.single()
+            provider.channel.send(ProviderEvent.ResponseEnded(provider.input.id, "completed"))
+            writing.await()
+            controller.forceStopTask(task.taskId)
+            runCurrent()
+            assertTrue(controller.needsWorkCoverage.value)
+            release.complete(Unit)
+            advanceUntilIdle()
+            assertEquals(TurnStatus.INTERRUPTED, store.turns(task.threadId).single().status)
+            assertFalse(controller.needsWorkCoverage.value)
+        }
+
+    @Test
+    fun `force stop marks interruption before a slow action drains and coverage waits for its receipt`() =
+        runTest {
+            val entered = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val draining =
+                object : ExecutionBackend {
+                    override suspend fun unavailableReason(): String? = null
+
+                    override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome =
+                        withContext(NonCancellable) {
+                            executions++
+                            entered.complete(Unit)
+                            release.await()
+                            ExecutionOutcome(InvocationStatus.UNKNOWN, "A submitted action may have had effects")
+                        }
+                }
+            val provider = FakeProvider()
+            val controller = controller(provider, registry = CapabilityRegistry(mapOf(action.id to draining), listOf(action)))
+            advanceUntilIdle()
+            controller.connect("test")
+            advanceUntilIdle()
+            controller.submit("Start an action")
+            advanceUntilIdle()
+            provider.call("slow", action.id, "place" to "Park")
+            entered.await()
+            val task = controller.taskSnapshots.value.single()
+            controller.stopTask(task.taskId)
+            runCurrent()
+            controller.forceStopTask(task.taskId)
+            runCurrent()
+            assertEquals(TurnStatus.INTERRUPTED, store.turns(task.threadId).single().status)
+            assertTrue(controller.needsWorkCoverage.value)
+            assertTrue(store.items(task.threadId).filterIsInstance<ThreadItem.Notice>().any { it.text.contains("Force-stopped by you") })
+            release.complete(Unit)
+            advanceUntilIdle()
+            assertFalse(controller.needsWorkCoverage.value)
+            assertTrue(controller.taskSnapshots.value.isEmpty())
+            assertEquals(InvocationStatus.UNKNOWN, repository.history().single().status)
+            assertEquals(1, executions)
+        }
+
+    @Test
+    fun `coverage precedes provider acceptance and lasts through the final journal write`() =
+        runTest {
+            val promoted = CompletableDeferred<Unit>()
+            val writing = CompletableDeferred<Unit>()
+            val written = CompletableDeferred<Unit>()
+            val blockingStore =
+                object : ConversationStore by store {
+                    override suspend fun closeTurn(
+                        turnId: String,
+                        status: TurnStatus,
+                    ) {
+                        writing.complete(Unit)
+                        written.await()
+                        store.closeTurn(turnId, status)
+                    }
+                }
+            val provider = FakeProvider()
+            val controller = controller(provider, conversationStore = blockingStore, accepted = { promoted.await() })
+            advanceUntilIdle()
+            controller.connect("test")
+            advanceUntilIdle()
+            controller.submit("Wait for coverage")
+            runCurrent()
+            assertTrue(controller.needsWorkCoverage.value)
+            assertTrue(provider.responseRequests.isEmpty())
+            promoted.complete(Unit)
+            runCurrent()
+            provider.channel.send(ProviderEvent.ResponseEnded(provider.input.id, "completed"))
+            writing.await()
+            assertTrue(controller.needsWorkCoverage.value)
+            assertEquals(
+                TaskState.STOPPING,
+                controller.taskSnapshots.value
+                    .single()
+                    .state,
+            )
+            written.complete(Unit)
+            advanceUntilIdle()
+            assertFalse(controller.needsWorkCoverage.value)
+            assertTrue(controller.taskSnapshots.value.isEmpty())
+        }
+
+    @Test
+    fun `snapshots retain concurrent tasks across threads and stop all drains them`() =
+        runTest {
+            val provider = FakeProvider()
+            val background = FakeProvider(epoch = "background")
+            val controller = controller(provider, background = background)
+            advanceUntilIdle()
+            controller.connect("test")
+            advanceUntilIdle()
+            controller.submit("First task")
+            advanceUntilIdle()
+            val first = controller.taskSnapshots.value.single()
+            controller.disconnect()
+            advanceUntilIdle()
+            controller.newThread()
+            advanceUntilIdle()
+            controller.connect("test")
+            advanceUntilIdle()
+            controller.submit("Second task")
+            advanceUntilIdle()
+            val tasks = controller.taskSnapshots.value
+            assertEquals(2, tasks.size)
+            assertEquals(2, tasks.map { it.threadId }.distinct().size)
+            assertEquals(TaskKind.REHOMED_CONTINUATION, tasks.single { it.taskId == first.taskId }.kind)
+            controller.stopAllTasks()
+            advanceUntilIdle()
+            assertTrue(controller.taskSnapshots.value.isEmpty())
+            tasks.forEach { assertEquals(TurnStatus.INTERRUPTED, store.turns(it.threadId).single().status) }
+        }
+
+    @Test
+    fun `stalled task stays alive clears on progress and force stop never replays`() =
+        runTest {
+            var now = 1_000L
+            val provider = FakeProvider()
+            val controller = controller(provider, now = { now })
+            advanceUntilIdle()
+            controller.connect("test")
+            advanceUntilIdle()
+            controller.submit("Research this")
+            advanceUntilIdle()
+            val task = controller.taskSnapshots.value.single()
+            assertEquals(TaskKind.TYPED_TURN, task.kind)
+            controller.setWorkCoverage(WorkCoverage.SHORT_SERVICE)
+            controller.workCoverageNotice("Limited to three minutes")
+            controller.workCoverageNotice("Limited to three minutes")
+            runCurrent()
+            assertEquals(
+                WorkCoverage.SHORT_SERVICE,
+                controller.taskSnapshots.value
+                    .single()
+                    .coverage,
+            )
+            assertEquals(1, store.items(task.threadId).filterIsInstance<ThreadItem.Notice>().count { it.kind == NoticeKind.COVERAGE_LIMIT })
+            assertEquals(TurnStatus.OPEN, store.turns(task.threadId).single().status)
+            now += 180_001
+            controller.refreshTaskSnapshots()
+            assertEquals(
+                TaskState.LOOKS_STUCK,
+                controller.taskSnapshots.value
+                    .single()
+                    .state,
+            )
+            assertEquals(TurnStatus.OPEN, store.turns(task.threadId).single().status)
+            provider.channel.send(ProviderEvent.AssistantText(provider.input.id, "Found a source", false))
+            runCurrent()
+            assertEquals(
+                TaskState.WORKING,
+                controller.taskSnapshots.value
+                    .single()
+                    .state,
+            )
+            assertEquals(
+                now,
+                controller.taskSnapshots.value
+                    .single()
+                    .lastProgressAt,
+            )
+            controller.forceStopTask(task.taskId)
+            advanceUntilIdle()
+            assertTrue(controller.taskSnapshots.value.isEmpty())
+            assertFalse(controller.needsWorkCoverage.value)
+            assertEquals(TurnStatus.INTERRUPTED, store.turns(task.threadId).single().status)
+            assertTrue(store.items(task.threadId).filterIsInstance<ThreadItem.Notice>().any { it.text.contains("Force-stopped by you") })
+            assertEquals(0, executions)
+        }
 
     @Test
     fun `configured messaging bridges are named on the shared messaging tools only`() =
@@ -1600,7 +1897,7 @@ class ThreadControllerTest {
         }
 
     @Test
-    fun `coverage follows non voice turns even when the thread set and voice attachment stay the same`() =
+    fun `coverage is acquired for accepted voice work before handoff and rearmed for text work`() =
         runTest {
             val voice = FakeProvider()
             val background = FakeProvider(epoch = "background")
@@ -1610,7 +1907,7 @@ class ThreadControllerTest {
             advanceUntilIdle()
             voice.startVoice("first", "Research")
             runCurrent()
-            assertFalse(controller.needsWorkCoverage.value)
+            assertTrue(controller.needsWorkCoverage.value)
             val working = controller.working.value
             voice.call("delegate", ThreadController.DEFER_TO_TEXT.capabilityId, "task" to "Research")
             advanceUntilIdle()

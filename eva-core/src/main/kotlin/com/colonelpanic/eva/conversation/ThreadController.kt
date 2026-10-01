@@ -108,6 +108,8 @@ class ThreadController(
     private val prompt: suspend () -> PromptConfig = { PromptDefaults.config },
     /** Notification fallback when a background outcome cannot be delivered to attached voice. */
     private val onBackgroundAnswer: (BackgroundAnswer) -> Unit = {},
+    private val onWorkAccepted: suspend () -> Unit = {},
+    private val stallPeriodMillis: () -> Long = { 180_000L },
     private val nowMillis: () -> Long = System::currentTimeMillis,
     private val deviceTasks: com.colonelpanic.eva.devicecontrol.DeviceTaskCoordinator? = null,
 ) {
@@ -147,6 +149,120 @@ class ThreadController(
 
     private var shownThreadId: String? = null
     private val tasks = mutableMapOf<String, TurnTask>()
+    private val progress = mutableMapOf<String, TaskProgressRecord>()
+    private val mutableTaskSnapshots = MutableStateFlow<List<TaskSnapshot>>(emptyList())
+    val taskSnapshots = mutableTaskSnapshots.asStateFlow()
+    private var workCoverage = WorkCoverage.NONE
+    private val coverageNotices = mutableSetOf<Pair<String, String>>()
+
+    fun setWorkCoverage(coverage: WorkCoverage) {
+        workCoverage = coverage
+        refreshTaskSnapshots()
+    }
+
+    fun workCoverageNotice(reason: String) {
+        tasks.values.filter { it.active && coverageNotices.add(it.turnId to reason) }.forEach { task ->
+            launchFinalization {
+                store.append(notice(task.threadId, task.turnId, NoticeKind.COVERAGE_LIMIT, reason))
+                requestRefresh()
+            }
+        }
+    }
+
+    /** The host ticks this clock while running, independently of provider traffic. */
+    fun refreshTaskSnapshots() {
+        val now = nowMillis()
+        val device = deviceTasks?.running?.value
+        mutableTaskSnapshots.value =
+            tasks.values.map { task ->
+                val record = progress.getOrPut(task.turnId) { TaskProgressRecord(now) }
+                val ownsDevice = device?.turnId == task.turnId
+                val holdsLease = deviceTasks?.lease?.owner?.let { it in task.actionCallIds } == true
+                TaskSnapshot(
+                    task.threadId,
+                    threads.value.firstOrNull { it.id == task.threadId }?.title ?: task.request.take(60),
+                    task.turnId,
+                    task.request,
+                    when {
+                        ownsDevice -> TaskKind.DEVICE_TASK
+                        task.delegated -> TaskKind.DELEGATED_TEXT_AGENT
+                        task.isBackground -> TaskKind.REHOMED_CONTINUATION
+                        connectionTools[task.originLeg]?.voice == true -> TaskKind.VOICE_TURN
+                        else -> TaskKind.TYPED_TURN
+                    },
+                    when {
+                        now - record.lastProgressAt >= stallPeriodMillis() -> {
+                            TaskState.LOOKS_STUCK
+                        }
+
+                        !task.active -> {
+                            TaskState.STOPPING
+                        }
+
+                        ownsDevice && device.progress?.phase == TaskPhase.NEEDS_INPUT -> {
+                            TaskState.NEEDS_INPUT
+                        }
+
+                        ownsDevice || task.actionCallIds.any { it in deviceTasks?.waitingForLease?.value.orEmpty() } -> {
+                            TaskState.WAITING_FOR_DEVICE
+                        }
+
+                        record.waiting -> {
+                            TaskState.WAITING_FOR_EXTENSION
+                        }
+
+                        task.isBackground && task.backgroundState == "CONNECTING" -> {
+                            TaskState.CONNECTING
+                        }
+
+                        else -> {
+                            TaskState.WORKING
+                        }
+                    },
+                    record.startedAt,
+                    record.lastProgressAt,
+                    task.actionCallIds.size,
+                    record.lastActionTitle,
+                    record.lastActionStatus,
+                    holdsLease,
+                    workCoverage,
+                )
+            }
+    }
+
+    private fun taskProgress(turnId: String) {
+        progress[turnId]?.lastProgressAt = nowMillis()
+        refreshTaskSnapshots()
+    }
+
+    private fun providerProgress(
+        event: ProviderEvent,
+        leg: ConversationSession,
+    ) {
+        val input =
+            when (event) {
+                is ProviderEvent.ResponseStarted -> event.inputId
+                is ProviderEvent.ResponseEnded -> event.inputId
+                is ProviderEvent.AssistantText -> event.inputId
+                is ProviderEvent.ToolCallReady -> event.call.inputId
+                is ProviderEvent.Transcript -> event.inputId
+                else -> null
+            }
+        tasks.values
+            .filter { it.active && it.leg === leg && (input == null || it.inputId == input) }
+            .forEach { taskProgress(it.turnId) }
+    }
+
+    fun stopTask(taskId: String) {
+        tasks[taskId]?.interrupt(wording().message(Wording.TURN_STOP_REQUESTED))
+    }
+
+    fun stopAllTasks() = interruptAll(wording().message(Wording.TURN_STOP_REQUESTED))
+
+    fun forceStopTask(taskId: String) {
+        tasks[taskId]?.forceStop()
+    }
+
     private val mutationLocks = mutableMapOf<String, Mutex>()
 
     private data class VoiceTurn(
@@ -164,13 +280,31 @@ class ThreadController(
 
     private fun updateWorkCoverage() {
         mutableWorkCoverage.value =
-            tasks.values.any { (it.active || it.dispatches.any { dispatch -> dispatch.isActive }) && !voiceCovered(it) }
+            tasks.isNotEmpty() || journalJobs.isNotEmpty()
+        refreshTaskSnapshots()
     }
 
     /** Each turn's job until it completes, which can be after the turn leaves [tasks]. */
     private val turnJobs: MutableSet<Job> =
         java.util.concurrent.ConcurrentHashMap
             .newKeySet()
+
+    private val journalJobs =
+        java.util.concurrent.ConcurrentHashMap
+            .newKeySet<Job>()
+
+    private fun launchFinalization(block: suspend CoroutineScope.() -> Unit): Job =
+        scope.launch(NonCancellable, start = CoroutineStart.LAZY, block = block).also { job ->
+            turnJobs += job
+            journalJobs += job
+            job.invokeOnCompletion {
+                turnJobs -= job
+                journalJobs -= job
+                scope.launch { updateWorkCoverage() }
+            }
+            updateWorkCoverage()
+            job.start()
+        }
 
     /** Refreshes run one at a time, so an older read can never publish over a newer one. */
     private val refreshLock = Mutex()
@@ -328,7 +462,16 @@ class ThreadController(
 
     init {
         scope.launch {
+            deviceTasks?.lease?.ownerFlow?.collect { callId ->
+                tasks.values.firstOrNull { callId in it.actionCallIds }?.let { taskProgress(it.turnId) }
+                refreshTaskSnapshots()
+            }
+        }
+        scope.launch { deviceTasks?.waitingForLease?.collect { refreshTaskSnapshots() } }
+        scope.launch {
             deviceTasks?.running?.collect { running ->
+                running?.let { taskProgress(it.turnId) }
+                refreshTaskSnapshots()
                 val owned = running?.takeIf { it.threadId == shownThreadId }
                 mutableState.update {
                     it.copy(
@@ -625,6 +768,7 @@ class ThreadController(
         threadId: String,
         voice: Boolean,
     ) {
+        providerProgress(event, opened)
         when (event) {
             is ProviderEvent.Connected -> {
                 check(event.catalogRevision == connectionTools.getValue(opened).catalog.revision)
@@ -879,19 +1023,25 @@ class ThreadController(
             return
         }
         if (event.capabilityId == BACKGROUND_STATUS.capabilityId) {
+            refreshTaskSnapshots()
+            val live = taskSnapshots.value.associateBy { it.taskId }
             val items = store.items(threadId, limit = BACKGROUND_STATUS_ITEMS)
             val legs = items.filterIsInstance<ThreadItem.TextLeg>().associateBy { it.turnId }
             val calls = items.filterIsInstance<ThreadItem.ActionCall>().groupBy { it.turnId }
             val active =
                 tasks.values.filter {
-                    it.threadId == threadId && it.active &&
+                    it.threadId == threadId && it.turnId in live &&
                         (it.isBackground || it.delegated || deviceTasks?.owns(it.turnId) == true)
                 }
             val records = receipts(items) + repository.byCallIds(active.flatMap { it.actionCallIds })
             val turns = store.turns(threadId)
             val selected =
                 turns.filter { turn -> active.any { it.turnId == turn.id } } +
-                    turns.filter { it.status != TurnStatus.OPEN && it.id in legs }.takeLast(BACKGROUND_RECENT_TASKS).reversed()
+                    turns
+                        .filter { it.status != TurnStatus.OPEN && it.id in legs && it.id !in live }
+                        .takeLast(
+                            BACKGROUND_RECENT_TASKS,
+                        ).reversed()
             val summaries = mutableListOf<JsonObject>()
             var used = 256
             for (turn in selected) {
@@ -900,16 +1050,9 @@ class ThreadController(
                 val summary =
                     buildJsonObject {
                         put("taskId", turn.id)
-                        put("task", (legs[turn.id]?.task ?: task?.request ?: turn.request).take(256))
-                        put(
-                            "state",
-                            when {
-                                turn.status != TurnStatus.OPEN -> turn.status.name
-                                deviceTasks?.owns(turn.id) == true -> "WORKING"
-                                else -> task?.backgroundState ?: "CONNECTING"
-                            },
-                        )
-                        put("actions", actions.size)
+                        put("task", (live[turn.id]?.request ?: legs[turn.id]?.task ?: turn.request).take(256))
+                        put("state", live[turn.id]?.state?.name ?: turn.status.name)
+                        put("actions", live[turn.id]?.actionCount ?: actions.size)
                         put("historyLimited", items.size == BACKGROUND_STATUS_ITEMS && task == null)
                         actions.lastOrNull()?.let { id -> records[id]?.let { put("lastActionStatus", it.status.name) } }
                         put(
@@ -1254,6 +1397,7 @@ class ThreadController(
         mutableState.update { it.copy(isSubmitting = true, providerMessage = null) }
         scope.launch {
             val task = startTask(threadId, input.id, text, opened, spoken = false)
+            if (!task.active) return@launch
             try {
                 opened.submit(input)
                 opened.requestResponse(ResponseRequest(input.id))
@@ -1285,10 +1429,12 @@ class ThreadController(
         }
         val task = TurnTask(threadId, turnId, inputId, request, leg, announceOnly)
         tasks[turnId] = task
+        progress[turnId] = TaskProgressRecord(nowMillis())
         if (spoken) voiceTurns[leg to inputId] = VoiceTurn(turnId, announceOnly)
         mutableState.update { it.copy(working = threadId == shownThreadId) }
         mutableWorking.update { it + threadId }
         updateWorkCoverage()
+        onWorkAccepted()
         return task
     }
 
@@ -1355,6 +1501,9 @@ class ThreadController(
         private val deliveredCalls = mutableSetOf<CallIdentity>()
         private var mutationUncertain = false
         private var rehomed = false
+        private var forceStopReason: String? = null
+        private var forceStopJournal: Job? = null
+        private val terminalWrites = Mutex()
         private var detached = false
         val isBackground: Boolean get() = rehomed || detached
         var delegated = false
@@ -1383,6 +1532,13 @@ class ThreadController(
             val argumentError = if (arguments.values.any { it == null }) "This action binding requires scalar or list arguments." else null
             proposedCalls += event.call
             actionCallIds += id
+            progress[turnId]?.apply {
+                lastActionCallId = id
+                lastActionTitle = definition?.title ?: event.capabilityId
+                lastActionStatus = "DISPATCHING"
+                waiting = false
+            }
+            taskProgress(turnId)
             val proposal =
                 ToolProposal(
                     id,
@@ -1394,7 +1550,11 @@ class ThreadController(
                     turnId = turnId,
                     interactionMode = if (context.voice) InteractionMode.VOICE else InteractionMode.TYPED,
                     initiator = event.call.initiator,
-                    onWaiting = { mutableState.update { it.copy(providerMessage = "Still waiting for the action…") } },
+                    onWaiting = {
+                        progress[turnId]?.waiting = true
+                        refreshTaskSnapshots()
+                        mutableState.update { it.copy(providerMessage = "Still waiting for the action…") }
+                    },
                 )
             // A native tool that offers `quiet` lets the model skip the spoken follow-up to a completed call.
             val quiet =
@@ -1461,7 +1621,13 @@ class ThreadController(
                         rejection
                     }
                 try {
+                    taskProgress(turnId)
                     val result = dispatcher.execute(proposal, rejection ?: argumentError)
+                    progress[turnId]?.takeIf { it.lastActionCallId == id }?.apply {
+                        lastActionStatus = result.status.name
+                        waiting = false
+                    }
+                    taskProgress(turnId)
                     requestRefresh()
                     val changesPhone = definition?.readOnly == false && !definition.bookkeeping
                     if (changesPhone &&
@@ -1522,6 +1688,11 @@ class ThreadController(
                                     repository.byCallIds(listOf(id))[id]
                                         ?: dispatcher.execute(proposal, wording().message(Wording.TURN_STOPPED))
                                 }.getOrNull()
+                            progress[turnId]?.takeIf { it.lastActionCallId == id }?.apply {
+                                lastActionStatus = record?.status?.name ?: InvocationStatus.UNKNOWN.name
+                                waiting = false
+                            }
+                            taskProgress(turnId)
                             deliver(
                                 event.call,
                                 source,
@@ -1587,6 +1758,7 @@ class ThreadController(
             truncated: Boolean,
             spoken: Boolean,
         ) {
+            taskProgress(turnId)
             awaitingFollowUp = false
             answerParts += text
             if (background != null && !spoken) backgroundAnswers += text
@@ -1606,25 +1778,52 @@ class ThreadController(
         fun complete() {
             if (!active) return
             active = false
-            taskScope.launch(NonCancellable) {
+            refreshTaskSnapshots()
+            launchFinalization {
                 dispatches.toList().joinAll()
-                store.closeTurn(turnId, TurnStatus.ANSWERED)
-                reportBackground(TurnStatus.ANSWERED)
+                forceStopJournal?.join()
+                val status = if (forceStopReason == null) TurnStatus.ANSWERED else TurnStatus.INTERRUPTED
+                closeTurn(status)
+                forceStopJournal?.join()
+                reportBackground(if (forceStopReason == null) status else TurnStatus.INTERRUPTED, forceStopReason)
                 finish()
             }
+        }
+
+        private suspend fun closeTurn(status: TurnStatus) =
+            terminalWrites.withLock {
+                store.closeTurn(turnId, if (forceStopReason == null) status else TurnStatus.INTERRUPTED)
+            }
+
+        fun forceStop() {
+            if (forceStopReason != null) return
+            val reason = wording().message(Wording.TURN_FORCE_STOPPED)
+            forceStopReason = reason
+            forceStopJournal =
+                launchFinalization {
+                    closeTurn(TurnStatus.INTERRUPTED)
+                    store.append(notice(threadId, turnId, NoticeKind.INTERRUPTED, interruptionText(reason)))
+                    requestRefresh()
+                }
+            deviceTasks?.forceStop(turnId)
+            if (active) interrupt(forceStopReason!!)
+            taskScope.cancel()
+            refreshTaskSnapshots()
         }
 
         fun interrupt(reason: String) {
             val drainingDevice = deviceTasks?.stop(turnId) == true
             if (!active) return
             active = false
-            taskScope.launch(NonCancellable) {
+            refreshTaskSnapshots()
+            launchFinalization {
                 backgroundReady.complete(false)
                 if (!drainingDevice) dispatches.forEach { it.cancel() }
                 dispatches.joinAll()
-                store.closeTurn(turnId, TurnStatus.INTERRUPTED)
-                store.append(notice(threadId, turnId, NoticeKind.INTERRUPTED, interruptionText(reason)))
-                reportBackground(TurnStatus.INTERRUPTED, reason)
+                forceStopJournal?.join()
+                closeTurn(TurnStatus.INTERRUPTED)
+                if (forceStopReason == null) store.append(notice(threadId, turnId, NoticeKind.INTERRUPTED, interruptionText(reason)))
+                reportBackground(TurnStatus.INTERRUPTED, forceStopReason ?: reason)
                 finish()
             }
         }
@@ -1638,12 +1837,14 @@ class ThreadController(
             active = false
             backgroundReady.complete(false)
             val drainingDevice = deviceTasks?.stop(turnId) == true
-            taskScope.launch(NonCancellable) {
+            launchFinalization {
                 if (!drainingDevice) dispatches.forEach { it.cancel() }
                 dispatches.joinAll()
-                store.closeTurn(turnId, TurnStatus.FAILED)
-                store.append(notice(threadId, turnId, NoticeKind.INTERRUPTED, interruptionText(reason)))
-                reportBackground(TurnStatus.FAILED, reason)
+                forceStopJournal?.join()
+                val status = if (forceStopReason == null) TurnStatus.FAILED else TurnStatus.INTERRUPTED
+                closeTurn(status)
+                if (forceStopReason == null) store.append(notice(threadId, turnId, NoticeKind.INTERRUPTED, interruptionText(reason)))
+                reportBackground(status, forceStopReason ?: reason)
                 finish()
             }
         }
@@ -1653,6 +1854,8 @@ class ThreadController(
             background = null
             leg = null
             tasks.remove(turnId)
+            progress.remove(turnId)
+            coverageNotices.removeAll { it.first == turnId }
             if (tasks.values.none { it.threadId == threadId }) mutationLocks.remove(threadId)
             updateWorkCoverage()
             if (!hasActiveTasks(threadId)) mutableWorking.update { it - threadId }
@@ -1688,6 +1891,7 @@ class ThreadController(
             // Keep the proposing leg reachable until sibling calls have delivered their receipts.
             taskScope.launch(start = CoroutineStart.UNDISPATCHED) {
                 try {
+                    onWorkAccepted()
                     dispatches.toList().joinAll()
                     if (active) rehome(instruction)
                 } finally {
@@ -1800,6 +2004,7 @@ class ThreadController(
                                 var connected = false
                                 opened.events.takeWhile { it != ProviderEvent.Closed }.collect { event ->
                                     if (leg !== opened || !active) return@collect
+                                    providerProgress(event, opened)
                                     when (event) {
                                         is ProviderEvent.Connected -> {
                                             check(event.catalogRevision == catalog.revision)
@@ -1817,6 +2022,7 @@ class ThreadController(
                                                 }
                                                 opened.requestResponse(ResponseRequest(turnId))
                                                 backgroundState = "WORKING"
+                                                taskProgress(turnId)
                                                 backgroundReady.complete(true)
                                             }
                                         }

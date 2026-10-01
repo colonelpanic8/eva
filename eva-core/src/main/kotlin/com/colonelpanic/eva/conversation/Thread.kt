@@ -24,7 +24,7 @@ data class Turn(
     val createdAtMillis: Long,
 )
 
-enum class NoticeKind { SESSION_STARTED, SESSION_ENDED, REHOMED, INTERRUPTED }
+enum class NoticeKind { SESSION_STARTED, SESSION_ENDED, REHOMED, INTERRUPTED, COVERAGE_LIMIT }
 
 /** An attributed item in a thread, in the order it happened. */
 sealed interface ThreadItem {
