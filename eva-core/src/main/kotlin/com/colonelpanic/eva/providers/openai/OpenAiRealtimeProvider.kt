@@ -18,6 +18,7 @@ import com.colonelpanic.eva.providers.ProviderToolDefinition
 import com.colonelpanic.eva.providers.ResponseRequest
 import com.colonelpanic.eva.providers.SessionOpenRequest
 import com.colonelpanic.eva.providers.wireOutcome
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -29,6 +30,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
@@ -41,9 +43,14 @@ import kotlinx.serialization.json.put
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
 import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 /**
  * Direct WebRTC session with the OpenAI Realtime API. The phone posts its own SDP offer
@@ -58,6 +65,7 @@ class OpenAiRealtimeProvider(
     private val client: OkHttpClient = realtimeCallClient(),
     private val voice: String = "marin",
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val sideband: RealtimeSideband = OkHttpRealtimeSideband(access, client),
 ) : ConversationProvider {
     override suspend fun open(request: SessionOpenRequest): ConversationSession {
         require(request.catalog.tools.size <= CatalogAdmission.LIMIT) {
@@ -77,12 +85,7 @@ class OpenAiRealtimeProvider(
         if (request.history.isNotEmpty()) media.setMicrophoneMuted(true)
         try {
             val offer = media.createOffer()
-            val byteLimit = realtimeSessionByteLimit(offer)
-            require(sessionBytes <= byteLimit) {
-                "Voice configuration with ${named.size} tools is $sessionBytes bytes, above the safe WebRTC configuration bound " +
-                    "of $byteLimit bytes. Shorten the prompt or disable large extensions in Settings; text may offer more tools."
-            }
-            val answer =
+            val (answer, callId) =
                 withContext(ioDispatcher) {
                     val body =
                         MultipartBody
@@ -107,8 +110,21 @@ class OpenAiRealtimeProvider(
                         val text = it.body.string()
                         check(it.isSuccessful) { openAiErrorMessage(it.code, text, "the voice session") }
                         check(text.startsWith("v=")) { "OpenAI returned an unexpected answer." }
-                        text
+                        text to it.header("Location")?.substringAfterLast('/')?.takeIf(String::isNotBlank)
                     }
+                }
+            // The call request carries the whole configuration, but OpenAI only echoes a session
+            // that fits the data channel's advertised message size. A larger one is confirmed
+            // through a sideband connection to the same call, which has no such bound.
+            val confirm =
+                if (named.isNotEmpty() && sessionBytes > realtimeEchoByteLimit(offer)) {
+                    checkNotNull(callId) {
+                        "OpenAI did not identify the voice call, so EVA cannot confirm its configuration with ${named.size} tools " +
+                            "($sessionBytes bytes), which is too large to confirm over the voice connection."
+                    }
+                    suspend { sideband.configuredSession(callId) }
+                } else {
+                    null
                 }
             media.acceptAnswer(answer)
             withTimeout(30_000) { media.eventsReady.first { it } }
@@ -120,6 +136,9 @@ class OpenAiRealtimeProvider(
                 access.label,
                 request.history,
                 microphoneWasMuted,
+                confirm,
+                sessionBytes,
+                ioDispatcher,
             )
         } catch (error: Exception) {
             if (request.history.isNotEmpty() && !microphoneWasMuted) media.setMicrophoneMuted(false)
@@ -135,16 +154,97 @@ private fun realtimeCallClient(): OkHttpClient =
         .callTimeout(20, TimeUnit.SECONDS)
         .build()
 
-internal fun realtimeSessionByteLimit(offer: String): Int {
+/**
+ * The largest session whose echo OpenAI delivers over the data channel: the offer's advertised
+ * receive size (64 KiB when absent, unbounded when zero) less room for server-added fields.
+ */
+internal fun realtimeEchoByteLimit(offer: String): Long {
     val advertised =
         Regex("(?m)^a=max-message-size:(\\d+)")
             .find(offer)
             ?.groupValues
             ?.get(1)
             ?.toLongOrNull() ?: 65_536L
-    val receiveBytes = if (advertised == 0L) Long.MAX_VALUE else advertised
-    return minOf(CatalogAdmission.VOICE_SESSION_BYTES.toLong(), (receiveBytes - 8 * 1024).coerceAtLeast(0)).toInt()
+    if (advertised == 0L) return Long.MAX_VALUE
+    return (advertised - 8 * 1024).coerceAtLeast(0)
 }
+
+/** Reads a call's configured session through a second connection to it. */
+fun interface RealtimeSideband {
+    suspend fun configuredSession(callId: String): JsonObject
+}
+
+/**
+ * Attaches a WebSocket to the call, asks for an unchanged session update and returns the session
+ * OpenAI echoes, then detaches; closing the sideband leaves the call running.
+ */
+class OkHttpRealtimeSideband(
+    private val access: OpenAiAccess,
+    private val client: OkHttpClient,
+) : RealtimeSideband {
+    override suspend fun configuredSession(callId: String): JsonObject {
+        val url = access.realtimeCallsUrl.removeSuffix("/calls") + "?call_id=" + callId
+        val request = access.authorize(Request.Builder().url(url)).build()
+        val json = Json { ignoreUnknownKeys = true }
+        return suspendCancellableCoroutine { continuation ->
+            val socket =
+                client.newWebSocket(
+                    request,
+                    object : WebSocketListener() {
+                        override fun onOpen(
+                            webSocket: WebSocket,
+                            response: Response,
+                        ) {
+                            webSocket.send(REALTIME_UNCHANGED_UPDATE)
+                        }
+
+                        override fun onMessage(
+                            webSocket: WebSocket,
+                            text: String,
+                        ) {
+                            val message = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return
+                            when (message.str("type")) {
+                                "session.updated" -> {
+                                    webSocket.close(1000, null)
+                                    message.obj("session")?.let { if (continuation.isActive) continuation.resume(it) }
+                                }
+
+                                "error" -> {
+                                    webSocket.close(1000, null)
+                                    val detail = message.obj("error")?.str("message") ?: "OpenAI reported an error."
+                                    if (continuation.isActive) continuation.resumeWithException(IllegalStateException(detail))
+                                }
+                            }
+                        }
+
+                        override fun onFailure(
+                            webSocket: WebSocket,
+                            t: Throwable,
+                            response: Response?,
+                        ) {
+                            val detail =
+                                response?.let { "HTTP ${it.code}" } ?: t.message ?: t::class.simpleName
+                            if (continuation.isActive) continuation.resumeWithException(IllegalStateException(detail, t))
+                        }
+
+                        override fun onClosed(
+                            webSocket: WebSocket,
+                            code: Int,
+                            reason: String,
+                        ) {
+                            if (continuation.isActive) {
+                                continuation.resumeWithException(IllegalStateException("the connection closed before OpenAI replied"))
+                            }
+                        }
+                    },
+                )
+            continuation.invokeOnCancellation { socket.cancel() }
+        }
+    }
+}
+
+/** A no-op change to a setting EVA always sends with tools, so OpenAI echoes the session. */
+internal const val REALTIME_UNCHANGED_UPDATE = """{"type":"session.update","session":{"type":"realtime","tool_choice":"auto"}}"""
 
 internal const val REALTIME_CONFIG_ACK_TIMEOUT_MILLIS = 8_000L
 
@@ -167,6 +267,10 @@ private class OpenAiRealtimeSession(
     private val accountLabel: String,
     history: List<HistoryItem>,
     private val microphoneWasMuted: Boolean,
+    /** Present when the configuration is too large for its echo to arrive on the data channel. */
+    private val confirm: (suspend () -> JsonObject)?,
+    private val sessionBytes: Int,
+    private val ioDispatcher: CoroutineDispatcher,
 ) : ConversationSession {
     override val connectionEpoch: String = UUID.randomUUID().toString()
     private var sessionId: String? = null
@@ -250,6 +354,41 @@ private class OpenAiRealtimeSession(
             eventScope = this
             send(ProviderEvent.Account(accountLabel))
             val forward = launch { for (event in local) send(event) }
+
+            fun configured(session: JsonObject?) {
+                val acknowledged =
+                    (session?.get("tools") as? JsonArray)
+                        ?.mapNotNull { (it as? JsonObject)?.str("name") }
+                        ?.toSet()
+                        .orEmpty()
+                if (sessionId != null || acknowledged != tools.keys) return
+                sessionId = session?.str("id") ?: UUID.randomUUID().toString()
+                val connected =
+                    ProviderEvent.Connected(
+                        checkNotNull(sessionId),
+                        catalogRevision,
+                        session?.str("model") ?: model,
+                    )
+                if (seedReady) {
+                    emit(connected)
+                } else {
+                    pendingConnected = connected
+                    val gate = CompletableDeferred<Boolean>()
+                    seedGate = gate
+                    seedItems.forEach { sendItem(it.event, ItemRequest(seedItemId = it.id)) }
+                    seedTimeout =
+                        launch {
+                            delay(REALTIME_HISTORY_ACK_TIMEOUT_MILLIS)
+                            if (gate.complete(false)) {
+                                emit(
+                                    ProviderEvent.Failure(
+                                        "OpenAI did not acknowledge EVA's conversation history within 10 seconds.",
+                                    ),
+                                )
+                            }
+                        }
+                }
+            }
             val receiving =
                 launch {
                     media.events.collect { raw ->
@@ -261,41 +400,7 @@ private class OpenAiRealtimeSession(
                         }
                         when (message.str("type")) {
                             "session.created", "session.updated" -> {
-                                if (sessionId == null) {
-                                    val session = message.obj("session")
-                                    val acknowledged =
-                                        (session?.get("tools") as? JsonArray)
-                                            ?.mapNotNull { (it as? JsonObject)?.str("name") }
-                                            ?.toSet()
-                                            .orEmpty()
-                                    if (acknowledged != tools.keys) return@collect
-                                    sessionId = session?.str("id") ?: UUID.randomUUID().toString()
-                                    val connected =
-                                        ProviderEvent.Connected(
-                                            checkNotNull(sessionId),
-                                            catalogRevision,
-                                            session?.str("model") ?: model,
-                                        )
-                                    if (seedReady) {
-                                        emit(connected)
-                                    } else {
-                                        pendingConnected = connected
-                                        val gate = CompletableDeferred<Boolean>()
-                                        seedGate = gate
-                                        seedItems.forEach { sendItem(it.event, ItemRequest(seedItemId = it.id)) }
-                                        seedTimeout =
-                                            launch {
-                                                delay(REALTIME_HISTORY_ACK_TIMEOUT_MILLIS)
-                                                if (gate.complete(false)) {
-                                                    emit(
-                                                        ProviderEvent.Failure(
-                                                            "OpenAI did not acknowledge EVA's conversation history within 10 seconds.",
-                                                        ),
-                                                    )
-                                                }
-                                            }
-                                    }
-                                }
+                                if (sessionId == null) configured(message.obj("session"))
                             }
 
                             "conversation.item.created", "conversation.item.added" -> {
@@ -463,23 +568,45 @@ private class OpenAiRealtimeSession(
                         }
                     }
                 }
+            var unconfirmed = false
+
+            fun failUnconfigured(cause: String?) {
+                if (sessionId != null || unconfirmed) return
+                unconfirmed = true
+                val how = if (confirm == null) "" else " through its sideband connection"
+                emit(
+                    ProviderEvent.Failure(
+                        "OpenAI did not confirm the voice configuration with ${tools.size} tools ($sessionBytes bytes)$how" +
+                            (cause?.let { ": $it" } ?: " within 8 seconds.") +
+                            " EVA did not start the call without its tools. Try again, or use a typed conversation.",
+                    ),
+                )
+                receiving.cancel()
+            }
+            val confirmation =
+                confirm?.let { read ->
+                    launch {
+                        try {
+                            val session = withContext(ioDispatcher) { read() }
+                            configured(session)
+                            val count = (session["tools"] as? JsonArray)?.size ?: 0
+                            if (sessionId == null) failUnconfigured("OpenAI reports $count of the ${tools.size} tools configured.")
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (error: Exception) {
+                            failUnconfigured(error.message ?: error::class.simpleName)
+                        }
+                    }
+                }
             val configurationTimeout =
                 launch {
                     delay(REALTIME_CONFIG_ACK_TIMEOUT_MILLIS)
-                    if (sessionId == null) {
-                        emit(
-                            ProviderEvent.Failure(
-                                "OpenAI did not acknowledge the voice configuration with ${tools.size} tools within 8 seconds. " +
-                                    "A large tool catalog or prompt can exceed the WebRTC size boundary. " +
-                                    "Try text or reduce extensions in Settings.",
-                            ),
-                        )
-                        receiving.cancel()
-                    }
+                    failUnconfigured(null)
                 }
             try {
                 receiving.join()
             } finally {
+                confirmation?.cancel()
                 configurationTimeout.cancel()
                 this@OpenAiRealtimeSession.close()
                 forward.cancel()

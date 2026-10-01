@@ -594,7 +594,8 @@ class OpenAiRealtimeProviderTest {
             assertTrue(events.none { it is ProviderEvent.Connected })
             val failure = events.filterIsInstance<ProviderEvent.Failure>().single()
             assertTrue(
-                failure.message.contains("1 tools") && failure.message.contains("WebRTC size") && failure.message.contains("8 seconds"),
+                failure.message.contains("1 tools") && failure.message.contains("8 seconds") &&
+                    failure.message.contains("without its tools"),
             )
             assertEquals(ProviderEvent.Closed, events.last())
             collector.cancel()
@@ -620,26 +621,99 @@ class OpenAiRealtimeProviderTest {
             collector.cancel()
         }
 
+    private val locatedClient =
+        OkHttpClient
+            .Builder()
+            .addInterceptor { chain ->
+                val buffer = Buffer().also { chain.request().body?.writeTo(it) }
+                requests += buffer.readUtf8()
+                Response
+                    .Builder()
+                    .request(chain.request())
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(201)
+                    .message("Created")
+                    .header("Location", "/v1/realtime/calls/rtc_test")
+                    .body("v=0 answer".toResponseBody("application/sdp".toMediaType()))
+                    .build()
+            }.build()
+
+    /** Instructions large enough that OpenAI cannot echo the session on a 64 KiB data channel. */
+    private val largeInstructions = "x".repeat(70_000)
+
     @Test
-    fun `an oversized final configuration fails before posting even with one tool`() =
+    fun `a configuration too large to echo is posted whole and confirmed through the sideband`() =
         runTest {
-            val error =
-                runCatching {
-                    openSession(
-                        FakeMedia(),
-                    ).open(SessionOpenRequest("x".repeat(com.colonelpanic.eva.capability.CatalogAdmission.VOICE_SESSION_BYTES), catalog))
-                }.exceptionOrNull()
-            assertTrue(error is IllegalArgumentException)
-            assertTrue(error!!.message!!.contains("1 tools") && error.message!!.contains("safe WebRTC"))
-            assertTrue(requests.isEmpty())
+            val media = FakeMedia()
+            val asked = mutableListOf<String>()
+            val session =
+                OpenAiRealtimeProvider(
+                    ApiKeyAccess("sk-test", "https://example.test"),
+                    media,
+                    client = locatedClient,
+                    ioDispatcher = StandardTestDispatcher(testScheduler),
+                    sideband = { callId ->
+                        asked += callId
+                        Json.parseToJsonElement("""{"id":"sess_big","tools":[{"name":"eva_tool_0"}]}""").jsonObject
+                    },
+                ).open(SessionOpenRequest(largeInstructions, catalog))
+            assertTrue(requests.single().contains(largeInstructions) && requests.single().contains("eva_tool_0"))
+            val events = mutableListOf<ProviderEvent>()
+            val collector = launch { session.events.collect { events += it } }
+            media.incoming.send("""{"type":"session.created","session":{"id":"sess_big","tools":[]}}""")
+            runCurrent()
+            assertEquals(listOf("rtc_test"), asked)
+            assertEquals("sess_big", events.filterIsInstance<ProviderEvent.Connected>().single().sessionId)
+            advanceTimeBy(REALTIME_CONFIG_ACK_TIMEOUT_MILLIS)
+            runCurrent()
+            assertTrue(events.none { it is ProviderEvent.Failure })
+            collector.cancel()
         }
 
     @Test
-    fun `configuration safety follows the advertised receive size with a server-envelope margin`() {
-        assertEquals(248 * 1024, realtimeSessionByteLimit("v=0\r\na=max-message-size:262144\r\n"))
-        assertEquals(56 * 1024, realtimeSessionByteLimit("v=0\r\na=max-message-size:65536\r\n"))
-        assertEquals(56 * 1024, realtimeSessionByteLimit("v=0"))
-        assertEquals(248 * 1024, realtimeSessionByteLimit("v=0\r\na=max-message-size:0\r\n"))
+    fun `a sideband echo missing tools fails at once instead of starting a call without them`() =
+        runTest {
+            val media = FakeMedia()
+            val session =
+                OpenAiRealtimeProvider(
+                    ApiKeyAccess("sk-test", "https://example.test"),
+                    media,
+                    client = locatedClient,
+                    ioDispatcher = StandardTestDispatcher(testScheduler),
+                    sideband = { Json.parseToJsonElement("""{"id":"sess_big","tools":[]}""").jsonObject },
+                ).open(SessionOpenRequest(largeInstructions, catalog))
+            val events = mutableListOf<ProviderEvent>()
+            val collector = launch { session.events.collect { events += it } }
+            runCurrent()
+            val failure = events.filterIsInstance<ProviderEvent.Failure>().single()
+            assertTrue(failure.message.contains("sideband") && failure.message.contains("0 of the 1 tools"))
+            assertTrue(events.none { it is ProviderEvent.Connected })
+            assertEquals(ProviderEvent.Closed, events.last())
+            collector.cancel()
+        }
+
+    @Test
+    fun `a configuration too large to echo needs the call ID to be confirmed`() =
+        runTest {
+            val error =
+                runCatching {
+                    OpenAiRealtimeProvider(
+                        ApiKeyAccess("sk-test", "https://example.test"),
+                        FakeMedia(),
+                        client = client,
+                        ioDispatcher = StandardTestDispatcher(testScheduler),
+                        sideband = { error("not reached") },
+                    ).open(SessionOpenRequest(largeInstructions, catalog))
+                }.exceptionOrNull()
+            assertTrue(error is IllegalStateException && error.message!!.contains("did not identify the voice call"))
+        }
+
+    @Test
+    fun `the echo bound follows the advertised receive size with a server-envelope margin`() {
+        assertEquals(248L * 1024, realtimeEchoByteLimit("v=0\r\na=max-message-size:262144\r\n"))
+        assertEquals(56L * 1024, realtimeEchoByteLimit("v=0\r\na=max-message-size:65536\r\n"))
+        assertEquals(56L * 1024, realtimeEchoByteLimit("v=0"))
+        assertEquals(Long.MAX_VALUE, realtimeEchoByteLimit("v=0\r\na=max-message-size:0\r\n"))
     }
 
     @Test
