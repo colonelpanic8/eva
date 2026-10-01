@@ -12,6 +12,7 @@ import com.colonelpanic.eva.capability.ExecutionOutcome
 import com.colonelpanic.eva.capability.InitiatorKind
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.MemoryInvocationRepository
+import com.colonelpanic.eva.capability.ToolProposal
 import com.colonelpanic.eva.conversation.MemoryConversationStore
 import com.colonelpanic.eva.conversation.ProviderStatus
 import com.colonelpanic.eva.conversation.ThreadController
@@ -312,6 +313,112 @@ class RealtimeTurnOwnershipTest {
         }
 
     @Test
+    fun `a handoff starts without waiting for a sibling device task and each call keeps one result`() =
+        runTest {
+            val f = fixture()
+            f.speech("request", "r1", "Do this on the phone and research that")
+            f.call("r1", "device", CapabilityRegistry.DEVICE_TASK)
+            f.call("r1", "delegate", ThreadController.DEFER_TO_TEXT.capabilityId, buildJsonObject { put("task", "Research that") })
+            f.done("r1")
+            runCurrent()
+            assertNotNull(f.background.request.continuation)
+            assertEquals(
+                "HANDED_OFF",
+                f
+                    .outputs("delegate")
+                    .single()
+                    .getValue("status")
+                    .jsonPrimitive.content,
+            )
+            assertTrue(f.outputs("device").isEmpty())
+            f.gate.complete(Unit)
+            runCurrent()
+            assertEquals(1, f.outputs("device").size)
+            assertEquals(1, f.outputs("delegate").size)
+            f.close()
+        }
+
+    @Test
+    fun `a long lookup in a voice turn says once that it is still working`() =
+        runTest {
+            val f = fixture()
+
+            fun notes() =
+                f.media.sent.map { Json.parseToJsonElement(it).jsonObject }.count {
+                    it["type"]?.jsonPrimitive?.content == "response.create" &&
+                        it
+                            .getValue("response")
+                            .jsonObject
+                            .getValue("metadata")
+                            .jsonObject["eva_purpose"]
+                            ?.jsonPrimitive
+                            ?.content == "lifecycle_note"
+                }
+            f.speech("request", "r1", "Look this up")
+            f.call("r1", "lookup", "test.lookup")
+            f.done("r1")
+            advanceTimeBy(7_000)
+            runCurrent()
+            assertEquals(0, notes())
+            advanceTimeBy(1_001)
+            runCurrent()
+            assertEquals(1, notes())
+            assertEquals(
+                "none",
+                f
+                    .acceptRequest("still-working")
+                    .getValue("tool_choice")
+                    .jsonPrimitive.content,
+            )
+            f.done("still-working")
+            advanceTimeBy(30_000)
+            runCurrent()
+            assertEquals(1, notes())
+            assertTrue(f.outputs("lookup").isEmpty())
+            f.gate.complete(Unit)
+            runCurrent()
+            assertEquals(1, f.outputs("lookup").size)
+            f.close()
+        }
+
+    @Test
+    fun `a deferred hang-up waits for another turn's slow result to be spoken`() =
+        runTest {
+            val f = fixture()
+            f.speech("first", "r1", "Do the slow thing")
+            f.call("r1", "slow", "test.wait")
+            f.done("r1")
+            runCurrent()
+            f.speech("second", "r2", "That's all, bye")
+            f.call("r2", "bye", ThreadController.END_CONVERSATION.capabilityId)
+            f.done("r2")
+            runCurrent()
+            assertEquals(
+                "NOT_EXECUTED",
+                f
+                    .outputs("bye")
+                    .single()
+                    .getValue("status")
+                    .jsonPrimitive.content,
+            )
+            f.acceptRequest("bye-reply")
+            f.text("bye-reply", "One moment, the first request is still running.")
+            f.done("bye-reply")
+            runCurrent()
+            assertEquals(ProviderStatus.CONNECTED, f.controller.state.value.providerStatus)
+
+            f.gate.complete(Unit)
+            runCurrent()
+            assertEquals(1, f.outputs("slow").size)
+            f.acceptRequest("slow-reply")
+            f.text("slow-reply", "The slow thing is done. Bye.")
+            f.done("slow-reply")
+            runCurrent()
+            assertEquals(ProviderStatus.DISCONNECTED, f.controller.state.value.providerStatus)
+            f.close()
+        }
+
+    @Test
     fun `barge-in cancels running and unacknowledged responses without executing their tools`() =
         runTest {
             for (acknowledgedBeforeSpeech in listOf(false, true)) {
@@ -594,6 +701,31 @@ class RealtimeTurnOwnershipTest {
             f.done("device-reply")
             runCurrent()
             assertEquals(1, f.outputs("device").size)
+            f.close()
+        }
+
+    @Test
+    fun `a screen action waiting on the device does not block a message on the same thread`() =
+        runTest {
+            val f = fixture()
+            f.speech("first", "r1", "Tap the blue button")
+            f.call("r1", "tap", "test.tap")
+            f.done("r1")
+            runCurrent()
+            f.speech("second", "r2", "Text Bob I'm late")
+            f.call("r2", "message", "test.mutate")
+            f.done("r2")
+            runCurrent()
+            assertEquals(listOf("test.tap", "test.mutate"), f.executions)
+            assertTrue(f.outputs("tap").isEmpty())
+            assertEquals(
+                "COMPLETED",
+                f
+                    .outputs("message")
+                    .single()
+                    .getValue("status")
+                    .jsonPrimitive.content,
+            )
             f.close()
         }
 
@@ -1007,20 +1139,24 @@ class RealtimeTurnOwnershipTest {
         lateinit var voice: ConversationSession
         private lateinit var request: SessionOpenRequest
         val acknowledged = mutableSetOf<String>()
+        private val ids = listOf("test.read", "test.lookup", "test.wait", "test.mutate", "test.tap", CapabilityRegistry.DEVICE_TASK)
+        private val blocking = setOf("test.wait", "test.lookup", "test.tap", CapabilityRegistry.DEVICE_TASK)
         private val registry =
             CapabilityRegistry(
-                listOf("test.read", "test.wait", "test.mutate", CapabilityRegistry.DEVICE_TASK).associateWith { id ->
+                ids.associateWith { id ->
                     object : ExecutionBackend {
+                        override fun usesDeviceUi(proposal: ToolProposal): Boolean = id == "test.tap"
+
                         override suspend fun unavailableReason(): String? = null
 
                         override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome {
                             executions += id
-                            if (id == "test.wait" || id == CapabilityRegistry.DEVICE_TASK) gate.await()
+                            if (id in blocking) gate.await()
                             return ExecutionOutcome(InvocationStatus.COMPLETED, "Done")
                         }
                     }
                 },
-                listOf("test.read", "test.wait", "test.mutate", CapabilityRegistry.DEVICE_TASK).map {
+                ids.map {
                     CapabilityDefinition(
                         it,
                         it,
@@ -1030,7 +1166,7 @@ class RealtimeTurnOwnershipTest {
                                 """{"type":"object","properties":{},"required":[],"additionalProperties":false}""",
                             ).jsonObject,
                         readOnly =
-                            it == "test.read",
+                            it == "test.read" || it == "test.lookup",
                     )
                 },
             )

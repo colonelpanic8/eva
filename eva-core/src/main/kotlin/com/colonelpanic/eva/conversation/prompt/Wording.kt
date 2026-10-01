@@ -76,6 +76,7 @@ data class Wording(
         const val INTERRUPTED_RESPONSE_ACTION = "interrupted-response-action"
         const val INCOMPLETE_ACTION = "incomplete-action"
         const val ACTION_QUEUED = "action-queued"
+        const val ACTION_STILL_WORKING = "action-still-working"
         const val UNKNOWN_ORIGIN = "unknown-origin"
         const val UNOWNED_ACTION = "unowned-action"
         const val DEVICE_RELEASE_UNCERTAIN = "device-release-uncertain"

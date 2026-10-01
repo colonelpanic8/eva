@@ -196,13 +196,15 @@ and stopping are never flagged. Device owners are working, while queued tasks
 wait for device control. Only attributed provider events count as progress.
 Streaming progress updates the clock silently; a one-second tick publishes it,
 while state changes publish immediately. Only task-list/settings screens collect
-the snapshot flow. This is advisory and never kills work. Existing per-turn action budgets and
-device-task step/time budgets continue to apply.
+the snapshot flow. This is advisory and never kills work. Device-task step/time
+budgets continue to apply.
 
 A turn can run successive native or extension reads and mutations without another
-user message. Calls execute sequentially with a ceiling of 32 admitted calls,
-including at most 24 reads, per turn; the same budget follows a turn onto its
-background leg. Every call retains dispatcher validation, grants, and journaling.
+user message. EVA does not cap the number of calls a turn or its background leg
+makes; the user stops runaway work from Running work. Every call retains
+dispatcher validation, grants, and journaling. A typed request may be as long as
+the connected session accepts (4,000 characters for OpenAI, 1,000 for the voice
+broker); a longer one is refused with its length and that bound.
 An unknown or failed mutation blocks further mutations in that turn because partial
 external effects may exist; read-only verification remains available. Process
 recovery marks interrupted work and never automatically repeats it. The legacy
@@ -761,8 +763,12 @@ The service handles both Android timeout callbacks without assuming their type.
 Voice shutdown rechecks coverage, including when an earlier attempt was refused.
 
 The ongoing notification shows the active task count, a task's text and elapsed
-time, any **looks stuck** marker or fallback limit, Stop all, and a link to Running
-work. Notification permission can hide Android notifications; thread notices and
+time, any **looks stuck** marker or fallback limit, Stop background work (which
+leaves a live call's turn running), and a link to Running work. It uses Android's
+deferred foreground-service display (about ten seconds on Android 12 and later),
+so short typed work does not flash it, and it is reposted only when its text changes. During a call the work service
+holds the voice notification's ID instead, so the call shows one notification;
+the work notification returns when the call ends. Notification permission can hide Android notifications; thread notices and
 the in-app task surface still expose restrictions. Services remain non-sticky;
 force-stop and process death do not trigger replay. A foreground service is not a
 wake lock, a lock-screen bypass, or a guarantee against OEM/process termination.

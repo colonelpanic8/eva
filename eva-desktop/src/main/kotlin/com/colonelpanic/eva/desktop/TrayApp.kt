@@ -156,7 +156,7 @@ private fun Conversation(
         val text = draft.trim()
         if (text.isEmpty() || !canSend) return
         if (text.length > ThreadController.MAX_REQUEST_CHARS) {
-            problem = "Keep requests under 1,000 characters."
+            problem = ThreadController.requestTooLong(text.length, ThreadController.MAX_REQUEST_CHARS)
             return
         }
         controller.submit(text)

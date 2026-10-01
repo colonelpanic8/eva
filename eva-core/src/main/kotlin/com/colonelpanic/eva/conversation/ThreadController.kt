@@ -31,6 +31,7 @@ import com.colonelpanic.eva.providers.ConversationInput
 import com.colonelpanic.eva.providers.ConversationProvider
 import com.colonelpanic.eva.providers.ConversationSession
 import com.colonelpanic.eva.providers.CorrelatedToolResult
+import com.colonelpanic.eva.providers.MAX_INPUT_CHARS
 import com.colonelpanic.eva.providers.MODEL_RESULT_CHARS
 import com.colonelpanic.eva.providers.ProviderEvent
 import com.colonelpanic.eva.providers.ProviderToolCatalog
@@ -49,6 +50,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.ClosedSendChannelException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -73,6 +75,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import java.io.IOException
 import java.security.MessageDigest
 import java.util.UUID
 
@@ -246,11 +249,30 @@ class ThreadController(
 
     fun stopAllTasks() = interruptAll(wording().message(Wording.TURN_STOP_REQUESTED))
 
+    /** Stops work the live call is not carrying, for controls outside the conversation. */
+    fun stopBackgroundTasks() {
+        tasks.values.filter { it.active && !voiceCovered(it) }.forEach { it.interrupt(wording().message(Wording.TURN_STOP_REQUESTED)) }
+    }
+
     fun forceStopTask(taskId: String) {
         tasks[taskId]?.forceStop()
     }
 
     private val mutationLocks = mutableMapOf<String, Mutex>()
+
+    /** Mutations a force stop stopped waiting for, by thread; their effects are uncertain until they return. */
+    private val abandonedMutations = mutableMapOf<String, MutableSet<Job>>()
+
+    private fun abandonedMutationOn(threadId: String) = synchronized(abandonedMutations) { threadId in abandonedMutations }
+
+    private fun releaseAbandoned(
+        threadId: String,
+        job: Job,
+    ) = synchronized(abandonedMutations) {
+        val jobs = abandonedMutations[threadId] ?: return@synchronized
+        jobs -= job
+        if (jobs.isEmpty()) abandonedMutations -= threadId
+    }
 
     private data class VoiceTurn(
         val turnId: String,
@@ -975,10 +997,13 @@ class ThreadController(
                 val task = taskFor(opened, event.inputId)
                 task?.generationEnded(event.status)
                 if (voice && hangUpDeferred) {
-                    endCall(ENDED_BY_MODEL)
+                    // Another turn's result may still be due; the hang-up waits for its reply too.
+                    if (!hasUnreportedWork(opened)) endCall(ENDED_BY_MODEL)
                 } else if (voice && replyHangUp) {
                     endCall(ENDED_AFTER_ACTION)
-                } else if (voice && task?.actionServiced == true && connectionTools[opened]?.callMode == VoiceCallMode.ONE_REQUEST) {
+                } else if (voice && task?.actionServiced == true && connectionTools[opened]?.callMode == VoiceCallMode.ONE_REQUEST &&
+                    !hasUnreportedWork(opened)
+                ) {
                     // The model decides when a request is fully served, but one whose action is done and
                     // reported does not stay open just because it forgot to hang up: silence ends it.
                     quietArmed = quietHangUpMillis() > 0
@@ -1233,7 +1258,7 @@ class ThreadController(
         quietHangUp =
             scope.launch {
                 delay(quietHangUpMillis())
-                if (thisAttempt == attempt && quietArmed) {
+                if (thisAttempt == attempt && quietArmed && !hasUnreportedWork(session)) {
                     quietArmed = false
                     endCall(ENDED_AFTER_REQUEST)
                 }
@@ -1271,11 +1296,7 @@ class ThreadController(
         if (!ending || token != endingToken) return
         val request = endRequest
         val opened = session
-        val unreported =
-            tasks.values.any {
-                it.active && it.leg === opened && !it.delegated && (it.dispatches.any { job -> job.isActive } || it.awaitingFollowUp)
-            }
-        if (request != null && opened != null && (unreported || request.generationId in actionResponses)) {
+        if (request != null && opened != null && (hasUnreportedWork(opened) || request.generationId in actionResponses)) {
             ending = false
             endRequest = null
             hangUpDeferred = true
@@ -1290,6 +1311,13 @@ class ThreadController(
         }
         hangUp(endReason)
     }
+
+    /** A turn on [opened] still has an action running or a result the model has not replied to. */
+    private fun hasUnreportedWork(opened: ConversationSession?): Boolean =
+        opened != null &&
+            tasks.values.any {
+                it.active && it.leg === opened && !it.delegated && (it.dispatches.any { job -> job.isActive } || it.awaitingFollowUp)
+            }
 
     /** Ends the attachment only. Whatever the thread was doing keeps going, on another leg if it has to. */
     fun disconnect() = end(ENDED_BY_USER)
@@ -1434,8 +1462,8 @@ class ThreadController(
             mutableState.update { it.copy(providerMessage = "EVA is still working on the last request.") }
             return
         }
-        if (text.length > MAX_REQUEST_CHARS) {
-            mutableState.update { it.copy(providerMessage = "Keep requests under 1,000 characters.") }
+        if (text.length > opened.maxInputChars) {
+            mutableState.update { it.copy(providerMessage = requestTooLong(text.length, opened.maxInputChars)) }
             return
         }
         val input = ConversationInput(UUID.randomUUID().toString(), text)
@@ -1551,15 +1579,17 @@ class ThreadController(
             private set
         val dispatches = mutableListOf<Job>()
 
+        /** Dispatches serialized on the device lease, which a handoff does not wait for. */
+        private val deviceDispatches = mutableSetOf<Job>()
+        private val mutationDispatches = mutableSetOf<Job>()
+
         /** This request's phone action completed or was handed off, so the request has been served. */
         var actionServiced = false
             private set
-        private var readOnlyCalls = 0
         private val dispatchLock = Mutex()
         var coverageLost = false
         private val mutationLock = mutationLocks.getOrPut(threadId) { Mutex() }
         val actionCallIds = linkedSetOf<String>()
-        private val admittedCalls = mutableSetOf<String>()
 
         /** Every call proposed for this turn, so an ending action can tell whether it was proposed alone. */
         private val proposedCalls = mutableListOf<CallIdentity>()
@@ -1680,27 +1710,19 @@ class ThreadController(
                                 }
 
                                 !definition.readOnly && !definition.bookkeeping &&
-                                    tasks.values.any { it.threadId == threadId && it.mutationUncertain } -> {
+                                    (
+                                        tasks.values.any { it.threadId == threadId && it.mutationUncertain } ||
+                                            abandonedMutationOn(
+                                                threadId,
+                                            )
+                                    ) -> {
                                     wording().message(Wording.MUTATION_UNCERTAIN)
-                                }
-
-                                id !in admittedCalls && admittedCalls.size >= CALLS_PER_TURN -> {
-                                    "The action limit for this request was reached. Nothing was executed."
-                                }
-
-                                definition.readOnly && readOnlyCalls >= READ_ONLY_CALLS_PER_TURN -> {
-                                    "Too many lookups for one request."
                                 }
 
                                 else -> {
                                     ToolSchema.error(definition.inputSchema, event.arguments)
                                 }
                             }
-                        if (rejection == null && argumentError == null && admittedCalls.add(id) &&
-                            definition?.readOnly == true
-                        ) {
-                            readOnlyCalls++
-                        }
                         store.append(
                             ThreadItem.ActionCall(
                                 UUID.randomUUID().toString(),
@@ -1717,9 +1739,32 @@ class ThreadController(
                         )
                         rejection
                     }
+                // A long lookup in a voice turn would otherwise be silence until its receipt.
+                val stillWorking =
+                    if (context.voice && definition?.readOnly == true && rejection == null && argumentError == null) {
+                        taskScope.launch {
+                            delay(STILL_WORKING_NOTE_MILLIS)
+                            runCatching {
+                                source?.submitContext(
+                                    wording().message(Wording.ACTION_STILL_WORKING),
+                                    respond = true,
+                                    data =
+                                        buildJsonObject {
+                                            put("callId", event.call.callId)
+                                            put("taskId", turnId)
+                                            put("state", "RUNNING")
+                                            put("contentTrust", "external_data")
+                                        },
+                                )
+                            }
+                        }
+                    } else {
+                        null
+                    }
                 try {
                     taskProgress(turnId)
                     val result = dispatcher.execute(proposal, rejection ?: argumentError)
+                    stillWorking?.cancel()
                     progress[turnId]?.takeIf { it.lastActionCallId == id }?.apply {
                         lastActionStatus = result.status.name
                         waiting = false
@@ -1771,13 +1816,20 @@ class ThreadController(
                     mutableState.update { it.copy(errorMessage = SessionController.STORAGE_ERROR) }
                     interrupt("Action history could not be saved.")
                     end("ended: action history could not be saved")
+                } finally {
+                    stillWorking?.cancel()
+                    // Still inside the thread lock, so a queued mutation sees this one as returned.
+                    releaseAbandoned(threadId, currentCoroutineContext().job)
                 }
             }
             // The device coordinator owns long tasks and UI serialization. Other mutations share the thread lock.
+            val serializedByDevice =
+                event.capabilityId == CapabilityRegistry.DEVICE_TASK ||
+                    runCatching { context.snapshot.resolve(proposal)?.usesDeviceUi(proposal) == true }.getOrDefault(false)
             val job =
                 taskScope.launch(start = CoroutineStart.UNDISPATCHED) {
                     try {
-                        if (definition?.readOnly == true || event.capabilityId == CapabilityRegistry.DEVICE_TASK) {
+                        if (definition?.readOnly == true || serializedByDevice) {
                             run()
                         } else {
                             val waiting =
@@ -1819,6 +1871,8 @@ class ThreadController(
                     }
                 }
             dispatches += job
+            if (serializedByDevice) deviceDispatches += job
+            if (definition?.readOnly != true && definition?.bookkeeping != true) mutationDispatches += job
         }
 
         /**
@@ -1861,8 +1915,19 @@ class ThreadController(
                 if (current === leg && !delegated) awaitingFollowUp = true
             } catch (error: CancellationException) {
                 throw error
-            } catch (_: Exception) {
-                if (current === leg && !delegated) legLost()
+            } catch (error: Exception) {
+                if (error is IOException || error is ClosedSendChannelException) {
+                    if (current === leg && !delegated) legLost()
+                } else {
+                    // The session is still up; reopening the turn elsewhere would only hide the defect.
+                    mutableState.update {
+                        it.copy(
+                            providerMessage =
+                                "EVA could not return an action result to the conversation " +
+                                    "(${error.message ?: error::class.simpleName}). The action's receipt is saved.",
+                        )
+                    }
+                }
             }
         }
 
@@ -1922,6 +1987,11 @@ class ThreadController(
                     }
                 }
                 if (dispatches.any { !it.isCompleted }) {
+                    val stuck = mutationDispatches.filter { !it.isCompleted }
+                    if (stuck.isNotEmpty()) {
+                        synchronized(abandonedMutations) { abandonedMutations.getOrPut(threadId) { mutableSetOf() } += stuck }
+                        stuck.forEach { job -> job.invokeOnCompletion { releaseAbandoned(threadId, job) } }
+                    }
                     dispatcher.abandon(actionCallIds, wording().message(Wording.FORCE_STOP_ABANDONED))
                     progress[turnId]?.lastActionStatus = InvocationStatus.UNKNOWN.name
                     refreshTaskSnapshots()
@@ -2011,7 +2081,10 @@ class ThreadController(
             tasks.remove(turnId)
             progress.remove(turnId)
             coverageNotices.removeAll { it.first == turnId }
-            if (tasks.values.none { it.threadId == threadId }) mutationLocks.remove(threadId)
+            // An abandoned dispatch can still hold the lock; a fresh one would let the next mutation run beside it.
+            if (tasks.values.none { it.threadId == threadId } && mutationLocks[threadId]?.isLocked != true) {
+                mutationLocks.remove(threadId)
+            }
             updateWorkCoverage()
             if (!hasActiveTasks(threadId)) mutableWorking.update { it - threadId }
             finishSubmitting(inputId)
@@ -2053,7 +2126,7 @@ class ThreadController(
             taskScope.launch(start = CoroutineStart.UNDISPATCHED) {
                 try {
                     onWorkAccepted()
-                    dispatches.toList().joinAll()
+                    dispatches.filter { it !in deviceDispatches }.joinAll()
                     if (active) rehome(instruction)
                 } finally {
                     withContext(NonCancellable) {
@@ -2242,13 +2315,17 @@ class ThreadController(
         val MESSAGING_TOOLS =
             setOf(CapabilityRegistry.CONVERSATIONS_SEARCH, CapabilityRegistry.CONVERSATION_READ, CapabilityRegistry.SMS_SEND)
         const val UNTITLED = "New conversation"
-        const val READ_ONLY_CALLS_PER_TURN = 24
-        const val CALLS_PER_TURN = 32
         private const val VOICE_REQUEST = "Voice request"
         private const val MAX_PROPOSAL_REQUEST = 1000
+        private const val STILL_WORKING_NOTE_MILLIS = 8_000L
 
         /** The longest typed request a turn accepts. */
-        const val MAX_REQUEST_CHARS = 1000
+        const val MAX_REQUEST_CHARS = MAX_INPUT_CHARS
+
+        fun requestTooLong(
+            length: Int,
+            limit: Int,
+        ) = "This request is $length characters; the connected provider accepts up to $limit. Shorten it or split it into parts."
 
         /** Bounds the wait for a goodbye whose end is never reported. */
         private const val END_SPEECH_LIMIT_MILLIS = 10_000L

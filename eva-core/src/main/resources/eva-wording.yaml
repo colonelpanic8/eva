@@ -318,6 +318,10 @@ messages:
     EVA has accepted this action and it is queued behind earlier work. The attributed data
     identifies the pending call. Tell the user it is waiting; do not submit a duplicate or
     claim it completed. EVA will deliver its final receipt when it finishes.
+  action-still-working: >-
+    An action is still running. The attributed data identifies the call. Tell the user in a
+    few words that you are still working on it; do not guess or claim its result. EVA will
+    deliver its receipt when it finishes.
   incomplete-action: >-
     The tool call did not contain a completed item with valid arguments. Nothing was executed.
     Ask the user to clarify the request if it still needs an action.

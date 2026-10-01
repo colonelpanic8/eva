@@ -23,6 +23,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -57,6 +58,10 @@ private class BrokerSession(
     private val onAnswer: suspend (String) -> Unit,
 ) : ConversationSession {
     override val connectionEpoch: String = UUID.randomUUID().toString()
+
+    /** The voice broker bounds typed input to 1,000 characters. */
+    override val maxInputChars = 1000
+
     private val incoming = Channel<String>(64)
     private val closed = AtomicBoolean(false)
     private var collected = false
@@ -286,8 +291,8 @@ private class BrokerSession(
 
     override suspend fun submit(input: ConversationInput) {
         check(sessionId != null && !closed.get() && buffered == null && active == null)
-        require(input.text.isNotBlank() && input.text.length <= 1000 && input.id.length in 1..128) {
-            "A request must be 1 to 1,000 characters."
+        require(input.text.isNotBlank() && input.text.length <= maxInputChars && input.id.length in 1..128) {
+            "A request must be 1 to $maxInputChars characters."
         }
         buffered = input
     }
@@ -309,7 +314,8 @@ private class BrokerSession(
     }
 
     override suspend fun submitToolResult(result: CorrelatedToolResult) {
-        check(!closed.get() && result.call.connectionEpoch == connectionEpoch && pending[result.call.callId] == result.call)
+        if (closed.get()) throw IOException("The voice broker connection is closed.")
+        check(result.call.connectionEpoch == connectionEpoch && pending[result.call.callId] == result.call)
         send(
             buildJsonObject {
                 put("type", "tool-result")

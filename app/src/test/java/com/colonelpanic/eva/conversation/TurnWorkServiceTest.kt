@@ -2,12 +2,18 @@ package com.colonelpanic.eva.conversation
 
 import android.app.Application
 import android.app.Notification
+import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.os.Looper
+import com.colonelpanic.eva.audio.VoiceSessionService
+import kotlinx.coroutines.async
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -19,6 +25,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
 import org.robolectric.shadows.ShadowService
+import java.time.Duration
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], manifest = Config.NONE, application = TurnWorkServiceTest.WorkApplication::class)
@@ -159,6 +166,31 @@ class TurnWorkServiceTest {
         }
     }
 
+    @Test
+    fun `accepting work withdraws a stop deferred behind a pending start`() {
+        val host = RuntimeEnvironment.getApplication() as WorkApplication
+        TurnWorkService.start(host)
+        TurnWorkService.stop(host)
+        val controller = Robolectric.buildService(TurnWorkService::class.java).create()
+        try {
+            val service = controller.get()
+            val covered =
+                kotlinx.coroutines.runBlocking {
+                    val started =
+                        async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) { TurnWorkService.ensureStarted(host) }
+                    service.onStartCommand(null, 0, 1)
+                    service.onStartCommand(null, 0, 2)
+                    started.await()
+                }
+            assertTrue(covered)
+            assertFalse(shadowOf(service).isStoppedBySelf)
+            assertEquals(WorkCoverage.LONG_RUNNING, host.coverage)
+            assertTrue(host.interruptions.isEmpty())
+        } finally {
+            controller.destroy()
+        }
+    }
+
     @Test fun `restriction notifications coalesce repeated reasons for one minute`() {
         val coalescer = LimitNoticeCoalescer()
         assertTrue(coalescer.shouldNotify("Denied", 0))
@@ -202,13 +234,46 @@ class TurnWorkServiceTest {
         assertTrue(text.contains("4m elapsed"))
         assertTrue(text.contains("Looks stuck"))
         assertTrue(shadowOf(notification.contentIntent).savedIntent.getBooleanExtra(WorkNotifications.EXTRA_RUNNING_WORK, false))
-        assertEquals("Stop all", notification.actions.single().title)
+        assertEquals("Stop background work", notification.actions.single().title)
         val controller = Robolectric.buildService(TurnWorkService::class.java).create()
         try {
             controller.get().onStartCommand(shadowOf(notification.actions.single().actionIntent).savedIntent, 0, 1)
             assertTrue(host.stopped)
             assertEquals(WorkCoverage.LONG_RUNNING, host.coverage)
         } finally {
+            controller.destroy()
+        }
+    }
+
+    @Test
+    fun `during a call work coverage shares the voice notification and reposts only on change`() {
+        val host = RuntimeEnvironment.getApplication() as WorkApplication
+        val voice =
+            androidx.core.app.NotificationCompat
+                .Builder(host, "eva.voice")
+                .setContentTitle("EVA is listening")
+                .build()
+        VoiceSessionService.shown = voice
+        val manager = shadowOf(host.getSystemService(NotificationManager::class.java))
+        val controller = Robolectric.buildService(TurnWorkService::class.java).create()
+        try {
+            val service = controller.get()
+            service.onStartCommand(null, 0, 1)
+            val shadow = shadowOf(service)
+            assertEquals(VoiceSessionService.NOTIFICATION_ID, shadow.lastForegroundNotificationId)
+            assertSame(voice, shadow.lastForegroundNotification)
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(3))
+            assertNull(manager.getNotification(WORK_NOTIFICATION_ID))
+
+            VoiceSessionService.shown = null
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(1))
+            assertEquals(WORK_NOTIFICATION_ID, shadow.lastForegroundNotificationId)
+            val work = manager.getNotification(WORK_NOTIFICATION_ID)
+            assertEquals("EVA background work ready", work.extras.getCharSequence(Notification.EXTRA_TITLE))
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(3))
+            assertSame(work, manager.getNotification(WORK_NOTIFICATION_ID))
+        } finally {
+            VoiceSessionService.shown = null
             controller.destroy()
         }
     }
@@ -265,5 +330,9 @@ class TurnWorkServiceTest {
         } finally {
             controller.destroy()
         }
+    }
+
+    private companion object {
+        const val WORK_NOTIFICATION_ID = 42
     }
 }

@@ -4,39 +4,61 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Upgrade
+
+- Update every device: configuration repositories written by this release do not load on 0.49.x, and the action journal cannot be downgraded.
+
 ### Added
 
-- Voice and text can research the web and report an answer with sources without opening the phone's browser. Research uses existing OpenAI access, journaled read-only receipts, external-content provenance, and portable model, reasoning, enablement, and timeout settings. API-key research remains enabled by default, with search-fee and token billing shown in settings and the access mode recorded in receipts. Unsupported saved research efforts load at low with a visible notice; timeout changes save when the slider is released. The answer appears once in the result.
-
-- Running work lists active tasks across threads, with Stop, Force stop, Stop all, device ownership, progress, and foreground coverage. Open it from the drawer, Settings, or the work notification.
-- Settings → Background work configures a portable inactivity warning period. Tasks that look stuck are flagged without being killed; progress clears the warning.
+- Voice and text can research the web and answer with sources without opening the browser.
+- Web research uses your existing OpenAI access; API-key search fees and token billing are shown in settings and recorded in receipts.
+- Web research model, reasoning, enablement, and timeout are portable settings. Unsupported saved efforts load at low with a notice.
+- Running work lists active tasks across threads with Stop, Force stop, Stop all, device ownership, progress, and coverage. Open it from the drawer, Settings, or the work notification.
+- Settings → Background work sets a portable inactivity warning. Tasks that look stuck are flagged, never killed.
+- Extensions shows tool-budget meters and lists actions excluded from a session.
+- Voice says once that it is still working when a lookup runs longer than eight seconds.
 
 ### Changed
 
-- Accepted assistant tasks reserve long-running specialUse foreground coverage before voice coverage ends and retain it through final journal writes. Android refusing it triggers a visible shortService fallback before uncovered work is interrupted with partial findings.
+- The 64-tool catalog cap is gone; 512 tools is now only a safety bound. Extension and package tool groups are admitted whole, installed services first.
+- A session that excludes tools says "N tools unavailable — see Extensions".
+- Voice fails within 8 seconds with a clear error if OpenAI does not acknowledge its configuration.
+- A turn no longer stops after 32 actions or 24 lookups.
+- Typed requests may be up to 4,000 characters (1,000 with the voice broker); a longer one is refused with its length and the limit.
+- A call shows one notification instead of a separate work notification that refreshed every second.
+- The work notification's Stop background work leaves a live call's turn running, and short typed requests no longer flash the notification.
+- Accepted tasks keep long-running foreground coverage after voice ends, through final journal writes. If Android refuses, a visible short-service fallback runs first.
 
 ### Fixed
 
-- Brief waits between actions stay quiet. A mutation waiting behind earlier work announces its queue status after three seconds, and starting sooner cancels the delayed notice. Device-lease waits still report immediately.
-- Resuming speech cancels both active voice responses and replies still awaiting acknowledgement, preventing late replies from talking over the user or executing interrupted calls. Tool follow-ups retain their original turn and resume after the new speech response. Long dictation keeps queued replies silent; speech recovery starts after speaking stops, and late transcription failures report only a missing caption.
-- Hardware Enter and numpad Enter send the composer request. Silent completed turns no longer add "Response completed." bubbles.
-- Creating or selecting a conversation reattaches text to the shown thread. Voice stays with its original conversation, with a hint while browsing elsewhere. Submission and working state recover across thread switches and reconnects.
-
-- Voice response ownership uses explicit speech-item metadata, so abandoned speech and new utterances cannot strand or close a queued tool follow-up. Interrupted calls return not-executed results, and duplicate call IDs receive one answer.
-- Background findings enter voice context as attributed external data. Notifications remain until the spoken announcement completes, including when context delivery fails.
-- Device tasks allow separate SMS and HTTP actions to proceed while foreground UI actions report when they queue. Lost foreground-service coverage resets while cancelled work drains, so later work can acquire coverage.
-- Realtime captions survive missing IDs, finished correlation history stays bounded, and errors tied to EVA requests leave the call connected with a notice. Opening a newer Android action journal refuses clearly and preserves its data.
-- Force stop waits for device input to unwind, requires fresh observation after an uncertain release, and bounds receipt draining with a second-press escape. Late receipts remain recordable and already answered turns retain their status.
-- Work coverage persists across the whole voice session without gating utterances. Short-service expiry stops promptly when long-running promotion fails, and opening EVA retries an upgrade.
-- Task snapshots distinguish waits from inactivity, publish streamed progress on a one-second tick, and preserve notification navigation across recreation without reopening Running work.
-
-- Subscription Responses streams must receive a completion event before EVA publishes text or tool calls. Dropped replies never return partial actions; regression tests cover the text provider's SSE path and the device worker's subscription WebSocket path.
-- Late Realtime calls and transcripts retain the response and request that produced them. Unknown-origin calls receive a recorded refusal, and action details retain their initiator across restarts.
-- Voice can accept and display new requests while delegated text work continues. Handoffs wait for text startup, preserve sibling action results, and return a task ID for voice status and cancellation.
-- Background answers and partial failures return to an attached voice session when it is idle, with notification fallback. Stop targets the shown thread, working indicators account for concurrent tasks, and duplicate unowned calls return their existing receipts.
-- Lifecycle announcements cannot execute tools; the next spoken request retains its normal tools. Concurrent turns serialize mutations and can inspect recent background receipts before further changes.
-- Stop prioritizes the shown thread's running device task. Background status keeps active work and a bounded recent history; duplicate calls wait for final receipts.
-- Text and delegated turns keep work-service coverage even during a call. A service timeout attempts renewal; Android refusing coverage interrupts only dependent turns and preserves partial findings.
+- Voice no longer refuses every action when OpenAI omits EVA's request ID from a reply.
+- A screen action waiting for a device task no longer blocks SMS or extension actions in the same conversation.
+- A handoff to text starts without waiting for a sibling device task.
+- Hanging up after another request's slow action now waits until its result is spoken.
+- Accepting work right after a stop no longer leaves it without background coverage.
+- After a force stop, a new action in the same conversation waits for the abandoned one instead of running beside it.
+- A provider error while returning an action result no longer moves a live call's turn to a background text agent.
+- Brief waits between actions stay quiet; a mutation queued behind earlier work announces it after three seconds. Device-lease waits still report at once.
+- Speaking over EVA cancels active and pending replies, so late replies cannot talk over you or run interrupted calls.
+- Tool follow-ups keep their turn and resume after new speech. Long dictation keeps queued replies silent.
+- Hardware and numpad Enter send the composer request. Silent turns no longer add "Response completed." bubbles.
+- Creating or selecting a conversation reattaches text to the shown thread. Voice stays with its original conversation.
+- Voice response ownership uses speech-item metadata, so abandoned speech cannot strand or close a tool follow-up.
+- Interrupted calls return not-executed results, and duplicate call IDs get one answer.
+- Background findings enter voice context as attributed external data. Notifications stay until the announcement is spoken.
+- Device tasks let separate SMS and HTTP actions proceed; screen actions report when they queue.
+- Realtime captions survive missing IDs, and errors tied to EVA requests leave the call connected with a notice.
+- Opening a newer action journal refuses clearly and preserves its data.
+- Force stop waits for device input to unwind, requires a fresh screen read after an uncertain release, and a second press escapes receipt draining.
+- Work coverage lasts the whole voice session. Short-service expiry stops promptly if long-running promotion fails; opening EVA retries an upgrade.
+- Task snapshots distinguish waits from inactivity and keep notification navigation across recreation.
+- Subscription Responses streams must complete before EVA publishes text or tool calls, so dropped replies never run partial actions.
+- Late Realtime calls and transcripts keep the response that produced them. Unknown-origin calls get a recorded refusal.
+- Voice accepts new requests while delegated text work continues. Handoffs return a task ID for status and cancellation.
+- Background answers return to an idle attached call, with a notification fallback. Stop targets the shown thread.
+- Lifecycle announcements cannot run tools. Concurrent turns serialize mutations and can check recent background receipts first.
+- Stop prioritizes the shown thread's device task. Background status keeps active work and a bounded recent history.
+- Text and delegated turns keep work coverage during a call. A refused renewal interrupts only dependent turns and keeps partial findings.
 
 ## [0.49.1] - 2026-10-01
 

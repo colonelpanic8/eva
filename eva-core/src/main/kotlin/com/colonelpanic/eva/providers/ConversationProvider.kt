@@ -180,9 +180,15 @@ interface ConversationProvider {
     suspend fun open(request: SessionOpenRequest): ConversationSession
 }
 
+/** The longest typed input EVA's OpenAI sessions accept. */
+const val MAX_INPUT_CHARS = 4000
+
 interface ConversationSession {
     val connectionEpoch: String
     val events: Flow<ProviderEvent>
+
+    /** The longest typed input [submit] accepts. */
+    val maxInputChars: Int get() = MAX_INPUT_CHARS
 
     suspend fun submit(input: ConversationInput)
 

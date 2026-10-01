@@ -26,16 +26,23 @@ def version_code(version: tuple[int, int, int]) -> int:
     return code
 
 
+MORE = "* ...see CHANGELOG.md for the rest."
+
+
 def render(entries: list[str]) -> str:
     if not entries:
         return "Maintenance release.\n"
 
     lines: list[str] = []
     used = 0
-    for entry in entries:
+    for index, entry in enumerate(entries):
         candidate = f"* {entry}"
-        if lines and used + len(candidate) + 1 > MAX_CHARS:
-            lines.append("* ...see CHANGELOG.md for the rest.")
+        trailer = 0 if index == len(entries) - 1 else len(MORE) + 1
+        room = MAX_CHARS - used - trailer - 1
+        if len(candidate) > room:
+            if not lines:
+                lines.append(candidate[: MAX_CHARS - len(MORE) - 3].rstrip() + "…")
+            lines.append(MORE)
             break
         lines.append(candidate)
         used += len(candidate) + 1

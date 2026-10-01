@@ -15,6 +15,7 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.colonelpanic.eva.ForegroundServiceGate
 import com.colonelpanic.eva.MainActivity
+import com.colonelpanic.eva.audio.VoiceSessionService
 import kotlinx.coroutines.flow.first
 
 interface TurnWorkHost {
@@ -34,11 +35,14 @@ interface TurnWorkHost {
 class TurnWorkService : Service() {
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private var coverage = WorkCoverage.NONE
+    private var postedId = NOTIFICATION_ID
+    private var postedText: Pair<String, String>? = null
+    private var promotedAt = 0L
     private val updateNotification =
         object : Runnable {
             override fun run() {
                 if (coverage == WorkCoverage.NONE) return
-                runCatching { getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification()) }
+                refreshNotification()
                 handler.postDelayed(this, 1_000)
             }
         }
@@ -64,7 +68,47 @@ class TurnWorkService : Service() {
         return START_NOT_STICKY
     }
 
-    internal fun notification(): Notification = WorkNotifications.running(this, host?.workTasks().orEmpty(), coverage)
+    /**
+     * During a call the work service holds the voice notification's ID, so only that one is shown;
+     * Android keeps a shared ID posted while any foreground service of the app still uses it.
+     */
+    private fun refreshNotification() {
+        val voice = VoiceSessionService.shown
+        if (voice != null) {
+            if (postedId != VoiceSessionService.NOTIFICATION_ID) runCatching { bind(VoiceSessionService.NOTIFICATION_ID, voice, coverage) }
+            return
+        }
+        val text = WorkNotifications.runningText(host?.workTasks().orEmpty(), coverage)
+        if (postedId != NOTIFICATION_ID) {
+            runCatching {
+                bind(NOTIFICATION_ID, WorkNotifications.running(this, text), coverage)
+                postedText = text
+            }
+        } else if (text != postedText && android.os.SystemClock.elapsedRealtime() - promotedAt >= DEFERRED_DISPLAY_MILLIS) {
+            runCatching { getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, WorkNotifications.running(this, text)) }
+            postedText = text
+        }
+    }
+
+    private fun bind(
+        id: Int,
+        notification: Notification,
+        mode: WorkCoverage,
+    ) {
+        if (Build.VERSION.SDK_INT >= 34) {
+            val type =
+                if (mode == WorkCoverage.SHORT_SERVICE) {
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SHORT_SERVICE
+                } else {
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                }
+            startForeground(id, notification, type)
+        } else {
+            startForeground(id, notification)
+        }
+        postedId = id
+        postedText = null
+    }
 
     private fun promote(): Boolean {
         WorkNotifications.channels(this)
@@ -77,18 +121,14 @@ class TurnWorkService : Service() {
     }
 
     private fun tryPromote(mode: WorkCoverage): Boolean {
-        val notice = WorkNotifications.running(this, host?.workTasks().orEmpty(), mode)
+        val voice = VoiceSessionService.shown
+        val text = WorkNotifications.runningText(host?.workTasks().orEmpty(), mode)
         try {
-            if (Build.VERSION.SDK_INT >= 34) {
-                val type =
-                    if (mode == WorkCoverage.SHORT_SERVICE) {
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_SHORT_SERVICE
-                    } else {
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-                    }
-                startForeground(NOTIFICATION_ID, notice, type)
+            if (voice != null) {
+                bind(VoiceSessionService.NOTIFICATION_ID, voice, mode)
             } else {
-                startForeground(NOTIFICATION_ID, notice)
+                bind(NOTIFICATION_ID, WorkNotifications.running(this, text), mode)
+                postedText = text
             }
         } catch (_: SecurityException) {
             return false
@@ -96,6 +136,7 @@ class TurnWorkService : Service() {
             return false
         }
         coverage = mode
+        promotedAt = android.os.SystemClock.elapsedRealtime()
         host?.workCoverageChanged(mode)
         promotion.value = mode
         return true
@@ -156,6 +197,9 @@ class TurnWorkService : Service() {
         internal const val UPGRADE = "com.colonelpanic.eva.UPGRADE_WORK"
         internal const val STOP_ALL = "com.colonelpanic.eva.STOP_ALL_WORK"
         private const val NOTIFICATION_ID = 42
+
+        /** A notify() inside Android's deferral window would show the notification early. */
+        private const val DEFERRED_DISPLAY_MILLIS = 10_000L
         private val gate = ForegroundServiceGate()
         private val promotion = kotlinx.coroutines.flow.MutableStateFlow<WorkCoverage?>(WorkCoverage.NONE)
 
@@ -195,10 +239,20 @@ class TurnWorkService : Service() {
             }
         }
 
+        /**
+         * Starts unless already promoted, even with a start pending: a new start withdraws a stop
+         * deferred behind that pending one, which would otherwise end coverage on arrival.
+         */
         suspend fun ensureStarted(context: Context): Boolean {
-            if (promotion.value == WorkCoverage.NONE) start(context)
+            val host = context.applicationContext as? TurnWorkHost
+            val current = promotion.value
+            if (current != WorkCoverage.LONG_RUNNING && current != WorkCoverage.SHORT_SERVICE) start(context)
             val mode = promotion.first { it != null }
-            if (mode == WorkCoverage.SHORT_SERVICE) (context.applicationContext as? TurnWorkHost)?.workCoverageLimited(SHORT_LIMIT)
+            if (mode == WorkCoverage.SHORT_SERVICE) host?.workCoverageLimited(SHORT_LIMIT)
+            if (mode == WorkCoverage.NONE && host?.needsWorkCoverage() == true) {
+                host.workCoverageLimited(START_DENIED)
+                host.interruptWork(START_DENIED)
+            }
             return mode != WorkCoverage.NONE
         }
 
@@ -254,7 +308,13 @@ object WorkNotifications {
         context: Context,
         tasks: List<TaskSnapshot>,
         coverage: WorkCoverage,
-    ): Notification {
+    ): Notification = running(context, runningText(tasks, coverage))
+
+    /** Title and details; the notification is reposted only when these change. */
+    fun runningText(
+        tasks: List<TaskSnapshot>,
+        coverage: WorkCoverage,
+    ): Pair<String, String> {
         val top = tasks.firstOrNull { it.looksStuck } ?: tasks.firstOrNull()
         val elapsed = top?.let { ((System.currentTimeMillis() - it.startedAt).coerceAtLeast(0) / 60_000) } ?: 0
         val details =
@@ -263,24 +323,35 @@ object WorkNotifications {
                 "Looks stuck".takeIf { tasks.any { it.looksStuck } },
                 TurnWorkService.SHORT_LIMIT.takeIf { coverage == WorkCoverage.SHORT_SERVICE },
             ).joinToString(" · ")
+        val title =
+            when (tasks.size) {
+                0 -> "EVA background work ready"
+                1 -> "EVA is working on 1 task"
+                else -> "EVA is working on ${tasks.size} tasks"
+            }
+        return title to details
+    }
+
+    fun running(
+        context: Context,
+        text: Pair<String, String>,
+    ): Notification {
+        val (title, details) = text
         return NotificationCompat
             .Builder(context, WORK_CHANNEL)
             .setSmallIcon(android.R.drawable.ic_popup_sync)
-            .setContentTitle(
-                when (tasks.size) {
-                    0 -> "EVA background work ready"
-                    1 -> "EVA is working on 1 task"
-                    else -> "EVA is working on ${tasks.size} tasks"
-                },
-            ).setContentText(details)
+            .setContentTitle(title)
+            .setContentText(details)
             .setStyle(NotificationCompat.BigTextStyle().bigText(details))
             .setOngoing(true)
             .setSilent(true)
             .setShowWhen(false)
             .setContentIntent(open(context, null))
+            // Android holds a deferred notification back about ten seconds, so sub-second work never flashes it.
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_DEFERRED)
             .addAction(
                 0,
-                "Stop all",
+                "Stop background work",
                 PendingIntent.getService(
                     context,
                     0,

@@ -42,7 +42,9 @@ class VoiceSessionService : Service() {
         scope.launch {
             host.voiceSession.collect { status ->
                 if (foreground) {
-                    getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(status))
+                    val notification = notification(status)
+                    shown = notification
+                    getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification)
                 }
             }
         }
@@ -93,6 +95,7 @@ class VoiceSessionService : Service() {
         scope.cancel()
         gate.destroyed()
         foreground = false
+        shown = null
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         super.onDestroy()
     }
@@ -131,6 +134,7 @@ class VoiceSessionService : Service() {
             }
         }
         foreground = true
+        shown = notification
     }
 
     private fun createChannel() {
@@ -186,11 +190,15 @@ class VoiceSessionService : Service() {
     companion object {
         private const val START_DENIED = "Android could not keep voice active. Invoke EVA through the system assistant and try again."
         private const val CHANNEL = "eva.voice"
-        private const val NOTIFICATION_ID = 41
+        internal const val NOTIFICATION_ID = 41
         private const val ACTION_TOGGLE_MICROPHONE = "com.colonelpanic.eva.audio.TOGGLE_MICROPHONE"
         private const val ACTION_END = "com.colonelpanic.eva.audio.END"
 
         private val gate = ForegroundServiceGate()
+
+        /** The voice notification while the service is in the foreground; work coverage shares it. */
+        @Volatile
+        internal var shown: Notification? = null
 
         fun start(context: Context) {
             if (!gate.requestStart { ContextCompat.startForegroundService(context, Intent(context, VoiceSessionService::class.java)) }) {
