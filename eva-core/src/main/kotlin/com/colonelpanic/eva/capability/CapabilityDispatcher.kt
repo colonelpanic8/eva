@@ -21,6 +21,38 @@ class CapabilityDispatcher(
     private val onBackendFailure: (String, Exception) -> Unit = { _, _ -> },
 ) {
     private val submissions = CallLocks()
+    private val outcomeLocks = CallLocks()
+    private val abandoned =
+        java.util.concurrent.ConcurrentHashMap
+            .newKeySet<String>()
+
+    suspend fun abandon(
+        callIds: Collection<String>,
+        message: String,
+    ) {
+        callIds.forEach { id ->
+            outcomeLocks.withLock(id) {
+                val record = repository.byCallIds(listOf(id))[id]
+                if (record?.status in setOf(InvocationStatus.CLAIMED, InvocationStatus.DISPATCHING)) {
+                    repository.transition(id, record!!.status, InvocationStatus.UNKNOWN, message)
+                    abandoned += id
+                }
+            }
+        }
+    }
+
+    private suspend fun transition(
+        callId: String,
+        expected: InvocationStatus,
+        status: InvocationStatus,
+        message: String,
+        data: kotlinx.serialization.json.JsonObject? = null,
+    ): InvocationRecord =
+        outcomeLocks.withLock(callId) {
+            val prior = if (callId in abandoned) InvocationStatus.UNKNOWN else expected
+            repository.transition(callId, prior, status, message, data).also { abandoned -= callId }
+        }
+
     val catalogRevision: String get() = registry.snapshot.revision
 
     suspend fun execute(
@@ -79,20 +111,20 @@ class CapabilityDispatcher(
                     }
                 if (unavailable != null) {
                     return@withLock journal {
-                        repository.transition(proposal.callId, phase, InvocationStatus.NOT_EXECUTED, unavailable)
+                        transition(proposal.callId, phase, InvocationStatus.NOT_EXECUTED, unavailable)
                     }
                 }
                 var admissionRejection = CapabilityRegistry.STALE_MESSAGE
                 val admitted =
                     registry.commitDispatch(snapshot, onRejected = { admissionRejection = it }) {
                         journal {
-                            repository.transition(proposal.callId, phase, InvocationStatus.DISPATCHING, "Dispatching action…")
+                            transition(proposal.callId, phase, InvocationStatus.DISPATCHING, "Dispatching action…")
                             phase = InvocationStatus.DISPATCHING
                         }
                     }
                 if (admitted == null) {
                     return@withLock journal {
-                        repository.transition(proposal.callId, phase, InvocationStatus.NOT_EXECUTED, admissionRejection)
+                        transition(proposal.callId, phase, InvocationStatus.NOT_EXECUTED, admissionRejection)
                     }
                 }
                 currentCoroutineContext().ensureActive()
@@ -106,7 +138,7 @@ class CapabilityDispatcher(
                         ExecutionOutcome(InvocationStatus.UNKNOWN, UNKNOWN_MESSAGE)
                     }
                 journal(mayHaveExecuted = true) {
-                    repository.transition(proposal.callId, phase, outcome.status, outcome.message, outcome.data)
+                    transition(proposal.callId, phase, outcome.status, outcome.message, outcome.data)
                 }
             } catch (error: CancellationException) {
                 journal(mayHaveExecuted = phase == InvocationStatus.DISPATCHING) {
@@ -119,7 +151,7 @@ class CapabilityDispatcher(
                         } else {
                             UNKNOWN_MESSAGE
                         }
-                    repository.transition(proposal.callId, phase, status, message)
+                    transition(proposal.callId, phase, status, message)
                 }
                 throw error
             }

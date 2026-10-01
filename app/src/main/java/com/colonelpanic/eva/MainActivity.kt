@@ -541,11 +541,13 @@ class MainActivity : ComponentActivity() {
         eva.refreshModels()
         val controller = eva.controller
         intent?.getStringExtra(WorkNotifications.EXTRA_THREAD_ID)?.let(controller::showThread)
-        if (intent?.getBooleanExtra(WorkNotifications.EXTRA_RUNNING_WORK, false) == true) runningWorkRequest++
+        if (intent?.getBooleanExtra(WorkNotifications.EXTRA_RUNNING_WORK, false) == true) {
+            runningWorkRequest++
+            intent.removeExtra(WorkNotifications.EXTRA_RUNNING_WORK)
+        }
         setContent {
             val state by controller.state.collectAsStateWithLifecycle()
             val threads by controller.threads.collectAsStateWithLifecycle()
-            val tasks by controller.taskSnapshots.collectAsStateWithLifecycle()
             val dynamicColor by eva.appearance.dynamicColorFlow.collectAsStateWithLifecycle()
             EvaTheme(dynamicColor = dynamicColor) {
                 if (surface.locked) {
@@ -566,7 +568,7 @@ class MainActivity : ComponentActivity() {
                     promptActions = promptActions(),
                     about = aboutInfo(),
                     threads = threads,
-                    tasks = tasks,
+                    tasks = controller.taskSnapshots,
                     runningWorkRequest = runningWorkRequest,
                     onStopWork = controller::stopTask,
                     onForceStopWork = controller::forceStopTask,
@@ -600,7 +602,10 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         intent.getStringExtra(WorkNotifications.EXTRA_THREAD_ID)?.let(eva.controller::showThread)
-        if (intent.getBooleanExtra(WorkNotifications.EXTRA_RUNNING_WORK, false)) runningWorkRequest++
+        if (intent.getBooleanExtra(WorkNotifications.EXTRA_RUNNING_WORK, false)) {
+            runningWorkRequest++
+            intent.removeExtra(WorkNotifications.EXTRA_RUNNING_WORK)
+        }
         setIntent(intent)
         voice.launchHandled = true
         openHandsFree()
@@ -608,6 +613,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        com.colonelpanic.eva.conversation.TurnWorkService
+            .retryUpgrade(this)
         contentPermissionRevision++
         eva.configuration.reloadOnResume()
         eva.extensions.refresh()

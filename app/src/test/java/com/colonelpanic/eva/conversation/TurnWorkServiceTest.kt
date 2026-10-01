@@ -53,13 +53,21 @@ class TurnWorkServiceTest {
 
     @Implements(Service::class)
     class RejectSpecialUse : ShadowService() {
+        companion object {
+            var reject = true
+        }
+
         @Implementation(minSdk = 29)
         override fun startForeground(
             id: Int,
             notification: Notification,
             foregroundServiceType: Int,
         ) {
-            if (foregroundServiceType == ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE) throw SecurityException("specialUse refused")
+            if (reject &&
+                foregroundServiceType == ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            ) {
+                throw SecurityException("specialUse refused")
+            }
             super.startForeground(id, notification, foregroundServiceType)
         }
     }
@@ -67,6 +75,7 @@ class TurnWorkServiceTest {
     @Test
     @Config(shadows = [RejectSpecialUse::class])
     fun `specialUse rejection promotes short coverage and exposes its limit`() {
+        RejectSpecialUse.reject = true
         val host = RuntimeEnvironment.getApplication() as WorkApplication
         val controller = Robolectric.buildService(TurnWorkService::class.java).create()
         try {
@@ -85,6 +94,80 @@ class TurnWorkServiceTest {
     }
 
     @Test
+    @Config(shadows = [RejectSpecialUse::class])
+    fun `short timeout cannot renew short coverage and stops promptly`() {
+        RejectSpecialUse.reject = true
+        val host = RuntimeEnvironment.getApplication() as WorkApplication
+        val controller = Robolectric.buildService(TurnWorkService::class.java).create()
+        try {
+            val service = controller.get()
+            service.onStartCommand(null, 0, 1)
+            assertEquals(WorkCoverage.SHORT_SERVICE, host.coverage)
+            service.onTimeout(1, ServiceInfo.FOREGROUND_SERVICE_TYPE_SHORT_SERVICE)
+            assertTrue(shadowOf(service).isStoppedBySelf)
+            assertEquals(WorkCoverage.NONE, host.coverage)
+            assertEquals(1, host.interruptions.size)
+            assertTrue(host.interruptions.single().contains("Partial findings"))
+        } finally {
+            controller.destroy()
+        }
+    }
+
+    @Test
+    @Config(shadows = [RejectSpecialUse::class])
+    fun `eligible upgrade replaces short coverage without stopping work`() {
+        RejectSpecialUse.reject = true
+        val host = RuntimeEnvironment.getApplication() as WorkApplication
+        val controller = Robolectric.buildService(TurnWorkService::class.java).create()
+        try {
+            val service = controller.get()
+            service.onStartCommand(null, 0, 1)
+            assertEquals(WorkCoverage.SHORT_SERVICE, host.coverage)
+            RejectSpecialUse.reject = false
+            TurnWorkService.retryUpgrade(host)
+            val intent = shadowOf(host).nextStartedService
+            assertEquals(TurnWorkService.UPGRADE, intent.action)
+            service.onStartCommand(intent, 0, 2)
+            assertEquals(WorkCoverage.LONG_RUNNING, host.coverage)
+            assertFalse(shadowOf(service).isStoppedBySelf)
+            assertTrue(host.interruptions.isEmpty())
+        } finally {
+            controller.destroy()
+            RejectSpecialUse.reject = true
+        }
+    }
+
+    @Test
+    @Config(shadows = [RejectSpecialUse::class])
+    fun `rejected upgrade start preserves existing short coverage`() {
+        RejectSpecialUse.reject = true
+        val host = RuntimeEnvironment.getApplication() as WorkApplication
+        val controller = Robolectric.buildService(TurnWorkService::class.java).create()
+        try {
+            controller.get().onStartCommand(null, 0, 1)
+            val refusing =
+                object : android.content.ContextWrapper(host) {
+                    override fun startForegroundService(intent: Intent): android.content.ComponentName? =
+                        throw SecurityException("Rejected")
+                }
+            TurnWorkService.retryUpgrade(refusing)
+            assertEquals(WorkCoverage.SHORT_SERVICE, host.coverage)
+            assertTrue(host.interruptions.isEmpty())
+            assertTrue(kotlinx.coroutines.runBlocking { TurnWorkService.ensureStarted(host) })
+        } finally {
+            controller.destroy()
+        }
+    }
+
+    @Test fun `restriction notifications coalesce repeated reasons for one minute`() {
+        val coalescer = LimitNoticeCoalescer()
+        assertTrue(coalescer.shouldNotify("Denied", 0))
+        assertFalse(coalescer.shouldNotify("Denied", 1))
+        assertFalse(coalescer.shouldNotify("Denied", 59_999))
+        assertTrue(coalescer.shouldNotify("Denied", 60_000))
+    }
+
+    @Test
     fun `notification exposes tasks stall marker navigation and stop all`() {
         val host = RuntimeEnvironment.getApplication() as WorkApplication
         val task =
@@ -94,7 +177,7 @@ class TurnWorkServiceTest {
                 "turn",
                 "Find the answer",
                 TaskKind.DELEGATED_TEXT_AGENT,
-                TaskState.LOOKS_STUCK,
+                TaskState.WORKING,
                 System.currentTimeMillis() - 240_000,
                 0,
                 2,
@@ -102,9 +185,18 @@ class TurnWorkServiceTest {
                 "COMPLETED",
                 false,
                 WorkCoverage.LONG_RUNNING,
+                looksStuck = true,
             )
         val notification = WorkNotifications.running(host, listOf(task, task.copy(taskId = "second")), WorkCoverage.LONG_RUNNING)
         assertEquals("EVA is working on 2 tasks", notification.extras.getCharSequence(Notification.EXTRA_TITLE))
+        assertEquals(
+            "EVA is working on 1 task",
+            WorkNotifications.running(host, listOf(task), WorkCoverage.LONG_RUNNING).extras.getCharSequence(Notification.EXTRA_TITLE),
+        )
+        assertEquals(
+            "EVA background work ready",
+            WorkNotifications.running(host, emptyList(), WorkCoverage.LONG_RUNNING).extras.getCharSequence(Notification.EXTRA_TITLE),
+        )
         val text = notification.extras.getCharSequence(Notification.EXTRA_TEXT).toString()
         assertTrue(text.contains("Find the answer"))
         assertTrue(text.contains("4m elapsed"))

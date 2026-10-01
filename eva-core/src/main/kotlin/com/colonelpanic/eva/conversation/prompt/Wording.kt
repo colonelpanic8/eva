@@ -78,6 +78,8 @@ data class Wording(
         const val ACTION_QUEUED = "action-queued"
         const val UNKNOWN_ORIGIN = "unknown-origin"
         const val UNOWNED_ACTION = "unowned-action"
+        const val DEVICE_RELEASE_UNCERTAIN = "device-release-uncertain"
+        const val FORCE_STOP_ABANDONED = "force-stop-abandoned"
         const val TURN_FORCE_STOPPED = "turn-force-stopped"
         const val TURN_STOP_REQUESTED = "turn-stop-requested"
         const val RESPONSE_FAILED = "response-failed"

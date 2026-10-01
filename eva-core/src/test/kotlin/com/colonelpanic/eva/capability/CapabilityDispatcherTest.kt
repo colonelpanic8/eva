@@ -45,6 +45,28 @@ class CapabilityDispatcherTest {
     )
 
     @Test
+    fun `abandoned dispatch stays unknown until its late result lands without replay`() =
+        runTest {
+            val entered = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            action = {
+                entered.complete(Unit)
+                release.await()
+                ExecutionOutcome(InvocationStatus.COMPLETED, "Verified late completion")
+            }
+            val result = async { dispatcher.execute(proposal()) }
+            entered.await()
+            dispatcher.abandon(listOf(proposal().callId), "Stopped waiting")
+            assertEquals(InvocationStatus.UNKNOWN, repository.history().single().status)
+            assertEquals("Stopped waiting", repository.history().single().message)
+            release.complete(Unit)
+            assertEquals(InvocationStatus.COMPLETED, result.await().status)
+            assertEquals("Verified late completion", repository.history().single().message)
+            assertEquals(InvocationStatus.COMPLETED, dispatcher.execute(proposal()).status)
+            assertEquals(1, executions)
+        }
+
+    @Test
     fun `duplicate delivery returns the original result without opening again`() =
         runTest {
             val first = dispatcher.execute(proposal())

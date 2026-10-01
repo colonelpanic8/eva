@@ -55,6 +55,7 @@ class TurnWorkService : Service() {
             foregroundRejected()
             return START_NOT_STICKY
         }
+        if (intent?.action == UPGRADE && coverage == WorkCoverage.SHORT_SERVICE) tryPromote(WorkCoverage.LONG_RUNNING)
         promotion.value = coverage
         if (intent?.action == STOP_ALL) host?.stopAllWork()
         if (gate.foregrounded()) stopCoverage()
@@ -133,7 +134,7 @@ class TurnWorkService : Service() {
 
     private fun timedOut() {
         if (host?.needsWorkCoverage() == true) {
-            if (promote()) return
+            if (tryPromote(WorkCoverage.LONG_RUNNING)) return
             host?.workCoverageLimited(START_DENIED)
             host?.interruptWork("$START_DENIED Partial findings are retained in this thread.")
         }
@@ -152,14 +153,40 @@ class TurnWorkService : Service() {
         private const val START_DENIED = "Android did not allow EVA to continue this request in the background."
         internal const val SHORT_LIMIT =
             "Android refused long-running coverage. Background work has only about three minutes from service promotion."
+        internal const val UPGRADE = "com.colonelpanic.eva.UPGRADE_WORK"
         internal const val STOP_ALL = "com.colonelpanic.eva.STOP_ALL_WORK"
         private const val NOTIFICATION_ID = 42
         private val gate = ForegroundServiceGate()
         private val promotion = kotlinx.coroutines.flow.MutableStateFlow<WorkCoverage?>(WorkCoverage.NONE)
 
-        fun start(context: Context) {
+        fun retryUpgrade(context: Context) {
+            if (promotion.value == WorkCoverage.LONG_RUNNING || promotion.value == null) return
+            if ((context.applicationContext as? TurnWorkHost)?.needsWorkCoverage() != true) return
+            start(context, upgrade = true)
+        }
+
+        fun start(
+            context: Context,
+            upgrade: Boolean = false,
+        ) {
+            val previous = promotion.value
             promotion.value = null
-            if (!gate.requestStart { ContextCompat.startForegroundService(context, Intent(context, TurnWorkService::class.java)) }) {
+            if (!gate.requestStart {
+                    ContextCompat.startForegroundService(
+                        context,
+                        Intent(context, TurnWorkService::class.java).apply {
+                            if (upgrade) {
+                                action =
+                                    UPGRADE
+                            }
+                        },
+                    )
+                }
+            ) {
+                if (upgrade && previous == WorkCoverage.SHORT_SERVICE) {
+                    promotion.value = previous
+                    return
+                }
                 promotion.value = WorkCoverage.NONE
                 (context.applicationContext as? TurnWorkHost)?.let {
                     it.workCoverageLimited(START_DENIED)
@@ -201,16 +228,20 @@ object WorkNotifications {
     const val EXTRA_RUNNING_WORK = "com.colonelpanic.eva.RUNNING_WORK"
     const val EXTRA_THREAD_ID = "com.colonelpanic.eva.THREAD_ID"
 
+    private val limitNotices = LimitNoticeCoalescer()
+
     fun limited(
         context: Context,
         reason: String,
     ) {
+        if (!limitNotices.shouldNotify(reason, android.os.SystemClock.elapsedRealtime())) return
         channels(context)
         val notification =
             NotificationCompat
                 .Builder(context, WORK_CHANNEL)
                 .setSmallIcon(android.R.drawable.ic_dialog_alert)
                 .setContentTitle("Background work restricted by Android")
+                .setOnlyAlertOnce(true)
                 .setContentText(reason)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(reason))
                 .setContentIntent(open(context, null))
@@ -224,19 +255,24 @@ object WorkNotifications {
         tasks: List<TaskSnapshot>,
         coverage: WorkCoverage,
     ): Notification {
-        val top = tasks.firstOrNull { it.state == TaskState.LOOKS_STUCK } ?: tasks.firstOrNull()
+        val top = tasks.firstOrNull { it.looksStuck } ?: tasks.firstOrNull()
         val elapsed = top?.let { ((System.currentTimeMillis() - it.startedAt).coerceAtLeast(0) / 60_000) } ?: 0
         val details =
             listOfNotNull(
                 top?.let { "${it.request} · ${elapsed}m elapsed" },
-                "Looks stuck".takeIf { tasks.any { it.state == TaskState.LOOKS_STUCK } },
+                "Looks stuck".takeIf { tasks.any { it.looksStuck } },
                 TurnWorkService.SHORT_LIMIT.takeIf { coverage == WorkCoverage.SHORT_SERVICE },
             ).joinToString(" · ")
         return NotificationCompat
             .Builder(context, WORK_CHANNEL)
             .setSmallIcon(android.R.drawable.ic_popup_sync)
-            .setContentTitle("EVA is working on ${tasks.size} tasks")
-            .setContentText(details)
+            .setContentTitle(
+                when (tasks.size) {
+                    0 -> "EVA background work ready"
+                    1 -> "EVA is working on 1 task"
+                    else -> "EVA is working on ${tasks.size} tasks"
+                },
+            ).setContentText(details)
             .setStyle(NotificationCompat.BigTextStyle().bigText(details))
             .setOngoing(true)
             .setSilent(true)
@@ -302,5 +338,20 @@ object WorkNotifications {
                 .build()
         visibleAnswers[answer.threadId] = answer.taskId
         runCatching { context.getSystemService(NotificationManager::class.java).notify(answer.threadId.hashCode(), notification) }
+    }
+}
+
+internal class LimitNoticeCoalescer {
+    private var lastReason: String? = null
+    private var lastAt = 0L
+
+    fun shouldNotify(
+        reason: String,
+        now: Long,
+    ): Boolean {
+        if (lastReason == reason && now - lastAt < 60_000) return false
+        lastReason = reason
+        lastAt = now
+        return true
     }
 }

@@ -12,6 +12,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.colonelpanic.eva.audio.AudioFocusState
 import com.colonelpanic.eva.audio.MediaControls
 import com.colonelpanic.eva.audio.RealtimeMediaState
@@ -53,7 +54,11 @@ fun EvaApp(
     onNewThread: () -> Unit = {},
     onShowThread: (String) -> Unit = {},
     onStopTask: () -> Unit = {},
-    tasks: List<com.colonelpanic.eva.conversation.TaskSnapshot> = emptyList(),
+    tasks: kotlinx.coroutines.flow.StateFlow<List<com.colonelpanic.eva.conversation.TaskSnapshot>> =
+        kotlinx.coroutines.flow
+            .MutableStateFlow(
+                emptyList(),
+            ),
     runningWorkRequest: Int = 0,
     onStopWork: (String) -> Unit = {},
     onForceStopWork: (String) -> Unit = {},
@@ -137,7 +142,8 @@ fun EvaApp(
             }
 
             EvaDestination.RUNNING_WORK -> {
-                RunningWorkScreen(tasks, { openDrawer() }, onStopWork, onForceStopWork, onStopAllWork) { id ->
+                val runningTasks by tasks.collectAsStateWithLifecycle()
+                RunningWorkScreen(runningTasks, { openDrawer() }, onStopWork, onForceStopWork, onStopAllWork) { id ->
                     onShowThread(id)
                     destination = EvaDestination.CONVERSATION
                 }
@@ -164,11 +170,12 @@ fun EvaApp(
             }
 
             EvaDestination.SETTINGS -> {
+                val runningTasks by tasks.collectAsStateWithLifecycle()
                 SettingsScreen(
                     state = settings,
                     actions = settingsActions,
                     onOpenDrawer = { openDrawer() },
-                    activeTaskCount = tasks.size,
+                    activeTaskCount = runningTasks.size,
                     onRunningWork = { destination = EvaDestination.RUNNING_WORK },
                     showScreenControl = showScreenControl,
                     onScreenControlShown = { showScreenControl = false },

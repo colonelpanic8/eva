@@ -108,7 +108,8 @@ finished tasks from the last 512 thread items. It includes task text, action cou
 last action status, and three recent attributed receipts (call ID, capability,
 arguments, status, and message) for verification. The result stays below the model
 result budget; `tasksOmitted` and `historyLimited` expose omitted or partial history.
-Active states follow the Running work snapshot, including waits and `LOOKS_STUCK`;
+Active states follow the Running work snapshot, including waits and `RELEASING_DEVICE`;
+`looksStuck` is a separate flag restricted to working or connecting tasks;
 recent terminal states are `ANSWERED`, `FAILED`, or `INTERRUPTED`. Cancel requests interruption of exactly that active task,
 including its owned device task; unknown, finished, or other-thread IDs return
 `NOT_EXECUTED`. Cancellation does not undo actions already started; their receipts
@@ -136,11 +137,11 @@ voice retain that fallback. Failed or interrupted notifications and thread
 notices retain accumulated partial answers and identify the interruption.
 
 `VoiceSessionService` owns foreground voice lifetime; `TurnWorkService` reserves
-execution coverage when a turn is accepted, including voice turns that may outlive
-the call. Acceptance waits for service promotion while the Activity, assistant
-window, or voice foreground service still provides start eligibility. A single
-host transition coordinates both services and awaits work promotion before
-stopping voice coverage. Work coverage survives call end and audio-focus loss and
+execution coverage at voice-session start while the Activity or assistant window
+provides start eligibility, and retains it across utterances. Voice-turn acceptance
+does not wait for promotion. Typed turns and delegation still await coverage.
+A single host transition coordinates both services, keeps work coverage through
+the whole call, and rechecks promotion before stopping voice coverage. Work coverage survives call end and audio-focus loss and
 remains until the last task's dispatched actions and terminal journal writes have
 drained. `ForegroundServiceGate` still postpones an early stop until promotion.
 If Android refuses renewed coverage, affected turns release their coverage demand
@@ -160,18 +161,29 @@ receipt/history projection. Open thread navigates without cancelling work.
 
 Stop and Stop all use the existing interruption path: cancellation requests drain
 started actions and preserve their truthful receipts. Force stop cancels the task
-scope immediately, revokes its device lease, and records `INTERRUPTED` with
-“Force-stopped by you; actions already started may have had effects”. Late cleanup
-cannot release a successor's lease. The task remains visible while outstanding
-receipts drain; neither stop path retries actions or claims to undo effects.
+scope immediately and records `INTERRUPTED` with
+“Force-stopped by you; actions already started may have had effects”. An already
+answered turn retains `ANSWERED` and receives the notice. Device ownership remains
+exclusive while backend input unwinds, shown as **Releasing device…**, for up to
+ten seconds. If it does not return, the successor receives an uncertain-screen
+notice and must observe afresh before ordinary device mutations; a new device
+worker starts from a fresh observation. Late cleanup cannot release a successor's
+lease. Post-force-stop receipt waiting is bounded to ten seconds; a second Force
+stop skips the remaining receipt wait. Remaining calls are recorded `UNKNOWN`,
+the task finishes and releases coverage, and late results can still update receipts.
+Neither stop path retries actions or claims to undo effects.
 
 Settings → Background work edits `capabilities.stallPeriodSeconds` in the same
 portable configuration model (default 180 seconds, positive, no maximum duration
 cap). The value composes, synchronizes, and restores with the other capability
 settings. Provider events attributed to a task, action starts/completions, and
 device progress refresh its progress clock. A one-second host tick marks inactivity
-as **looks stuck** in the shared snapshot and notification; progress clears it.
-This is advisory and never kills work. Existing per-turn action budgets and
+as **looks stuck** only for working/connecting tasks; waits, requests for input,
+and stopping are never flagged. Device owners are working, while queued tasks
+wait for device control. Only attributed provider events count as progress.
+Streaming progress updates the clock silently; a one-second tick publishes it,
+while state changes publish immediately. Only task-list/settings screens collect
+the snapshot flow. This is advisory and never kills work. Existing per-turn action budgets and
 device-task step/time budgets continue to apply.
 
 A turn can run successive native or extension reads and mutations without another
@@ -717,9 +729,12 @@ The work service uses Android's `specialUse` foreground-service type, declares
 delegated research, and device automation in `PROPERTY_SPECIAL_USE_FGS_SUBTYPE`.
 It has no EVA-side duration cap. Android currently gives `specialUse` no fixed
 three-minute timeout. The manifest also declares `shortService` solely for fallback:
-if long-running promotion is refused, EVA tries short-service promotion and exposes
-the roughly three-minute limit in each affected thread and in notifications. If
-start or both promotions are refused, or a timeout cannot renew coverage, only
+if initial long-running promotion is refused, EVA tries short-service promotion.
+Only tasks without live voice coverage receive restriction notices; repeated limit
+notifications coalesce. Opening EVA retries upgrading short coverage to specialUse.
+A timeout tries only specialUse: repeating shortService promotion cannot be relied
+on to extend its expired timer. If start or both initial promotions are refused,
+or a timeout cannot obtain long-running coverage, the service stops promptly and only
 turns without live voice coverage are interrupted, with partial findings retained.
 The service handles both Android timeout callbacks without assuming their type.
 Voice shutdown rechecks coverage, including when an earlier attempt was refused.

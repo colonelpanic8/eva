@@ -8,18 +8,16 @@ class WorkServiceTransition(
     private val stopVoice: () -> Unit,
 ) {
     private var voiceActive = false
-    private var workActive = false
 
     suspend fun update(
         voice: Boolean,
         work: Boolean,
     ) {
         if (voice && !voiceActive) startVoice()
-        if (work) workActive = startWork()
+        if ((voice && !voiceActive) || (!voice && work)) startWork()
         if (!voice && voiceActive) stopVoice()
-        if (!work && workActive) {
+        if (!voice && !work) {
             stopWork()
-            workActive = false
         }
         voiceActive = voice
     }
