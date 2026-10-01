@@ -121,6 +121,26 @@ class OpenAiResponsesProviderTest {
         }
 
     @Test
+    fun `an answer cut off by the output limit is marked truncated`() =
+        runTest {
+            replies.clear()
+            replies.addLast(
+                """{"id":"resp_1","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},""" +
+                    """"output":[{"type":"message","content":[{"type":"output_text","text":"The first half"}]}]}""",
+            )
+            val session =
+                OpenAiResponsesProvider(access, "gpt-test", client, StandardTestDispatcher(testScheduler))
+                    .open(SessionOpenRequest("You are EVA.", catalog))
+            val events = mutableListOf<ProviderEvent>()
+            val collector = launch { session.events.collect { events += it } }
+            session.submit(ConversationInput("input-1", "Explain everything"))
+            session.requestResponse(ResponseRequest("input-1"))
+            advanceUntilIdle()
+            assertTrue(events.filterIsInstance<ProviderEvent.AssistantText>().single().truncated)
+            collector.cancel()
+        }
+
+    @Test
     fun `a typed turn round-trips a function call and continues from the previous response`() =
         runTest {
             val session =

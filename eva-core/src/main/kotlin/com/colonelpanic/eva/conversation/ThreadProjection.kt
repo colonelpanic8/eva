@@ -130,10 +130,18 @@ fun projectHistory(
     items: List<ThreadItem>,
     receipts: Map<String, InvocationRecord>,
     limit: Int = HISTORY_ITEM_LIMIT,
+    /** The store's read was itself bounded, so the thread may hold more than [items]. */
+    readBounded: Boolean = false,
 ): List<HistoryItem> {
     val kept = items.takeLast(limit)
     val dropped = items.size - kept.size
-    val head = if (dropped > 0) listOf(HistoryItem.Note("$dropped earlier items in this conversation are not shown.")) else emptyList()
+    val head =
+        when {
+            readBounded && dropped > 0 -> listOf(HistoryItem.Note("At least $dropped earlier items in this conversation are not shown."))
+            readBounded -> listOf(HistoryItem.Note("Earlier items in this conversation are not shown."))
+            dropped > 0 -> listOf(HistoryItem.Note("$dropped earlier items in this conversation are not shown."))
+            else -> emptyList()
+        }
     return head +
         kept.map { item ->
             when (item) {
@@ -142,7 +150,7 @@ fun projectHistory(
                 }
 
                 is ThreadItem.AssistantMessage -> {
-                    HistoryItem.Assistant(item.text)
+                    HistoryItem.Assistant(item.text + if (item.truncated) "\n[This response was cut off before it finished.]" else "")
                 }
 
                 is ThreadItem.ActionCall -> {

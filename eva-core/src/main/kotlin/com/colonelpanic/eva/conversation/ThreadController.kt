@@ -719,7 +719,7 @@ class ThreadController(
                                 connectionCatalog,
                                 // Captions only; a typed session has no audio to transcribe.
                                 if (voice) voiceKeywords() else emptyList(),
-                                history = projectHistory(items, receipts(items)),
+                                history = projectHistory(items, receipts(items), readBounded = items.size >= ConversationStore.DEFAULT_ITEM_LIMIT),
                             ),
                         )
                     openedSession = opened
@@ -1090,7 +1090,7 @@ class ThreadController(
                 val summary =
                     buildJsonObject {
                         put("taskId", turn.id)
-                        put("task", (live[turn.id]?.request ?: legs[turn.id]?.task ?: turn.request).take(256))
+                        put("task", clipped(live[turn.id]?.request ?: legs[turn.id]?.task ?: turn.request, 256))
                         put("state", live[turn.id]?.state?.name ?: turn.status.name)
                         put("looksStuck", live[turn.id]?.looksStuck ?: false)
                         put("actions", live[turn.id]?.actionCount ?: actions.size)
@@ -1102,17 +1102,11 @@ class ThreadController(
                                 actions.takeLast(3).mapNotNull { id ->
                                     records[id]?.let { record ->
                                         buildJsonObject {
-                                            put("callId", record.callId.take(200))
-                                            put("capabilityId", record.capabilityId.take(200))
+                                            put("callId", clipped(record.callId, 200))
+                                            put("capabilityId", clipped(record.capabilityId, 200))
                                             put("status", record.status.name)
-                                            put(
-                                                "arguments",
-                                                record.arguments
-                                                    ?.toString()
-                                                    ?.take(400)
-                                                    .orEmpty(),
-                                            )
-                                            put("message", record.message.take(600))
+                                            put("arguments", clipped(record.arguments?.toString().orEmpty(), 400))
+                                            put("message", clipped(record.message, 600))
                                             put("contentTrust", "external")
                                         }
                                     }
@@ -2139,7 +2133,7 @@ class ThreadController(
                                     instruction?.let { wording().message(Wording.HANDOFF_INSTRUCTIONS) + "\n" + JsonPrimitive(it) }
                                         ?: wording().message(Wording.CONTINUATION)
                                 )
-                        val history = projectHistory(items, receipts(items))
+                        val history = projectHistory(items, receipts(items), readBounded = items.size >= ConversationStore.DEFAULT_ITEM_LIMIT)
                         val textLeg =
                             ThreadItem.TextLeg(
                                 UUID.randomUUID().toString(),
@@ -2375,3 +2369,11 @@ fun progressLabel(phase: TaskPhase): String =
         TaskPhase.NEEDS_INPUT -> "Waiting for your answer…"
         TaskPhase.PROGRESS -> "Working on the screen…"
     }
+
+/** Cuts a status field to [limit] characters and ends a cut one with [CLIPPED], which background-status explains. */
+internal fun clipped(
+    text: String,
+    limit: Int,
+): String = if (text.length <= limit) text else text.take(limit) + CLIPPED
+
+internal const val CLIPPED = "…[cut by EVA]"

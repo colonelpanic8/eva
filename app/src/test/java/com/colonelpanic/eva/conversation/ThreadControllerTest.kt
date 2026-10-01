@@ -2079,6 +2079,35 @@ class ThreadControllerTest {
         }
 
     @Test
+    fun `background status marks a shortened task request instead of cutting it silently`() =
+        runTest {
+            val voice = FakeProvider()
+            val background = FakeProvider(epoch = "background")
+            val controller = controller(voice, background = background, media = { VoiceMedia() })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            val task = "Read every message from the team and summarize it. ".repeat(6)
+            voice.startVoice("first", "Research")
+            voice.call("delegate", ThreadController.DEFER_TO_TEXT.capabilityId, "task" to task)
+            advanceUntilIdle()
+            voice.startVoice("second", "How is it going")
+            voice.call("status", ThreadController.BACKGROUND_STATUS.capabilityId)
+            runCurrent()
+            val shown =
+                voice.results
+                    .last()
+                    .data!!
+                    .getValue("tasks")
+                    .jsonArray
+                    .single()
+                    .jsonObject
+                    .getValue("task")
+                    .jsonPrimitive.content
+            assertEquals(task.take(256) + "…[cut by EVA]", shown)
+        }
+
+    @Test
     fun `background status and cancellation identify exactly one task and retain final receipts`() =
         runTest {
             val voice = FakeProvider()

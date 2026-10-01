@@ -388,10 +388,12 @@ class ScreenActions(
         return "the field reads ${quote(details.actual.orEmpty())} instead of ${quote(expected)}."
     }
 
-    private fun quote(text: String) =
-        kotlinx.serialization.json
-            .JsonPrimitive(text.take(200))
-            .toString()
+    /** Quotes on-screen text, saying so when only its start fits. */
+    private fun quote(text: String): String {
+        if (text.length <= QUOTE_CHARS) return kotlinx.serialization.json.JsonPrimitive(text).toString()
+        val start = kotlinx.serialization.json.JsonPrimitive(text.take(QUOTE_CHARS) + "…").toString()
+        return "$start (first $QUOTE_CHARS of ${text.length} characters)"
+    }
 
     private fun describe(element: Element): String {
         val label = if (element.password) null else element.text?.takeIf(String::isNotBlank) ?: element.contentDescription
@@ -404,6 +406,7 @@ class ScreenActions(
 
     companion object {
         private const val TASK = "eva-direct"
+        private const val QUOTE_CHARS = 200
         const val MAX_REFERENCES = 8
         const val LIFETIME_MILLIS = 180_000L
         const val DISABLED = "Screen control is switched off in EVA's settings."

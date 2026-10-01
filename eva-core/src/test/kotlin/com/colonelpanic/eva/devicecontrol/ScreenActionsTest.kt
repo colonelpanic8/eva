@@ -134,6 +134,20 @@ class ScreenActionsTest {
     }
 
     @Test
+    fun `a long read-back says only its start is quoted`() {
+        val wanted = "a".repeat(250)
+        phone.next = { action, after ->
+            result(action, after, ok = false, error = TextMismatch(action.actionId, null, 3, wanted, "b"))
+                .copy(details = SetTextDetails(3, false, wanted, "b"))
+        }
+        val ref = reference(call(Operation.OBSERVE).message)
+
+        val outcome = call(Operation.SET_TEXT, "observationRef" to ref, "node" to "3", "text" to wanted)
+
+        assertTrue(outcome.message.contains("instead of \"${"a".repeat(200)}…\" (first 200 of 250 characters)"))
+    }
+
+    @Test
     fun `delivered input that did not take effect is a failure, not a completion`() {
         phone.next = { action, after ->
             result(action, after, ok = false, error = TextMismatch(action.actionId, null, 3, "hi", "h"))
