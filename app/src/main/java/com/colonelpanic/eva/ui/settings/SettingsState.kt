@@ -46,6 +46,7 @@ data class SettingsUiState(
     val waitDefaults: Map<com.colonelpanic.eva.capability.InteractionMode, Long> = emptyMap(),
     val extensions: ExtensionSettings = ExtensionSettings(),
     val extensionOverflow: Map<String, String> = emptyMap(),
+    val catalogAdmission: com.colonelpanic.eva.capability.CatalogAdmission.Preview? = null,
     /** Extensions the user has told a refresh not to enable on its own; absent means it may. */
     val autoEnabled: Map<String, Boolean> = emptyMap(),
     val account: String? = null,

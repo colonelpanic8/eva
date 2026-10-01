@@ -1102,14 +1102,27 @@ replacement. Removal, disabling, revocation, and invalidated bindings block new
 execution immediately even if a model still sees the old catalog. Temporary bind
 failure means unavailable without catalog revision churn.
 
-EVA's model-facing budget is 128 tools including controls. Reserve session controls,
-then bundled tools, then whole installed-service groups, then remaining whole
-extension/package/media groups in stable source-identity order. A group that cannot
-fit is skipped while smaller later groups can still be admitted. Overflow remains
-discovered and is shown unavailable with an explanation for typed and voice modes;
-it never silently evicts bundled tools or splits an offered extension workflow. See
-[capability execution](architecture.md#capability-execution) for voice reservations
-and the provider-limit evidence and verification boundaries.
+EVA uses a 512-tool safety bound, the highest count verified with subscription
+Responses and Realtime, rather than a published provider count limit. Voice also
+has a 224 KiB serialized metadata budget below native WebRTC's 256 KiB message
+boundary, reserving space for instructions, controls and server fields. Reserve
+four base session controls, plus device-task revise/stop when offered, then bundled
+tools, then whole installed-service groups, then remaining whole
+extension/package/media groups in stable source-identity order. Group identity is
+the capability source identity (installed component or package instance), falling
+back to the full extension capability prefix. A group that cannot fit is skipped
+while smaller later groups can still be admitted.
+
+Overflow remains discovered: Extensions shows counts, voice byte reservation and
+an always-visible list of excluded actions with separate typed/voice reasons.
+Sessions persist an excluded-count notice, and the model receives EVA's trusted
+`catalog-unavailable` wording outside provider-supplied metadata. Prompt-hidden
+actions are omitted from these warnings. No offered extension workflow is split
+by admission. The final Realtime configuration is checked against the SDP receive
+bound with a margin, and configuration acknowledgement must contain the expected
+tool names within eight seconds; HTTP success alone does not mark a session ready.
+See [capability execution](architecture.md#capability-execution) for evidence,
+margin calculations, prompt-hide ordering and verification boundaries.
 
 **Bounded multi-action requests.** `ThreadController` admits up to 32 calls per
 turn, including at most 24 reads, and executes them sequentially. Reads and

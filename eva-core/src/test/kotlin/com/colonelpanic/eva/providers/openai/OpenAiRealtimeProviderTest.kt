@@ -101,7 +101,9 @@ class OpenAiRealtimeProviderTest {
             assertTrue(!posted.contains("\"delay\""))
             val events = mutableListOf<ProviderEvent>()
             val collector = launch { session.events.collect { events += it } }
-            media.incoming.send("""{"type":"session.created","session":{"id":"sess_1","model":"gpt-realtime-2.1"}}""")
+            media.incoming.send(
+                """{"type":"session.created","session":{"id":"sess_1","tools":[{"name":"eva_tool_0"}],"model":"gpt-realtime-2.1"}}""",
+            )
             media.incoming.send("""{"type":"response.created","response":{"id":"resp_1"}}""")
             media.incoming.send(
                 """{"type":"conversation.item.input_audio_transcription.completed","transcript":"Set a timer for three minutes"}""",
@@ -235,7 +237,7 @@ class OpenAiRealtimeProviderTest {
                 ).open(SessionOpenRequest("You are EVA.", catalog))
             val events = mutableListOf<ProviderEvent>()
             val collector = launch { session.events.collect { events += it } }
-            media.incoming.send("""{"type":"session.created","session":{"id":"sess_1"}}""")
+            media.incoming.send("""{"type":"session.created","session":{"id":"sess_1","tools":[{"name":"eva_tool_0"}]}}""")
             advanceUntilIdle()
             session.submit(ConversationInput("input-7", "Hello"))
             session.requestResponse(ResponseRequest("input-7"))
@@ -261,7 +263,7 @@ class OpenAiRealtimeProviderTest {
                 ).open(SessionOpenRequest("You are EVA.", catalog))
             val events = mutableListOf<ProviderEvent>()
             val collector = launch { session.events.collect { events += it } }
-            media.incoming.send("""{"type":"session.created","session":{"id":"sess_1"}}""")
+            media.incoming.send("""{"type":"session.created","session":{"id":"sess_1","tools":[{"name":"eva_tool_0"}]}}""")
             media.incoming.send("""{"type":"output_audio_buffer.started","response_id":"resp_1"}""")
             media.incoming.send("""{"type":"output_audio_buffer.stopped","response_id":"resp_1"}""")
             media.incoming.send("""{"type":"output_audio_buffer.started","response_id":"resp_2"}""")
@@ -296,7 +298,7 @@ class OpenAiRealtimeProviderTest {
             val events = mutableListOf<ProviderEvent>()
             val collector = launch { session.events.collect { events += it } }
 
-            media.incoming.send("""{"type":"session.created","session":{"id":"sess_1"}}""")
+            media.incoming.send("""{"type":"session.created","session":{"id":"sess_1","tools":[{"name":"eva_tool_0"}]}}""")
             runCurrent()
 
             val seed = media.sent.map { Json.parseToJsonElement(it).jsonObject }
@@ -396,7 +398,7 @@ class OpenAiRealtimeProviderTest {
                 )
             val events = mutableListOf<ProviderEvent>()
             val collector = launch { session.events.collect { events += it } }
-            media.incoming.send("""{"type":"session.updated","session":{"id":"sess_1"}}""")
+            media.incoming.send("""{"type":"session.updated","session":{"id":"sess_1","tools":[{"name":"eva_tool_0"}]}}""")
             runCurrent()
 
             advanceTimeBy(REALTIME_HISTORY_ACK_TIMEOUT_MILLIS - 1)
@@ -427,7 +429,7 @@ class OpenAiRealtimeProviderTest {
                 ).open(SessionOpenRequest("You are EVA.", catalog))
             val events = mutableListOf<ProviderEvent>()
             val collector = launch { session.events.collect { events += it } }
-            media.incoming.send("""{"type":"session.created","session":{"id":"sess_1"}}""")
+            media.incoming.send("""{"type":"session.created","session":{"id":"sess_1","tools":[{"name":"eva_tool_0"}]}}""")
             media.incoming.send("""{"type":"response.created","response":{"id":"resp_1"}}""")
             media.incoming.send(
                 """{"type":"response.output_item.done","item":{"type":"function_call","name":"eva_tool_0","call_id":"call_1","arguments":"{\"seconds\":180}"}}""",
@@ -481,7 +483,7 @@ class OpenAiRealtimeProviderTest {
             val session = openSession(media).open(SessionOpenRequest("You are EVA.", catalog))
             val events = mutableListOf<ProviderEvent>()
             val collector = launch { session.events.collect { events += it } }
-            media.incoming.send("""{"type":"session.created","session":{"id":"sess_1"}}""")
+            media.incoming.send("""{"type":"session.created","session":{"id":"sess_1","tools":[{"name":"eva_tool_0"}]}}""")
             media.incoming.send("""{"type":"response.created","response":{"id":"resp_1"}}""")
             media.incoming.send(functionCall("call_1"))
             media.incoming.send("""{"type":"response.done","response":{"id":"resp_1","status":"completed"}}""")
@@ -514,7 +516,7 @@ class OpenAiRealtimeProviderTest {
             val session = openSession(media).open(SessionOpenRequest("You are EVA.", catalog))
             val events = mutableListOf<ProviderEvent>()
             val collector = launch { session.events.collect { events += it } }
-            media.incoming.send("""{"type":"session.created","session":{"id":"sess_1"}}""")
+            media.incoming.send("""{"type":"session.created","session":{"id":"sess_1","tools":[{"name":"eva_tool_0"}]}}""")
             media.incoming.send("""{"type":"response.created","response":{"id":"resp_1"}}""")
             media.incoming.send(functionCall("long"))
             media.incoming.send("""{"type":"response.done","response":{"id":"resp_1","status":"completed"}}""")
@@ -542,6 +544,68 @@ class OpenAiRealtimeProviderTest {
             assertEquals("voice:resp_1", events.filterIsInstance<ProviderEvent.ResponseEnded>().single().inputId)
             collector.cancel()
         }
+
+    @Test
+    fun `missing catalog acknowledgement fails visibly and closes instead of hanging`() =
+        runTest {
+            val media = FakeMedia()
+            val session = openSession(media).open(SessionOpenRequest("You are EVA.", catalog))
+            val events = mutableListOf<ProviderEvent>()
+            val collector = launch { session.events.collect { events += it } }
+            runCurrent()
+            media.incoming.send("""{"type":"session.created","session":{"id":"bare","tools":[]}}""")
+            advanceTimeBy(REALTIME_CONFIG_ACK_TIMEOUT_MILLIS)
+            runCurrent()
+            assertTrue(events.none { it is ProviderEvent.Connected })
+            val failure = events.filterIsInstance<ProviderEvent.Failure>().single()
+            assertTrue(
+                failure.message.contains("1 tools") && failure.message.contains("WebRTC size") && failure.message.contains("8 seconds"),
+            )
+            assertEquals(ProviderEvent.Closed, events.last())
+            collector.cancel()
+        }
+
+    @Test
+    fun `a configured update after a bare session acknowledges the catalog and cancels the failure`() =
+        runTest {
+            val media = FakeMedia()
+            val session = openSession(media).open(SessionOpenRequest("You are EVA.", catalog))
+            val events = mutableListOf<ProviderEvent>()
+            val collector = launch { session.events.collect { events += it } }
+            media.incoming.send("""{"type":"session.created","session":{"id":"bare","tools":[]}}""")
+            advanceTimeBy(4_000)
+            assertTrue(events.none { it is ProviderEvent.Connected })
+            media.incoming.send(
+                """{"type":"session.updated","session":{"id":"configured","tools":[{"name":"eva_tool_0"}]}}""",
+            )
+            advanceTimeBy(REALTIME_CONFIG_ACK_TIMEOUT_MILLIS)
+            runCurrent()
+            assertEquals("configured", events.filterIsInstance<ProviderEvent.Connected>().single().sessionId)
+            assertTrue(events.none { it is ProviderEvent.Failure })
+            collector.cancel()
+        }
+
+    @Test
+    fun `an oversized final configuration fails before posting even with one tool`() =
+        runTest {
+            val error =
+                runCatching {
+                    openSession(
+                        FakeMedia(),
+                    ).open(SessionOpenRequest("x".repeat(com.colonelpanic.eva.capability.CatalogAdmission.VOICE_SESSION_BYTES), catalog))
+                }.exceptionOrNull()
+            assertTrue(error is IllegalArgumentException)
+            assertTrue(error!!.message!!.contains("1 tools") && error.message!!.contains("safe WebRTC"))
+            assertTrue(requests.isEmpty())
+        }
+
+    @Test
+    fun `configuration safety follows the advertised receive size with a server-envelope margin`() {
+        assertEquals(248 * 1024, realtimeSessionByteLimit("v=0\r\na=max-message-size:262144\r\n"))
+        assertEquals(56 * 1024, realtimeSessionByteLimit("v=0\r\na=max-message-size:65536\r\n"))
+        assertEquals(56 * 1024, realtimeSessionByteLimit("v=0"))
+        assertEquals(248 * 1024, realtimeSessionByteLimit("v=0\r\na=max-message-size:0\r\n"))
+    }
 
     private class FakeMedia : RealtimeMediaSession {
         override val state = MutableStateFlow<RealtimeMediaState>(RealtimeMediaState.Idle)

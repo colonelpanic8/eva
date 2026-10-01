@@ -86,7 +86,7 @@ class CatalogAdmissionTest {
     @Test
     fun `admitted tools overflow and reasons are deterministic across input order`() {
         val definitions =
-            bundled(26) + service() + List(40) { group("extension.package.$it", 3, "package:$it") }.flatten() +
+            bundled(26) + service() + List(200) { group("extension.package.$it", 3, "package:$it") }.flatten() +
                 group("extension.media.player", 3, "media:0:player")
         val expected = CatalogAdmission.select(definitions, controls = 4)
         val reasons = CatalogAdmission.overflowReasons(definitions)
@@ -103,14 +103,53 @@ class CatalogAdmissionTest {
     fun `voice reserves four session controls and two more for an offered device task`() {
         val native = bundled(CatalogAdmission.LIMIT)
         assertEquals(4, CatalogAdmission.voiceControls(native))
-        val voice = CatalogAdmission.select(native, CatalogAdmission.voiceControls(native))
+        val voice = CatalogAdmission.select(native, CatalogAdmission.voiceControls(native), voiceBytes = Int.MAX_VALUE)
         assertEquals(CatalogAdmission.LIMIT - 4, voice.admitted.size)
-        val reasons = CatalogAdmission.overflowReasons(native)
-        assertEquals(4, reasons.size)
-        assertTrue(reasons.values.all { it.contains("4 of ${CatalogAdmission.LIMIT}") && it.contains("Available in typed") })
         val withTask = native.take(CatalogAdmission.LIMIT - 1) + definition(CapabilityRegistry.DEVICE_TASK)
         assertEquals(6, CatalogAdmission.voiceControls(withTask))
-        assertTrue(CatalogAdmission.overflowReasons(withTask).values.all { it.contains("6 of ${CatalogAdmission.LIMIT}") })
+        assertEquals(CatalogAdmission.LIMIT - 6, CatalogAdmission.select(withTask, 6, voiceBytes = Int.MAX_VALUE).admitted.size)
+    }
+
+    @Test
+    fun `voice enforces metadata bytes instead of an arbitrary low tool count`() {
+        val compact = bundled(200)
+        val voice = CatalogAdmission.select(compact, controls = 4)
+        assertTrue(voice.admitted.size > 128)
+        assertTrue(voice.metadataBytes <= CatalogAdmission.VOICE_TOOL_BYTES)
+        val large = service().map { it.copy(description = "é".repeat(40_000)) }
+        val later = group("extension.package.zzz", 1, "package:zzz")
+        val selected = CatalogAdmission.select(large + later, controls = 4)
+        assertEquals(later, selected.admitted)
+        assertEquals(large, selected.overflow)
+        assertTrue(CatalogAdmission.select(large + later).overflow.isEmpty())
+        val preview = CatalogAdmission.preview(large + later)
+        assertEquals(selected, preview.voice)
+        assertTrue(
+            CatalogAdmission.overflowReasons(preview).values.all {
+                it.contains("Unavailable in voice") && it.contains("session controls") && it.contains("224 KiB")
+            },
+        )
+    }
+
+    @Test
+    fun `shared extension guidance consumes bytes once per admitted source`() {
+        val workflow = service().map { it.copy(guidance = "g".repeat(100_000)) }
+        val selection = CatalogAdmission.select(workflow, controls = 4)
+        assertEquals(workflow, selection.admitted)
+        assertTrue(selection.overflow.isEmpty())
+        assertTrue(selection.metadataBytes in 100_000..110_000)
+    }
+
+    @Test
+    fun `text safety bound is the highest verified count and prompt-hidden actions are not reported as overflow`() {
+        assertEquals(512, CatalogAdmission.LIMIT)
+        val definitions = bundled(513)
+        val selected = CatalogAdmission.select(definitions)
+        assertEquals(512, selected.admitted.size)
+        assertEquals(definitions.last(), selected.overflow.single())
+        val visible = selected.without(setOf(definitions.last().id, definitions.first().id))
+        assertTrue(visible.overflow.isEmpty())
+        assertEquals(511, visible.admitted.size)
     }
 
     @Test
@@ -121,10 +160,16 @@ class CatalogAdmissionTest {
         val alwaysOverflow = group("extension.package.ccc", 7, "package:ccc")
         val definitions = native + large + small + alwaysOverflow
         assertEquals(native + large, CatalogAdmission.select(definitions).admitted)
-        assertEquals(native + small, CatalogAdmission.select(definitions, controls = 4).admitted)
-        val reasons = CatalogAdmission.overflowReasons(definitions)
+        assertEquals(native + small, CatalogAdmission.select(definitions, controls = 4, voiceBytes = Int.MAX_VALUE).admitted)
+        val reasons =
+            CatalogAdmission.overflowReasons(
+                CatalogAdmission.Preview(
+                    CatalogAdmission.select(definitions),
+                    CatalogAdmission.select(definitions, controls = 4, voiceBytes = Int.MAX_VALUE),
+                ),
+            )
         assertEquals((large + small + alwaysOverflow).map { it.id }.toSet(), reasons.keys)
-        assertTrue(large.all { reasons.getValue(it.id).startsWith("Unavailable in voice:") })
+        assertTrue(large.all { reasons.getValue(it.id).startsWith("Unavailable in voice.") })
         assertTrue(small.all { reasons.getValue(it.id).startsWith("Unavailable in typed conversations.") })
         assertTrue(alwaysOverflow.all { reasons.getValue(it.id).startsWith("Unavailable in typed and voice conversations.") })
         assertTrue(reasons.values.all { it.contains("whole groups") && it.contains("installed services") })

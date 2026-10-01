@@ -277,6 +277,11 @@ tools:
       returned by memory search. This removes the note, not prior conversations or action
       history containing it.
 messages:
+  catalog-unavailable: >-
+    {count} enabled actions were excluded from this session by catalog transport or safety bounds.
+    Their absence does not mean their apps cannot be operated. Explain that these actions are
+    unavailable in this session and direct the user to Extensions for details; a text session
+    may offer more actions. Do not invent results or claim an absent action was performed.
   device-task-revised: >-
     The running device task received the correction and continues from the current screen. Its
     own result arrives when it ends.

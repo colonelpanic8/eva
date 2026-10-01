@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.colonelpanic.eva.capability.CallEnding
+import com.colonelpanic.eva.capability.CatalogAdmission
 import com.colonelpanic.eva.capability.extensions.Effect
 import com.colonelpanic.eva.capability.extensions.ExtensionSettingsEntry
 
@@ -29,6 +30,28 @@ internal fun ExtensionsSection(
 ) {
     val extensions = state.extensions
     SettingsSection("Your extensions") {
+        state.catalogAdmission?.let { admission ->
+            SettingsBlock {
+                val voiceLimit = CatalogAdmission.LIMIT - admission.voice.reservedControls
+                Text(
+                    "Phone/extension tools: voice ${admission.voice.admitted.size}/$voiceLimit; " +
+                        "text ${admission.text.admitted.size}/${CatalogAdmission.LIMIT}.",
+                )
+                Text(
+                    "Voice metadata reservation: ${(admission.voice.metadataBytes + 1023) / 1024}/" +
+                        "${CatalogAdmission.VOICE_TOOL_BYTES / 1024} KiB. " +
+                        "Session controls and instructions have separate reserved space.",
+                )
+                if (state.extensionOverflow.isNotEmpty()) {
+                    Text(
+                        "${state.extensionOverflow.size} enabled tools are unavailable in at least one mode. These actions will not be offered to the model:",
+                    )
+                    (admission.text.overflow + admission.voice.overflow).distinctBy { it.id }.forEach { tool ->
+                        Text("${tool.title}: ${state.extensionOverflow.getValue(tool.id)}")
+                    }
+                }
+            }
+        }
         SettingsBlock {
             Text(
                 "Enable only extensions you trust. Read actions can disclose private data to your configured model. " +
