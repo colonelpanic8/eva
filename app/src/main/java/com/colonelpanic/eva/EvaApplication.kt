@@ -162,7 +162,7 @@ class EvaApplication :
 
     override fun endVoiceSession() = controller.disconnect()
 
-    override fun interruptWork(reason: String) = controller.interruptAll(reason)
+    override fun interruptWork(reason: String) = controller.interruptBackgroundWork(reason)
 
     private val packageInfo by lazy { runCatching { packageManager.getPackageInfo(packageName, 0) }.getOrNull() }
 

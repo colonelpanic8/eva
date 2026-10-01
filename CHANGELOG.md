@@ -4,6 +4,12 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Voice can accept and display new requests while delegated text work continues. Handoffs wait for text startup, preserve sibling action results, and return a task ID for voice status and cancellation.
+- Background answers and partial failures return to an attached voice session when it is idle, with notification fallback. Stop targets the shown thread, working indicators account for concurrent tasks, and duplicate unowned calls return their existing receipts.
+- Background-service timeout or start rejection interrupts only work without a live attachment and retains partial findings; it no longer stops unrelated voice, text, or device work.
+
 ## [0.49.1] - 2026-10-01
 
 ### Fixed

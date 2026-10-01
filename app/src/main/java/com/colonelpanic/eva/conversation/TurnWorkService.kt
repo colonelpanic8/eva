@@ -18,13 +18,14 @@ import com.colonelpanic.eva.MainActivity
 
 /** The application supplies the controller so the service can interrupt work Android will not let it finish. */
 interface TurnWorkHost {
+    /** Interrupt only dependent work; recheck live voice/text attachments before stopping any turn. */
     fun interruptWork(reason: String)
 }
 
 /**
  * Keeps the process alive while a turn finishes with nothing attached to its thread: after a
- * call was hung up, or a text connection dropped. Short by Android's definition, which fits;
- * a turn that cannot finish inside the allowance is interrupted rather than left half-done.
+ * call was hung up, or a text connection dropped. Android's short-service time limit can
+ * interrupt work that depends on this service; a live voice turn has its own service.
  */
 class TurnWorkService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
@@ -134,8 +135,15 @@ object WorkNotifications {
             NotificationCompat
                 .Builder(context, WORK_CHANNEL)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentTitle(answer.title)
-                .setContentText(answer.answer.lineSequence().firstOrNull { it.isNotBlank() } ?: "Finished.")
+                .setContentTitle(
+                    if (answer.status ==
+                        TurnStatus.ANSWERED
+                    ) {
+                        answer.title
+                    } else {
+                        "${answer.title} · ${answer.status.name.lowercase()}"
+                    },
+                ).setContentText(answer.answer.lineSequence().firstOrNull { it.isNotBlank() } ?: "Finished.")
                 .setStyle(NotificationCompat.BigTextStyle().bigText(answer.answer))
                 .setAutoCancel(true)
                 .setContentIntent(open(context, answer.threadId))
