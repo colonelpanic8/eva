@@ -763,8 +763,10 @@ The service handles both Android timeout callbacks without assuming their type.
 Voice shutdown rechecks coverage, including when an earlier attempt was refused.
 
 The ongoing notification shows the active task count, a task's text and elapsed
-time, any **looks stuck** marker or fallback limit, Stop all, and a link to Running
-work; it is reposted only when that text changes. During a call the work service
+time, any **looks stuck** marker or fallback limit, Stop background work (which
+leaves a live call's turn running), and a link to Running work. It uses Android's
+deferred foreground-service display (about ten seconds on Android 12 and later),
+so short typed work does not flash it, and it is reposted only when its text changes. During a call the work service
 holds the voice notification's ID instead, so the call shows one notification;
 the work notification returns when the call ends. Notification permission can hide Android notifications; thread notices and
 the in-app task surface still expose restrictions. Services remain non-sticky;

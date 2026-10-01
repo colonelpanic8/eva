@@ -249,6 +249,11 @@ class ThreadController(
 
     fun stopAllTasks() = interruptAll(wording().message(Wording.TURN_STOP_REQUESTED))
 
+    /** Stops work the live call is not carrying, for controls outside the conversation. */
+    fun stopBackgroundTasks() {
+        tasks.values.filter { it.active && !voiceCovered(it) }.forEach { it.interrupt(wording().message(Wording.TURN_STOP_REQUESTED)) }
+    }
+
     fun forceStopTask(taskId: String) {
         tasks[taskId]?.forceStop()
     }
@@ -1705,7 +1710,12 @@ class ThreadController(
                                 }
 
                                 !definition.readOnly && !definition.bookkeeping &&
-                                    (tasks.values.any { it.threadId == threadId && it.mutationUncertain } || abandonedMutationOn(threadId)) -> {
+                                    (
+                                        tasks.values.any { it.threadId == threadId && it.mutationUncertain } ||
+                                            abandonedMutationOn(
+                                                threadId,
+                                            )
+                                    ) -> {
                                     wording().message(Wording.MUTATION_UNCERTAIN)
                                 }
 

@@ -37,6 +37,7 @@ class TurnWorkService : Service() {
     private var coverage = WorkCoverage.NONE
     private var postedId = NOTIFICATION_ID
     private var postedText: Pair<String, String>? = null
+    private var promotedAt = 0L
     private val updateNotification =
         object : Runnable {
             override fun run() {
@@ -83,7 +84,7 @@ class TurnWorkService : Service() {
                 bind(NOTIFICATION_ID, WorkNotifications.running(this, text), coverage)
                 postedText = text
             }
-        } else if (text != postedText) {
+        } else if (text != postedText && android.os.SystemClock.elapsedRealtime() - promotedAt >= DEFERRED_DISPLAY_MILLIS) {
             runCatching { getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, WorkNotifications.running(this, text)) }
             postedText = text
         }
@@ -135,6 +136,7 @@ class TurnWorkService : Service() {
             return false
         }
         coverage = mode
+        promotedAt = android.os.SystemClock.elapsedRealtime()
         host?.workCoverageChanged(mode)
         promotion.value = mode
         return true
@@ -195,6 +197,9 @@ class TurnWorkService : Service() {
         internal const val UPGRADE = "com.colonelpanic.eva.UPGRADE_WORK"
         internal const val STOP_ALL = "com.colonelpanic.eva.STOP_ALL_WORK"
         private const val NOTIFICATION_ID = 42
+
+        /** A notify() inside Android's deferral window would show the notification early. */
+        private const val DEFERRED_DISPLAY_MILLIS = 10_000L
         private val gate = ForegroundServiceGate()
         private val promotion = kotlinx.coroutines.flow.MutableStateFlow<WorkCoverage?>(WorkCoverage.NONE)
 
@@ -342,9 +347,11 @@ object WorkNotifications {
             .setSilent(true)
             .setShowWhen(false)
             .setContentIntent(open(context, null))
+            // Android holds a deferred notification back about ten seconds, so sub-second work never flashes it.
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_DEFERRED)
             .addAction(
                 0,
-                "Stop all",
+                "Stop background work",
                 PendingIntent.getService(
                     context,
                     0,

@@ -171,7 +171,7 @@ class EvaApplication :
         if (controller.workCoverageNotice(reason)) WorkNotifications.limited(this, reason)
     }
 
-    override fun stopAllWork() = controller.stopAllTasks()
+    override fun stopAllWork() = controller.stopBackgroundTasks()
 
     override fun needsWorkCoverage(): Boolean =
         controller.needsWorkCoverage.value ||

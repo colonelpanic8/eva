@@ -408,7 +408,14 @@ class ThreadControllerTest {
             advanceUntilIdle()
             assertEquals(2, executions)
             assertFalse(overlapped)
-            assertEquals(InvocationStatus.COMPLETED, repository.byCallIds(listOf("provider:session:next")).values.single().status)
+            assertEquals(
+                InvocationStatus.COMPLETED,
+                repository
+                    .byCallIds(listOf("provider:session:next"))
+                    .values
+                    .single()
+                    .status,
+            )
         }
 
     @Test
@@ -433,6 +440,25 @@ class ThreadControllerTest {
             assertTrue(store.items(task.threadId).filterIsInstance<ThreadItem.Notice>().none { it.kind == NoticeKind.COVERAGE_LIMIT })
             controller.stopAllTasks()
             advanceUntilIdle()
+        }
+
+    @Test
+    fun `stopping background work leaves the live call's turn running`() =
+        runTest {
+            val voice = FakeProvider()
+            val controller = controller(voice, media = { VoiceMedia() })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            voice.startVoice("first", "Hello")
+            runCurrent()
+            val task = controller.taskSnapshots.value.single()
+            controller.stopBackgroundTasks()
+            advanceUntilIdle()
+            assertEquals(listOf(task.taskId), controller.taskSnapshots.value.map { it.taskId })
+            controller.stopAllTasks()
+            advanceUntilIdle()
+            assertTrue(controller.taskSnapshots.value.isEmpty())
         }
 
     @Test

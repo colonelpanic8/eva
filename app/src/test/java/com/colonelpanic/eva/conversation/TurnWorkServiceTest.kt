@@ -234,7 +234,7 @@ class TurnWorkServiceTest {
         assertTrue(text.contains("4m elapsed"))
         assertTrue(text.contains("Looks stuck"))
         assertTrue(shadowOf(notification.contentIntent).savedIntent.getBooleanExtra(WorkNotifications.EXTRA_RUNNING_WORK, false))
-        assertEquals("Stop all", notification.actions.single().title)
+        assertEquals("Stop background work", notification.actions.single().title)
         val controller = Robolectric.buildService(TurnWorkService::class.java).create()
         try {
             controller.get().onStartCommand(shadowOf(notification.actions.single().actionIntent).savedIntent, 0, 1)
