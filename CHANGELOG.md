@@ -13,10 +13,16 @@ All notable changes to EVA will be documented here.
 
 ### Changed
 
+- Voice offers every admitted tool regardless of metadata size. The call request already carries the whole configuration; the 224 KiB voice budget is gone, and a configuration too large for the data channel's echo is confirmed through a sideband connection to the call before the session counts as connected. The 512-tool bound stays.
+- Prompt-hidden tools are removed before catalog admission, so they no longer take capacity, and Settings → Extensions agrees with what sessions offer. Hiding the device-task tool also hides its revise/stop controls.
+- Excluded tools are named: the session-start notice lists the first few and opens Extensions when tapped, and the model's note lists up to 20 by title.
+- Screen-control health is failure-driven: Portal and Shizuku show as ready once set up, turn unhealthy with the backend and reason when a real screen read or input fails, and recover on the next success. Probes can only mark a backend degraded; setup problems stay their own state. Settings shows "Not checked yet." for a backend that was never checked instead of "Ready."
 - Accepted assistant tasks reserve long-running specialUse foreground coverage before voice coverage ends and retain it through final journal writes. Android refusing it triggers a visible shortService fallback before uncovered work is interrupted with partial findings.
 
 ### Fixed
 
+- Direct screen tools fall back to the next backend when one passes its check but cannot read the screen, before any input is sent, as device tasks already did. Inputs are never repeated on another backend.
+- Background status, resumed-leg history, incomplete text answers and long on-screen quotes say when they were cut instead of truncating silently.
 - Brief waits between actions stay quiet. A mutation waiting behind earlier work announces its queue status after three seconds, and starting sooner cancels the delayed notice. Device-lease waits still report immediately.
 - Resuming speech cancels both active voice responses and replies still awaiting acknowledgement, preventing late replies from talking over the user or executing interrupted calls. Tool follow-ups retain their original turn and resume after the new speech response. Long dictation keeps queued replies silent; speech recovery starts after speaking stops, and late transcription failures report only a missing caption.
 - Hardware Enter and numpad Enter send the composer request. Silent completed turns no longer add "Response completed." bubbles.

@@ -1103,26 +1103,26 @@ execution immediately even if a model still sees the old catalog. Temporary bind
 failure means unavailable without catalog revision churn.
 
 EVA uses a 512-tool safety bound, the highest count verified with subscription
-Responses and Realtime, rather than a published provider count limit. Voice also
-has a 224 KiB serialized metadata budget below native WebRTC's 256 KiB message
-boundary, reserving space for instructions, controls and server fields. Reserve
-four base session controls, plus device-task revise/stop when offered, then bundled
-tools, then whole installed-service groups, then remaining whole
+Responses and Realtime, rather than a published provider count limit. Settings
+switches and prompt-hidden tools are removed first and take no capacity. Reserve
+four base voice session controls, plus device-task revise/stop when offered, then
+bundled tools, then whole installed-service groups, then remaining whole
 extension/package/media groups in stable source-identity order. Group identity is
 the capability source identity (installed component or package instance), falling
 back to the full extension capability prefix. A group that cannot fit is skipped
-while smaller later groups can still be admitted.
+while smaller later groups can still be admitted. Voice has no metadata byte budget:
+the call request carries the whole configuration.
 
-Overflow remains discovered: Extensions shows counts, voice byte reservation and
-an always-visible list of excluded actions with separate typed/voice reasons.
-Sessions persist an excluded-count notice, and the model receives EVA's trusted
-`catalog-unavailable` wording outside provider-supplied metadata. Prompt-hidden
-actions are omitted from these warnings. No offered extension workflow is split
-by admission. The final Realtime configuration is checked against the SDP receive
-bound with a margin, and configuration acknowledgement must contain the expected
-tool names within eight seconds; HTTP success alone does not mark a session ready.
-See [capability execution](architecture.md#capability-execution) for evidence,
-margin calculations, prompt-hide ordering and verification boundaries.
+Overflow remains discovered: Extensions shows counts and an always-visible list of
+excluded actions with separate typed/voice reasons. Sessions persist a notice naming
+the first excluded actions, and the model receives EVA's trusted
+`catalog-unavailable` wording, which lists excluded titles as quoted data outside
+provider-supplied metadata. No offered extension workflow is split by admission.
+Realtime configuration acknowledgement must contain the expected tool names within
+eight seconds, through the data channel or, for a configuration too large for its
+echo, a sideband connection to the call; HTTP success alone does not mark a session
+ready. See [capability execution](architecture.md#capability-execution) for evidence
+and verification boundaries.
 
 **Bounded multi-action requests.** `ThreadController` admits up to 32 calls per
 turn, including at most 24 reads, and executes them sequentially. Reads and
