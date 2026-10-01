@@ -260,7 +260,17 @@ class TextTaskAgent(
                     continue
                 }
                 noCall = 0
-                steps += WorkerStep(step, rev, call.name, "not_dispatched", StepTiming(observationMillis, modelMillis))
+                steps +=
+                    WorkerStep(
+                        step,
+                        rev,
+                        call.name,
+                        "not_dispatched",
+                        StepTiming(observationMillis, modelMillis),
+                        call.id,
+                        call.responseId,
+                        call.outputItemId,
+                    )
                 // Redact secret text in replayed calls as well as progress history.
                 val safeArgs =
                     if (call.name == "set_text" &&
@@ -302,7 +312,7 @@ class TextTaskAgent(
                             ?.content
                             .orEmpty()
                             .take(1000)
-                    steps[steps.lastIndex] = WorkerStep(step, rev, "finish", status.orEmpty(), StepTiming(observationMillis, modelMillis))
+                    steps[steps.lastIndex] = steps.last().copy(result = status.orEmpty())
                     return result(if (status == "completed") TaskStatus.COMPLETED else TaskStatus.FAILED, summary)
                 }
                 val key = call.name + JsonObject(safeArgs.filterKeys { it != "intent" }).toString() + signature(before)
@@ -384,7 +394,7 @@ class TextTaskAgent(
                         observation?.packageName in settings.launchAliases[action.packageName].orEmpty() &&
                         r?.error is com.colonelpanic.eva.devicecontrol.proto.AppNotFound
                 val outcome = if (aliasedLaunch) "ok" else r?.error?.javaClass?.simpleName ?: if (r?.ok == false) "failed" else "ok"
-                steps[steps.lastIndex] = WorkerStep(step, rev, call.name, outcome, timing)
+                steps[steps.lastIndex] = steps.last().copy(result = outcome, timing = timing)
                 progress(TaskPhase.PROGRESS, "${call.name}: $outcome", timing)
                 if (isStopped) return result(TaskStatus.CANCELLED, "cancelled")
                 if (revision != rev) continue
@@ -582,4 +592,7 @@ data class WorkerStep(
     val kind: String,
     val result: String,
     val timing: StepTiming,
+    val callId: String? = null,
+    val responseId: String? = null,
+    val outputItemId: String? = null,
 )

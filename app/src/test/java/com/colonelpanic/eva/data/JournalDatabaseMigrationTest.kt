@@ -1,6 +1,8 @@
 package com.colonelpanic.eva.data
 
 import android.app.Application
+import com.colonelpanic.eva.capability.ActionInitiator
+import com.colonelpanic.eva.capability.InitiatorKind
 import com.colonelpanic.eva.capability.InvocationRecord
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.conversation.ThreadItem
@@ -17,6 +19,64 @@ import java.util.UUID
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], manifest = Config.NONE, application = Application::class)
 class JournalDatabaseMigrationTest {
+    @Test
+    fun `version seven preserves legacy origins and round trips new initiation identities`() =
+        runBlocking<Unit> {
+            val context = RuntimeEnvironment.getApplication()
+            val name = "initiator-${UUID.randomUUID()}.db"
+            context.openOrCreateDatabase(name, 0, null).use { db ->
+                db.execSQL(
+                    "CREATE TABLE invocations (call_id TEXT PRIMARY KEY NOT NULL, fingerprint TEXT NOT NULL, request TEXT NOT NULL, destination TEXT, status TEXT NOT NULL, message TEXT NOT NULL, created_at INTEGER NOT NULL, capability_id TEXT NOT NULL, catalog_revision TEXT NOT NULL, title TEXT, thread_id TEXT, turn_id TEXT, arguments_json TEXT, provenance_json TEXT, data_json TEXT)",
+                )
+                db.execSQL(
+                    "CREATE TABLE threads (id TEXT PRIMARY KEY NOT NULL, title TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
+                )
+                db.execSQL(
+                    "CREATE TABLE turns (id TEXT PRIMARY KEY NOT NULL, thread_id TEXT NOT NULL, request TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, side_effect_call_id TEXT)",
+                )
+                db.execSQL(
+                    "CREATE TABLE items (id TEXT PRIMARY KEY NOT NULL, thread_id TEXT NOT NULL, turn_id TEXT, created_at INTEGER NOT NULL, type TEXT NOT NULL, text TEXT, spoken INTEGER, truncated INTEGER, call_id TEXT, capability_id TEXT, title TEXT, arguments TEXT, notice_kind TEXT, leg_id TEXT, instructions TEXT, history_items INTEGER)",
+                )
+                db.execSQL("INSERT INTO threads VALUES ('thread','Old',1,1)")
+                db.execSQL(
+                    "INSERT INTO items (id,thread_id,created_at,type,call_id,capability_id,title,arguments) VALUES ('old','thread',1,'ACTION_CALL','old','eva.test','Old action','{}')",
+                )
+                db.execSQL(
+                    "INSERT INTO invocations (call_id,fingerprint,request,status,message,created_at,capability_id,catalog_revision) VALUES ('old','fingerprint','Old request','COMPLETED','Done',1,'eva.test','revision')",
+                )
+                db.version = 7
+            }
+
+            val initiator = ActionInitiator(InitiatorKind.TEXT_AGENT, inputId = "input", responseId = "response", legId = "text-leg")
+            val journal = JournalDatabase(context, name)
+            try {
+                val repository = SqliteInvocationRepository(journal)
+                val store = SqliteConversationStore(journal)
+                val old = repository.history().single()
+                assertNull(old.initiator)
+                val oldItem = store.items("thread").single() as ThreadItem.ActionCall
+                assertNull(oldItem.initiator)
+                repository.claim(old.copy(callId = "new", initiator = initiator))
+                store.append(oldItem.copy(id = "new", callId = "new", createdAtMillis = 2, initiator = initiator))
+            } finally {
+                journal.close()
+            }
+            val reopened = JournalDatabase(context, name)
+            try {
+                val receipt = SqliteInvocationRepository(reopened).byCallIds(listOf("new")).getValue("new")
+                val items = SqliteConversationStore(reopened).items("thread")
+                assertEquals(initiator, receipt.initiator)
+                assertEquals(initiator, (items.last() as ThreadItem.ActionCall).initiator)
+                val entries =
+                    com.colonelpanic.eva.conversation
+                        .projectEntries(emptyList(), items, mapOf("new" to receipt))
+                assertEquals(initiator, entries.last().initiator)
+            } finally {
+                reopened.close()
+                context.deleteDatabase(name)
+            }
+        }
+
     @Test
     fun `version two migrates receipts and supports conversation items`() =
         runBlocking {

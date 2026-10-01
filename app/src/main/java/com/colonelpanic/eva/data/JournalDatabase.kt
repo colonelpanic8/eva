@@ -42,6 +42,7 @@ class JournalDatabase(
                 "arguments_json",
                 "provenance_json",
                 "data_json",
+                "initiator_json",
             )
         val values =
             names.map { name ->
@@ -60,7 +61,7 @@ class JournalDatabase(
             db.rawQuery("PRAGMA table_info(items)", null).use { cursor ->
                 buildSet { while (cursor.moveToNext()) add(cursor.getString(cursor.getColumnIndexOrThrow("name"))) }
             }
-        ITEM_COLUMNS_SINCE_V7.filterKeys { it !in itemColumns }.forEach { (name, type) ->
+        ADDED_ITEM_COLUMNS.filterKeys { it !in itemColumns }.forEach { (name, type) ->
             db.execSQL("ALTER TABLE items ADD COLUMN $name $type")
         }
     }
@@ -70,7 +71,7 @@ class JournalDatabase(
             "CREATE TABLE invocations (call_id TEXT PRIMARY KEY NOT NULL, fingerprint TEXT NOT NULL, " +
                 "request TEXT NOT NULL, destination TEXT, status TEXT NOT NULL, message TEXT NOT NULL, " +
                 "created_at INTEGER NOT NULL, capability_id TEXT NOT NULL, catalog_revision TEXT NOT NULL, " +
-                "title TEXT, thread_id TEXT, turn_id TEXT, arguments_json TEXT, provenance_json TEXT, data_json TEXT)",
+                "title TEXT, thread_id TEXT, turn_id TEXT, arguments_json TEXT, provenance_json TEXT, data_json TEXT, initiator_json TEXT)",
         )
     }
 
@@ -87,14 +88,20 @@ class JournalDatabase(
             "CREATE TABLE IF NOT EXISTS items (id TEXT PRIMARY KEY NOT NULL, thread_id TEXT NOT NULL, turn_id TEXT, " +
                 "created_at INTEGER NOT NULL, type TEXT NOT NULL, text TEXT, spoken INTEGER, truncated INTEGER, " +
                 "call_id TEXT, capability_id TEXT, title TEXT, arguments TEXT, notice_kind TEXT, " +
-                ITEM_COLUMNS_SINCE_V7.entries.joinToString { (name, type) -> "$name $type" } + ")",
+                ADDED_ITEM_COLUMNS.entries.joinToString { (name, type) -> "$name $type" } + ")",
         )
         db.execSQL("CREATE INDEX IF NOT EXISTS turns_thread_id ON turns(thread_id)")
         db.execSQL("CREATE INDEX IF NOT EXISTS items_thread_id ON items(thread_id)")
     }
 
     companion object {
-        const val VERSION = 7
-        private val ITEM_COLUMNS_SINCE_V7 = linkedMapOf("leg_id" to "TEXT", "instructions" to "TEXT", "history_items" to "INTEGER")
+        const val VERSION = 8
+        private val ADDED_ITEM_COLUMNS =
+            linkedMapOf(
+                "leg_id" to "TEXT",
+                "instructions" to "TEXT",
+                "history_items" to "INTEGER",
+                "initiator_json" to "TEXT",
+            )
     }
 }

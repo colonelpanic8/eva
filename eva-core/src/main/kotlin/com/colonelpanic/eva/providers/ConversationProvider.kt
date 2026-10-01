@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.providers
 
+import com.colonelpanic.eva.capability.ActionInitiator
 import com.colonelpanic.eva.capability.ReceiptProvenance
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.JsonObject
@@ -59,6 +60,7 @@ sealed interface HistoryItem {
 
 data class Continuation(
     val turnId: String,
+    val legId: String? = null,
 )
 
 data class ConversationInput(
@@ -78,6 +80,7 @@ data class CallIdentity(
     val providerTurnId: String,
     val catalogRevision: String,
     val callId: String,
+    val initiator: ActionInitiator? = null,
 )
 
 data class CorrelatedToolResult(

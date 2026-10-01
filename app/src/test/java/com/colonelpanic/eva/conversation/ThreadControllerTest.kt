@@ -931,7 +931,7 @@ class ThreadControllerTest {
         }
 
     @Test
-    fun `late user captions stay separate while the handoff reply keeps its original turn`() =
+    fun `late user captions and handoff replies keep their original turn`() =
         runTest {
             val voice = FakeProvider()
             val background = FakeProvider(epoch = "background")
@@ -947,9 +947,9 @@ class ThreadControllerTest {
             voice.channel.send(ProviderEvent.AssistantText("voice:first", "I have handed it off", false))
             advanceUntilIdle()
             val items = store.items(controller.state.value.threadId!!)
-            assertNull(items.filterIsInstance<ThreadItem.UserMessage>().last().turnId)
+            assertEquals(latestTurn(controller), items.filterIsInstance<ThreadItem.UserMessage>().last().turnId)
             assertEquals(latestTurn(controller), items.filterIsInstance<ThreadItem.AssistantMessage>().last().turnId)
-            assertTrue(
+            assertFalse(
                 controller.state.value.entries
                     .any { it.request == "Late caption" },
             )

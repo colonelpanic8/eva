@@ -59,6 +59,7 @@ fun projectEntries(
                         arguments = item.arguments,
                         result = receipt?.message,
                         parentId = item.legId ?: turnId,
+                        initiator = receipt?.initiator ?: item.initiator,
                     )
             }
 

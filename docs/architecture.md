@@ -78,11 +78,11 @@ holding the leg's own actions and its prompt.
 One attachment is live at a time. Several turn tasks can be active in the same
 thread: a delegated text turn and a later foreground voice turn own their calls
 independently. Ownership follows the provider leg and input ID, never whichever
-turn happens to be first in the thread. User transcripts follow the current voice
-input (or remain thread-level if no voice turn owns them). A late assistant reply
-from the handoff response keeps its original turn ID, even after text work finishes.
-A pending device task retains its original turn and device lease; Realtime keeps
-that input while its call is pending, so device corrections and Stop remain live.
+turn happens to be first in the thread. User transcripts follow their committed
+speech item; late captions and assistant replies keep their original turn ID,
+even after text work finishes. A new spoken request gets a separate input while a
+pending device task retains its original turn and device lease. Device corrections
+and Stop remain available through the thread's device controls.
 The UI Stop targets a running device task on the shown thread first, then its
 foreground task, then its latest active background task. It cannot stop another
 thread's device task. Working
@@ -174,6 +174,18 @@ input identity must survive late transcripts and asynchronous tool events:
 transcript arrival order alone cannot establish which request owns an action.
 Tool correlation carries connection/session, input, generation, turn, catalog,
 and call identity; stale calls cannot gain authority through reconnection.
+Each Realtime response ID has an immutable origin. Output-item, assistant-text,
+and completion events resolve their own response ID, including late events after
+a newer response starts. Completion output also supplies calls, deduplicated against
+item events. An unrecognized response cannot borrow the latest request: its call
+receives a correlated, journaled NOT_EXECUTED result asking for a new user request.
+EVA-created typed, tool-follow-up, and lifecycle responses carry request, input,
+purpose, initiator, and applicable parent-response/speech-item metadata. Automatic
+server-VAD responses bind to committed speech items in conversation order, without
+waiting for transcription. This retains server-side response creation and barge-in;
+client-owned VAD response creation would add a data-channel round trip before model
+startup. These ownership rules have raw-event provider/controller replay coverage;
+voice latency and barge-in have not been measured on a device for this change.
 Realtime asks for a spoken follow-up once every call from the same model response
 has resolved, not once all calls in the session have, so a quick lookup is answered
 while a device task from an earlier response still runs. A follow-up requested while
@@ -183,7 +195,12 @@ follow-up: a COMPLETED quiet call ends the input silently, while any other statu
 is still reported for the model to explain.
 
 Provider-independent history preserves action provenance and distinguishes
-external tool content from EVA's outcome envelope. Provider output is not proof
+external tool content from EVA's outcome envelope. Action records separately retain
+the initiator (user speech, typed request, text-agent leg, device-task worker, or
+lifecycle-note reply) and the applicable input, response, item, and leg IDs. Android
+and desktop journal version 8 preserves this identity across restart; older records
+keep an absent initiator rather than inventing one. Action details show a small
+“from” label. Provider output is not proof
 that an operation completed. Interrupting speech, ending a call, canceling local
 work, and undoing a remote action are distinct operations.
 
@@ -373,7 +390,9 @@ worker. An unresolved primitive effect remains UNKNOWN at terminal task receipt,
 even if later actions succeed. The task uses neither `BudgetedBackend` nor
 `BoundedExecution`, returns no startup handoff, and holds its lease until terminal
 completion/drain. Its one receipt includes task/revision identity, effects, and
-per-step kind, result and observation/model/action timings. A stop before any
+per-step kind, result and observation/model/action timings. Step receipts also retain
+the device-worker initiator, task/leg ID, call ID, and available response/output-item
+IDs, separate from the outer call's initiator. A stop before any
 completed effect is NOT_EXECUTED; known partial work is FAILED; unresolved work is
 UNKNOWN. Journal recovery never replays a task.
 

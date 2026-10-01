@@ -4,6 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
+import com.colonelpanic.eva.capability.ActionInitiator
 import com.colonelpanic.eva.capability.CapabilityDispatcher
 import com.colonelpanic.eva.capability.ClaimResult
 import com.colonelpanic.eva.capability.InvocationRecord
@@ -74,6 +75,7 @@ class SqliteInvocationRepository(
                                 },
                             )
                             put("provenance_json", record.provenance?.toJson()?.toString())
+                            put("initiator_json", record.initiator?.toJson()?.toString())
                             put("thread_id", record.threadId)
                             put("turn_id", record.turnId)
                         }
@@ -179,6 +181,7 @@ class SqliteInvocationRepository(
             threadId = getColumnIndexOrThrow("thread_id").let { if (isNull(it)) null else getString(it) },
             turnId = getColumnIndexOrThrow("turn_id").let { if (isNull(it)) null else getString(it) },
             data = nullableJson("data_json"),
+            initiator = nullableJson("initiator_json")?.let(ActionInitiator::fromJson),
         )
 
     private fun Cursor.nullableJson(column: String): JsonObject? =

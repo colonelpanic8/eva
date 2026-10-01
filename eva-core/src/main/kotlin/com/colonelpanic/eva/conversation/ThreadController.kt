@@ -6,6 +6,7 @@ import com.colonelpanic.eva.audio.RealtimeMediaState
 import com.colonelpanic.eva.capability.CallEnding
 import com.colonelpanic.eva.capability.CapabilityDispatcher
 import com.colonelpanic.eva.capability.CapabilityRegistry
+import com.colonelpanic.eva.capability.InitiatorKind
 import com.colonelpanic.eva.capability.InteractionMode
 import com.colonelpanic.eva.capability.InvocationPersistenceException
 import com.colonelpanic.eva.capability.InvocationRecord
@@ -666,7 +667,7 @@ class ThreadController(
                         ThreadItem.UserMessage(
                             UUID.randomUUID().toString(),
                             threadId,
-                            task?.turnId,
+                            task?.turnId ?: event.inputId?.let { voiceTurns[opened to it]?.turnId },
                             nowMillis(),
                             event.text,
                             spoken = true,
@@ -693,10 +694,12 @@ class ThreadController(
 
             is ProviderEvent.ToolCallReady -> {
                 check(event.call.catalogRevision == connectionTools.getValue(opened).catalog.revision)
-                if (voiceTurns[opened to event.call.inputId]?.announceOnly == true) {
-                    opened.submitToolResult(
-                        CorrelatedToolResult(event.call, "NOT_EXECUTED", wording().message(Wording.ANNOUNCEMENT_ACTION)),
-                    )
+                if (event.call.initiator?.kind == InitiatorKind.UNKNOWN) {
+                    rejectUnowned(event, opened, threadId, voice, Wording.UNKNOWN_ORIGIN)
+                } else if (voiceTurns[opened to event.call.inputId]?.announceOnly == true ||
+                    event.call.initiator?.kind == InitiatorKind.LIFECYCLE_NOTE_REPLY
+                ) {
+                    rejectUnowned(event, opened, threadId, voice, Wording.ANNOUNCEMENT_ACTION)
                 } else if (voice && event.capabilityId == END_CONVERSATION.capabilityId) {
                     // Nothing runs on the phone and, unless the hang-up is deferred, no result is
                     // returned, so the model is not prompted to speak again. Its goodbye plays out first.
@@ -965,8 +968,9 @@ class ThreadController(
         opened: ConversationSession,
         threadId: String,
         voice: Boolean,
+        messageKey: String = Wording.UNOWNED_ACTION,
     ) {
-        val message = wording().message(Wording.UNOWNED_ACTION)
+        val message = wording().message(messageKey)
         val id = "provider:${event.call.providerSessionId}:${event.call.callId}"
         val arguments = event.arguments.mapValues { (_, value) -> (value as? JsonPrimitive)?.content ?: value.toString() }
         val snapshot = connectionTools[opened]?.snapshot ?: registry.snapshot
@@ -978,12 +982,13 @@ class ThreadController(
                     ThreadItem.ActionCall(
                         UUID.randomUUID().toString(),
                         threadId,
-                        null,
+                        voiceTurns[opened to event.call.inputId]?.turnId,
                         nowMillis(),
                         id,
                         event.capabilityId,
                         title,
                         arguments,
+                        initiator = event.call.initiator,
                     ),
                 )
             }
@@ -996,7 +1001,9 @@ class ThreadController(
                         VOICE_REQUEST,
                         catalogRevision = snapshot.revision,
                         threadId = threadId,
+                        turnId = voiceTurns[opened to event.call.inputId]?.turnId,
                         interactionMode = if (voice) InteractionMode.VOICE else InteractionMode.TYPED,
+                        initiator = event.call.initiator,
                     ),
                     message,
                 )
@@ -1370,6 +1377,7 @@ class ThreadController(
                     threadId = threadId,
                     turnId = turnId,
                     interactionMode = if (context.voice) InteractionMode.VOICE else InteractionMode.TYPED,
+                    initiator = event.call.initiator,
                     onWaiting = { mutableState.update { it.copy(providerMessage = "Still waiting for the action…") } },
                 )
             // A native tool that offers `quiet` lets the model skip the spoken follow-up to a completed call.
@@ -1431,6 +1439,7 @@ class ThreadController(
                                 definition?.title ?: event.capabilityId,
                                 proposal.arguments,
                                 legId,
+                                initiator = event.call.initiator,
                             ),
                         )
                         rejection
@@ -1752,7 +1761,12 @@ class ThreadController(
                         store.append(textLeg)
                         val opened =
                             backgroundProviderFactory().open(
-                                SessionOpenRequest(instructions, catalog, history = history, continuation = Continuation(turnId)),
+                                SessionOpenRequest(
+                                    instructions,
+                                    catalog,
+                                    history = history,
+                                    continuation = Continuation(turnId, textLeg.id),
+                                ),
                             )
                         background = opened
                         if (!active) {

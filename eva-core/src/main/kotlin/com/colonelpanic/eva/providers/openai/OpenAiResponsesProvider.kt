@@ -1,6 +1,8 @@
 package com.colonelpanic.eva.providers.openai
 
+import com.colonelpanic.eva.capability.ActionInitiator
 import com.colonelpanic.eva.capability.CatalogAdmission
+import com.colonelpanic.eva.capability.InitiatorKind
 import com.colonelpanic.eva.capability.ToolSchema
 import com.colonelpanic.eva.providers.CallIdentity
 import com.colonelpanic.eva.providers.ConversationInput
@@ -147,6 +149,13 @@ private class OpenAiResponsesSession(
                                     responseId,
                                     request.catalog.revision,
                                     callId,
+                                    ActionInitiator(
+                                        if (request.continuation != null) InitiatorKind.TEXT_AGENT else InitiatorKind.USER_TYPED,
+                                        inputId = response.inputId,
+                                        responseId = responseId,
+                                        legId = request.continuation?.legId,
+                                        outputItemId = call.str("id"),
+                                    ),
                                 )
                             pending[callId] = identity
                             emit(ProviderEvent.ToolCallReady(identity, tool.capabilityId, arguments))

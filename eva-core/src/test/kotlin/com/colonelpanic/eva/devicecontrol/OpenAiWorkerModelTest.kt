@@ -39,7 +39,7 @@ class OpenAiWorkerModelTest {
                             .message("OK")
                             .body(
                                 """
-                                {"output":[{"type":"function_call","call_id":"next","name":"finish","arguments":"{}"}]}
+                                {"id":"response","output":[{"id":"output-item","type":"function_call","call_id":"next","name":"finish","arguments":"{}"}]}
                                 """.toResponseBody(
                                     "application/json".toMediaType(),
                                 ),
@@ -86,6 +86,8 @@ class OpenAiWorkerModelTest {
             )
             assertFalse(input[2].jsonObject.containsKey("role"))
             assertEquals("next", reply.calls.single().id)
+            assertEquals("response", reply.calls.single().responseId)
+            assertEquals("output-item", reply.calls.single().outputItemId)
             assertEquals(
                 "next",
                 reply.output

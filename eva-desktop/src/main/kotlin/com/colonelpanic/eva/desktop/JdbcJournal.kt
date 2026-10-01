@@ -26,11 +26,20 @@ class JdbcJournal(
         connection = DriverManager.getConnection("jdbc:sqlite:${file.absolutePath}")
         connection.createStatement().use { it.execute("PRAGMA journal_mode=WAL") }
         val version = connection.createStatement().use { statement -> statement.executeQuery("PRAGMA user_version").use { it.getInt(1) } }
-        check(version == 0 || version == VERSION) { "Unsupported journal version $version in $file" }
-        if (version == 0) {
+        check(version == 0 || version in 7..VERSION) { "Unsupported journal version $version in $file" }
+        if (version < VERSION) {
             connection.autoCommit = false
             try {
-                SCHEMA.forEach { sql -> connection.createStatement().use { it.execute(sql) } }
+                val statements =
+                    if (version == 0) {
+                        SCHEMA
+                    } else {
+                        listOf(
+                            "ALTER TABLE invocations ADD COLUMN initiator_json TEXT",
+                            "ALTER TABLE items ADD COLUMN initiator_json TEXT",
+                        )
+                    }
+                statements.forEach { sql -> connection.createStatement().use { it.execute(sql) } }
                 connection.createStatement().use { it.execute("PRAGMA user_version = $VERSION") }
                 connection.commit()
             } catch (failure: Exception) {
@@ -64,14 +73,14 @@ class JdbcJournal(
     override fun close() = runBlocking { mutex.withLock { connection.close() } }
 
     companion object {
-        const val VERSION = 7
+        const val VERSION = 8
 
         private val SCHEMA =
             listOf(
                 "CREATE TABLE invocations (call_id TEXT PRIMARY KEY NOT NULL, fingerprint TEXT NOT NULL, " +
                     "request TEXT NOT NULL, destination TEXT, status TEXT NOT NULL, message TEXT NOT NULL, " +
                     "created_at INTEGER NOT NULL, capability_id TEXT NOT NULL, catalog_revision TEXT NOT NULL, " +
-                    "title TEXT, thread_id TEXT, turn_id TEXT, arguments_json TEXT, provenance_json TEXT, data_json TEXT)",
+                    "title TEXT, thread_id TEXT, turn_id TEXT, arguments_json TEXT, provenance_json TEXT, data_json TEXT, initiator_json TEXT)",
                 "CREATE TABLE threads (id TEXT PRIMARY KEY NOT NULL, title TEXT NOT NULL, " +
                     "created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
                 "CREATE TABLE turns (id TEXT PRIMARY KEY NOT NULL, thread_id TEXT NOT NULL, request TEXT NOT NULL, " +
@@ -79,7 +88,7 @@ class JdbcJournal(
                 "CREATE TABLE items (id TEXT PRIMARY KEY NOT NULL, thread_id TEXT NOT NULL, turn_id TEXT, " +
                     "created_at INTEGER NOT NULL, type TEXT NOT NULL, text TEXT, spoken INTEGER, truncated INTEGER, " +
                     "call_id TEXT, capability_id TEXT, title TEXT, arguments TEXT, notice_kind TEXT, " +
-                    "leg_id TEXT, instructions TEXT, history_items INTEGER)",
+                    "leg_id TEXT, instructions TEXT, history_items INTEGER, initiator_json TEXT)",
                 "CREATE INDEX turns_thread_id ON turns(thread_id)",
                 "CREATE INDEX items_thread_id ON items(thread_id)",
             )

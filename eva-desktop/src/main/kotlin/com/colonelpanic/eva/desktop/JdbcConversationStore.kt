@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.desktop
 
+import com.colonelpanic.eva.capability.ActionInitiator
 import com.colonelpanic.eva.conversation.ConversationStore
 import com.colonelpanic.eva.conversation.NoticeKind
 import com.colonelpanic.eva.conversation.Thread
@@ -9,6 +10,7 @@ import com.colonelpanic.eva.conversation.TurnStatus
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import java.sql.Connection
 import java.sql.ResultSet
 import java.util.UUID
@@ -190,6 +192,7 @@ class JdbcConversationStore(
                         "title" to item.title,
                         "arguments" to Json.encodeToString(item.arguments),
                         "leg_id" to item.legId,
+                        "initiator_json" to item.initiator?.toJson()?.toString(),
                     )
             }
 
@@ -243,6 +246,7 @@ class JdbcConversationStore(
                     getString("title"),
                     Json.decodeFromString(getString("arguments")),
                     nullableString("leg_id"),
+                    nullableString("initiator_json")?.let { ActionInitiator.fromJson(Json.parseToJsonElement(it).jsonObject) },
                 )
             }
 

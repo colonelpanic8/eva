@@ -59,6 +59,7 @@ class CapabilityDispatcher(
                         },
                     threadId = proposal.threadId,
                     turnId = proposal.turnId,
+                    initiator = proposal.initiator,
                 )
             val claim = journal { repository.claim(initial) }
             if (claim.record.fingerprint != initial.fingerprint) throw ConflictingCallException()

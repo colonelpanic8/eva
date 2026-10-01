@@ -137,6 +137,8 @@ class OpenAiWorkerModel(
                         it.getValue("call_id").jsonPrimitive.content,
                         it.getValue("name").jsonPrimitive.content,
                         Json.parseToJsonElement(it.getValue("arguments").jsonPrimitive.content).jsonObject,
+                        body["id"]?.jsonPrimitive?.content,
+                        it["id"]?.jsonPrimitive?.content,
                     )
                 }
         return WorkerReply(

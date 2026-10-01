@@ -339,6 +339,9 @@ messages:
     An action in this thread may have changed external state. Check background_status
     for recent receipts and verify the outcome before requesting more changes.
     Nothing was executed.
+  unknown-origin: >-
+    This tool call has an unknown origin. Nothing was executed. Ask the user to
+    make a new request so the action can be tied to that request.
   unowned-action: No request is active to run this action. Nothing was executed.
   turn-stop-requested: Stopped.
   response-failed: The model could not complete this response.

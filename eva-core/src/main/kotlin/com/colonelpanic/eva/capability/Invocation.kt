@@ -14,6 +14,7 @@ data class ToolProposal(
     val interactionMode: InteractionMode = InteractionMode.TYPED,
     val onWaiting: () -> Unit = {},
     val waitBudget: WaitBudget? = null,
+    val initiator: ActionInitiator? = null,
 ) {
     fun fingerprint(): String {
         val fields = listOf(capabilityId, catalogRevision) + arguments.toSortedMap().flatMap { listOf(it.key, it.value) }
@@ -50,6 +51,7 @@ data class InvocationRecord(
     val turnId: String? = null,
     /** Machine-readable result the provider returned beside its text, when it returned one. */
     val data: JsonObject? = null,
+    val initiator: ActionInitiator? = null,
 )
 
 data class ClaimResult(

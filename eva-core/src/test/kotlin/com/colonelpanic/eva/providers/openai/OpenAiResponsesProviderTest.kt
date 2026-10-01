@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.providers.openai
 
+import com.colonelpanic.eva.capability.InitiatorKind
 import com.colonelpanic.eva.providers.Continuation
 import com.colonelpanic.eva.providers.ConversationInput
 import com.colonelpanic.eva.providers.CorrelatedToolResult
@@ -139,6 +140,7 @@ class OpenAiResponsesProviderTest {
             assertEquals("eva.android.maps.search", call.capabilityId)
             assertEquals(JsonPrimitive("Ferry Building"), call.arguments["destination"])
             assertEquals("input-1", call.call.inputId)
+            assertEquals(InitiatorKind.USER_TYPED, call.call.initiator!!.kind)
             assertEquals("resp_1", call.call.providerTurnId)
             assertTrue(events.none { it is ProviderEvent.ResponseEnded })
             session.submitToolResult(CorrelatedToolResult(call.call, "HANDED_OFF", "Map search opened."))
@@ -279,6 +281,33 @@ class OpenAiResponsesProviderTest {
                     .getValue("content")
                     .jsonPrimitive.content,
             )
+            collector.cancel()
+        }
+
+    @Test
+    fun `continuation calls identify the specific text agent leg`() =
+        runTest {
+            val session =
+                OpenAiResponsesProvider(
+                    access,
+                    "gpt-test",
+                    client,
+                    StandardTestDispatcher(testScheduler),
+                ).open(SessionOpenRequest("You are EVA.", catalog, continuation = Continuation("turn", "leg")))
+            val events = mutableListOf<ProviderEvent>()
+            val collector = launch { session.events.collect { events += it } }
+            advanceUntilIdle()
+            session.requestResponse(ResponseRequest("turn"))
+            advanceUntilIdle()
+            val origin =
+                events
+                    .filterIsInstance<ProviderEvent.ToolCallReady>()
+                    .single()
+                    .call.initiator!!
+            assertEquals(InitiatorKind.TEXT_AGENT, origin.kind)
+            assertEquals("leg", origin.legId)
+            assertEquals("turn", origin.inputId)
+            assertEquals("resp_1", origin.responseId)
             collector.cancel()
         }
 
