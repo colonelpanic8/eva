@@ -23,18 +23,18 @@ class CatalogAdmissionTest {
     }
 
     @Test
-    fun `voice reserves two control slots and settings distinguishes typed and voice overflow`() {
-        val voice = CatalogAdmission.select(bundled + extensions, controls = 2)
-        assertEquals(62, voice.admitted.size)
+    fun `voice reserves four control slots and settings distinguishes typed and voice overflow`() {
+        val voice = CatalogAdmission.select(bundled + extensions, controls = CatalogAdmission.voiceControls(bundled + extensions))
+        assertEquals(60, voice.admitted.size)
         val reasons = CatalogAdmission.overflowReasons(bundled + extensions)
-        assertEquals(28, reasons.size)
-        assertTrue(reasons.getValue(extensions[36].id).contains("Available in typed"))
-        assertTrue(reasons.getValue(extensions[37].id).contains("Available in typed"))
+        assertEquals(30, reasons.size)
+        assertTrue(reasons.getValue(extensions[34].id).contains("Available in typed"))
+        assertTrue(reasons.getValue(extensions[35].id).contains("Available in typed"))
         assertTrue(reasons.getValue(extensions[38].id).startsWith("Unavailable:"))
-        assertTrue(CatalogAdmission.overflowReasons((bundled + extensions).take(62)).isEmpty())
+        assertTrue(CatalogAdmission.overflowReasons((bundled + extensions).take(60)).isEmpty())
 
         val withTasks = listOf(definition(CapabilityRegistry.DEVICE_TASK)) + bundled + extensions
-        assertEquals(4, CatalogAdmission.voiceControls(withTasks))
-        assertTrue(CatalogAdmission.overflowReasons(withTasks).getValue(extensions[34].id).contains("4 of 64"))
+        assertEquals(6, CatalogAdmission.voiceControls(withTasks))
+        assertTrue(CatalogAdmission.overflowReasons(withTasks).getValue(extensions[34].id).contains("6 of 64"))
     }
 }

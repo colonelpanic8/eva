@@ -16,7 +16,13 @@ class WordingTest {
                         "device-worker.$name" to schema
                     } +
                     (PromptDefaults.END_CONVERSATION_ID to ThreadController.END_CONVERSATION.inputSchema) +
-                    listOf(ThreadController.DEVICE_TASK_REVISE, ThreadController.DEVICE_TASK_STOP).map { it.capabilityId to it.inputSchema }
+                    listOf(
+                        ThreadController.DEVICE_TASK_REVISE,
+                        ThreadController.DEVICE_TASK_STOP,
+                        ThreadController.DEFER_TO_TEXT,
+                        ThreadController.BACKGROUND_STATUS,
+                        ThreadController.BACKGROUND_CANCEL,
+                    ).map { it.capabilityId to it.inputSchema }
             ).toMap()
         // The catalog also words tools that only another host, such as the desktop, offers.
         Wording.bundled.tools.filterKeys { !it.startsWith("eva.desktop.") }.forEach { (id, text) ->

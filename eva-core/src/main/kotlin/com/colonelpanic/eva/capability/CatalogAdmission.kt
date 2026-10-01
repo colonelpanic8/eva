@@ -17,9 +17,9 @@ object CatalogAdmission {
         return Selection(ordered.take(LIMIT - controls), ordered.drop(LIMIT - controls))
     }
 
-    /** Ending and deferring the call, plus revising and stopping a device task when one can run. */
+    /** End, defer, background status/cancel, plus device revise/stop when available. */
     fun voiceControls(definitions: List<CapabilityDefinition>): Int =
-        2 + if (definitions.any { it.id == CapabilityRegistry.DEVICE_TASK }) 2 else 0
+        4 + if (definitions.any { it.id == CapabilityRegistry.DEVICE_TASK }) 2 else 0
 
     fun overflowReasons(definitions: List<CapabilityDefinition>): Map<String, String> {
         val typed = select(definitions).overflow.map { it.id }.toSet()
