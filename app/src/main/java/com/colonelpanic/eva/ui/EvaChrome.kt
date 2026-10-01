@@ -30,12 +30,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.NavigationDrawerItem
-import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarColors
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -85,7 +85,7 @@ internal fun EvaDrawerSheet(
                     .fillMaxWidth()
                     .background(MaterialTheme.colorScheme.primaryContainer)
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
-                    .padding(horizontal = 28.dp, vertical = 24.dp),
+                    .padding(horizontal = 16.dp, vertical = 24.dp),
         ) {
             Text(
                 text = stringResource(R.string.app_name),
@@ -112,7 +112,7 @@ internal fun EvaDrawerSheet(
             icon = { Icon(Icons.Filled.Add, contentDescription = null) },
             selected = false,
             onClick = onNewThread,
-            modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
+            shape = RectangleShape,
         )
         LazyColumn {
             items(threads, key = { it.id }) { thread ->
@@ -121,7 +121,7 @@ internal fun EvaDrawerSheet(
                     badge = { if (thread.working) Text("Working…", style = MaterialTheme.typography.labelSmall) },
                     selected = thread.id == shownThreadId && current == EvaDestination.CONVERSATION,
                     onClick = { onShowThread(thread.id) },
-                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
+                    shape = RectangleShape,
                 )
             }
         }
@@ -141,6 +141,6 @@ private fun DrawerDestination(
         icon = { Icon(icon, contentDescription = null) },
         selected = destination == current,
         onClick = { onSelect(destination) },
-        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
+        shape = RectangleShape,
     )
 }
