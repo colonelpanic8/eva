@@ -38,6 +38,8 @@ class GrantedExecutionBackend(
     private val backend: ExecutionBackend,
     private val authorization: () -> String?,
 ) : ExecutionBackend {
+    override fun usesDeviceUi(proposal: ToolProposal): Boolean = backend.usesDeviceUi(proposal)
+
     override fun prepare(proposal: ToolProposal): ToolProposal = backend.prepare(proposal)
 
     override fun dispatchRejection(): String? = authorization() ?: backend.dispatchRejection()

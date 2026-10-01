@@ -13,6 +13,7 @@ import androidx.core.content.ContextCompat
 import com.colonelpanic.eva.capability.ExecutionBackend
 import com.colonelpanic.eva.capability.ExecutionOutcome
 import com.colonelpanic.eva.capability.InvocationStatus
+import com.colonelpanic.eva.capability.ToolProposal
 
 /**
  * Places the call through Android's telecom service when EVA holds the phone permission, so it
@@ -24,6 +25,8 @@ class PhoneCallBackend(
     private val dialer: ExecutionBackend,
     private val isEmergency: (String) -> Boolean = { emergency(context, it) },
 ) : ExecutionBackend {
+    override fun usesDeviceUi(proposal: ToolProposal): Boolean = true
+
     private fun canCall(number: String) =
         ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED &&
             !isEmergency(number)

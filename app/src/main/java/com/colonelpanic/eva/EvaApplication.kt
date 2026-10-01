@@ -737,16 +737,12 @@ class EvaApplication :
                 CapabilityDispatcher(registry, repository, onBackendFailure = { capability, error ->
                     android.util.Log.w("EvaDispatch", "$capability threw before reporting an outcome", error)
                 }, executeAdmitted = { proposal, backend ->
-                    val definition = registry.snapshot.definitions[proposal.capabilityId]
-                    deviceTasks.executeAdmitted(
-                        proposal,
-                        backend,
-                        definition?.readOnly != true || proposal.capabilityId in CapabilityRegistry.SCREEN_CONTROL,
-                    )
+                    deviceTasks.executeAdmitted(proposal, backend, backend.usesDeviceUi(proposal))
                 }),
             deviceTasks = deviceTasks,
             store = SqliteConversationStore(journal),
             onBackgroundAnswer = { WorkNotifications.answered(this, it) },
+            onBackgroundAnswerDelivered = { WorkNotifications.delivered(this, it) },
             // A blank link means the phone talks to OpenAI itself; a link means the paired host bridge.
             providerFactory = { link ->
                 if (link.isBlank()) {

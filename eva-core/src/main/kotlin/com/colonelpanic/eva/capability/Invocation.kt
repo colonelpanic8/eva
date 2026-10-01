@@ -15,6 +15,7 @@ data class ToolProposal(
     val onWaiting: () -> Unit = {},
     val waitBudget: WaitBudget? = null,
     val initiator: ActionInitiator? = null,
+    val onQueued: () -> Unit = {},
 ) {
     fun fingerprint(): String {
         val fields = listOf(capabilityId, catalogRevision) + arguments.toSortedMap().flatMap { listOf(it.key, it.value) }
@@ -89,6 +90,9 @@ data class ExecutionOutcome(
 }
 
 interface ExecutionBackend {
+    /** True when execution reads or changes the foreground UI shared with the device worker. */
+    fun usesDeviceUi(proposal: ToolProposal): Boolean = false
+
     /** External content attribution without treating a native operation as an imported tool. */
     fun receiptSource(): CapabilitySource? = null
 
@@ -116,3 +120,11 @@ class InvocationPersistenceException(
     val mayHaveExecuted: Boolean,
     cause: Exception,
 ) : IllegalStateException("Action history could not be saved.", cause)
+
+class UnsupportedJournalVersionException(
+    found: Int,
+    supported: Int,
+) : IllegalStateException(
+        "This EVA build supports action history version $supported, but the saved history uses version $found. " +
+            "Install a newer EVA build to open it. Your history has been kept unchanged.",
+    )

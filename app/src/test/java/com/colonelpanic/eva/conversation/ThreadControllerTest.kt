@@ -68,6 +68,7 @@ class ThreadControllerTest {
     private val repository = MemoryInvocationRepository()
     private val store = MemoryConversationStore()
     private var executions = 0
+    private val deliveredAnswers = mutableListOf<ThreadController.BackgroundAnswer>()
     private val answers = mutableListOf<ThreadController.BackgroundAnswer>()
 
     private val action =
@@ -141,6 +142,7 @@ class ThreadControllerTest {
         messagingBridges = messagingBridges,
         prompt = prompt,
         onBackgroundAnswer = { answers += it },
+        onBackgroundAnswerDelivered = { deliveredAnswers += it },
     )
 
     @Test
@@ -1449,7 +1451,11 @@ class ThreadControllerTest {
             background.channel.send(ProviderEvent.AssistantText(turn, answer, false))
             background.channel.send(ProviderEvent.ResponseEnded(turn, "completed"))
             advanceUntilIdle()
-            assertTrue(answers.isEmpty())
+            assertEquals(turn, answers.single().taskId)
+            assertTrue(deliveredAnswers.isEmpty())
+            voice.channel.send(ProviderEvent.ContextDelivery(listOf(turn), true))
+            runCurrent()
+            assertEquals(turn, deliveredAnswers.single().taskId)
             val (note, respond) = voice.contexts.single()
             assertTrue(respond)
             assertEquals(Wording.bundled.message(Wording.BACKGROUND_UPDATE), note.substringBeforeLast("\n"))
@@ -1489,7 +1495,8 @@ class ThreadControllerTest {
             assertEquals("FAILED", data.getValue("state").jsonPrimitive.content)
             assertEquals("First finding\n\nSecond finding", data.getValue("answer").jsonPrimitive.content)
             assertEquals("Connection failed", data.getValue("reason").jsonPrimitive.content)
-            assertTrue(answers.isEmpty())
+            assertEquals(turn, answers.single().taskId)
+            assertTrue(deliveredAnswers.isEmpty())
         }
 
     @Test
@@ -1597,6 +1604,78 @@ class ThreadControllerTest {
             assertEquals(TurnStatus.INTERRUPTED, turns.getValue(foreground).status)
             assertEquals(TurnStatus.OPEN, turns.getValue(delegated).status)
             assertTrue(controller.state.value.working)
+        }
+
+    @Test
+    fun `coverage falls while interrupted device work drains and rises for a later turn`() =
+        runTest {
+            val gate = CompletableDeferred<Unit>()
+            val device = action.copy(id = CapabilityRegistry.DEVICE_TASK)
+            val blocking =
+                object : ExecutionBackend {
+                    override suspend fun unavailableReason(): String? = null
+
+                    override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome =
+                        withContext(NonCancellable) {
+                            gate.await()
+                            ExecutionOutcome(InvocationStatus.COMPLETED, "Device action drained")
+                        }
+                }
+            val registry = CapabilityRegistry(mapOf(device.id to blocking), listOf(device))
+            val provider = FakeProvider()
+            val controller = controller(provider, registry = registry)
+            runCurrent()
+            controller.connect("test")
+            runCurrent()
+            controller.submit("Work on the device")
+            runCurrent()
+            provider.call("device", device.id, "place" to "Park")
+            runCurrent()
+            assertTrue(controller.needsWorkCoverage.value)
+            controller.interruptBackgroundWork("Android refused renewed coverage")
+            runCurrent()
+            assertFalse(controller.needsWorkCoverage.value)
+            assertTrue(controller.working.value.isNotEmpty())
+            controller.newThread()
+            runCurrent()
+            controller.connect("test")
+            runCurrent()
+            controller.submit("A new text request")
+            runCurrent()
+            assertTrue(controller.needsWorkCoverage.value)
+            provider.channel.send(ProviderEvent.ResponseEnded(provider.input.id, "completed"))
+            runCurrent()
+            assertFalse(controller.needsWorkCoverage.value)
+            gate.complete(Unit)
+            runCurrent()
+        }
+
+    @Test
+    fun `a newer journal displays a recovery instruction instead of a generic storage error`() =
+        runTest {
+            val error =
+                com.colonelpanic.eva.capability
+                    .UnsupportedJournalVersionException(9, 8)
+            val newer =
+                object : com.colonelpanic.eva.capability.InvocationRepository by repository {
+                    override suspend fun recoverInterrupted(): Unit = throw error
+                }
+            val controller =
+                ThreadController(
+                    registry,
+                    CapabilityDispatcher(registry, newer),
+                    newer,
+                    store,
+                    liveScope(),
+                    providerFactory = { FakeProvider() },
+                )
+            runCurrent()
+            assertEquals(error.message, controller.state.value.errorMessage)
+            assertFalse(controller.state.value.isLoading)
+            assertTrue(
+                controller.state.value.errorMessage!!
+                    .contains("unchanged"),
+            )
         }
 
     @Test
@@ -2897,6 +2976,7 @@ class ThreadControllerTest {
             note: String,
             respond: Boolean,
             data: kotlinx.serialization.json.JsonObject?,
+            deliveryId: String?,
         ): Boolean {
             if (!supportsContext) return false
             contexts += (note + (data?.let { "\n" + it } ?: "")) to respond

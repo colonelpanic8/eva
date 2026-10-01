@@ -373,6 +373,16 @@ messages:
     An action in this thread may have changed external state. Check background_status
     for recent receipts and verify the outcome before requesting more changes.
     Nothing was executed.
+  interrupted-response-action: >-
+    This response was interrupted or did not finish. Its tool call was not executed.
+    Follow the user's latest request; do not claim the interrupted action happened.
+  incomplete-action: >-
+    The tool call did not contain a completed item with valid arguments. Nothing was executed.
+    Ask the user to clarify the request if it still needs an action.
+  action-queued: >-
+    EVA has accepted this action and it is queued behind earlier work. The attributed data
+    identifies the pending call. Tell the user it is waiting; do not submit a duplicate or
+    claim it completed. EVA will deliver its final receipt when it finishes.
   unknown-origin: >-
     This tool call has an unknown origin. Nothing was executed. Ask the user to
     make a new request so the action can be tied to that request.

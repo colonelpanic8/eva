@@ -7,6 +7,7 @@ import com.colonelpanic.eva.capability.CapabilitySource
 import com.colonelpanic.eva.capability.ExecutionBackend
 import com.colonelpanic.eva.capability.ExecutionOutcome
 import com.colonelpanic.eva.capability.InvocationStatus
+import com.colonelpanic.eva.capability.ToolProposal
 import com.colonelpanic.eva.capability.extensions.AdapterIdentity
 import com.colonelpanic.eva.capability.extensions.Capability
 import com.colonelpanic.eva.capability.extensions.CapabilityAdapter
@@ -305,6 +306,8 @@ internal class MediaAppPlayBackend(
     private val settle: suspend () -> Unit,
     private val remote: RemotePlayer? = null,
 ) : ExecutionBackend {
+    override fun usesDeviceUi(proposal: ToolProposal): Boolean = intent?.usesDeviceUi(proposal) == true
+
     private val packageName get() = app.identity.packageName
     private val label get() = app.label
 

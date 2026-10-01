@@ -135,8 +135,17 @@ class DeviceTaskCoordinatorTest {
                         return ExecutionOutcome(InvocationStatus.COMPLETED, "done")
                     }
                 }
+            var queuedNotices = 0
             val queued =
-                async { coordinator.executeAdmitted(proposal("ordinary").copy(capabilityId = CapabilityRegistry.OPEN_APP), ordinary, true) }
+                async {
+                    coordinator.executeAdmitted(
+                        proposal("ordinary").copy(capabilityId = CapabilityRegistry.OPEN_APP, onQueued = {
+                            queuedNotices++
+                        }),
+                        ordinary,
+                        true,
+                    )
+                }
             var abandonedOutcome: ExecutionOutcome? = null
             val abandoned =
                 launch {
@@ -149,6 +158,7 @@ class DeviceTaskCoordinatorTest {
                 }
             testScheduler.runCurrent()
             assertFalse(queued.isCompleted)
+            assertEquals(1, queuedNotices)
             abandoned.cancel()
             testScheduler.runCurrent()
             // Returned rather than thrown, so the dispatcher journals it as not run instead of uncertain.
@@ -164,6 +174,34 @@ class DeviceTaskCoordinatorTest {
             assertEquals(InvocationStatus.COMPLETED, queued.await().status)
             assertEquals(listOf("ordinary"), order)
             assertNull(coordinator.lease.owner)
+        }
+
+    @Test fun backgroundActionsRunWhileTheDeviceLeaseIsHeld() =
+        runTest {
+            val entered = CompletableDeferred<Unit>()
+            val coordinator = DeviceTaskCoordinator(create = finishing(entered))
+            val device = async { coordinator.execute(proposal()) }
+            entered.await()
+            var sent = false
+            val sms =
+                object : ExecutionBackend {
+                    override suspend fun unavailableReason(): String? = null
+
+                    override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome {
+                        assertTrue(coordinator.running.value != null)
+                        sent = true
+                        return ExecutionOutcome(InvocationStatus.COMPLETED, "Sent")
+                    }
+                }
+            val message =
+                proposal(
+                    "sms",
+                ).copy(capabilityId = CapabilityRegistry.SMS_SEND, onQueued = { error("SMS must not queue for the device UI") })
+            assertEquals(InvocationStatus.COMPLETED, coordinator.executeAdmitted(message, sms, sms.usesDeviceUi(message)).status)
+            assertTrue(sent)
+            assertFalse(device.isCompleted)
+            coordinator.stopRunning("thread")
+            device.await()
         }
 
     @Test fun aSecondTaskRunsAfterTheFirstIsStopped() =

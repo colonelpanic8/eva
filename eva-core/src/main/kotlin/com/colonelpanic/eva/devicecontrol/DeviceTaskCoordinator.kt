@@ -73,7 +73,7 @@ class DeviceTaskCoordinator(
         val thread = proposal.threadId ?: return execute(proposal.arguments)
         val turn = proposal.turnId ?: return execute(proposal.arguments)
         if (synchronized(monitor) { turn in stoppedTurns }) return stoppedBeforeDispatch()
-        awaitLease(proposal.callId)?.let { return it }
+        awaitLease(proposal)?.let { return it }
         val agent =
             synchronized(monitor) {
                 if (turn in stoppedTurns) {
@@ -176,9 +176,10 @@ class DeviceTaskCoordinator(
      * Queues behind whatever holds the device. Cancellation while queued is reported as not run
      * rather than propagated, because the dispatcher would otherwise journal it as uncertain.
      */
-    private suspend fun awaitLease(callId: String): ExecutionOutcome? =
+    private suspend fun awaitLease(proposal: ToolProposal): ExecutionOutcome? =
         try {
-            lease.acquire(callId)
+            if (lease.owner != null) proposal.onQueued()
+            lease.acquire(proposal.callId)
             null
         } catch (_: CancellationException) {
             ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "Cancelled while waiting for an earlier device action to finish.")
@@ -190,7 +191,7 @@ class DeviceTaskCoordinator(
         needsDevice: Boolean,
     ): ExecutionOutcome {
         if (proposal.capabilityId == CapabilityRegistry.DEVICE_TASK || !needsDevice) return backend.execute(proposal)
-        awaitLease(proposal.callId)?.let { return it }
+        awaitLease(proposal)?.let { return it }
         return try {
             backend.execute(proposal)
         } finally {
