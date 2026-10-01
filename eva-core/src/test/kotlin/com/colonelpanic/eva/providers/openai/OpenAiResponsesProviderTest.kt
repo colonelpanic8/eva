@@ -121,6 +121,80 @@ class OpenAiResponsesProviderTest {
         }
 
     @Test
+    fun `a long typed request is sent whole and a context overflow is named plainly`() =
+        runTest {
+            val overflow =
+                OkHttpClient
+                    .Builder()
+                    .addInterceptor { chain ->
+                        val listing =
+                            chain
+                                .request()
+                                .url.encodedPath
+                                .endsWith("/models")
+                        if (!listing) requests += Buffer().also { chain.request().body?.writeTo(it) }.readUtf8()
+                        Response
+                            .Builder()
+                            .request(chain.request())
+                            .protocol(Protocol.HTTP_1_1)
+                            .code(if (listing) 200 else 400)
+                            .message(if (listing) "OK" else "Bad Request")
+                            .body(
+                                (
+                                    if (listing) {
+                                        modelList
+                                    } else {
+                                        """{"error":{"message":"Your input exceeds the context window of this model. Please adjust your input and try again.","type":"invalid_request_error","param":"input","code":"context_length_exceeded"}}"""
+                                    }
+                                ).toResponseBody("application/json".toMediaType()),
+                            ).build()
+                    }.build()
+            val session =
+                OpenAiResponsesProvider(access, "gpt-test", overflow, StandardTestDispatcher(testScheduler))
+                    .open(SessionOpenRequest("You are EVA.", catalog))
+            val events = mutableListOf<ProviderEvent>()
+            val collector = launch { session.events.collect { events += it } }
+            advanceUntilIdle()
+            val text = "word ".repeat(4_000)
+            session.submit(ConversationInput("input-1", text))
+            session.requestResponse(ResponseRequest("input-1"))
+            advanceUntilIdle()
+            assertTrue(requests.single().contains(text.trim()))
+            assertEquals(
+                "This request is too long for gpt-test's context. Shorten it, split it into parts, " +
+                    "or start a new conversation if earlier messages fill the context.",
+                events.filterIsInstance<ProviderEvent.Failure>().single().message,
+            )
+            collector.cancel()
+        }
+
+    @Test
+    fun `a streamed context overflow names the model's window`() {
+        val failed =
+            """{"type":"response.failed","response":{"id":"resp_1","status":"failed","error":""" +
+                """{"code":"context_length_exceeded","message":"This model's maximum context length is 128000 tokens."}}}"""
+        val response =
+            Response
+                .Builder()
+                .request(
+                    okhttp3.Request
+                        .Builder()
+                        .url("https://example.test/v1/responses")
+                        .build(),
+                ).protocol(Protocol.HTTP_1_1)
+                .code(200)
+                .message("OK")
+                .body("data: $failed\n\n".toResponseBody("text/event-stream".toMediaType()))
+                .build()
+        val error = runCatching { collectResponsesStream(response, "gpt-test") }.exceptionOrNull()
+        assertEquals(
+            "This request is too long for gpt-test's context (128000 tokens). Shorten it, split it into parts, " +
+                "or start a new conversation if earlier messages fill the context.",
+            error?.message,
+        )
+    }
+
+    @Test
     fun `a typed turn round-trips a function call and continues from the previous response`() =
         runTest {
             val session =

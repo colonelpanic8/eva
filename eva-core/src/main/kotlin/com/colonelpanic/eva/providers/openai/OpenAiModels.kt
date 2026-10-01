@@ -125,14 +125,31 @@ internal fun openAiErrorMessage(
     code: Int,
     body: String,
     what: String,
+    model: String? = null,
 ): String {
-    val message =
+    val error =
         runCatching {
             kotlinx.serialization.json.Json
                 .parseToJsonElement(body)
                 .jsonObject
                 .obj("error")
-                ?.str("message")
         }.getOrNull()
-    return "OpenAI rejected $what ($code): ${(message ?: body).trim().take(300)}"
+    contextOverflow(error, model)?.let { return it }
+    return "OpenAI rejected $what ($code): ${(error?.str("message") ?: body).trim().take(300)}"
 }
+
+/** Names a context-window overflow plainly, with the window size when OpenAI states it; null for other errors. */
+internal fun contextOverflow(
+    error: JsonObject?,
+    model: String?,
+): String? {
+    val message = error?.str("message")?.trim().orEmpty()
+    if (error?.str("code") != "context_length_exceeded" && !CONTEXT_OVERFLOW.containsMatchIn(message)) return null
+    val tokens = CONTEXT_TOKENS.find(message)?.groupValues?.get(1)
+    val window = if (tokens == null) "context" else "context ($tokens tokens)"
+    return "This request is too long for ${model ?: "the model"}'s $window. Shorten it, split it into parts, " +
+        "or start a new conversation if earlier messages fill the context."
+}
+
+private val CONTEXT_OVERFLOW = Regex("(?i)(exceed|maximum).{0,60}context (window|length)|context (window|length).{0,60}exceed")
+private val CONTEXT_TOKENS = Regex("(?i)(?:context (?:window|length)\\D{0,30}?)(\\d[\\d,]*) tokens")
