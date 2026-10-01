@@ -118,6 +118,58 @@ class DeviceTaskCoordinatorTest {
             )
         }
 
+    @Test fun forcedOrdinaryActionCleanupCannotReleaseASuccessorsLease() =
+        runTest {
+            val entered = CompletableDeferred<Unit>()
+            val finish = CompletableDeferred<Unit>()
+            val coordinator = DeviceTaskCoordinator { error("No device worker expected") }
+            val backend =
+                object : ExecutionBackend {
+                    override suspend fun unavailableReason(): String? = null
+
+                    override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome {
+                        entered.complete(Unit)
+                        finish.await()
+                        return ExecutionOutcome(InvocationStatus.UNKNOWN, "Effects uncertain")
+                    }
+                }
+            val task =
+                launch {
+                    coordinator.executeAdmitted(proposal("old").copy(capabilityId = CapabilityRegistry.OPEN_APP), backend, true)
+                }
+            entered.await()
+            coordinator.forceStop("turn")
+            coordinator.lease.acquire("successor")
+            finish.complete(Unit)
+            task.join()
+            assertEquals("successor", coordinator.lease.owner)
+            coordinator.lease.release("successor")
+            assertEquals(
+                InvocationStatus.NOT_EXECUTED,
+                coordinator.executeAdmitted(proposal("late").copy(capabilityId = CapabilityRegistry.OPEN_APP), backend, true).status,
+            )
+        }
+
+    @Test fun forceStopRevokesLeaseAndDoesNotReplay() =
+        runTest {
+            val entered = CompletableDeferred<Unit>()
+            var creates = 0
+            val coordinator =
+                DeviceTaskCoordinator {
+                    creates++
+                    finishing(entered)()
+                }
+            val task = launch { coordinator.execute(proposal()) }
+            entered.await()
+            assertEquals("call", coordinator.lease.owner)
+            coordinator.forceStop("turn")
+            assertNull(coordinator.lease.owner)
+            assertNull(coordinator.running.value)
+            task.join()
+            assertEquals(InvocationStatus.NOT_EXECUTED, coordinator.execute(proposal("late")).status)
+            assertEquals(1, creates)
+        }
+
     @Test fun actionsQueueBehindARunningTaskAndControlsBypassIt() =
         runTest {
             val entered = CompletableDeferred<Unit>()

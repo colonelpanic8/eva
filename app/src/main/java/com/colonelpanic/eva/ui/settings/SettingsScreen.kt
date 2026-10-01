@@ -64,6 +64,8 @@ fun SettingsScreen(
     state: SettingsUiState,
     actions: SettingsActions,
     onOpenDrawer: () -> Unit,
+    activeTaskCount: Int = 0,
+    onRunningWork: () -> Unit = {},
     showScreenControl: Boolean = false,
     onScreenControlShown: () -> Unit = {},
 ) {
@@ -94,6 +96,8 @@ fun SettingsScreen(
         ) {
             ConfigurationSection(state, actions)
             SettingsDivider()
+            BackgroundWorkSection(state, actions, activeTaskCount, onRunningWork)
+            SettingsDivider()
             AccountSection(state, actions)
             SettingsDivider()
             ModelsSection(state, actions)
@@ -111,6 +115,36 @@ fun SettingsScreen(
             SettingsDivider()
             AppearanceSection(state, actions)
             Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun BackgroundWorkSection(
+    state: SettingsUiState,
+    actions: SettingsActions,
+    count: Int,
+    onRunningWork: () -> Unit,
+) {
+    var period by remember(state.stallPeriodSeconds) { mutableStateOf(state.stallPeriodSeconds.toString()) }
+    SettingsSection("Background work") {
+        SettingsBlock {
+            SettingsRow(title = "Running work", supporting = "$count active tasks") {
+                TextButton(onClick = onRunningWork) { Text("Open") }
+            }
+            Text("Flag tasks that have made no progress. This never stops a task automatically.")
+            OutlinedTextField(
+                value = period,
+                onValueChange = { period = it },
+                label = { Text("Looks stuck after (seconds)") },
+                singleLine = true,
+                isError = period.toIntOrNull()?.let { it > 0 } != true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            TextButton(
+                enabled = period.toIntOrNull()?.let { it > 0 && it != state.stallPeriodSeconds } == true,
+                onClick = { period.toIntOrNull()?.takeIf { it > 0 }?.let(actions.onStallPeriodSeconds) },
+            ) { Text("Save") }
         }
     }
 }

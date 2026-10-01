@@ -110,6 +110,43 @@ class ConfigurationCompositionTest {
     }
 
     @Test
+    fun `stall period round trips composes and old configurations default to three minutes`() {
+        val base = fullConfiguration()
+        val expected = base.copy(capabilities = base.capabilities.copy(stallPeriodSeconds = 900))
+        val encoded = EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(expected))
+        assertEquals(expected, EvaConfigurationCodec.resolve(reader(mapOf(EvaConfigurationCodec.FILE_NAME to encoded))).configuration)
+        val override = EvaConfigurationCodec.overrides(expected, EvaConfigurationCodec.complete(base), listOf("base.yaml"))
+        assertEquals(CapabilitiesPatch(stallPeriodSeconds = 900), override.capabilities)
+        assertEquals(
+            expected,
+            EvaConfigurationCodec
+                .resolve(
+                    reader(
+                        mapOf(
+                            EvaConfigurationCodec.FILE_NAME to EvaConfigurationCodec.encode(override),
+                            "base.yaml" to EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(base)),
+                        ),
+                    ),
+                ).configuration,
+        )
+        val old = encoded.lines().filterNot { it.trim().startsWith("stallPeriodSeconds:") }.joinToString("\n")
+        assertEquals(
+            180,
+            EvaConfigurationCodec
+                .resolve(
+                    reader(mapOf(EvaConfigurationCodec.FILE_NAME to old)),
+                ).configuration.capabilities.stallPeriodSeconds,
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            EvaConfigurationCodec.resolve(
+                reader(
+                    mapOf(EvaConfigurationCodec.FILE_NAME to encoded.replace("stallPeriodSeconds: 900", "stallPeriodSeconds: 0")),
+                ),
+            )
+        }
+    }
+
+    @Test
     fun `bearer reference kind round trips and mismatched kinds are rejected`() {
         val current = fullConfiguration()
         val reference = EvaConfigurationCodec.serviceSecretId(SERVICE_NAME, "bearer")

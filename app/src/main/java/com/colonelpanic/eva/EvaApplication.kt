@@ -85,6 +85,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -161,6 +162,17 @@ class EvaApplication :
     override fun voiceUnavailable(reason: String) = controller.voiceUnavailable(reason)
 
     override fun endVoiceSession() = controller.disconnect()
+
+    override fun workTasks() = controller.taskSnapshots.value
+
+    override fun workCoverageChanged(coverage: com.colonelpanic.eva.conversation.WorkCoverage) = controller.setWorkCoverage(coverage)
+
+    override fun workCoverageLimited(reason: String) {
+        controller.workCoverageNotice(reason)
+        WorkNotifications.limited(this, reason)
+    }
+
+    override fun stopAllWork() = controller.stopAllTasks()
 
     override fun needsWorkCoverage(): Boolean = controller.needsWorkCoverage.value
 
@@ -745,6 +757,8 @@ class EvaApplication :
                     )
                 }),
             deviceTasks = deviceTasks,
+            onWorkAccepted = { TurnWorkService.ensureStarted(this) },
+            stallPeriodMillis = { capabilities.stallPeriodSeconds * 1_000L },
             store = SqliteConversationStore(journal),
             onBackgroundAnswer = { WorkNotifications.answered(this, it) },
             // A blank link means the phone talks to OpenAI itself; a link means the paired host bridge.
@@ -798,18 +812,29 @@ class EvaApplication :
                 controller.state.collect { mutableVoiceSession.value = VoiceSessionStatus(it.mediaState, it.mediaControls) }
             }
             scope.launch {
-                controller.state
-                    .map { it.voiceMode && it.providerStatus != ProviderStatus.DISCONNECTED }
-                    .distinctUntilChanged()
-                    .collect { active ->
-                        if (active) VoiceSessionService.start(this@EvaApplication) else VoiceSessionService.stop(this@EvaApplication)
-                    }
+                val transition =
+                    com.colonelpanic.eva.conversation.WorkServiceTransition(
+                        startWork = { TurnWorkService.ensureStarted(this@EvaApplication) },
+                        stopWork = { TurnWorkService.stop(this@EvaApplication) },
+                        startVoice = { VoiceSessionService.start(this@EvaApplication) },
+                        stopVoice = { VoiceSessionService.stop(this@EvaApplication) },
+                    )
+                kotlinx.coroutines.flow
+                    .combine(
+                        controller.state.map { it.voiceMode && it.providerStatus != ProviderStatus.DISCONNECTED }.distinctUntilChanged(),
+                        controller.needsWorkCoverage,
+                    ) { voice, work -> voice to work }
+                    .collect { (voice, work) -> transition.update(voice, work) }
             }
             scope.launch {
-                controller.needsWorkCoverage
-                    .collect { active ->
-                        if (active) TurnWorkService.start(this@EvaApplication) else TurnWorkService.stop(this@EvaApplication)
+                controller.needsWorkCoverage.collectLatest { needed ->
+                    if (needed) {
+                        while (true) {
+                            controller.refreshTaskSnapshots()
+                            kotlinx.coroutines.delay(1_000)
+                        }
                     }
+                }
             }
         }
     }

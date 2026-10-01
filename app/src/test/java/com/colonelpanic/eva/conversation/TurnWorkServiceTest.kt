@@ -1,6 +1,10 @@
 package com.colonelpanic.eva.conversation
 
 import android.app.Application
+import android.app.Notification
+import android.app.Service
+import android.content.Intent
+import android.content.pm.ServiceInfo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame
@@ -12,6 +16,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.Implementation
+import org.robolectric.annotation.Implements
+import org.robolectric.shadows.ShadowService
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], manifest = Config.NONE, application = TurnWorkServiceTest.WorkApplication::class)
@@ -21,11 +28,96 @@ class TurnWorkServiceTest {
         TurnWorkHost {
         var needed = true
         val interruptions = mutableListOf<String>()
+        val limits = mutableListOf<String>()
+        var coverage = WorkCoverage.NONE
+        var stopped = false
+
+        override fun workCoverageLimited(reason: String) {
+            limits += reason
+        }
+
+        override fun workCoverageChanged(coverage: WorkCoverage) {
+            this.coverage = coverage
+        }
+
+        override fun stopAllWork() {
+            stopped = true
+        }
 
         override fun needsWorkCoverage() = needed
 
         override fun interruptWork(reason: String) {
             interruptions += reason
+        }
+    }
+
+    @Implements(Service::class)
+    class RejectSpecialUse : ShadowService() {
+        @Implementation(minSdk = 29)
+        override fun startForeground(
+            id: Int,
+            notification: Notification,
+            foregroundServiceType: Int,
+        ) {
+            if (foregroundServiceType == ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE) throw SecurityException("specialUse refused")
+            super.startForeground(id, notification, foregroundServiceType)
+        }
+    }
+
+    @Test
+    @Config(shadows = [RejectSpecialUse::class])
+    fun `specialUse rejection promotes short coverage and exposes its limit`() {
+        val host = RuntimeEnvironment.getApplication() as WorkApplication
+        val controller = Robolectric.buildService(TurnWorkService::class.java).create()
+        try {
+            controller.get().onStartCommand(null, 0, 1)
+            assertEquals(WorkCoverage.SHORT_SERVICE, host.coverage)
+            assertTrue(host.limits.single().contains("three minutes"))
+            assertTrue(host.interruptions.isEmpty())
+            assertTrue(
+                shadowOf(
+                    controller.get(),
+                ).lastForegroundNotification.extras.getCharSequence(Notification.EXTRA_TEXT).toString().contains("three minutes"),
+            )
+        } finally {
+            controller.destroy()
+        }
+    }
+
+    @Test
+    fun `notification exposes tasks stall marker navigation and stop all`() {
+        val host = RuntimeEnvironment.getApplication() as WorkApplication
+        val task =
+            TaskSnapshot(
+                "thread",
+                "Research",
+                "turn",
+                "Find the answer",
+                TaskKind.DELEGATED_TEXT_AGENT,
+                TaskState.LOOKS_STUCK,
+                System.currentTimeMillis() - 240_000,
+                0,
+                2,
+                "Search",
+                "COMPLETED",
+                false,
+                WorkCoverage.LONG_RUNNING,
+            )
+        val notification = WorkNotifications.running(host, listOf(task, task.copy(taskId = "second")), WorkCoverage.LONG_RUNNING)
+        assertEquals("EVA is working on 2 tasks", notification.extras.getCharSequence(Notification.EXTRA_TITLE))
+        val text = notification.extras.getCharSequence(Notification.EXTRA_TEXT).toString()
+        assertTrue(text.contains("Find the answer"))
+        assertTrue(text.contains("4m elapsed"))
+        assertTrue(text.contains("Looks stuck"))
+        assertTrue(shadowOf(notification.contentIntent).savedIntent.getBooleanExtra(WorkNotifications.EXTRA_RUNNING_WORK, false))
+        assertEquals("Stop all", notification.actions.single().title)
+        val controller = Robolectric.buildService(TurnWorkService::class.java).create()
+        try {
+            controller.get().onStartCommand(shadowOf(notification.actions.single().actionIntent).savedIntent, 0, 1)
+            assertTrue(host.stopped)
+            assertEquals(WorkCoverage.LONG_RUNNING, host.coverage)
+        } finally {
+            controller.destroy()
         }
     }
 
@@ -75,7 +167,7 @@ class TurnWorkServiceTest {
             val service = controller.get()
             service.onStartCommand(null, 0, 1)
             host.needed = false
-            service.onTimeout(1)
+            service.onTimeout(1, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
             assertTrue(shadowOf(service).isStoppedBySelf)
             assertTrue(host.interruptions.isEmpty())
         } finally {

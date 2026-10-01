@@ -35,7 +35,7 @@ import com.colonelpanic.eva.ui.settings.SettingsUiState
 import com.colonelpanic.eva.ui.theme.EvaTheme
 import kotlinx.coroutines.launch
 
-internal enum class EvaDestination { CONVERSATION, EXTENSIONS, MESSAGING, MEMORY, PROMPT, SETTINGS, ABOUT }
+internal enum class EvaDestination { CONVERSATION, RUNNING_WORK, EXTENSIONS, MESSAGING, MEMORY, PROMPT, SETTINGS, ABOUT }
 
 /**
  * Top-level destinations behind a navigation drawer. A navigation library would only
@@ -53,6 +53,11 @@ fun EvaApp(
     onNewThread: () -> Unit = {},
     onShowThread: (String) -> Unit = {},
     onStopTask: () -> Unit = {},
+    tasks: List<com.colonelpanic.eva.conversation.TaskSnapshot> = emptyList(),
+    runningWorkRequest: Int = 0,
+    onStopWork: (String) -> Unit = {},
+    onForceStopWork: (String) -> Unit = {},
+    onStopAllWork: () -> Unit = {},
     onSubmit: (String) -> Unit,
     onConnect: () -> Unit = {},
     onVoice: () -> Unit = {},
@@ -65,6 +70,9 @@ fun EvaApp(
     onDismissDenial: () -> Unit = {},
 ) {
     var destination by rememberSaveable { mutableStateOf(EvaDestination.CONVERSATION) }
+    androidx.compose.runtime.LaunchedEffect(runningWorkRequest) {
+        if (runningWorkRequest > 0) destination = EvaDestination.RUNNING_WORK
+    }
     var showScreenControl by rememberSaveable { mutableStateOf(false) }
     val uriHandler = LocalUriHandler.current
     val drawer = rememberDrawerState(DrawerValue.Closed)
@@ -128,6 +136,13 @@ fun EvaApp(
                 )
             }
 
+            EvaDestination.RUNNING_WORK -> {
+                RunningWorkScreen(tasks, { openDrawer() }, onStopWork, onForceStopWork, onStopAllWork) { id ->
+                    onShowThread(id)
+                    destination = EvaDestination.CONVERSATION
+                }
+            }
+
             EvaDestination.EXTENSIONS -> {
                 ExtensionsScreen(state = settings, actions = settingsActions, onOpenDrawer = { openDrawer() })
             }
@@ -153,6 +168,8 @@ fun EvaApp(
                     state = settings,
                     actions = settingsActions,
                     onOpenDrawer = { openDrawer() },
+                    activeTaskCount = tasks.size,
+                    onRunningWork = { destination = EvaDestination.RUNNING_WORK },
                     showScreenControl = showScreenControl,
                     onScreenControlShown = { showScreenControl = false },
                 )

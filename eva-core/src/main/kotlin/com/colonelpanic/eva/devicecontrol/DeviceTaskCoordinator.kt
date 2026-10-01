@@ -9,7 +9,7 @@ import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.ToolProposal
 import com.colonelpanic.eva.devicecontrol.worker.TextTaskAgent
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
@@ -25,12 +25,17 @@ class DeviceTaskCoordinator(
     private val monitor = Any()
     val lease = DeviceExecutionLease()
     private val stoppedTurns = mutableSetOf<String>()
+    private val admittedOwners = mutableMapOf<String, String?>()
+    private val mutableWaitingForLease = MutableStateFlow<Set<String>>(emptySet())
+    val waitingForLease = mutableWaitingForLease.asStateFlow()
 
     data class Running(
         val threadId: String,
         val turnId: String,
         val agent: TextTaskAgent,
         val progress: TaskProgress? = null,
+        val callId: String,
+        val job: kotlinx.coroutines.CompletableJob,
     )
 
     private val mutableRunning = MutableStateFlow<Running?>(null)
@@ -64,6 +69,19 @@ class DeviceTaskCoordinator(
             true
         }
 
+    fun forceStop(turnId: String) =
+        synchronized(monitor) {
+            stoppedTurns += turnId
+            admittedOwners.filterValues { it == turnId }.keys.forEach(lease::releaseIfOwned)
+            val task = mutableRunning.value?.takeIf { it.turnId == turnId }
+            if (task != null) {
+                task.agent.cancel()
+                task.job.cancel()
+                mutableRunning.value = null
+                lease.releaseIfOwned(task.callId)
+            }
+        }
+
     override suspend fun unavailableReason(): String? = unavailable()
 
     override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome =
@@ -81,7 +99,7 @@ class DeviceTaskCoordinator(
                     return stoppedBeforeDispatch()
                 }
                 try {
-                    create().also { mutableRunning.value = Running(thread, turn, it) }
+                    create().also { mutableRunning.value = Running(thread, turn, it, callId = proposal.callId, job = Job()) }
                 } catch (
                     e: Exception,
                 ) {
@@ -93,11 +111,16 @@ class DeviceTaskCoordinator(
                 }
             }
         // Only the agent's explicit controls end a task; an attachment cannot release its lease.
-        return withContext(NonCancellable) {
+        val taskJob =
+            synchronized(monitor) { mutableRunning.value?.takeIf { it.agent === agent }?.job }
+                ?: return stoppedBeforeDispatch()
+        return withContext(taskJob) {
             try {
                 val result =
                     agent.run(proposal.arguments.getValue("goal")) { progress ->
-                        synchronized(monitor) { mutableRunning.value = mutableRunning.value?.copy(progress = progress) }
+                        synchronized(monitor) {
+                            mutableRunning.value?.takeIf { it.agent === agent }?.let { mutableRunning.value = it.copy(progress = progress) }
+                        }
                     }
                 val status =
                     when (result.status) {
@@ -163,8 +186,9 @@ class DeviceTaskCoordinator(
                 )
             } finally {
                 synchronized(monitor) {
-                    mutableRunning.value = null
-                    lease.release(proposal.callId)
+                    if (mutableRunning.value?.agent === agent) mutableRunning.value = null
+                    lease.releaseIfOwned(proposal.callId)
+                    taskJob.complete()
                 }
             }
         }
@@ -176,13 +200,17 @@ class DeviceTaskCoordinator(
      * Queues behind whatever holds the device. Cancellation while queued is reported as not run
      * rather than propagated, because the dispatcher would otherwise journal it as uncertain.
      */
-    private suspend fun awaitLease(callId: String): ExecutionOutcome? =
-        try {
+    private suspend fun awaitLease(callId: String): ExecutionOutcome? {
+        synchronized(monitor) { mutableWaitingForLease.value += callId }
+        return try {
             lease.acquire(callId)
             null
         } catch (_: CancellationException) {
             ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "Cancelled while waiting for an earlier device action to finish.")
+        } finally {
+            synchronized(monitor) { mutableWaitingForLease.value -= callId }
         }
+    }
 
     suspend fun executeAdmitted(
         proposal: ToolProposal,
@@ -190,11 +218,22 @@ class DeviceTaskCoordinator(
         needsDevice: Boolean,
     ): ExecutionOutcome {
         if (proposal.capabilityId == CapabilityRegistry.DEVICE_TASK || !needsDevice) return backend.execute(proposal)
+        if (synchronized(monitor) { proposal.turnId in stoppedTurns }) return stoppedBeforeDispatch()
         awaitLease(proposal.callId)?.let { return it }
+        synchronized(monitor) {
+            if (proposal.turnId in stoppedTurns) {
+                lease.releaseIfOwned(proposal.callId)
+                return stoppedBeforeDispatch()
+            }
+            admittedOwners[proposal.callId] = proposal.turnId
+        }
         return try {
             backend.execute(proposal)
         } finally {
-            lease.release(proposal.callId)
+            synchronized(monitor) {
+                admittedOwners.remove(proposal.callId)
+                lease.releaseIfOwned(proposal.callId)
+            }
         }
     }
 }

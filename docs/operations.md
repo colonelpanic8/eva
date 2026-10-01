@@ -263,6 +263,38 @@ adb -s "$EVA_TEST_DEVICE" shell "am instrument -w \
 adb -s "$EVA_TEST_DEVICE" logcat -d -s EvaExtensionDevice:I
 ```
 
+### Background work and task manager
+
+These checks require an explicitly selected device; JVM/Robolectric coverage is
+not evidence of Android foreground eligibility or OEM background behavior.
+
+- Start a delegated research/device task while the assistant window is visible.
+  End the call, hide the assistant, and let it work for more than three minutes.
+  Verify findings, action receipts, and the final result survive. Repeat from the
+  Activity and with several concurrent tasks across threads.
+- Have a browser take audio focus during work. Verify voice releases audio while
+  task execution and its notification continue, with no foreground-service gap.
+- Repeat with assistant shown/hidden and with the phone locked. Verify operations
+  that can run locked complete; UI/device actions that need unlock report that
+  limitation without claiming success or replaying an uncertain action.
+- Check Running work from the drawer, Settings → Background work (including the
+  active count), and the notification, including tapping while EVA is already
+  open. Open thread must show the owning conversation.
+- Change the stall period in Settings and round-trip the portable configuration.
+  Leave a test provider/device task without progress: **looks stuck** must appear
+  in the list and notification without stopping the task, then clear on progress.
+- Stop a task, Stop all from both surfaces, and Force stop a device task while an
+  action is in flight. Verify the force-stop notice and `INTERRUPTED` status, lease
+  release, truthful final receipts, no duplicate action, and continued operation
+  of a subsequent task. The service must stay until receipt/journal draining ends.
+- Exercise Android rejecting specialUse promotion in a controlled test build:
+  shortService fallback must visibly state its three-minute limitation. Refusing
+  both types must interrupt only uncovered work and retain partial findings.
+  Verify behavior with notification permission denied as well.
+- Check that the work notification disappears after the last task and its journal
+  writes finish, and that restarting after process death reports interruption
+  without replaying any action.
+
 ### Device-control parity
 
 The backend acceptance test is

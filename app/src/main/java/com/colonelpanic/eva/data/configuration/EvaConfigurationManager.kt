@@ -646,6 +646,7 @@ class EvaConfigurationManager(
                     app.capabilities.screenControlEnabled,
                     app.capabilities.deviceTask,
                     app.capabilities.webResearch,
+                    app.capabilities.stallPeriodSeconds,
                 ),
             messaging = EvaConfiguration.Messaging(messaging.enabled, replies, messaging.bridges),
             prompt = EvaConfiguration.Prompt(prompt.source, prompt.config.components),
@@ -792,6 +793,7 @@ class EvaConfigurationManager(
         app.capabilities.saveScreenControl(configuration.capabilities.screenControl)
         app.capabilities.saveDeviceTask(configuration.capabilities.deviceTask)
         app.capabilities.saveWebResearch(configuration.capabilities.webResearch)
+        app.capabilities.saveStallPeriodSeconds(configuration.capabilities.stallPeriodSeconds)
         app.spotify.saveClientId(configuration.spotify.clientId.orEmpty())
         app.prompts.restorePortable(configuration.prompt.source, PromptConfig(configuration.prompt.components))
         val notices = app.packageSettings.restore(packages, beforePackagePreferences)
@@ -967,6 +969,7 @@ class EvaConfigurationManager(
             app.capabilities.saveScreenControl(before.capabilities.screenControl)
             app.capabilities.saveDeviceTask(before.capabilities.deviceTask)
             app.capabilities.saveWebResearch(before.capabilities.webResearch)
+            app.capabilities.saveStallPeriodSeconds(before.capabilities.stallPeriodSeconds)
         }
         attempt("Spotify client") { app.spotify.saveClientId(before.spotify.clientId.orEmpty()) }
         attempt("packages") { app.packageSettings.restore(before.packages.portable(before.services)) }

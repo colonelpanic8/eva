@@ -100,6 +100,7 @@ internal fun EvaDrawerSheet(
         }
         Spacer(Modifier.height(12.dp))
         DrawerDestination("Conversation", Icons.Filled.Home, EvaDestination.CONVERSATION, current, onSelect)
+        DrawerDestination("Running work", Icons.AutoMirrored.Filled.List, EvaDestination.RUNNING_WORK, current, onSelect)
         DrawerDestination("Extensions", Icons.AutoMirrored.Filled.List, EvaDestination.EXTENSIONS, current, onSelect)
         DrawerDestination("Messaging", Icons.AutoMirrored.Filled.Send, EvaDestination.MESSAGING, current, onSelect)
         DrawerDestination("Memory", Icons.Filled.Star, EvaDestination.MEMORY, current, onSelect)

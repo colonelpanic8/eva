@@ -1,5 +1,7 @@
 package com.colonelpanic.eva.devicecontrol
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 
 /**
@@ -9,17 +11,24 @@ import kotlinx.coroutines.sync.Mutex
 class DeviceExecutionLease {
     private val mutex = Mutex()
 
-    @Volatile private var holder: String? = null
-    val owner: String? get() = holder
+    private val mutableOwner = MutableStateFlow<String?>(null)
+    val ownerFlow = mutableOwner.asStateFlow()
+    val owner: String? get() = mutableOwner.value
 
     suspend fun acquire(owner: String) {
         mutex.lock()
-        holder = owner
+        mutableOwner.value = owner
     }
 
+    @Synchronized
+    fun releaseIfOwned(owner: String) {
+        if (mutableOwner.value == owner) release(owner)
+    }
+
+    @Synchronized
     fun release(owner: String) {
-        check(holder == owner)
-        holder = null
+        check(mutableOwner.value == owner)
+        mutableOwner.value = null
         mutex.unlock()
     }
 }

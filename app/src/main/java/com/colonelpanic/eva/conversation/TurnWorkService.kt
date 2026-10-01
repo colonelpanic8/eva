@@ -15,20 +15,35 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.colonelpanic.eva.ForegroundServiceGate
 import com.colonelpanic.eva.MainActivity
+import kotlinx.coroutines.flow.first
 
-/** The application supplies the controller so the service can interrupt work Android will not let it finish. */
 interface TurnWorkHost {
     fun needsWorkCoverage(): Boolean
 
-    /** Interrupt only dependent work after Android refuses coverage. */
     fun interruptWork(reason: String)
+
+    fun workTasks(): List<TaskSnapshot> = emptyList()
+
+    fun workCoverageChanged(coverage: WorkCoverage) {}
+
+    fun workCoverageLimited(reason: String) {}
+
+    fun stopAllWork() {}
 }
 
-/**
- * Covers text and detached turns, including work delegated during a call. Renews short-service
- * coverage when Android permits it; only a live voice turn has another service of its own.
- */
 class TurnWorkService : Service() {
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var coverage = WorkCoverage.NONE
+    private val updateNotification =
+        object : Runnable {
+            override fun run() {
+                if (coverage == WorkCoverage.NONE) return
+                runCatching { getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification()) }
+                handler.postDelayed(this, 1_000)
+            }
+        }
+    private val host get() = application as? TurnWorkHost
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(
@@ -36,79 +51,135 @@ class TurnWorkService : Service() {
         flags: Int,
         startId: Int,
     ): Int {
-        if (!promote()) {
+        if (coverage == WorkCoverage.NONE && !promote()) {
             foregroundRejected()
             return START_NOT_STICKY
         }
+        promotion.value = coverage
+        if (intent?.action == STOP_ALL) host?.stopAllWork()
         if (gate.foregrounded()) stopCoverage()
+        handler.removeCallbacks(updateNotification)
+        if (coverage != WorkCoverage.NONE) handler.post(updateNotification)
         return START_NOT_STICKY
     }
 
+    internal fun notification(): Notification = WorkNotifications.running(this, host?.workTasks().orEmpty(), coverage)
+
     private fun promote(): Boolean {
         WorkNotifications.channels(this)
-        val notification =
-            NotificationCompat
-                .Builder(this, WorkNotifications.WORK_CHANNEL)
-                .setSmallIcon(android.R.drawable.ic_popup_sync)
-                .setContentTitle("EVA is finishing a request")
-                .setOngoing(true)
-                .setSilent(true)
-                .setShowWhen(false)
-                .setContentIntent(WorkNotifications.open(this, null))
-                .setPriority(NotificationCompat.PRIORITY_LOW)
-                .build()
+        if (tryPromote(WorkCoverage.LONG_RUNNING)) return true
+        if (Build.VERSION.SDK_INT >= 34 && tryPromote(WorkCoverage.SHORT_SERVICE)) {
+            host?.workCoverageLimited(SHORT_LIMIT)
+            return true
+        }
+        return false
+    }
+
+    private fun tryPromote(mode: WorkCoverage): Boolean {
+        val notice = WorkNotifications.running(this, host?.workTasks().orEmpty(), mode)
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SHORT_SERVICE)
+            if (Build.VERSION.SDK_INT >= 34) {
+                val type =
+                    if (mode == WorkCoverage.SHORT_SERVICE) {
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_SHORT_SERVICE
+                    } else {
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                    }
+                startForeground(NOTIFICATION_ID, notice, type)
             } else {
-                startForeground(NOTIFICATION_ID, notification)
+                startForeground(NOTIFICATION_ID, notice)
             }
         } catch (_: SecurityException) {
             return false
         } catch (_: IllegalStateException) {
             return false
         }
+        coverage = mode
+        host?.workCoverageChanged(mode)
+        promotion.value = mode
         return true
     }
 
     private fun foregroundRejected() {
         gate.startRejected()
-        (application as? TurnWorkHost)?.interruptWork(START_DENIED)
-        stopSelf()
+        promotion.value = WorkCoverage.NONE
+        host?.workCoverageChanged(WorkCoverage.NONE)
+        host?.workCoverageLimited(START_DENIED)
+        host?.interruptWork(START_DENIED)
+        stopCoverage()
     }
 
     override fun onDestroy() {
+        handler.removeCallbacks(updateNotification)
+        val unexpectedlyLost = coverage != WorkCoverage.NONE && promotion.value != null && host?.needsWorkCoverage() == true
+        coverage = WorkCoverage.NONE
+        if (promotion.value != null) promotion.value = WorkCoverage.NONE
+        host?.workCoverageChanged(WorkCoverage.NONE)
         gate.destroyed()
+        if (unexpectedlyLost) {
+            host?.interruptWork(
+                "Android stopped EVA's background work service. Partial findings are retained in this thread.",
+            )
+        }
         super.onDestroy()
     }
 
-    override fun onTimeout(startId: Int) {
-        val host = application as? TurnWorkHost
+    override fun onTimeout(startId: Int) = timedOut()
+
+    override fun onTimeout(
+        startId: Int,
+        fgsType: Int,
+    ) = timedOut()
+
+    private fun timedOut() {
         if (host?.needsWorkCoverage() == true) {
             if (promote()) return
-            host.interruptWork(START_DENIED)
+            host?.workCoverageLimited(START_DENIED)
+            host?.interruptWork("$START_DENIED Partial findings are retained in this thread.")
         }
         stopCoverage()
     }
 
     private fun stopCoverage() {
+        coverage = WorkCoverage.NONE
+        promotion.value = WorkCoverage.NONE
+        host?.workCoverageChanged(WorkCoverage.NONE)
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
     companion object {
         private const val START_DENIED = "Android did not allow EVA to continue this request in the background."
+        internal const val SHORT_LIMIT =
+            "Android refused long-running coverage. Background work has only about three minutes from service promotion."
+        internal const val STOP_ALL = "com.colonelpanic.eva.STOP_ALL_WORK"
         private const val NOTIFICATION_ID = 42
         private val gate = ForegroundServiceGate()
+        private val promotion = kotlinx.coroutines.flow.MutableStateFlow<WorkCoverage?>(WorkCoverage.NONE)
 
         fun start(context: Context) {
+            promotion.value = null
             if (!gate.requestStart { ContextCompat.startForegroundService(context, Intent(context, TurnWorkService::class.java)) }) {
-                (context.applicationContext as? TurnWorkHost)?.interruptWork(START_DENIED)
+                promotion.value = WorkCoverage.NONE
+                (context.applicationContext as? TurnWorkHost)?.let {
+                    it.workCoverageLimited(START_DENIED)
+                    it.interruptWork(START_DENIED)
+                }
             }
         }
 
+        suspend fun ensureStarted(context: Context): Boolean {
+            if (promotion.value == WorkCoverage.NONE) start(context)
+            val mode = promotion.first { it != null }
+            if (mode == WorkCoverage.SHORT_SERVICE) (context.applicationContext as? TurnWorkHost)?.workCoverageLimited(SHORT_LIMIT)
+            return mode != WorkCoverage.NONE
+        }
+
         fun stop(context: Context) {
-            if (gate.stopping()) context.stopService(Intent(context, TurnWorkService::class.java))
+            if (gate.stopping()) {
+                promotion.value = WorkCoverage.NONE
+                context.stopService(Intent(context, TurnWorkService::class.java))
+            }
         }
     }
 }
@@ -116,7 +187,62 @@ class TurnWorkService : Service() {
 /** Notifications for work that finished with nobody watching. */
 object WorkNotifications {
     const val WORK_CHANNEL = "eva.work"
+    const val EXTRA_RUNNING_WORK = "com.colonelpanic.eva.RUNNING_WORK"
     const val EXTRA_THREAD_ID = "com.colonelpanic.eva.THREAD_ID"
+
+    fun limited(
+        context: Context,
+        reason: String,
+    ) {
+        channels(context)
+        val notification =
+            NotificationCompat
+                .Builder(context, WORK_CHANNEL)
+                .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                .setContentTitle("Background work restricted by Android")
+                .setContentText(reason)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(reason))
+                .setContentIntent(open(context, null))
+                .setAutoCancel(true)
+                .build()
+        runCatching { context.getSystemService(NotificationManager::class.java).notify(43, notification) }
+    }
+
+    fun running(
+        context: Context,
+        tasks: List<TaskSnapshot>,
+        coverage: WorkCoverage,
+    ): Notification {
+        val top = tasks.firstOrNull { it.state == TaskState.LOOKS_STUCK } ?: tasks.firstOrNull()
+        val elapsed = top?.let { ((System.currentTimeMillis() - it.startedAt).coerceAtLeast(0) / 60_000) } ?: 0
+        val details =
+            listOfNotNull(
+                top?.let { "${it.request} · ${elapsed}m elapsed" },
+                "Looks stuck".takeIf { tasks.any { it.state == TaskState.LOOKS_STUCK } },
+                TurnWorkService.SHORT_LIMIT.takeIf { coverage == WorkCoverage.SHORT_SERVICE },
+            ).joinToString(" · ")
+        return NotificationCompat
+            .Builder(context, WORK_CHANNEL)
+            .setSmallIcon(android.R.drawable.ic_popup_sync)
+            .setContentTitle("EVA is working on ${tasks.size} tasks")
+            .setContentText(details)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(details))
+            .setOngoing(true)
+            .setSilent(true)
+            .setShowWhen(false)
+            .setContentIntent(open(context, null))
+            .addAction(
+                0,
+                "Stop all",
+                PendingIntent.getService(
+                    context,
+                    0,
+                    Intent(context, TurnWorkService::class.java).setAction(TurnWorkService.STOP_ALL),
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                ),
+            ).setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+    }
 
     fun channels(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -134,7 +260,10 @@ object WorkNotifications {
         PendingIntent.getActivity(
             context,
             threadId?.hashCode() ?: 0,
-            Intent(context, MainActivity::class.java).apply { threadId?.let { putExtra(EXTRA_THREAD_ID, it) } },
+            Intent(context, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                if (threadId == null) putExtra(EXTRA_RUNNING_WORK, true) else putExtra(EXTRA_THREAD_ID, threadId)
+            },
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
