@@ -96,9 +96,10 @@ result sink during handoff, including calls arriving after text starts, so movin
 the turn never strands their receipts. Text continuation is one-shot and never
 retries an uncertain mutation. Ordinary mutations serialize across turns on the same thread;
 `eva.device.task` runs outside that lock under its own device lease, so background
-SMS and HTTP actions can proceed while it runs. Waiting actions report that they are
-queued through a voice lifecycle note and the conversation status;
-an UNKNOWN or FAILED mutation in any still-running turn blocks further mutations
+SMS and HTTP actions can proceed while it runs. A mutation waiting for the thread
+lock reports that it is queued after three seconds through a voice lifecycle note
+and the conversation status; acquiring the lock sooner cancels that delayed notice.
+Device-lease waits report their queue status immediately. An UNKNOWN or FAILED mutation in any still-running turn blocks further mutations
 while that turn remains active. Read-only tools remain available for verification.
 
 Voice offers `eva.session.background_status` (no arguments) and
@@ -241,11 +242,19 @@ initiator, and applicable parent-response/speech-item metadata. Server VAD keeps
 `interrupt_response: true` for barge-in and uses `create_response: false`; EVA
 requests each speech response immediately on the committed audio item's explicit
 ID, without waiting for transcription or guessing response ownership from FIFO
-order. This adds a data-channel exchange before response creation. These rules have
-raw-event provider/controller replay coverage; device latency and barge-in remain
-unmeasured for this change.
+order. This adds a data-channel exchange before response creation. On speech start,
+EVA cancels active responses and clears their buffered audio. It also marks requests
+still awaiting acknowledgement: if one is created after the user resumes speaking,
+EVA cancels it immediately and treats its eventual output as interrupted even if
+the server reports completion. Interrupted tool-result follow-ups and lifecycle
+announcements stay queued behind the resumed speech, preserving their original
+input; tools from the interrupted response cannot execute. These rules have raw-event
+provider/controller replay coverage; device latency and barge-in remain unmeasured.
 Speech waiting state clears on commits, buffer clearing, transcription failures,
-and seed cancellation, with a 30-second recovery for an abandoned speech event.
+and seed cancellation. A 30-second recovery timer starts only after speech stops,
+so uninterrupted dictation keeps queued replies silent. A transcription failure
+for committed audio reports only an unavailable caption and cannot release a newer
+speech input.
 Unacknowledged response requests release the queue after 10 seconds with a visible
 notice. Errors tied to EVA's response/item event IDs are recoverable notices;
 unattributed session errors still end the connection. User captions are retained,

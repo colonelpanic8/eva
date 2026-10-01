@@ -1733,8 +1733,19 @@ class ThreadController(
                         if (definition?.readOnly == true || event.capabilityId == CapabilityRegistry.DEVICE_TASK) {
                             run()
                         } else {
-                            if (mutationLock.isLocked) proposal.onQueued()
-                            mutationLock.withLock { run() }
+                            val waiting =
+                                launch {
+                                    delay(3_000)
+                                    proposal.onQueued()
+                                }
+                            try {
+                                mutationLock.withLock {
+                                    waiting.cancel()
+                                    run()
+                                }
+                            } finally {
+                                waiting.cancel()
+                            }
                         }
                     } catch (error: CancellationException) {
                         withContext(NonCancellable) {

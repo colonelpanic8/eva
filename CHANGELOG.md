@@ -17,6 +17,8 @@ All notable changes to EVA will be documented here.
 
 ### Fixed
 
+- Brief waits between actions stay quiet. A mutation waiting behind earlier work announces its queue status after three seconds, and starting sooner cancels the delayed notice. Device-lease waits still report immediately.
+- Resuming speech cancels both active voice responses and replies still awaiting acknowledgement, preventing late replies from talking over the user or executing interrupted calls. Tool follow-ups retain their original turn and resume after the new speech response. Long dictation keeps queued replies silent; speech recovery starts after speaking stops, and late transcription failures report only a missing caption.
 - Voice response ownership uses explicit speech-item metadata, so abandoned speech and new utterances cannot strand or close a queued tool follow-up. Interrupted calls return not-executed results, and duplicate call IDs receive one answer.
 - Background findings enter voice context as attributed external data. Notifications remain until the spoken announcement completes, including when context delivery fails.
 - Device tasks allow separate SMS and HTTP actions to proceed while foreground UI actions report when they queue. Lost foreground-service coverage resets while cancelled work drains, so later work can acquire coverage.

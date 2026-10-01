@@ -183,9 +183,17 @@ private class OpenAiRealtimeSession(
         val known: Boolean get() = initiator.kind != InitiatorKind.UNKNOWN
     }
 
+    private data class RequestState(
+        val origin: Origin,
+        var interrupted: Boolean = false,
+        var interruptionHandled: Boolean = false,
+    )
+
     private data class ResponseState(
         val origin: Origin,
+        val request: RequestState?,
         var status: String? = null,
+        var interrupted: Boolean = request?.interrupted == true,
     )
 
     private data class CallState(
@@ -203,8 +211,8 @@ private class OpenAiRealtimeSession(
     )
 
     private val responses = linkedMapOf<String, ResponseState>()
-    private val requested = linkedMapOf<String, Origin>()
-    private val retiredRequests = linkedMapOf<String, Origin>()
+    private val requested = linkedMapOf<String, RequestState>()
+    private val retiredRequests = linkedMapOf<String, RequestState>()
     private val requestTimers = mutableMapOf<String, Job>()
     private val itemRequests = linkedMapOf<String, ItemRequest>()
     private val queued = ArrayDeque<Origin>()
@@ -216,7 +224,7 @@ private class OpenAiRealtimeSession(
     private val endedInputs = linkedSetOf<String>()
     private val inputStatus = mutableMapOf<String, String>()
     private val speechInputs = linkedMapOf<String, String>()
-    private val awaitingSpeech = linkedMapOf<String, Job>()
+    private val awaitingSpeech = linkedMapOf<String, Job?>()
     private val captions = linkedMapOf<String, MutableList<ProviderEvent.Transcript>>()
     private val pending = mutableMapOf<String, CallIdentity>()
     private val calls = linkedMapOf<String, CallState>()
@@ -225,6 +233,7 @@ private class OpenAiRealtimeSession(
     private val contextIds = linkedSetOf<String>()
     private val failedContextIds = linkedSetOf<String>()
     private var userSpeaking = false
+    private var speakingItemId: String? = null
     private var assistantAudioActive = false
     private var closed = false
     private val local = Channel<ProviderEvent>(Channel.UNLIMITED)
@@ -301,8 +310,11 @@ private class OpenAiRealtimeSession(
                                     return@collect
                                 }
                                 bindResponse(response)?.let { id ->
-                                    activeResponses += id
-                                    if (responses.getValue(id).origin.inputId in endedInputs) media.send(responseCancel(id))
+                                    val state = responses.getValue(id)
+                                    if (state.status == null) {
+                                        activeResponses += id
+                                        if (state.interrupted || state.origin.inputId in endedInputs) cancelResponse(id)
+                                    }
                                 }
                             }
 
@@ -311,13 +323,20 @@ private class OpenAiRealtimeSession(
                                 userSpeaking = true
                                 emit(ProviderEvent.UserSpeaking)
                                 val id = message.str("item_id") ?: "unidentified-speech"
-                                awaitSpeech(id)
+                                speakingItemId = id
+                                awaitingSpeech[id] = null
+                                interruptForSpeech()
                                 message.str("item_id")?.let { emit(ProviderEvent.SpeechInputStarted(it)) }
                             }
 
                             "input_audio_buffer.speech_stopped" -> {
-                                userSpeaking = false
-                                message.str("item_id")?.let(::awaitSpeech)
+                                val id = message.str("item_id") ?: speakingItemId ?: "unidentified-speech"
+                                if (speakingItemId == null || speakingItemId == id || speakingItemId == "unidentified-speech") {
+                                    speakingItemId?.takeIf { it != id }?.let(::releaseSpeech)
+                                    userSpeaking = false
+                                    speakingItemId = null
+                                    awaitSpeech(id)
+                                }
                             }
 
                             "input_audio_buffer.cleared" -> {
@@ -348,12 +367,19 @@ private class OpenAiRealtimeSession(
 
                             "conversation.item.input_audio_transcription.failed" -> {
                                 val item = message.str("item_id")
-                                if (item == null) clearSpeech() else releaseSpeech(item)
-                                userSpeaking = false
+                                if (item != null && item == speakingItemId) {
+                                    userSpeaking = false
+                                    speakingItemId = null
+                                }
+                                if (item == null && !userSpeaking) clearSpeech() else item?.let(::releaseSpeech)
                                 emit(
                                     ProviderEvent.Notice(
-                                        message.obj("error")?.str("message")
-                                            ?: "OpenAI could not transcribe that speech. You can keep talking.",
+                                        if (item in speechInputs) {
+                                            "The speech caption is unavailable."
+                                        } else {
+                                            message.obj("error")?.str("message")
+                                                ?: "OpenAI could not transcribe that speech. You can keep talking."
+                                        },
                                     ),
                                 )
                                 pumpRequests()
@@ -409,7 +435,7 @@ private class OpenAiRealtimeSession(
                                 val response = message.obj("response") ?: return@collect
                                 val id = bindResponse(response) ?: return@collect
                                 val state = responses.getValue(id)
-                                state.status = response.str("status") ?: "incomplete"
+                                state.status = if (state.interrupted) "cancelled" else response.str("status") ?: "incomplete"
                                 (response["output"] as? JsonArray)?.forEach { item -> (item as? JsonObject)?.let { receiveCall(id, it) } }
                                 calls
                                     .filterValues { it.responseId == id && !it.emitted }
@@ -425,6 +451,7 @@ private class OpenAiRealtimeSession(
                                     state.origin.initiator.itemId
                                         ?.let(::releaseSpeech)
                                 }
+                                if (state.interrupted) state.request?.let(::resumeInterrupted)
                                 finishInput(state.origin.inputId)
                                 prune()
                                 pumpRequests()
@@ -488,12 +515,49 @@ private class OpenAiRealtimeSession(
             if (inFlight == requestId) inFlight = null
             if (own != null) retiredRequests[requestId] = own
         }
-        val origin = own ?: Origin("unowned:$id", ActionInitiator(InitiatorKind.UNKNOWN), "unknown")
+        val origin = own?.origin ?: Origin("unowned:$id", ActionInitiator(InitiatorKind.UNKNOWN), "unknown")
         val bound = origin.copy(initiator = origin.initiator.copy(responseId = id))
-        responses[id] = ResponseState(bound)
+        responses[id] = ResponseState(bound, own)
         startInput(bound)
         prune()
         return id
+    }
+
+    private fun cancelResponse(id: String) {
+        media.send(responseCancel(id))
+        media.send("""{"type":"output_audio_buffer.clear"}""")
+    }
+
+    private fun interruptForSpeech() {
+        requested.values.forEach { it.interrupted = true }
+        activeResponses.forEach { id ->
+            responses.getValue(id).let { state ->
+                state.interrupted = true
+                state.request?.interrupted = true
+            }
+            cancelResponse(id)
+        }
+        if (activeResponses.isEmpty() && assistantAudioActive) {
+            media.send("""{"type":"output_audio_buffer.clear"}""")
+        }
+        queued.filter { it.purpose == "user_speech" }.forEach { origin ->
+            queued.remove(origin)
+            inputStatus.putIfAbsent(origin.inputId, "cancelled")
+            finishInput(origin.inputId)
+        }
+    }
+
+    private fun resumeInterrupted(request: RequestState) {
+        if (request.interruptionHandled) return
+        request.interruptionHandled = true
+        val origin = request.origin
+        if (origin.inputId in endedInputs) return
+        if ((origin.purpose == "tool_follow_up" || origin.announceOnly) && origin.inputId !in inputStatus) {
+            if (origin !in queued) queued.addLast(origin)
+        } else {
+            inputStatus.putIfAbsent(origin.inputId, "cancelled")
+        }
+        finishInput(origin.inputId)
     }
 
     private fun startInput(origin: Origin) {
@@ -510,7 +574,6 @@ private class OpenAiRealtimeSession(
             checkNotNull(eventScope).launch {
                 delay(REALTIME_SPEECH_WAIT_MILLIS)
                 releaseSpeech(itemId)
-                userSpeaking = false
                 emit(
                     ProviderEvent.Notice("OpenAI did not finish the speech input. EVA released the waiting replies; you can keep talking."),
                 )
@@ -524,9 +587,10 @@ private class OpenAiRealtimeSession(
     }
 
     private fun clearSpeech(except: String? = null) {
-        awaitingSpeech.values.forEach { it.cancel() }
+        awaitingSpeech.values.forEach { it?.cancel() }
         awaitingSpeech.clear()
         userSpeaking = false
+        speakingItemId = null
         captions.keys
             .toList()
             .filter { it != except }
@@ -604,7 +668,7 @@ private class OpenAiRealtimeSession(
     private fun finishInput(inputId: String) {
         if (inputId !in startedInputs || inputId in endedInputs || pending.values.any { it.inputId == inputId } ||
             calls.values.any { !it.emitted && responses[it.responseId]?.origin?.inputId == inputId } ||
-            requested.values.any { it.inputId == inputId } || queued.any { it.inputId == inputId } ||
+            requested.values.any { it.origin.inputId == inputId } || queued.any { it.inputId == inputId } ||
             activeResponses.any { responses[it]?.origin?.inputId == inputId }
         ) {
             return
@@ -727,8 +791,13 @@ private class OpenAiRealtimeSession(
             requestTimers.remove(id)?.cancel()
             if (inFlight == id) inFlight = null
             retiredRequests[id] = own
+            if (own.interrupted) {
+                resumeInterrupted(own)
+                pumpRequests()
+                return
+            }
             if (error.str("code") == "conversation_already_has_active_response") {
-                queued.addFirst(own)
+                queued.addFirst(own.origin)
                 waitingForBusyResponse = true
                 busyTimer?.cancel()
                 busyTimer =
@@ -740,7 +809,7 @@ private class OpenAiRealtimeSession(
                     }
                 return
             }
-            failInput(own.inputId)
+            failInput(own.origin.inputId)
             emit(ProviderEvent.Notice(error.str("message") ?: "OpenAI could not start that response. You can keep talking."))
             pumpRequests()
             return
@@ -804,7 +873,7 @@ private class OpenAiRealtimeSession(
             }
         startInput(origin)
         val id = eventId()
-        requested[id] = origin
+        requested[id] = RequestState(origin)
         inFlight = id
         requestTimers[id] =
             checkNotNull(eventScope).launch {
@@ -813,12 +882,16 @@ private class OpenAiRealtimeSession(
                 retiredRequests[id] = abandoned
                 requestTimers.remove(id)
                 if (inFlight == id) inFlight = null
-                failInput(abandoned.inputId)
-                emit(
-                    ProviderEvent.Notice(
-                        "OpenAI did not acknowledge the response request. The call remains connected; please try your request again.",
-                    ),
-                )
+                if (abandoned.interrupted) {
+                    resumeInterrupted(abandoned)
+                } else {
+                    failInput(abandoned.origin.inputId)
+                    emit(
+                        ProviderEvent.Notice(
+                            "OpenAI did not acknowledge the response request. The call remains connected; please try your request again.",
+                        ),
+                    )
+                }
                 pumpRequests()
             }
         media.send(

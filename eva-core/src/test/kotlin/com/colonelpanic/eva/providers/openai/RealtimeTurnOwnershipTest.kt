@@ -312,42 +312,122 @@ class RealtimeTurnOwnershipTest {
         }
 
     @Test
-    fun `a new utterance cannot close an input whose tool follow-up is queued`() =
+    fun `barge-in cancels running and unacknowledged responses without executing their tools`() =
         runTest {
-            val f = fixture()
-            f.speech("first", "r1", "Read then act")
-            f.call("r1", "read", "test.read")
-            f.raw("""{"type":"input_audio_buffer.speech_started","item_id":"ack"}""")
-            f.done("r1")
-            runCurrent()
-            val original = f.turn("Read then act")
-            f.speech("ack", "r2", "mm-hm")
-            assertEquals(
-                TurnStatus.OPEN,
-                f.store
-                    .turns(f.thread)
-                    .first { it.id == original }
-                    .status,
-            )
-            f.done("r2")
-            runCurrent()
-            val followup = f.acceptRequest("r3")
-            assertEquals(
-                "voice:first",
-                followup
-                    .getValue("metadata")
-                    .jsonObject
-                    .getValue("eva_input_id")
-                    .jsonPrimitive.content,
-            )
-            f.call("r3", "act", "test.mutate")
-            f.done("r3")
-            runCurrent()
-            val receipt = f.repository.history().last()
-            assertEquals(original, receipt.turnId)
-            assertEquals(InvocationStatus.COMPLETED, receipt.status)
-            assertEquals(listOf("test.read", "test.mutate"), f.executions)
-            f.close()
+            for (acknowledgedBeforeSpeech in listOf(false, true)) {
+                val f = fixture()
+                f.raw("""{"type":"input_audio_buffer.committed","item_id":"half-sentence"}""")
+                runCurrent()
+                if (acknowledgedBeforeSpeech) f.acceptRequest("interrupted")
+                f.raw("""{"type":"input_audio_buffer.speech_started","item_id":"resumed"}""")
+                f.raw("""{"type":"input_audio_buffer.speech_stopped","item_id":"resumed"}""")
+                f.raw("""{"type":"input_audio_buffer.committed","item_id":"resumed"}""")
+                runCurrent()
+                if (!acknowledgedBeforeSpeech) f.acceptRequest("interrupted")
+                val sent = f.media.sent.map { Json.parseToJsonElement(it).jsonObject }
+                assertTrue(
+                    sent.any {
+                        it["type"]?.jsonPrimitive?.content == "response.cancel" &&
+                            it["response_id"]?.jsonPrimitive?.content == "interrupted"
+                    },
+                )
+                assertTrue(sent.any { it["type"]?.jsonPrimitive?.content == "output_audio_buffer.clear" })
+                f.done("interrupted", listOf(f.callItem("stale", "test.mutate")), "completed")
+                runCurrent()
+                assertTrue(f.executions.isEmpty())
+                assertEquals(
+                    "NOT_EXECUTED",
+                    f
+                        .outputs("stale")
+                        .single()
+                        .getValue("status")
+                        .jsonPrimitive.content,
+                )
+                val next = f.acceptRequest("resumed")
+                assertEquals(
+                    "voice:resumed",
+                    next
+                        .getValue("metadata")
+                        .jsonObject
+                        .getValue("eva_input_id")
+                        .jsonPrimitive.content,
+                )
+                f.call("resumed", "current", "test.mutate")
+                f.done("resumed")
+                runCurrent()
+                assertEquals(listOf("test.mutate"), f.executions)
+                assertEquals(
+                    "COMPLETED",
+                    f
+                        .outputs("current")
+                        .single()
+                        .getValue("status")
+                        .jsonPrimitive.content,
+                )
+                f.close()
+            }
+        }
+
+    @Test
+    fun `interrupted tool follow-ups resume on their original input after the new speech response`() =
+        runTest {
+            for (acknowledgedBeforeSpeech in listOf(false, true)) {
+                val f = fixture()
+                f.speech("first", "r1", "Read then act")
+                f.call("r1", "read", "test.read")
+                f.done("r1")
+                runCurrent()
+                val original = f.turn("Read then act")
+                if (acknowledgedBeforeSpeech) f.acceptRequest("interrupted-followup")
+                f.raw("""{"type":"input_audio_buffer.speech_started","item_id":"ack"}""")
+                runCurrent()
+                if (!acknowledgedBeforeSpeech) f.acceptRequest("interrupted-followup")
+                f.done("interrupted-followup", listOf(f.callItem("stale-followup", "test.mutate")), "completed")
+                runCurrent()
+                assertEquals(
+                    TurnStatus.OPEN,
+                    f.store
+                        .turns(f.thread)
+                        .first { it.id == original }
+                        .status,
+                )
+                assertEquals(
+                    "NOT_EXECUTED",
+                    f
+                        .outputs("stale-followup")
+                        .single()
+                        .getValue("status")
+                        .jsonPrimitive.content,
+                )
+                f.speech("ack", "r2", "mm-hm")
+                f.done("r2")
+                runCurrent()
+                val followup = f.acceptRequest("r3")
+                assertEquals(
+                    "voice:first",
+                    followup
+                        .getValue("metadata")
+                        .jsonObject
+                        .getValue("eva_input_id")
+                        .jsonPrimitive.content,
+                )
+                assertEquals(
+                    "r1",
+                    followup
+                        .getValue("metadata")
+                        .jsonObject
+                        .getValue("eva_parent_response_id")
+                        .jsonPrimitive.content,
+                )
+                f.call("r3", "act", "test.mutate")
+                f.done("r3")
+                runCurrent()
+                val receipt = f.repository.history().last()
+                assertEquals(original, receipt.turnId)
+                assertEquals(InvocationStatus.COMPLETED, receipt.status)
+                assertEquals(listOf("test.read", "test.mutate"), f.executions)
+                f.close()
+            }
         }
 
     @Test
@@ -522,6 +602,7 @@ class RealtimeTurnOwnershipTest {
         runTest {
             val f = fixture()
             f.raw("""{"type":"input_audio_buffer.speech_started","item_id":"abandoned"}""")
+            f.raw("""{"type":"input_audio_buffer.speech_stopped","item_id":"abandoned"}""")
             f.raw(
                 """{"type":"conversation.item.input_audio_transcription.completed","item_id":"abandoned","transcript":"Do not lose this caption"}""",
             )
@@ -567,6 +648,100 @@ class RealtimeTurnOwnershipTest {
                     .single()
                     .turnId,
             )
+            f.close()
+        }
+
+    @Test
+    fun `long dictation holds replies and starts recovery only after speech stops`() =
+        runTest {
+            val f = fixture()
+            f.raw("""{"type":"input_audio_buffer.speech_started"}""")
+            runCurrent()
+            f.voice.submitContext("A waiting update", true)
+            advanceTimeBy(REALTIME_SPEECH_WAIT_MILLIS * 2)
+            runCurrent()
+            assertFalse(
+                f.media.sent.any {
+                    Json
+                        .parseToJsonElement(it)
+                        .jsonObject["type"]
+                        ?.jsonPrimitive
+                        ?.content == "response.create"
+                },
+            )
+            assertFalse(
+                f.controller.state.value.providerMessage
+                    .orEmpty()
+                    .contains("did not finish"),
+            )
+            f.raw("""{"type":"input_audio_buffer.speech_stopped","item_id":"dictation"}""")
+            runCurrent()
+            advanceTimeBy(REALTIME_SPEECH_WAIT_MILLIS - 1)
+            runCurrent()
+            assertFalse(
+                f.media.sent.any {
+                    Json
+                        .parseToJsonElement(it)
+                        .jsonObject["type"]
+                        ?.jsonPrimitive
+                        ?.content == "response.create"
+                },
+            )
+            advanceTimeBy(1)
+            runCurrent()
+            assertTrue(
+                f.controller.state.value.providerMessage
+                    .orEmpty()
+                    .contains("did not finish"),
+            )
+            assertEquals(
+                "none",
+                f
+                    .acceptRequest("announcement")
+                    .getValue("tool_choice")
+                    .jsonPrimitive.content,
+            )
+            f.done("announcement")
+            runCurrent()
+            f.close()
+        }
+
+    @Test
+    fun `late transcription failure reports only a missing caption and cannot release current speech`() =
+        runTest {
+            val f = fixture()
+            f.speech("answered", "answered", "Already answered")
+            f.done("answered")
+            runCurrent()
+            f.raw("""{"type":"input_audio_buffer.speech_started","item_id":"current"}""")
+            f.raw(
+                """{"type":"conversation.item.input_audio_transcription.failed","item_id":"answered","error":{"message":"Transcription failed"}}""",
+            )
+            runCurrent()
+            assertEquals("The speech caption is unavailable.", f.controller.state.value.providerMessage)
+            f.voice.submitContext("A waiting update", true)
+            advanceTimeBy(REALTIME_SPEECH_WAIT_MILLIS * 2)
+            runCurrent()
+            val requests =
+                f.media.sent.map { Json.parseToJsonElement(it).jsonObject }.filter {
+                    it["type"]?.jsonPrimitive?.content ==
+                        "response.create"
+                }
+            assertEquals(1, requests.size)
+            f.raw("""{"type":"input_audio_buffer.speech_stopped","item_id":"current"}""")
+            f.raw("""{"type":"input_audio_buffer.committed","item_id":"current"}""")
+            runCurrent()
+            val next = f.acceptRequest("next")
+            assertEquals(
+                "voice:current",
+                next
+                    .getValue("metadata")
+                    .jsonObject
+                    .getValue("eva_input_id")
+                    .jsonPrimitive.content,
+            )
+            f.done("next")
+            runCurrent()
             f.close()
         }
 
