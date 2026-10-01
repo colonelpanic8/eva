@@ -352,8 +352,10 @@ class ThreadController(
     private fun phoneTools(
         snapshot: CapabilityRegistry.Snapshot,
         voice: Boolean,
+        promptHidden: Set<String>,
     ): Pair<com.colonelpanic.eva.capability.CatalogAdmission.Selection, List<ProviderToolDefinition>> {
-        val offered = snapshot.catalog.filterNot { it.id in hiddenCapabilities() }
+        // Prompt-hidden tools leave before admission so they never take capacity from offered ones.
+        val offered = snapshot.catalog.filterNot { it.id in hiddenCapabilities() || it.id in promptHidden }
         val controls =
             if (voice) {
                 com.colonelpanic.eva.capability.CatalogAdmission
@@ -394,7 +396,11 @@ class ThreadController(
             if (catalog.excludedTools.isEmpty()) {
                 ""
             } else {
-                "\n\n" + wording().message(Wording.CATALOG_UNAVAILABLE).replace("{count}", catalog.excludedTools.size.toString())
+                "\n\n" +
+                    wording()
+                        .message(Wording.CATALOG_UNAVAILABLE)
+                        .replace("{count}", catalog.excludedTools.size.toString())
+                        .replace("{names}", catalog.excludedNames(ProviderToolCatalog.NOTE_NAMES, quoted = true))
             }
         return unavailable +
             if (notes.isEmpty()) {
@@ -649,7 +655,7 @@ class ThreadController(
                     // which tools are offered and what they say.
                     val snapshot = registry.snapshot
                     val endings = if (voice) callEndings(snapshot) else emptyMap()
-                    val phone = phoneTools(snapshot, voice)
+                    val phone = phoneTools(snapshot, voice, assembled.hidden)
                     val deviceControls =
                         if (voice && phone.second.any { it.capabilityId == CapabilityRegistry.DEVICE_TASK }) {
                             listOf(DEVICE_TASK_REVISE, DEVICE_TASK_STOP).map(wording()::describe)
@@ -676,8 +682,7 @@ class ThreadController(
                                 ).map { tool -> endingNote(bridgeNote(tool), endings[tool.capabilityId]) },
                             snapshot.revision,
                         ).copy(
-                            excludedTools =
-                                phone.first.excludedIds(assembled.hidden),
+                            excludedTools = phone.first.excluded(),
                         )
                     val provider =
                         if (!voice) {
@@ -2123,10 +2128,10 @@ class ThreadController(
                         awaitCapabilities()
                         val assembled = assemble(voice = false)
                         val snapshot = registry.snapshot
-                        val phone = phoneTools(snapshot, false)
+                        val phone = phoneTools(snapshot, false, assembled.hidden)
                         val catalog =
                             catalogOf(assembled.apply(phone.second), snapshot.revision)
-                                .copy(excludedTools = phone.first.excludedIds(assembled.hidden))
+                                .copy(excludedTools = phone.first.excluded())
                         tools = ConnectionTools(snapshot, catalog, false)
                         val instructions =
                             assembled.instructions + extensionGuidance(snapshot, catalog) + "\n\n" +

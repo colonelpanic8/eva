@@ -289,10 +289,6 @@ class MainActivity : ComponentActivity() {
         val spotifyAccount by eva.spotify.account.collectAsStateWithLifecycle()
         val spotifyConnect by eva.spotifyConnect.state.collectAsStateWithLifecycle()
         val configuration by eva.configuration.status.collectAsStateWithLifecycle()
-        val catalogPreview =
-            CatalogAdmission.preview(
-                eva.registry.catalog.filterNot { !screenControl && it.id in CapabilityRegistry.SCREEN_CONTROL },
-            )
 
         fun hidden(voice: Boolean): Set<String> =
             (prompt as? PromptState.Loaded)
@@ -305,9 +301,10 @@ class MainActivity : ComponentActivity() {
                 )?.hidden
                 .orEmpty()
         val visibleCatalog =
-            CatalogAdmission.Preview(
-                catalogPreview.text.without(hidden(false)),
-                catalogPreview.voice.without(hidden(true)),
+            CatalogAdmission.preview(
+                eva.registry.catalog.filterNot { it.id in eva.switchedOffCapabilities() },
+                textHidden = hidden(false),
+                voiceHidden = hidden(true),
             )
         val stallPeriod by eva.capabilities.stallPeriodFlow.collectAsStateWithLifecycle()
         return SettingsUiState(

@@ -37,11 +37,6 @@ internal fun ExtensionsSection(
                     "Phone/extension tools: voice ${admission.voice.admitted.size}/$voiceLimit; " +
                         "text ${admission.text.admitted.size}/${CatalogAdmission.LIMIT}.",
                 )
-                Text(
-                    "Voice metadata reservation: ${(admission.voice.metadataBytes + 1023) / 1024}/" +
-                        "${CatalogAdmission.VOICE_TOOL_BYTES / 1024} KiB. " +
-                        "Session controls and instructions have separate reserved space.",
-                )
                 if (state.extensionOverflow.isNotEmpty()) {
                     Text(
                         "${state.extensionOverflow.size} enabled tools are unavailable in at least one mode. These actions will not be offered to the model:",

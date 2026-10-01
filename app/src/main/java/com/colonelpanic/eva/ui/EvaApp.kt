@@ -138,6 +138,7 @@ fun EvaApp(
                         showScreenControl = true
                         destination = EvaDestination.SETTINGS
                     },
+                    onOpenExtensions = { destination = EvaDestination.EXTENSIONS },
                 )
             }
 

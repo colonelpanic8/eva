@@ -316,6 +316,13 @@ class EvaApplication :
         }
     }
 
+    /** Capabilities a settings switch removes from every session's catalog. */
+    fun switchedOffCapabilities(): Set<String> =
+        buildSet {
+            if (!capabilities.screenControlEnabled) addAll(CapabilityRegistry.SCREEN_CONTROL)
+            if (!capabilities.webResearch.enabled) add(com.colonelpanic.eva.web.WebResearchBackend.ID)
+        }
+
     val screenControl by lazy {
         com.colonelpanic.eva.devicecontrol.ScreenControlMonitor(
             enabled = { capabilities.screenControlEnabled },
@@ -799,12 +806,7 @@ class EvaApplication :
                     .mapValues { it.value.label }
             },
             callEndings = { settings.callEndings.value },
-            hiddenCapabilities = {
-                buildSet {
-                    if (!capabilities.screenControlEnabled) addAll(CapabilityRegistry.SCREEN_CONTROL)
-                    if (!capabilities.webResearch.enabled) add(com.colonelpanic.eva.web.WebResearchBackend.ID)
-                }
-            },
+            hiddenCapabilities = ::switchedOffCapabilities,
             prompt = { prompts.load() },
         ).also { controller ->
             scope.launch {

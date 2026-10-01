@@ -27,6 +27,7 @@ import com.colonelpanic.eva.providers.ConversationInput
 import com.colonelpanic.eva.providers.ConversationProvider
 import com.colonelpanic.eva.providers.ConversationSession
 import com.colonelpanic.eva.providers.CorrelatedToolResult
+import com.colonelpanic.eva.providers.ExcludedTool
 import com.colonelpanic.eva.providers.HistoryItem
 import com.colonelpanic.eva.providers.ProviderEvent
 import com.colonelpanic.eva.providers.ResponseRequest
@@ -828,14 +829,17 @@ class ThreadControllerTest {
                         registry.snapshot.catalog,
                         CatalogAdmission.voiceControls(registry.snapshot.catalog),
                     ).overflow
-            assertEquals(excluded.map { it.id }, voice.request.catalog.excludedTools)
+            assertEquals(excluded.map { ExcludedTool(it.id, it.title) }, voice.request.catalog.excludedTools)
             assertTrue(voice.request.instructions.contains("${excluded.size} enabled actions were excluded"))
+            assertTrue(excluded.size in 4..20)
+            assertTrue(voice.request.instructions.contains(excluded.joinToString(", ", postfix = ".") { "\"${it.title}\"" }))
             val notice =
                 store
                     .items(controller.state.value.threadId!!)
                     .filterIsInstance<ThreadItem.Notice>()
                     .single { it.kind == NoticeKind.SESSION_STARTED }
-            assertTrue(notice.text.contains("${excluded.size} tools unavailable — see Extensions"))
+            val first = excluded.take(3).joinToString(", ") { it.title }
+            assertTrue(notice.text.endsWith("${excluded.size} tools unavailable: $first and ${excluded.size - 3} more — see Extensions"))
             voice.input = ConversationInput("voice:catalog-turn", "")
             voice.channel.send(ProviderEvent.ResponseStarted("voice:catalog-turn", "voice:catalog-turn"))
             voice.channel.send(ProviderEvent.Transcript("user", "Check status"))
@@ -843,10 +847,16 @@ class ThreadControllerTest {
             voice.call("delegate", ThreadController.DEFER_TO_TEXT.capabilityId, "task" to "Check status")
             advanceUntilIdle()
             val textExcluded = CatalogAdmission.select(registry.snapshot.catalog).overflow
-            assertEquals(textExcluded.map { it.id }, background.request.catalog.excludedTools)
+            assertEquals(
+                textExcluded.map { it.id },
+                background.request.catalog.excludedTools
+                    .map { it.capabilityId },
+            )
             assertTrue(
                 store.items(controller.state.value.threadId!!).filterIsInstance<ThreadItem.Notice>().any {
-                    it.text == "Background text session · ${textExcluded.size} tools unavailable — see Extensions"
+                    it.text ==
+                        "Background text session · ${textExcluded.size} tools unavailable: " +
+                        "${textExcluded.single().title} — see Extensions"
                 },
             )
         }
@@ -871,8 +881,13 @@ class ThreadControllerTest {
             advanceUntilIdle()
             val selection = CatalogAdmission.select(definitions)
             assertEquals(1, selection.overflow.size)
-            assertEquals(selection.overflow.map { it.id }, provider.request.catalog.excludedTools)
+            assertEquals(
+                selection.overflow.map { it.id },
+                provider.request.catalog.excludedTools
+                    .map { it.capabilityId },
+            )
             assertTrue(provider.request.instructions.contains("1 enabled actions were excluded"))
+            assertTrue(provider.request.instructions.contains("bound: \"Custom action\"."))
             controller.disconnect()
             advanceUntilIdle()
             val notice =
@@ -880,7 +895,52 @@ class ThreadControllerTest {
                     .items(controller.state.value.threadId!!)
                     .filterIsInstance<ThreadItem.Notice>()
                     .single { it.kind == NoticeKind.SESSION_STARTED }
-            assertEquals("Text session · 1 tools unavailable — see Extensions", notice.text)
+            assertEquals("Text session · 1 tools unavailable: Custom action — see Extensions", notice.text)
+        }
+
+    @Test
+    fun `prompt-hidden tools take no catalog capacity and hide their device-task controls`() =
+        runTest {
+            val extensions =
+                List(CatalogAdmission.LIMIT - 4) { index ->
+                    action.copy(id = "extension.test.group_${index.toString().padStart(3, '0')}.action")
+                }
+            val coordinator =
+                com.colonelpanic.eva.devicecontrol
+                    .DeviceTaskCoordinator { error("No task expected") }
+            val definitions = BundledCapabilities.definitions.filter { it.id == CapabilityRegistry.DEVICE_TASK } + action + extensions
+            val registry =
+                CapabilityRegistry(
+                    mapOf(CapabilityRegistry.DEVICE_TASK to coordinator) +
+                        (
+                            listOf(
+                                action,
+                            ) + extensions
+                        ).associate { it.id to backend { ExecutionOutcome(InvocationStatus.COMPLETED, "done") } },
+                    definitions,
+                )
+            val voice = FakeProvider()
+            val controller =
+                controller(voice, registry = registry, deviceTasks = coordinator, media = { VoiceMedia() }, prompt = {
+                    PromptConfig(
+                        PromptDefaults.config.components +
+                            PromptComponent(id = "no-tasks", hide = listOf(CapabilityRegistry.DEVICE_TASK, action.id)),
+                    )
+                })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            val offered =
+                voice.request.catalog.tools
+                    .map { it.capabilityId }
+            // Unhidden, the task tool, its two controls and the custom action would push extensions out.
+            assertTrue(offered.containsAll(extensions.map { it.id }))
+            assertFalse(offered.any { it.startsWith(CapabilityRegistry.DEVICE_TASK) || it == action.id })
+            assertTrue(
+                voice.request.catalog.excludedTools
+                    .isEmpty(),
+            )
+            assertFalse(voice.request.instructions.contains("were excluded"))
         }
 
     @Test
