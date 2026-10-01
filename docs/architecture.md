@@ -96,9 +96,10 @@ result sink during handoff, including calls arriving after text starts, so movin
 the turn never strands their receipts. Text continuation is one-shot and never
 retries an uncertain mutation. Ordinary mutations serialize across turns on the same thread;
 `eva.device.task` runs outside that lock under its own device lease, so background
-SMS and HTTP actions can proceed while it runs. Waiting actions report that they are
-queued through a voice lifecycle note and the conversation status;
-an UNKNOWN or FAILED mutation in any still-running turn blocks further mutations
+SMS and HTTP actions can proceed while it runs. A mutation waiting for the thread
+lock reports that it is queued after three seconds through a voice lifecycle note
+and the conversation status; acquiring the lock sooner cancels that delayed notice.
+Device-lease waits report their queue status immediately. An UNKNOWN or FAILED mutation in any still-running turn blocks further mutations
 while that turn remains active. Read-only tools remain available for verification.
 
 Voice offers `eva.session.background_status` (no arguments) and

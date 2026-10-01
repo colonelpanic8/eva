@@ -689,6 +689,62 @@ class ThreadControllerTest {
         }
 
     @Test
+    fun `brief mutation waits do not announce a queue after the lock is acquired`() = runTest { checkQueueAnnouncement(longWait = false) }
+
+    @Test
+    fun `a mutation waiting three seconds announces once and then completes`() = runTest { checkQueueAnnouncement(longWait = true) }
+
+    private suspend fun TestScope.checkQueueAnnouncement(longWait: Boolean) {
+        val gate = CompletableDeferred<Unit>()
+        registry.replace(
+            mapOf(
+                action.id to
+                    object : ExecutionBackend {
+                        override suspend fun unavailableReason(): String? = null
+
+                        override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome {
+                            executions++
+                            if (arguments.getValue("place") == "Park") gate.await()
+                            return ExecutionOutcome(InvocationStatus.COMPLETED, "Opened")
+                        }
+                    },
+            ),
+            listOf(action),
+        )
+        val voice = FakeProvider()
+        val controller = controller(voice, media = { VoiceMedia() })
+        runCurrent()
+        controller.connectVoice("test")
+        runCurrent()
+        voice.startVoice("first", "Open both places")
+        voice.call("first", action.id, "place" to "Park")
+        voice.call("second", action.id, "place" to "Beach")
+        runCurrent()
+        advanceTimeBy(if (longWait) 2_999 else 10)
+        runCurrent()
+        assertTrue(voice.contexts.isEmpty())
+        if (longWait) {
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(1, voice.contexts.size)
+            assertTrue(
+                voice.contexts
+                    .single()
+                    .first
+                    .startsWith(Wording.bundled.message(Wording.ACTION_QUEUED)),
+            )
+        }
+        gate.complete(Unit)
+        runCurrent()
+        advanceTimeBy(4_000)
+        runCurrent()
+        assertEquals(if (longWait) 1 else 0, voice.contexts.size)
+        assertEquals(2, executions)
+        assertEquals(listOf("COMPLETED", "COMPLETED"), voice.results.map { it.status })
+        controller.drain("Test finished")
+    }
+
+    @Test
     fun `uncertain mutations block queued changes but permit verification reads across rehoming`() =
         runTest {
             val gate = CompletableDeferred<Unit>()
