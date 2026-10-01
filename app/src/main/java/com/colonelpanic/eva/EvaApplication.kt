@@ -403,6 +403,14 @@ class EvaApplication :
         CapabilityRegistry(
             buildMap {
                 put(CapabilityRegistry.DEVICE_TASK, deviceTasks)
+                put(
+                    com.colonelpanic.eva.web.WebResearchBackend.ID,
+                    com.colonelpanic.eva.web.WebResearchBackend(
+                        access = ::access,
+                        configuration = { capabilities.webResearch },
+                        wording = { prompts.wording.value },
+                    ),
+                )
                 putAll(
                     com.colonelpanic.eva.capability.MemoryCapabilities
                         .backends(memories),
@@ -776,7 +784,12 @@ class EvaApplication :
                     .mapValues { it.value.label }
             },
             callEndings = { settings.callEndings.value },
-            hiddenCapabilities = { if (capabilities.screenControlEnabled) emptySet() else CapabilityRegistry.SCREEN_CONTROL },
+            hiddenCapabilities = {
+                buildSet {
+                    if (!capabilities.screenControlEnabled) addAll(CapabilityRegistry.SCREEN_CONTROL)
+                    if (!capabilities.webResearch.enabled) add(com.colonelpanic.eva.web.WebResearchBackend.ID)
+                }
+            },
             prompt = { prompts.load() },
         ).also { controller ->
             scope.launch {

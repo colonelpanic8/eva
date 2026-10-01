@@ -260,7 +260,17 @@ class EvaConfigurationManagerTest {
                     models = EvaConfiguration.Models("gpt-portable-text", "gpt-portable-realtime", "high", "medium"),
                     voice = EvaConfiguration.Voice(8),
                     appearance = EvaConfiguration.Appearance(dynamicColor = true),
-                    capabilities = EvaConfiguration.Capabilities(screenControl = false),
+                    capabilities =
+                        EvaConfiguration.Capabilities(
+                            screenControl = false,
+                            webResearch =
+                                com.colonelpanic.eva.web.WebResearchConfiguration(
+                                    enabled = false,
+                                    model = "research-custom",
+                                    effort = "medium",
+                                    timeoutSeconds = 30,
+                                ),
+                        ),
                     messaging = EvaConfiguration.Messaging(enabled = true, replies = listOf(LIVE_REPLY, CHANGED_SIGNER_REPLY)),
                     prompt =
                         EvaConfiguration.Prompt(
@@ -327,6 +337,7 @@ class EvaConfigurationManagerTest {
             assertEquals(8, app.settings.voiceLookupRetries)
             assertTrue(app.appearance.dynamicColor)
             assertFalse(app.capabilities.screenControlEnabled)
+            assertEquals(target.capabilities.webResearch, app.capabilities.webResearch)
             assertTrue(app.messagingSettings.state.value.enabled)
             assertEquals(setOf(LIVE_REPLY), app.messagingSettings.state.value.replies)
             assertEquals("spotify-portable-client", app.spotify.clientId.value)

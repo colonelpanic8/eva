@@ -4,6 +4,14 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Voice and text can research the web and report an answer with sources without opening the phone's browser. Research uses existing OpenAI access, journaled read-only receipts, external-content provenance, and portable model, reasoning, enablement, and timeout settings. API-key research remains enabled by default, with search-fee and token billing shown in settings and the access mode recorded in receipts. Unsupported saved research efforts load at low with a visible notice; timeout changes save when the slider is released. The answer appears once in the result.
+
+### Fixed
+
+- Subscription Responses streams must receive a completion event before EVA publishes text or tool calls. Dropped replies never return partial actions; regression tests cover the text provider's SSE path and the device worker's subscription WebSocket path.
+
 ## [0.49.1] - 2026-10-01
 
 ### Fixed

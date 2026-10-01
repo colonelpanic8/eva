@@ -98,6 +98,8 @@ fun SettingsScreen(
             SettingsDivider()
             ModelsSection(state, actions)
             SettingsDivider()
+            WebResearchSection(state, actions)
+            SettingsDivider()
             AssistantSection(state, actions)
             SettingsDivider()
             MediaSection(state, actions)

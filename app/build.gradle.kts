@@ -131,6 +131,7 @@ dependencies {
     implementation(libs.webrtc)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
+    testImplementation(libs.androidx.compose.ui.test.junit4)
     testImplementation(libs.junit)
     testImplementation(testFixtures(project(":eva-core")))
     testImplementation(libs.robolectric)

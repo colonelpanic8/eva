@@ -14,6 +14,7 @@ import com.colonelpanic.eva.conversation.prompt.PromptConfig
 import com.colonelpanic.eva.conversation.prompt.PromptDefaults
 import com.colonelpanic.eva.conversation.prompt.VoiceCallMode
 import com.colonelpanic.eva.providers.openai.OpenAiModels
+import com.colonelpanic.eva.web.WebResearchConfiguration
 import kotlinx.serialization.Required
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -70,7 +71,34 @@ data class EvaConfigurationDocument(
 @Serializable data class CapabilitiesPatch(
     val screenControl: Boolean? = null,
     val deviceTask: DeviceTaskConfiguration? = null,
+    val webResearch: WebResearchPatch? = null,
 )
+
+@Serializable data class WebResearchPatch(
+    val enabled: Boolean? = null,
+    val model: String? = null,
+    val effort: String? = null,
+    val timeoutSeconds: Int? = null,
+) {
+    init {
+        materialize()
+    }
+
+    fun normalizationNotice(): String? =
+        effort?.takeUnless { it in WebResearchConfiguration.EFFORTS }?.let {
+            "Unsupported web research reasoning effort was replaced with low. Choose a supported effort in Web research settings or capabilities.webResearch.effort."
+        }
+
+    fun materialize(): WebResearchConfiguration {
+        val defaults = WebResearchConfiguration()
+        return WebResearchConfiguration(
+            enabled ?: defaults.enabled,
+            model ?: defaults.model,
+            WebResearchConfiguration.normalizedEffort(effort ?: defaults.effort),
+            timeoutSeconds ?: defaults.timeoutSeconds,
+        )
+    }
+}
 
 @Serializable data class MessagingPatch(
     val enabled: Boolean? = null,
@@ -214,6 +242,7 @@ data class EvaConfiguration(
     data class Capabilities(
         val screenControl: Boolean,
         val deviceTask: DeviceTaskConfiguration = DeviceTaskConfiguration(),
+        val webResearch: WebResearchConfiguration = WebResearchConfiguration(),
     )
 
     data class Messaging(
@@ -275,6 +304,7 @@ data class ResolvedConfiguration(
     val includedFingerprint: String,
     val rootText: String,
     val paths: Set<String>,
+    val notices: List<String> = emptyList(),
 )
 
 fun interface ConfigurationReader {
@@ -386,7 +416,8 @@ object EvaConfigurationCodec {
         digest.update(rootPath.toByteArray(Charsets.UTF_8))
         digest.update(byteArrayOf(0))
         digest.update(rootText.toByteArray(Charsets.UTF_8))
-        val resolved = merge(included, root.copy(include = emptyList())).materialize().validated()
+        val merged = merge(included, root.copy(include = emptyList()))
+        val resolved = merged.materialize().validated()
         return ResolvedConfiguration(
             resolved,
             root,
@@ -396,6 +427,7 @@ object EvaConfigurationCodec {
             includedDigest.digest().hex(),
             rootText,
             paths.toSet(),
+            listOfNotNull(merged.capabilities?.webResearch?.normalizationNotice()),
         )
     }
 
@@ -434,6 +466,16 @@ object EvaConfigurationCodec {
                     it !=
                         base?.capabilities?.deviceTask
                 },
+                WebResearchPatch(
+                    current.capabilities.webResearch.enabled
+                        .takeIf { it != base?.capabilities?.webResearch?.enabled },
+                    current.capabilities.webResearch.model
+                        .takeIf { it != base?.capabilities?.webResearch?.model },
+                    current.capabilities.webResearch.effort
+                        .takeIf { it != base?.capabilities?.webResearch?.effort },
+                    current.capabilities.webResearch.timeoutSeconds
+                        .takeIf { it != base?.capabilities?.webResearch?.timeoutSeconds },
+                ).nonEmpty(),
             ).nonEmpty(),
         messaging =
             MessagingPatch(
@@ -493,6 +535,7 @@ object EvaConfigurationCodec {
                 EvaConfiguration.Capabilities(
                     requireNotNull(capabilities?.screenControl) { "capabilities.screenControl is missing." },
                     capabilities?.deviceTask ?: DeviceTaskConfiguration(),
+                    capabilities?.webResearch?.materialize() ?: WebResearchConfiguration(),
                 ),
             messaging =
                 EvaConfiguration.Messaging(
@@ -806,6 +849,12 @@ object EvaConfigurationCodec {
             CapabilitiesPatch(
                 override.capabilities?.screenControl ?: base.capabilities?.screenControl,
                 override.capabilities?.deviceTask ?: base.capabilities?.deviceTask,
+                WebResearchPatch(
+                    override.capabilities?.webResearch?.enabled ?: base.capabilities?.webResearch?.enabled,
+                    override.capabilities?.webResearch?.model ?: base.capabilities?.webResearch?.model,
+                    override.capabilities?.webResearch?.effort ?: base.capabilities?.webResearch?.effort,
+                    override.capabilities?.webResearch?.timeoutSeconds ?: base.capabilities?.webResearch?.timeoutSeconds,
+                ).nonEmpty(),
             ).nonEmpty(),
         messaging =
             MessagingPatch(
@@ -867,7 +916,9 @@ object EvaConfigurationCodec {
 
     private fun AppearancePatch.nonEmpty() = takeIf { dynamicColor != null }
 
-    private fun CapabilitiesPatch.nonEmpty() = takeIf { screenControl != null || deviceTask != null }
+    private fun CapabilitiesPatch.nonEmpty() = takeIf { screenControl != null || deviceTask != null || webResearch != null }
+
+    private fun WebResearchPatch.nonEmpty() = takeIf { enabled != null || model != null || effort != null || timeoutSeconds != null }
 
     private fun MessagingPatch.nonEmpty() = takeIf { enabled != null || replies != null || bridges != null }
 

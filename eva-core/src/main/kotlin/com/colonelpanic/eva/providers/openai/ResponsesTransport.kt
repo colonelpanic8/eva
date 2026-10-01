@@ -47,7 +47,12 @@ internal suspend fun responsesPost(
             try {
                 val result =
                     call.execute().use {
-                        if (!it.isSuccessful) error(openAiErrorMessage(it.code, it.body.string(), "the request"))
+                        if (!it.isSuccessful) {
+                            throw ResponsesHttpException(
+                                it.code,
+                                openAiErrorMessage(it.code, it.body.string(), "the request"),
+                            )
+                        }
                         if (access.serverKeepsHistory) Json.parseToJsonElement(it.body.string()).jsonObject else collectResponsesStream(it)
                     }
                 if (continuation.isActive) continuation.resume(result)
@@ -61,7 +66,9 @@ internal suspend fun responsesPost(
 internal fun collectResponsesStream(response: Response): JsonObject {
     val items = mutableListOf<JsonElement>()
     var id: String? = null
-    var status = "completed"
+    var status: String? = null
+    var completed = false
+    var finalOutput: JsonArray? = null
     val source = response.body.source()
     while (true) {
         val line = source.readUtf8Line() ?: break
@@ -83,18 +90,28 @@ internal fun collectResponsesStream(response: Response): JsonObject {
                     val body = event.obj("response") ?: continue
                     id = body.str("id") ?: id
                     body.str("status")?.let { status = it }
+                    if (type == "response.completed") {
+                        completed = true
+                        finalOutput = body["output"] as? JsonArray
+                    }
                     body.obj("error")?.let { error(streamError(it)) }
+                    if (type in setOf("response.completed", "response.failed", "response.incomplete")) break
                 }
             }
         }
     }
-    check(id != null && status == "completed") { "Incomplete Responses stream." }
+    check(completed && id != null && status == "completed") { "Incomplete Responses stream." }
     return buildJsonObject {
         put("id", id)
         put("status", status)
-        put("output", JsonArray(items))
+        put("output", finalOutput?.takeIf { it.isNotEmpty() } ?: JsonArray(items))
     }
 }
 
 private fun streamError(error: JsonObject?) =
     "OpenAI rejected the request: ${error?.str("message")?.trim()?.take(300) ?: "no reason was given"}"
+
+internal class ResponsesHttpException(
+    val statusCode: Int,
+    message: String,
+) : IllegalStateException(message)

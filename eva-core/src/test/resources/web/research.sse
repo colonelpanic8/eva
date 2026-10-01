@@ -1,0 +1,25 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_research_1","status":"in_progress","output":[]}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":0,"item":{"id":"ws_1","type":"web_search_call","status":"in_progress"}}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":0,"item":{"id":"ws_1","type":"web_search_call","status":"completed","action":{"type":"search","queries":["NASA Europa Clipper arrival Jupiter April 2030"],"sources":[{"type":"url","url":"https://science.nasa.gov/mission/europa-clipper/","title":"Europa Clipper"}]}}}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":1,"item":{"id":"ws_2","type":"web_search_call","status":"completed","action":{"type":"open_page","url":"https://science.nasa.gov/mission/europa-clipper/"}}}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":2,"item":{"id":"ws_3","type":"web_search_call","status":"completed","action":{"type":"find_in_page","url":"https://science.nasa.gov/mission/europa-clipper/","pattern":"2030"}}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_1","output_index":3,"content_index":0,"delta":"NASA plans"}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":3,"item":{"id":"msg_1","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"NASA plans arrival at Jupiter in April 2030; the schedule could change.","annotations":[{"type":"url_citation","url":"https://science.nasa.gov/mission/europa-clipper/","title":"Europa Clipper","start_index":0,"end_index":42},{"type":"url_citation","url":"https://www.jpl.nasa.gov/missions/europa-clipper/","title":"Europa Clipper at JPL","start_index":0,"end_index":42}]}]}}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_research_1","status":"completed","usage":{"input_tokens":700,"output_tokens":60}}}
+
+data: [DONE]

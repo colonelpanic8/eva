@@ -21,6 +21,47 @@ import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class OpenAiWorkerModelTest {
+    @Test fun truncatedSubscriptionWorkerReplyDoesNotReturnPartialActions() =
+        runBlocking {
+            val server = okhttp3.mockwebserver.MockWebServer()
+            server.enqueue(
+                okhttp3.mockwebserver.MockResponse().withWebSocketUpgrade(
+                    object : okhttp3.WebSocketListener() {
+                        override fun onMessage(
+                            webSocket: okhttp3.WebSocket,
+                            text: String,
+                        ) {
+                            webSocket.send(
+                                """{"type":"response.output_item.done","item":{"type":"function_call","call_id":"partial","name":"home","arguments":"{}"}}""",
+                            )
+                            webSocket.close(1000, "end before completion")
+                        }
+                    },
+                ),
+            )
+            server.start()
+            val access =
+                com.colonelpanic.eva.providers.openai.SubscriptionAccess({
+                    com.colonelpanic.eva.providers.openai
+                        .ChatGptTokens("id", "test", "refresh", null, null, null, Long.MAX_VALUE)
+                }, "1.0.0", baseUrl = server.url("/").toString().removeSuffix("/"))
+            val model = OpenAiWorkerModel(access)
+            try {
+                val failure =
+                    runCatching {
+                        kotlinx.coroutines.withTimeout(5000) {
+                            model.complete(WorkerRequest("instructions", listOf(WorkerMessage("user", "go home")), emptyList(), "task"))
+                        }
+                    }.exceptionOrNull()
+                org.junit.Assert.assertTrue(failure is IllegalStateException)
+                assertEquals("Responses socket closed.", failure!!.message)
+                assertEquals(1, server.requestCount)
+            } finally {
+                model.close()
+                server.shutdown()
+            }
+        }
+
     @Test fun sendsCorrelatedToolResultsAndReplaysProviderItems() =
         runBlocking {
             var sent: JsonObject? = null

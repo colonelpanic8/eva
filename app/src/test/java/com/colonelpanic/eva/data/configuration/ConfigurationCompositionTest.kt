@@ -15,6 +15,101 @@ import org.junit.Test
 
 class ConfigurationCompositionTest {
     @Test
+    fun `web research settings round trip compose and default for older configurations`() {
+        val defaults =
+            com.colonelpanic.eva.web
+                .WebResearchConfiguration()
+        val options = defaults.copy(enabled = false, model = "research-custom", effort = "medium", timeoutSeconds = 30)
+        val base = fullConfiguration()
+        val current = base.copy(capabilities = base.capabilities.copy(webResearch = options))
+        val document = EvaConfigurationCodec.complete(current)
+        val encoded = EvaConfigurationCodec.encode(document)
+        assertEquals(current, EvaConfigurationCodec.resolve(reader(mapOf("eva.yaml" to encoded))).configuration)
+        val legacy = document.copy(capabilities = document.capabilities!!.copy(webResearch = null))
+        assertEquals(
+            defaults,
+            EvaConfigurationCodec
+                .resolve(
+                    reader(mapOf("eva.yaml" to EvaConfigurationCodec.encode(legacy))),
+                ).configuration.capabilities.webResearch,
+        )
+        val root =
+            EvaConfigurationDocument(
+                include = listOf("base.yaml"),
+                capabilities = CapabilitiesPatch(webResearch = document.capabilities!!.webResearch),
+            )
+        val resolved =
+            EvaConfigurationCodec.resolve(
+                reader(
+                    mapOf(
+                        "eva.yaml" to EvaConfigurationCodec.encode(root),
+                        "base.yaml" to EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(base)),
+                    ),
+                ),
+            )
+        assertEquals(options, resolved.configuration.capabilities.webResearch)
+        assertEquals(base.capabilities.deviceTask, resolved.configuration.capabilities.deviceTask)
+        val timeoutOnly = root.copy(capabilities = CapabilitiesPatch(webResearch = WebResearchPatch(timeoutSeconds = 55)))
+        val composed =
+            EvaConfigurationCodec.resolve(
+                reader(
+                    mapOf(
+                        "eva.yaml" to EvaConfigurationCodec.encode(timeoutOnly),
+                        "base.yaml" to encoded,
+                    ),
+                ),
+            )
+        assertEquals(options.copy(timeoutSeconds = 55), composed.configuration.capabilities.webResearch)
+        val timeoutOverride = EvaConfigurationCodec.overrides(composed.configuration, document, listOf("base.yaml"))
+        assertEquals(WebResearchPatch(timeoutSeconds = 55), timeoutOverride.capabilities!!.webResearch)
+        val inherited = EvaConfigurationCodec.overrides(current, document, listOf("base.yaml"))
+        assertNull(inherited.capabilities)
+        for (invalid in listOf("timeoutSeconds: 4", "timeoutSeconds: 61", "model: ''")) {
+            assertThrows(IllegalArgumentException::class.java) {
+                EvaConfigurationCodec.decode("format: eva\nversion: 3\ncapabilities:\n  webResearch:\n    $invalid\n")
+            }
+        }
+    }
+
+    @Test fun `unsupported research effort loads at low with a notice while none remains supported`() {
+        val document = EvaConfigurationCodec.complete(fullConfiguration())
+        for (effort in listOf("minimal", "unknown")) {
+            val patched =
+                document.copy(
+                    capabilities =
+                        document.capabilities!!.copy(
+                            webResearch = WebResearchPatch(model = "research-custom", effort = effort, timeoutSeconds = 30),
+                        ),
+                )
+            val resolved = EvaConfigurationCodec.resolve(reader(mapOf("eva.yaml" to EvaConfigurationCodec.encode(patched))))
+            assertEquals("low", resolved.configuration.capabilities.webResearch.effort)
+            assertEquals("research-custom", resolved.configuration.capabilities.webResearch.model)
+            assertEquals(30, resolved.configuration.capabilities.webResearch.timeoutSeconds)
+            assertTrue(resolved.notices.single().contains("replaced with low"))
+            val overridden =
+                EvaConfigurationDocument(
+                    include = listOf("base.yaml"),
+                    capabilities = CapabilitiesPatch(webResearch = WebResearchPatch(effort = "medium")),
+                )
+            val valid =
+                EvaConfigurationCodec.resolve(
+                    reader(
+                        mapOf(
+                            "eva.yaml" to EvaConfigurationCodec.encode(overridden),
+                            "base.yaml" to EvaConfigurationCodec.encode(patched),
+                        ),
+                    ),
+                )
+            assertEquals("medium", valid.configuration.capabilities.webResearch.effort)
+            assertTrue(valid.notices.isEmpty())
+        }
+        val none = document.copy(capabilities = document.capabilities!!.copy(webResearch = WebResearchPatch(effort = "none")))
+        val resolved = EvaConfigurationCodec.resolve(reader(mapOf("eva.yaml" to EvaConfigurationCodec.encode(none))))
+        assertEquals("none", resolved.configuration.capabilities.webResearch.effort)
+        assertTrue(resolved.notices.isEmpty())
+    }
+
+    @Test
     fun `bearer reference kind round trips and mismatched kinds are rejected`() {
         val current = fullConfiguration()
         val reference = EvaConfigurationCodec.serviceSecretId(SERVICE_NAME, "bearer")

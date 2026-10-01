@@ -266,6 +266,8 @@ class MainActivity : ComponentActivity() {
         val memories by eva.memories.state.collectAsStateWithLifecycle()
         LaunchedEffect(Unit) { runCatching { eva.memories.load() } }
         val deviceTask by eva.capabilities.deviceTaskFlow.collectAsStateWithLifecycle()
+        val webResearch by eva.capabilities.webResearchFlow.collectAsStateWithLifecycle()
+        val webResearchNotice by eva.capabilities.webResearchNoticeFlow.collectAsStateWithLifecycle()
         val screenControl by eva.capabilities.screenControlFlow.collectAsStateWithLifecycle()
         val shizuku by shizukuAccess.collectAsStateWithLifecycle()
         LaunchedEffect(Unit) { eva.deviceControlHost?.let { shizukuAccess.value = it.accessStatus() } }
@@ -354,6 +356,8 @@ class MainActivity : ComponentActivity() {
             canControlScreen = eva.deviceControlHost != null,
             shizukuAccess = shizuku,
             screenControlEnabled = screenControl,
+            webResearch = webResearch,
+            webResearchNotice = webResearchNotice,
             screenControlStatus = screenControlStatus,
             deviceTask = deviceTask,
             spotifyClientId = spotifyClientId,
@@ -497,6 +501,7 @@ class MainActivity : ComponentActivity() {
                 onOpenMediaControlSettings = ::openMediaControlSettings,
                 onScreenControlChange = eva.capabilities::saveScreenControl,
                 onDeviceTaskChange = eva.capabilities::saveDeviceTask,
+                onWebResearchChange = eva.capabilities::saveWebResearch,
                 onPortalToken = { token ->
                     eva.capabilities.savePortalToken(token)
                     lifecycleScope.launch { eva.screenControl.refresh() }

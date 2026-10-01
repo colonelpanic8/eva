@@ -143,6 +143,14 @@ internal class WorkerResponsesSocket(
                 if (socket === webSocket) fail(IllegalStateException("Responses socket connection failed.", t))
             }
 
+            override fun onClosing(
+                webSocket: WebSocket,
+                code: Int,
+                reason: String,
+            ) = synchronized(monitor) {
+                if (socket === webSocket) fail(IllegalStateException("Responses socket closed."))
+            }
+
             override fun onClosed(
                 webSocket: WebSocket,
                 code: Int,

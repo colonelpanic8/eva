@@ -9,6 +9,34 @@ import org.junit.Test
 import java.io.IOException
 
 class LinkedConfigurationTest {
+    @Test fun `research effort notice survives reassessment and clears when the file is repaired`() =
+        runTest {
+            var local = configuration()
+            val selected = directory("research", local)
+            val unsupported =
+                EvaConfigurationCodec.complete(local).let {
+                    it.copy(capabilities = it.capabilities!!.copy(webResearch = WebResearchPatch(effort = "minimal")))
+                }
+            selected.files["eva.yaml"] = EvaConfigurationCodec.encode(unsupported)
+            val linked =
+                LinkedConfiguration(snapshot = { local }, apply = {
+                    local = it
+                    ConfigurationApplyResult()
+                }, reassess = {
+                    _,
+                    _,
+                    ->
+                    ConfigurationApplyResult()
+                })
+            val loaded = linked.attach(selected) as LinkedConfigurationResult.Loaded
+            assertEquals("low", local.capabilities.webResearch.effort)
+            assertTrue(loaded.setupRequired.single().contains("replaced with low"))
+            assertEquals(loaded.setupRequired, (linked.reload() as LinkedConfigurationResult.Loaded).setupRequired)
+            val saved = linked.localChange() as LinkedConfigurationResult.Saved
+            assertTrue(saved.setupRequired.isEmpty())
+            assertTrue((linked.reload() as LinkedConfigurationResult.Loaded).setupRequired.isEmpty())
+        }
+
     @Test
     fun `invalid newly selected directory leaves the previous valid link active`() =
         runTest {
