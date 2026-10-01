@@ -54,12 +54,22 @@ class AndroidDiagnostics(
                 app.controller.taskSnapshots.value,
                 trace.snapshot(),
                 System.currentTimeMillis(),
+                providerEvents = ProviderEventLog.realtime.snapshot(),
             )
         return write("eva-thread-${threadId.take(8)}", DiagnosticsExport.assemble(snapshot, redactor()))
     }
 
     suspend fun logsExport(): Export =
-        write("eva-logs", DiagnosticsExport.logs(environment(), trace.snapshot(), System.currentTimeMillis(), redactor()))
+        write(
+            "eva-logs",
+            DiagnosticsExport.logs(
+                environment(),
+                trace.snapshot(),
+                System.currentTimeMillis(),
+                redactor(),
+                ProviderEventLog.realtime.snapshot(),
+            ),
+        )
 
     fun share(
         context: Context,

@@ -1306,7 +1306,18 @@ private `files/diagnostics/`, so a restarted process restores the full ring.
 Journal version 9 (Android and desktop) adds `session_catalogs`: when a connection or
 background text leg connects, EVA records its kind, model, catalog revision, offered
 tool IDs and titles, and excluded tool IDs. Writing it is best effort; a failure is
-traced and never ends the session. Older journals upgrade in place.
+traced and never ends the session. Each insert drops the thread's records beyond the
+newest 50. Older journals upgrade in place.
+
+Realtime sessions also feed an in-memory ring of the last 1,000 raw wire events, both
+directions (`ProviderEventLog`). Each keeps its type, event/response/item/call IDs,
+response metadata, item type, role, name and status, response status with its reason,
+error type and code, and up to 2,000 characters of transcript, text, arguments, or
+error text. Audio payloads and session bodies (instructions, tool schemas) are never
+kept; a session event records only its tool count, and outbound events over 64 KiB
+keep only their type. Consecutive deltas for one item coalesce into one entry with a
+count and first/last times. Recording only reads fields from the already-parsed
+event; the ring never goes to Logcat and is lost when the process ends.
 
 A thread export (`DiagnosticsExport`) is one JSON document:
 
@@ -1320,7 +1331,9 @@ A thread export (`DiagnosticsExport`) is one JSON document:
   request, catalog revision, claim time). A call without a record says so.
 - `turns`, `sessions` (the catalog records above), the thread's `tasks` from the
   Running work snapshot, `deviceTasks` (goal, status, effects, and each step's kind,
-  result, and timings from the receipt), and the whole `trace` ring.
+  result, and timings from the receipt), the whole `trace` ring, and the
+  `providerEvents` wire ring. The recent-logs export includes the wire ring without
+  its text.
 
 Bounds are explicit: the newest 400 items (`bounds.items` gives the total, the
 omitted count, and an “N earlier items omitted” statement), the newest 50 session

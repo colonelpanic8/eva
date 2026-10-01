@@ -38,6 +38,8 @@ data class DiagnosticsSnapshot(
     val sessions: List<SessionCatalogRecord>,
     val tasks: List<TaskSnapshot>,
     val trace: List<TraceEvent>,
+    /** Recent raw Realtime wire events across sessions, oldest first. */
+    val providerEvents: List<ProviderWireEvent> = emptyList(),
 )
 
 /**
@@ -50,7 +52,7 @@ object DiagnosticsExport {
     const val FORMAT = "eva-diagnostics"
     const val VERSION = 1
     const val MAX_ITEMS = 400
-    const val MAX_SESSIONS = 50
+    const val MAX_SESSIONS = ConversationStore.SESSION_CATALOG_LIMIT
     const val MAX_TEXT_CHARS = 32_000
     const val REDACTION_RULE =
         "Credential values (tokens, keys, passwords, authorization headers, cookies, stored secrets) are replaced with " +
@@ -67,6 +69,7 @@ object DiagnosticsExport {
         trace: List<TraceEvent>,
         nowMillis: Long,
         maxItems: Int = MAX_ITEMS,
+        providerEvents: List<ProviderWireEvent> = emptyList(),
     ): DiagnosticsSnapshot {
         val items = store.items(threadId, maxItems)
         val callIds = items.filterIsInstance<ThreadItem.ActionCall>().map { it.callId }
@@ -82,6 +85,7 @@ object DiagnosticsExport {
             store.sessionCatalogs(threadId, MAX_SESSIONS),
             tasks.filter { it.threadId == threadId },
             trace,
+            providerEvents,
         )
     }
 
@@ -119,6 +123,9 @@ object DiagnosticsExport {
                     }
                     put("textCharacters", MAX_TEXT_CHARS)
                     put("traceEvents", snapshot.trace.size)
+                    put("providerEvents", snapshot.providerEvents.size)
+                    put("providerEventCapacity", ProviderEventLog.DEFAULT_CAPACITY)
+                    put("providerEventTextCharacters", ProviderEventLog.MAX_TEXT_CHARS)
                 }
                 putJsonArray("turns") {
                     snapshot.turns.forEach { turn ->
@@ -144,6 +151,7 @@ object DiagnosticsExport {
                         .forEach { call -> add(deviceTask(call, snapshot.receipts[call.callId])) }
                 }
                 put("trace", traceEvents(snapshot.trace))
+                put("providerEvents", JsonArray(snapshot.providerEvents.map(ProviderEventLog::toJson)))
             }
         return redactor.json(document).jsonObject
     }
@@ -154,6 +162,7 @@ object DiagnosticsExport {
         trace: List<TraceEvent>,
         nowMillis: Long,
         redactor: Redactor,
+        providerEvents: List<ProviderWireEvent> = emptyList(),
     ): JsonObject =
         redactor
             .json(
@@ -172,6 +181,8 @@ object DiagnosticsExport {
                     put("redaction", REDACTION_RULE)
                     put("environment", JsonObject(environment.mapValues { JsonPrimitive(it.value) }))
                     put("trace", traceEvents(trace))
+                    // Without conversation content: identities, types, and statuses only.
+                    put("providerEvents", JsonArray(providerEvents.map { ProviderEventLog.toJson(it.copy(text = null)) }))
                 },
             ).jsonObject
 
@@ -202,7 +213,7 @@ object DiagnosticsExport {
                     " offered ${it.tools.size} tools, ${it.excludedTools.size} excluded"
             },
             snapshot.tasks.takeIf { it.isNotEmpty() }?.joinToString(prefix = "Active tasks: ") { "${it.taskId} ${it.kind} ${it.state}" },
-            "${snapshot.trace.size} recent trace events",
+            "${snapshot.trace.size} recent trace events, ${snapshot.providerEvents.size} recent Realtime wire events",
             "Credential values are redacted; message content is included.",
         )
     }

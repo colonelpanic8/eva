@@ -280,6 +280,53 @@ class DiagnosticsExportTest {
         }
 
     @Test
+    fun `realtime wire events reach the thread export redacted and the logs export without text`() =
+        runTest {
+            val thread = store.createThread("Wire")
+            val wire =
+                listOf(
+                    ProviderWireEvent(
+                        1,
+                        1,
+                        "c",
+                        false,
+                        "conversation.item.input_audio_transcription.completed",
+                        mapOf("item_id" to "i1"),
+                        null,
+                        "my key is sk-abcdefghijklmnopqrstuv",
+                    ),
+                    ProviderWireEvent(2, 2, "c", false, "response.done", mapOf("response.id" to "r1"), "completed", null),
+                )
+            val document =
+                DiagnosticsExport.assemble(
+                    DiagnosticsExport.collect(
+                        store,
+                        repository,
+                        thread.id,
+                        environment,
+                        emptyList(),
+                        emptyList(),
+                        3,
+                        providerEvents = wire,
+                    ),
+                    Redactor(),
+                )
+            val events = document.getValue("providerEvents").jsonArray.map { it.jsonObject }
+            assertEquals(
+                listOf("conversation.item.input_audio_transcription.completed", "response.done"),
+                events.map {
+                    it.getValue("type").jsonPrimitive.content
+                },
+            )
+            assertEquals("my key is ${Redactor.REDACTED}", events[0].getValue("text").jsonPrimitive.content)
+            assertEquals("completed", events[1].getValue("status").jsonPrimitive.content)
+
+            val logs = DiagnosticsExport.logs(environment, emptyList(), 3, Redactor(), wire)
+            assertFalse(DiagnosticsExport.render(logs).contains("my key is"))
+            assertEquals(2, logs.getValue("providerEvents").jsonArray.size)
+        }
+
+    @Test
     fun `long text is cut with an explicit count of what was omitted`() =
         runTest {
             val thread = store.createThread("Long text")
