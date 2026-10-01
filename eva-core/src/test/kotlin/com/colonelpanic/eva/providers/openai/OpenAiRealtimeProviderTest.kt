@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.providers.openai
 
+import com.colonelpanic.eva.capability.InitiatorKind
 import com.colonelpanic.eva.audio.MediaControls
 import com.colonelpanic.eva.audio.MediaTimeline
 import com.colonelpanic.eva.audio.RealtimeMediaSession
@@ -482,6 +483,35 @@ class OpenAiRealtimeProviderTest {
             collector.cancel()
         }
 
+    @Test
+    fun `a response without the request echo binds to the only waiting request`() =
+        runTest {
+            val media = FakeMedia()
+            val session = openSession(media).open(SessionOpenRequest("You are EVA.", catalog))
+            val events = mutableListOf<ProviderEvent>()
+            val collector = launch { session.events.collect { events += it } }
+            media.incoming.send("""{"type":"session.created","session":{"id":"sess_1","tools":[{"name":"eva_tool_0"}]}}""")
+            createResponse(media, "resp_1", speechItemId = "item_1", echoMetadata = false)
+            media.incoming.send(functionCall("call_1"))
+            media.incoming.send("""{"type":"response.output_audio_transcript.done","response_id":"resp_1","transcript":"On it."}""")
+            media.incoming.send("""{"type":"response.done","response":{"id":"resp_1","status":"completed"}}""")
+            runCurrent()
+            val call = events.filterIsInstance<ProviderEvent.ToolCallReady>().single()
+            assertEquals("voice:item_1", call.call.inputId)
+            assertEquals(InitiatorKind.USER_SPEECH, call.call.initiator?.kind)
+            assertEquals("voice:item_1", events.filterIsInstance<ProviderEvent.AssistantText>().single().inputId)
+            assertEquals(1, events.count { it is ProviderEvent.Notice })
+
+            // Nothing is waiting, so an unechoed response stays unowned.
+            media.incoming.send("""{"type":"response.created","response":{"id":"resp_stray"}}""")
+            media.incoming.send(functionCall("call_2", "resp_stray"))
+            media.incoming.send("""{"type":"response.done","response":{"id":"resp_stray","status":"completed"}}""")
+            runCurrent()
+            val stray = events.filterIsInstance<ProviderEvent.ToolCallReady>().last()
+            assertEquals("unowned:resp_stray", stray.call.inputId)
+            collector.cancel()
+        }
+
     private fun TestScope.openSession(media: FakeMedia) =
         OpenAiRealtimeProvider(
             ApiKeyAccess("sk-test", "https://example.test"),
@@ -830,6 +860,7 @@ class OpenAiRealtimeProviderTest {
         media: FakeMedia,
         id: String,
         speechItemId: String = id,
+        echoMetadata: Boolean = true,
     ) {
         runCurrent()
 
@@ -850,7 +881,7 @@ class OpenAiRealtimeProviderTest {
                     "response",
                     buildJsonObject {
                         put("id", id)
-                        put("metadata", request.getValue("response").jsonObject.getValue("metadata"))
+                        if (echoMetadata) put("metadata", request.getValue("response").jsonObject.getValue("metadata"))
                     },
                 )
             }.toString(),

@@ -217,6 +217,7 @@ private class OpenAiRealtimeSession(
     private val itemRequests = linkedMapOf<String, ItemRequest>()
     private val queued = ArrayDeque<Origin>()
     private var inFlight: String? = null
+    private var reportedMissingEcho = false
     private var waitingForBusyResponse = false
     private var busyTimer: Job? = null
     private val activeResponses = linkedSetOf<String>()
@@ -508,7 +509,13 @@ private class OpenAiRealtimeSession(
     private fun bindResponse(response: JsonObject): String? {
         val id = response.str("id") ?: return null
         if (id in responses) return id
-        val requestId = response.obj("metadata")?.str("eva_request_id")
+        val echoed = response.obj("metadata")?.str("eva_request_id")
+        // EVA keeps at most one request in flight, so a reply without the echo can only be that one.
+        val requestId = echoed ?: inFlight?.takeIf { it in requested }
+        if (echoed == null && requestId != null && !reportedMissingEcho) {
+            reportedMissingEcho = true
+            emit(ProviderEvent.Notice("OpenAI did not echo EVA's request ID; EVA matched the reply to its only waiting request."))
+        }
         val own = requestId?.let { requested.remove(it) ?: retiredRequests[it] }
         if (requestId != null) {
             requestTimers.remove(requestId)?.cancel()
