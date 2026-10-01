@@ -339,6 +339,43 @@ class RealtimeTurnOwnershipTest {
         }
 
     @Test
+    fun `a long lookup in a voice turn says once that it is still working`() =
+        runTest {
+            val f = fixture()
+
+            fun notes() =
+                f.media.sent.map { Json.parseToJsonElement(it).jsonObject }.count {
+                    it["type"]?.jsonPrimitive?.content == "response.create" &&
+                        it
+                            .getValue("response")
+                            .jsonObject
+                            .getValue("metadata")
+                            .jsonObject["eva_purpose"]
+                            ?.jsonPrimitive
+                            ?.content == "lifecycle_note"
+                }
+            f.speech("request", "r1", "Look this up")
+            f.call("r1", "lookup", "test.lookup")
+            f.done("r1")
+            advanceTimeBy(7_000)
+            runCurrent()
+            assertEquals(0, notes())
+            advanceTimeBy(1_001)
+            runCurrent()
+            assertEquals(1, notes())
+            assertEquals("none", f.acceptRequest("still-working").getValue("tool_choice").jsonPrimitive.content)
+            f.done("still-working")
+            advanceTimeBy(30_000)
+            runCurrent()
+            assertEquals(1, notes())
+            assertTrue(f.outputs("lookup").isEmpty())
+            f.gate.complete(Unit)
+            runCurrent()
+            assertEquals(1, f.outputs("lookup").size)
+            f.close()
+        }
+
+    @Test
     fun `barge-in cancels running and unacknowledged responses without executing their tools`() =
         runTest {
             for (acknowledgedBeforeSpeech in listOf(false, true)) {
@@ -1061,7 +1098,7 @@ class RealtimeTurnOwnershipTest {
         val acknowledged = mutableSetOf<String>()
         private val registry =
             CapabilityRegistry(
-                listOf("test.read", "test.wait", "test.mutate", "test.tap", CapabilityRegistry.DEVICE_TASK).associateWith { id ->
+                listOf("test.read", "test.lookup", "test.wait", "test.mutate", "test.tap", CapabilityRegistry.DEVICE_TASK).associateWith { id ->
                     object : ExecutionBackend {
                         override fun usesDeviceUi(proposal: ToolProposal): Boolean = id == "test.tap"
 
@@ -1069,12 +1106,12 @@ class RealtimeTurnOwnershipTest {
 
                         override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome {
                             executions += id
-                            if (id == "test.wait" || id == "test.tap" || id == CapabilityRegistry.DEVICE_TASK) gate.await()
+                            if (id == "test.wait" || id == "test.lookup" || id == "test.tap" || id == CapabilityRegistry.DEVICE_TASK) gate.await()
                             return ExecutionOutcome(InvocationStatus.COMPLETED, "Done")
                         }
                     }
                 },
-                listOf("test.read", "test.wait", "test.mutate", "test.tap", CapabilityRegistry.DEVICE_TASK).map {
+                listOf("test.read", "test.lookup", "test.wait", "test.mutate", "test.tap", CapabilityRegistry.DEVICE_TASK).map {
                     CapabilityDefinition(
                         it,
                         it,
@@ -1084,7 +1121,7 @@ class RealtimeTurnOwnershipTest {
                                 """{"type":"object","properties":{},"required":[],"additionalProperties":false}""",
                             ).jsonObject,
                         readOnly =
-                            it == "test.read",
+                            it == "test.read" || it == "test.lookup",
                     )
                 },
             )

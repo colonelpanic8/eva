@@ -1708,9 +1708,32 @@ class ThreadController(
                         )
                         rejection
                     }
+                // A long lookup in a voice turn would otherwise be silence until its receipt.
+                val stillWorking =
+                    if (context.voice && definition?.readOnly == true && rejection == null && argumentError == null) {
+                        taskScope.launch {
+                            delay(STILL_WORKING_NOTE_MILLIS)
+                            runCatching {
+                                source?.submitContext(
+                                    wording().message(Wording.ACTION_STILL_WORKING),
+                                    respond = true,
+                                    data =
+                                        buildJsonObject {
+                                            put("callId", event.call.callId)
+                                            put("taskId", turnId)
+                                            put("state", "RUNNING")
+                                            put("contentTrust", "external_data")
+                                        },
+                                )
+                            }
+                        }
+                    } else {
+                        null
+                    }
                 try {
                     taskProgress(turnId)
                     val result = dispatcher.execute(proposal, rejection ?: argumentError)
+                    stillWorking?.cancel()
                     progress[turnId]?.takeIf { it.lastActionCallId == id }?.apply {
                         lastActionStatus = result.status.name
                         waiting = false
@@ -1762,6 +1785,8 @@ class ThreadController(
                     mutableState.update { it.copy(errorMessage = SessionController.STORAGE_ERROR) }
                     interrupt("Action history could not be saved.")
                     end("ended: action history could not be saved")
+                } finally {
+                    stillWorking?.cancel()
                 }
             }
             // The device coordinator owns long tasks and UI serialization. Other mutations share the thread lock.
@@ -2250,6 +2275,7 @@ class ThreadController(
         const val UNTITLED = "New conversation"
         private const val VOICE_REQUEST = "Voice request"
         private const val MAX_PROPOSAL_REQUEST = 1000
+        private const val STILL_WORKING_NOTE_MILLIS = 8_000L
 
         /** The longest typed request a turn accepts. */
         const val MAX_REQUEST_CHARS = MAX_INPUT_CHARS
