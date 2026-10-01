@@ -1554,6 +1554,9 @@ class ThreadController(
             private set
         val dispatches = mutableListOf<Job>()
 
+        /** Dispatches serialized on the device lease, which a handoff does not wait for. */
+        private val deviceDispatches = mutableSetOf<Job>()
+
         /** This request's phone action completed or was handed off, so the request has been served. */
         var actionServiced = false
             private set
@@ -1810,6 +1813,7 @@ class ThreadController(
                     }
                 }
             dispatches += job
+            if (serializedByDevice) deviceDispatches += job
         }
 
         /**
@@ -2055,7 +2059,7 @@ class ThreadController(
             taskScope.launch(start = CoroutineStart.UNDISPATCHED) {
                 try {
                     onWorkAccepted()
-                    dispatches.toList().joinAll()
+                    dispatches.filter { it !in deviceDispatches }.joinAll()
                     if (active) rehome(instruction)
                 } finally {
                     withContext(NonCancellable) {

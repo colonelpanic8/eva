@@ -313,6 +313,32 @@ class RealtimeTurnOwnershipTest {
         }
 
     @Test
+    fun `a handoff starts without waiting for a sibling device task and each call keeps one result`() =
+        runTest {
+            val f = fixture()
+            f.speech("request", "r1", "Do this on the phone and research that")
+            f.call("r1", "device", CapabilityRegistry.DEVICE_TASK)
+            f.call("r1", "delegate", ThreadController.DEFER_TO_TEXT.capabilityId, buildJsonObject { put("task", "Research that") })
+            f.done("r1")
+            runCurrent()
+            assertNotNull(f.background.request.continuation)
+            assertEquals(
+                "HANDED_OFF",
+                f
+                    .outputs("delegate")
+                    .single()
+                    .getValue("status")
+                    .jsonPrimitive.content,
+            )
+            assertTrue(f.outputs("device").isEmpty())
+            f.gate.complete(Unit)
+            runCurrent()
+            assertEquals(1, f.outputs("device").size)
+            assertEquals(1, f.outputs("delegate").size)
+            f.close()
+        }
+
+    @Test
     fun `barge-in cancels running and unacknowledged responses without executing their tools`() =
         runTest {
             for (acknowledgedBeforeSpeech in listOf(false, true)) {
