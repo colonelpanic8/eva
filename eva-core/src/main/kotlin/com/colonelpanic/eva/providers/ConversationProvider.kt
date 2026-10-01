@@ -191,6 +191,8 @@ sealed interface ProviderEvent {
 
     data class Notice(
         val message: String,
+        /** Also kept in the thread, after the session-start notice, so later banners cannot hide it. */
+        val persistent: Boolean = false,
     ) : ProviderEvent
 
     /** Delivery means the announcement reached its terminal response, not merely the send queue. */

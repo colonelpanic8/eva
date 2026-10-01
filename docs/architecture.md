@@ -403,7 +403,7 @@ leaves the call running. The sideband is a second network dependency of setup, s
 failure is loud but not fatal: when it errors, does not answer within the
 eight-second window, or cannot be addressed because the call ID is missing, the call
 continues on the session OpenAI created and EVA shows a notice naming the tool count,
-size and cause, since the configuration was sent whole and nothing indicates it was
+size and cause, also kept in the thread after the session-start notice, since the configuration was sent whole and nothing indicates it was
 rejected. Falling back to a byte budget instead would drop tools OpenAI already
 applied and would need a second call. A confirmation that names the wrong tools, or no
 session at all within eight seconds, still fails the connection with the tool count,

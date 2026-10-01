@@ -345,6 +345,9 @@ class ThreadController(
 
     private val connectionTools = mutableMapOf<ConversationSession, ConnectionTools>()
 
+    /** Persistent provider notices waiting for their session's start notice; absent once it is written. */
+    private val heldNotices = mutableMapOf<ConversationSession, MutableList<String>>()
+
     /**
      * Read when a session opens, not once at construction, so switching a capability off takes
      * effect on the next connection. A live session keeps the catalog it was opened with.
@@ -730,6 +733,7 @@ class ThreadController(
                         )
                     openedSession = opened
                     connectionTools[opened] = ConnectionTools(snapshot, connectionCatalog, voice, assembled.callMode, endings)
+                    heldNotices[opened] = mutableListOf()
                     currentCoroutineContext().ensureActive()
                     session = opened
                     opened.events.takeWhile { it != ProviderEvent.Closed }.collect { event ->
@@ -771,6 +775,7 @@ class ThreadController(
                     }
                     threadId?.let { detach(it, openedSession) }
                     connectionTools.remove(openedSession)
+                    heldNotices.remove(openedSession)
                     voiceTurns.keys.removeAll { it.first === openedSession }
                     pendingAnnouncements.keys.removeAll { it.first === openedSession }
                     withContext(NonCancellable) {
@@ -803,14 +808,16 @@ class ThreadController(
                         .distinct()
                         .joinToString(" · ")
                         .ifBlank { null }
+                val held = heldNotices.remove(opened).orEmpty()
                 mutableState.update {
-                    it.copy(providerStatus = ProviderStatus.CONNECTED, providerMessage = null, providerModel = model)
+                    it.copy(providerStatus = ProviderStatus.CONNECTED, providerMessage = held.lastOrNull(), providerModel = model)
                 }
                 updateWorkCoverage()
                 val label = listOfNotNull(if (voice) "Voice session" else "Text session", model).joinToString(" · ")
                 store.append(
                     notice(threadId, null, NoticeKind.SESSION_STARTED, connectionTools.getValue(opened).catalog.sessionNotice(label)),
                 )
+                held.forEach { store.append(notice(threadId, null, NoticeKind.SESSION_STARTED, it)) }
             }
 
             is ProviderEvent.Account -> {
@@ -999,6 +1006,10 @@ class ThreadController(
 
             is ProviderEvent.Notice -> {
                 mutableState.update { it.copy(providerMessage = event.message) }
+                if (event.persistent) {
+                    heldNotices[opened]?.add(event.message)
+                        ?: store.append(notice(threadId, null, NoticeKind.SESSION_STARTED, event.message))
+                }
             }
 
             is ProviderEvent.ContextDelivery -> {

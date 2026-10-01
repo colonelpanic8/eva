@@ -606,6 +606,7 @@ private class OpenAiRealtimeSession(
                             "its sideband connection to the call failed ($cause). OpenAI normally applies the whole " +
                             "configuration, so the call continues; if an action seems missing, end the call and try again " +
                             "or use a typed conversation.",
+                        persistent = true,
                     ),
                 )
                 bareSession?.let(::configured)

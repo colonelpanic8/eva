@@ -899,6 +899,31 @@ class ThreadControllerTest {
         }
 
     @Test
+    fun `a persistent provider notice is kept in the thread after the session start and outlives later banners`() =
+        runTest {
+            val voice = FakeProvider(autoConnect = false)
+            val controller = controller(voice, media = { VoiceMedia() })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            val unconfirmed = "EVA could not confirm that OpenAI configured all 300 voice tools."
+            voice.channel.send(ProviderEvent.Notice(unconfirmed, persistent = true))
+            voice.channel.send(ProviderEvent.Connected("session", voice.request.catalog.revision))
+            advanceUntilIdle()
+            assertEquals(unconfirmed, controller.state.value.providerMessage)
+            voice.channel.send(ProviderEvent.Notice("The speech caption is unavailable."))
+            advanceUntilIdle()
+            assertEquals("The speech caption is unavailable.", controller.state.value.providerMessage)
+            val notices =
+                store
+                    .items(controller.state.value.threadId!!)
+                    .filterIsInstance<ThreadItem.Notice>()
+                    .map { it.text }
+            assertTrue(notices[0].startsWith("Voice session"))
+            assertEquals(listOf(unconfirmed), notices.drop(1))
+        }
+
+    @Test
     fun `prompt-hidden tools take no catalog capacity and hide their device-task controls`() =
         runTest {
             val extensions =

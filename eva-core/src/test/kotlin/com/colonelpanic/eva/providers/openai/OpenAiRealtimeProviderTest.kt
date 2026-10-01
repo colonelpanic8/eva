@@ -713,7 +713,9 @@ class OpenAiRealtimeProviderTest {
                 advanceTimeBy(REALTIME_CONFIG_ACK_TIMEOUT_MILLIS)
                 runCurrent()
                 assertEquals("sess_bare", events.filterIsInstance<ProviderEvent.Connected>().single().sessionId)
-                val notice = events.filterIsInstance<ProviderEvent.Notice>().single().message
+                val shown = events.filterIsInstance<ProviderEvent.Notice>().single()
+                assertTrue(shown.persistent)
+                val notice = shown.message
                 assertTrue(notice.contains("could not confirm") && notice.contains("1 voice tools") && notice.contains(failure))
                 assertTrue(events.none { it is ProviderEvent.Failure })
                 collector.cancel()
