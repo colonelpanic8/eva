@@ -3,6 +3,7 @@ package com.colonelpanic.eva.adapters.android
 import com.colonelpanic.eva.capability.ExecutionBackend
 import com.colonelpanic.eva.capability.ExecutionOutcome
 import com.colonelpanic.eva.capability.InvocationStatus
+import com.colonelpanic.eva.capability.ToolProposal
 
 /**
  * When the user last dealt with each phone number: the last direct text thread on the phone, and
@@ -35,6 +36,8 @@ class RemembersNumbers(
     private val argument: String,
     private val record: suspend (List<String>) -> Unit,
 ) : ExecutionBackend {
+    override fun usesDeviceUi(proposal: ToolProposal): Boolean = delegate.usesDeviceUi(proposal)
+
     override suspend fun unavailableReason(): String? = delegate.unavailableReason()
 
     override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome {

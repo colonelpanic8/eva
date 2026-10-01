@@ -186,6 +186,17 @@ class TurnWorkService : Service() {
 
 /** Notifications for work that finished with nobody watching. */
 object WorkNotifications {
+    private val visibleAnswers = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    fun delivered(
+        context: Context,
+        answer: ThreadController.BackgroundAnswer,
+    ) {
+        if (visibleAnswers.remove(answer.threadId, answer.taskId)) {
+            context.getSystemService(NotificationManager::class.java).cancel(answer.threadId.hashCode())
+        }
+    }
+
     const val WORK_CHANNEL = "eva.work"
     const val EXTRA_RUNNING_WORK = "com.colonelpanic.eva.RUNNING_WORK"
     const val EXTRA_THREAD_ID = "com.colonelpanic.eva.THREAD_ID"
@@ -289,6 +300,7 @@ object WorkNotifications {
                 .setAutoCancel(true)
                 .setContentIntent(open(context, answer.threadId))
                 .build()
+        visibleAnswers[answer.threadId] = answer.taskId
         runCatching { context.getSystemService(NotificationManager::class.java).notify(answer.threadId.hashCode(), notification) }
     }
 }

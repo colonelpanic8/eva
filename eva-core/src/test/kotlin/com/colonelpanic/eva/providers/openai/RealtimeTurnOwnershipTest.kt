@@ -13,6 +13,7 @@ import com.colonelpanic.eva.capability.InitiatorKind
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.MemoryInvocationRepository
 import com.colonelpanic.eva.conversation.MemoryConversationStore
+import com.colonelpanic.eva.conversation.ProviderStatus
 import com.colonelpanic.eva.conversation.ThreadController
 import com.colonelpanic.eva.conversation.ThreadItem
 import com.colonelpanic.eva.conversation.TurnStatus
@@ -30,6 +31,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -45,6 +47,7 @@ import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -68,6 +71,7 @@ class RealtimeTurnOwnershipTest {
             f.call("r2", "new-read", "test.read")
             f.text("r2", "Second answer")
             f.text("r1", "First answer")
+            f.done("r2")
             runCurrent()
             val receipts = f.repository.history().associateBy { it.callId }
             val late = receipts.getValue("provider:session:late-read")
@@ -109,7 +113,7 @@ class RealtimeTurnOwnershipTest {
             f.done("followup")
             runCurrent()
             assertEquals(
-                1,
+                2,
                 f.media.sent.count {
                     Json
                         .parseToJsonElement(it)
@@ -190,6 +194,8 @@ class RealtimeTurnOwnershipTest {
             f.call("r1", "late", "test.read")
             f.call("not-observed", "unknown", "test.read")
             runCurrent()
+            advanceTimeBy(REALTIME_CALL_CORRELATION_MILLIS)
+            runCurrent()
             assertTrue(f.executions.isEmpty())
             assertEquals(
                 "NOT_EXECUTED",
@@ -213,6 +219,7 @@ class RealtimeTurnOwnershipTest {
             assertEquals(InitiatorKind.UNKNOWN, receipts.getValue("provider:session:unknown").initiator!!.kind)
             assertEquals("not-observed", receipts.getValue("provider:session:unknown").initiator!!.responseId)
             f.call("r2", "current", "test.read")
+            f.done("r2")
             runCurrent()
             assertEquals(listOf("test.read"), f.executions)
             f.close()
@@ -224,8 +231,8 @@ class RealtimeTurnOwnershipTest {
             val f = fixture()
             f.raw("""{"type":"input_audio_buffer.committed","item_id":"first"}""")
             f.raw("""{"type":"conversation.item.input_audio_transcription.completed","item_id":"first","transcript":"First request"}""")
-            f.raw("""{"type":"response.created","response":{"id":"r1"}}""")
             runCurrent()
+            f.acceptRequest("r1")
             val first = f.turn("First request")
             f.done("r1")
             f.speech("second", "r2", "Second request")
@@ -264,6 +271,8 @@ class RealtimeTurnOwnershipTest {
             f.background.incoming.send(ProviderEvent.AssistantText(turn, "Finding from a web page", false))
             f.background.incoming.send(ProviderEvent.ResponseEnded(turn, "completed"))
             runCurrent()
+            assertEquals(turn, f.notifications.single().taskId)
+            assertTrue(f.delivered.isEmpty())
             val announcement = f.acceptRequest("announcement")
             assertEquals("none", announcement.getValue("tool_choice").jsonPrimitive.content)
             assertEquals(
@@ -285,8 +294,10 @@ class RealtimeTurnOwnershipTest {
             f.acceptRequest("announcement-refusal")
             f.done("announcement-refusal")
             runCurrent()
+            assertEquals(turn, f.delivered.single().taskId)
             f.speech("next", "r2", "Look it up")
             f.call("r2", "requested", "test.read")
+            f.done("r2")
             runCurrent()
             assertEquals(listOf("test.read"), f.executions)
             assertEquals(
@@ -297,6 +308,503 @@ class RealtimeTurnOwnershipTest {
                     .initiator!!
                     .kind,
             )
+            f.close()
+        }
+
+    @Test
+    fun `a new utterance cannot close an input whose tool follow-up is queued`() =
+        runTest {
+            val f = fixture()
+            f.speech("first", "r1", "Read then act")
+            f.call("r1", "read", "test.read")
+            f.raw("""{"type":"input_audio_buffer.speech_started","item_id":"ack"}""")
+            f.done("r1")
+            runCurrent()
+            val original = f.turn("Read then act")
+            f.speech("ack", "r2", "mm-hm")
+            assertEquals(
+                TurnStatus.OPEN,
+                f.store
+                    .turns(f.thread)
+                    .first { it.id == original }
+                    .status,
+            )
+            f.done("r2")
+            runCurrent()
+            val followup = f.acceptRequest("r3")
+            assertEquals(
+                "voice:first",
+                followup
+                    .getValue("metadata")
+                    .jsonObject
+                    .getValue("eva_input_id")
+                    .jsonPrimitive.content,
+            )
+            f.call("r3", "act", "test.mutate")
+            f.done("r3")
+            runCurrent()
+            val receipt = f.repository.history().last()
+            assertEquals(original, receipt.turnId)
+            assertEquals(InvocationStatus.COMPLETED, receipt.status)
+            assertEquals(listOf("test.read", "test.mutate"), f.executions)
+            f.close()
+        }
+
+    @Test
+    fun `cancelled and incomplete responses refuse even completed zero argument items`() =
+        runTest {
+            val f = fixture()
+            for (status in listOf("cancelled", "incomplete")) {
+                f.speech(status, "r-$status", "Keep talking")
+                val end = f.callItem("end-$status", ThreadController.END_CONVERSATION.capabilityId)
+                f.raw(
+                    buildJsonObject {
+                        put("type", "response.output_item.done")
+                        put("response_id", "r-$status")
+                        put("item", end)
+                    }.toString(),
+                )
+                runCurrent()
+                assertTrue(f.repository.history().none { it.callId.endsWith("end-$status") })
+                f.done("r-$status", listOf(end), status)
+                runCurrent()
+                assertEquals(
+                    "NOT_EXECUTED",
+                    f
+                        .outputs("end-$status")
+                        .single()
+                        .getValue("status")
+                        .jsonPrimitive.content,
+                )
+                assertEquals(ProviderStatus.CONNECTED, f.controller.state.value.providerStatus)
+            }
+            f.speech("partial", "partial", "Act")
+            val partial =
+                JsonObject(
+                    f.callItem("partial-call", "test.mutate") + mapOf("status" to kotlinx.serialization.json.JsonPrimitive("incomplete")),
+                )
+            f.done("partial", listOf(partial))
+            runCurrent()
+            assertEquals(
+                "NOT_EXECUTED",
+                f
+                    .outputs("partial-call")
+                    .single()
+                    .getValue("status")
+                    .jsonPrimitive.content,
+            )
+            assertTrue(f.executions.isEmpty())
+            f.close()
+        }
+
+    @Test
+    fun `a missing response id is resolved by final output before the call is answered`() =
+        runTest {
+            val f = fixture()
+            f.speech("first", "r1", "Run once")
+            val call = f.callItem("one", "test.mutate")
+            val unbound =
+                buildJsonObject {
+                    put("type", "response.output_item.done")
+                    put("item", call)
+                }.toString()
+            f.raw(unbound)
+            runCurrent()
+            assertTrue(f.outputs("one").isEmpty())
+            f.done("r1", listOf(call))
+            runCurrent()
+            f.raw(unbound)
+            f.done("r1", listOf(call))
+            runCurrent()
+            assertEquals(listOf("test.mutate"), f.executions)
+            assertEquals(1, f.outputs("one").size)
+            assertEquals(
+                "r1",
+                f.repository
+                    .history()
+                    .single()
+                    .initiator!!
+                    .responseId,
+            )
+            assertEquals(ProviderStatus.CONNECTED, f.controller.state.value.providerStatus)
+            f.close()
+        }
+
+    @Test
+    fun `an already refused orphan stays refused when repeated with a response id`() =
+        runTest {
+            val f = fixture()
+            f.speech("first", "r1", "Run once")
+            val call = f.callItem("one", "test.mutate")
+            f.raw(
+                buildJsonObject {
+                    put("type", "response.output_item.done")
+                    put("item", call)
+                }.toString(),
+            )
+            runCurrent()
+            advanceTimeBy(REALTIME_CALL_CORRELATION_MILLIS)
+            runCurrent()
+            f.done("r1", listOf(call))
+            runCurrent()
+            assertTrue(f.executions.isEmpty())
+            assertEquals(1, f.outputs("one").size)
+            assertEquals(
+                "NOT_EXECUTED",
+                f
+                    .outputs("one")
+                    .single()
+                    .getValue("status")
+                    .jsonPrimitive.content,
+            )
+            assertEquals(ProviderStatus.CONNECTED, f.controller.state.value.providerStatus)
+            f.close()
+        }
+
+    @Test
+    fun `a device task permits a sibling mutation and its follow-up before the device result`() =
+        runTest {
+            val f = fixture()
+            f.speech("first", "r1", "Work on the phone and send a message")
+            f.call("r1", "device", CapabilityRegistry.DEVICE_TASK)
+            f.call("r1", "message", "test.mutate")
+            f.done("r1")
+            runCurrent()
+            assertEquals(listOf(CapabilityRegistry.DEVICE_TASK, "test.mutate"), f.executions)
+            assertTrue(f.outputs("device").isEmpty())
+            assertEquals(
+                "COMPLETED",
+                f
+                    .outputs("message")
+                    .single()
+                    .getValue("status")
+                    .jsonPrimitive.content,
+            )
+            val followup = f.acceptRequest("message-reply")
+            assertEquals(
+                "r1",
+                followup
+                    .getValue("metadata")
+                    .jsonObject
+                    .getValue("eva_parent_response_id")
+                    .jsonPrimitive.content,
+            )
+            f.done("message-reply")
+            runCurrent()
+            assertEquals(
+                TurnStatus.OPEN,
+                f.store
+                    .turns(f.thread)
+                    .single()
+                    .status,
+            )
+            f.voice.submitContext("A task update", true, buildJsonObject { put("answer", "another task finished") })
+            runCurrent()
+            assertEquals(
+                "none",
+                f
+                    .acceptRequest("announcement")
+                    .getValue("tool_choice")
+                    .jsonPrimitive.content,
+            )
+            f.done("announcement")
+            f.gate.complete(Unit)
+            runCurrent()
+            f.acceptRequest("device-reply")
+            f.done("device-reply")
+            runCurrent()
+            assertEquals(1, f.outputs("device").size)
+            f.close()
+        }
+
+    @Test
+    fun `abandoned speech is released without shifting later response ownership`() =
+        runTest {
+            val f = fixture()
+            f.raw("""{"type":"input_audio_buffer.speech_started","item_id":"abandoned"}""")
+            f.raw(
+                """{"type":"conversation.item.input_audio_transcription.completed","item_id":"abandoned","transcript":"Do not lose this caption"}""",
+            )
+            runCurrent()
+            f.voice.submitContext("Task update", true)
+            runCurrent()
+            assertTrue(
+                f.media.sent.none {
+                    Json
+                        .parseToJsonElement(it)
+                        .jsonObject["type"]
+                        ?.jsonPrimitive
+                        ?.content == "response.create"
+                },
+            )
+            advanceTimeBy(REALTIME_SPEECH_WAIT_MILLIS)
+            runCurrent()
+            f.acceptRequest("announcement")
+            f.done("announcement")
+            runCurrent()
+            assertTrue(
+                f.store
+                    .items(f.thread)
+                    .filterIsInstance<ThreadItem.UserMessage>()
+                    .any { it.text == "Do not lose this caption" },
+            )
+            f.speech("next", "r-next", "Now act")
+            f.call("r-next", "next", "test.mutate")
+            f.done("r-next")
+            runCurrent()
+            assertEquals(
+                "next",
+                f.repository
+                    .history()
+                    .single()
+                    .initiator!!
+                    .itemId,
+            )
+            assertEquals(
+                f.turn("Now act"),
+                f.repository
+                    .history()
+                    .single()
+                    .turnId,
+            )
+            f.close()
+        }
+
+    @Test
+    fun `cleared and failed speech release waiting announcements immediately`() =
+        runTest {
+            val f = fixture()
+            for ((index, event) in listOf(
+                """{"type":"input_audio_buffer.cleared"}""",
+                """{"type":"conversation.item.input_audio_transcription.failed","item_id":"stale"}""",
+            ).withIndex()) {
+                f.raw("""{"type":"input_audio_buffer.speech_started","item_id":"stale"}""")
+                runCurrent()
+                f.voice.submitContext("Task update", true)
+                f.raw(event)
+                runCurrent()
+                f.acceptRequest("announcement-$index")
+                f.done("announcement-$index")
+                runCurrent()
+            }
+            assertEquals(ProviderStatus.CONNECTED, f.controller.state.value.providerStatus)
+            f.close()
+        }
+
+    @Test
+    fun `committed speech has explicit metadata and lost response acknowledgements release the queue`() =
+        runTest {
+            val f = fixture()
+            f.raw("""{"type":"input_audio_buffer.committed","item_id":"unanswered"}""")
+            runCurrent()
+            val outgoing =
+                f.media.sent
+                    .map { Json.parseToJsonElement(it).jsonObject }
+                    .single()
+            val metadata =
+                outgoing
+                    .getValue("response")
+                    .jsonObject
+                    .getValue("metadata")
+                    .jsonObject
+            assertEquals("unanswered", metadata.getValue("eva_speech_item_id").jsonPrimitive.content)
+            f.voice.submitContext("Still available", true)
+            advanceTimeBy(REALTIME_RESPONSE_ACK_TIMEOUT_MILLIS)
+            runCurrent()
+            f.acknowledged += outgoing.getValue("event_id").jsonPrimitive.content
+            f.acceptRequest("announcement")
+            f.done("announcement")
+            runCurrent()
+            assertEquals(ProviderStatus.CONNECTED, f.controller.state.value.providerStatus)
+            assertTrue(
+                f.controller.state.value.providerMessage!!
+                    .contains("did not acknowledge"),
+            )
+            f.speech("next", "next", "Continue")
+            f.call("next", "act", "test.mutate")
+            f.done("next")
+            runCurrent()
+            assertEquals(
+                "next",
+                f.repository
+                    .history()
+                    .single()
+                    .initiator!!
+                    .itemId,
+            )
+            f.close()
+        }
+
+    @Test
+    fun `own request errors stay visible without disconnecting or shifting the next request`() =
+        runTest {
+            val f = fixture()
+            f.raw("""{"type":"input_audio_buffer.committed","item_id":"rejected"}""")
+            runCurrent()
+            val requestId =
+                Json
+                    .parseToJsonElement(f.media.sent.last())
+                    .jsonObject
+                    .getValue("event_id")
+                    .jsonPrimitive.content
+            f.raw(
+                buildJsonObject {
+                    put("type", "error")
+                    put(
+                        "error",
+                        buildJsonObject {
+                            put("event_id", requestId)
+                            put("code", "invalid_request_error")
+                            put("message", "Response could not be created")
+                        },
+                    )
+                }.toString(),
+            )
+            runCurrent()
+            f.acknowledged += requestId
+            assertEquals(ProviderStatus.CONNECTED, f.controller.state.value.providerStatus)
+            assertEquals("Response could not be created", f.controller.state.value.providerMessage)
+            f.speech("next", "r2", "Try this")
+            f.call("r2", "ok", "test.read")
+            f.done("r2")
+            runCurrent()
+            assertEquals(listOf("test.read"), f.executions)
+            f.close()
+        }
+
+    @Test
+    fun `idless assistant transcripts use the single active response and unowned user captions stay visible`() =
+        runTest {
+            val f = fixture()
+            f.speech("first", "r1", "My request")
+            val original = f.turn("My request")
+            f.raw("""{"type":"response.output_text.done","text":"Answer without a response id"}""")
+            f.raw(
+                """{"type":"conversation.item.input_audio_transcription.completed","item_id":"unknown","transcript":"Another spoken sentence"}""",
+            )
+            runCurrent()
+            val items = f.store.items(f.thread)
+            assertEquals(original, items.filterIsInstance<ThreadItem.AssistantMessage>().single().turnId)
+            assertTrue(items.filterIsInstance<ThreadItem.UserMessage>().any { it.text == "Another spoken sentence" })
+            f.close()
+        }
+
+    @Test
+    fun `rejected context items preserve the notification and the connected call`() =
+        runTest {
+            val f = fixture()
+            f.speech("request", "r1", "Research")
+            f.call("r1", "delegate", ThreadController.DEFER_TO_TEXT.capabilityId, buildJsonObject { put("task", "Research") })
+            f.done("r1")
+            runCurrent()
+            f.acceptRequest("ack")
+            f.done("ack")
+            runCurrent()
+            val turn =
+                f.background.request.continuation!!
+                    .turnId
+            f.background.incoming.send(ProviderEvent.AssistantText(turn, "External finding", false))
+            f.background.incoming.send(ProviderEvent.ResponseEnded(turn, "completed"))
+            runCurrent()
+            val item =
+                f.media.sent.map { Json.parseToJsonElement(it).jsonObject }.last {
+                    it["item"]
+                        ?.jsonObject
+                        ?.get("role")
+                        ?.jsonPrimitive
+                        ?.content == "user"
+                }
+            assertTrue(item.toString().contains("external_data"))
+            f.raw(
+                buildJsonObject {
+                    put("type", "error")
+                    put(
+                        "error",
+                        buildJsonObject {
+                            put("event_id", item.getValue("event_id"))
+                            put("message", "Conversation item was rejected")
+                        },
+                    )
+                }.toString(),
+            )
+            runCurrent()
+            assertEquals(ProviderStatus.CONNECTED, f.controller.state.value.providerStatus)
+            assertEquals("Conversation item was rejected", f.controller.state.value.providerMessage)
+            f.acceptRequest("announcement")
+            f.done("announcement")
+            runCurrent()
+            assertEquals(turn, f.notifications.single().taskId)
+            assertTrue(f.delivered.isEmpty())
+            f.raw("""{"type":"error","error":{"code":"session_expired","message":"Session expired"}}""")
+            runCurrent()
+            assertEquals(ProviderStatus.DISCONNECTED, f.controller.state.value.providerStatus)
+            f.close()
+        }
+
+    @Test
+    fun `completed correlation history is bounded without evicting a pending input`() =
+        runTest {
+            val f = fixture()
+            f.speech("pending", "pending", "Wait")
+            f.call("pending", "pending-call", "test.wait")
+            f.done("pending")
+            runCurrent()
+            repeat(REALTIME_CORRELATION_HISTORY + 4) { index ->
+                f.speech("s-$index", "r-$index", "Read $index")
+                f.call("r-$index", "c-$index", "test.read")
+                f.done("r-$index")
+                runCurrent()
+                f.acceptRequest("follow-$index")
+                f.done("follow-$index")
+                runCurrent()
+                f.media.sent.clear()
+            }
+
+            fun entries(name: String): Int {
+                val field =
+                    f.voice.javaClass
+                        .getDeclaredField(name)
+                        .also { it.isAccessible = true }
+                return when (val value = field.get(f.voice)) {
+                    is Map<*, *> -> value.size
+                    is Collection<*> -> value.size
+                    else -> error("Not a collection: $name")
+                }
+            }
+            for (name in listOf("endedInputs", "retiredRequests", "itemRequests")) {
+                assertTrue(
+                    name,
+                    entries(name) <= REALTIME_CORRELATION_HISTORY,
+                )
+            }
+            for (name in listOf("responses", "startedInputs", "calls", "speechInputs")) {
+                assertTrue(
+                    name,
+                    entries(name) <= REALTIME_CORRELATION_HISTORY + 1,
+                )
+            }
+            assertEquals(0, entries("captions"))
+            f.gate.complete(Unit)
+            runCurrent()
+            assertEquals(
+                "COMPLETED",
+                f
+                    .outputs("pending-call")
+                    .single()
+                    .getValue("status")
+                    .jsonPrimitive.content,
+            )
+            val followup = f.acceptRequest("pending-followup")
+            assertEquals(
+                "voice:pending",
+                followup
+                    .getValue("metadata")
+                    .jsonObject
+                    .getValue("eva_input_id")
+                    .jsonPrimitive.content,
+            )
+            f.done("pending-followup")
+            runCurrent()
             f.close()
         }
 
@@ -319,22 +827,25 @@ class RealtimeTurnOwnershipTest {
         val store = MemoryConversationStore()
         val gate = CompletableDeferred<Unit>()
         val executions = mutableListOf<String>()
+        val notifications = mutableListOf<ThreadController.BackgroundAnswer>()
+        val delivered = mutableListOf<ThreadController.BackgroundAnswer>()
+        lateinit var voice: ConversationSession
         private lateinit var request: SessionOpenRequest
-        private val acknowledged = mutableSetOf<String>()
+        val acknowledged = mutableSetOf<String>()
         private val registry =
             CapabilityRegistry(
-                listOf("test.read", "test.wait").associateWith { id ->
+                listOf("test.read", "test.wait", "test.mutate", CapabilityRegistry.DEVICE_TASK).associateWith { id ->
                     object : ExecutionBackend {
                         override suspend fun unavailableReason(): String? = null
 
                         override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome {
                             executions += id
-                            if (id == "test.wait") gate.await()
+                            if (id == "test.wait" || id == CapabilityRegistry.DEVICE_TASK) gate.await()
                             return ExecutionOutcome(InvocationStatus.COMPLETED, "Done")
                         }
                     }
                 },
-                listOf("test.read", "test.wait").map {
+                listOf("test.read", "test.wait", "test.mutate", CapabilityRegistry.DEVICE_TASK).map {
                     CapabilityDefinition(
                         it,
                         it,
@@ -371,6 +882,8 @@ class RealtimeTurnOwnershipTest {
                 providerFactory = { background },
                 mediaFactory = { media },
                 backgroundProviderFactory = { background },
+                onBackgroundAnswer = { notifications += it },
+                onBackgroundAnswerDelivered = { delivered += it },
                 voiceProviderFactory = { _, _ ->
                     object : ConversationProvider {
                         override suspend fun open(request: SessionOpenRequest): ConversationSession {
@@ -380,7 +893,7 @@ class RealtimeTurnOwnershipTest {
                                 media,
                                 client = client,
                                 ioDispatcher = StandardTestDispatcher(test.testScheduler),
-                            ).open(request)
+                            ).open(request).also { voice = it }
                         }
                     }
                 },
@@ -418,7 +931,8 @@ class RealtimeTurnOwnershipTest {
             raw("""{"type":"input_audio_buffer.speech_started","item_id":"$item"}""")
             raw("""{"type":"input_audio_buffer.speech_stopped","item_id":"$item"}""")
             raw("""{"type":"input_audio_buffer.committed","item_id":"$item"}""")
-            raw("""{"type":"response.created","response":{"id":"$response"}}""")
+            test.runCurrent()
+            acceptRequest(response)
             raw("""{"type":"conversation.item.input_audio_transcription.completed","item_id":"$item","transcript":"$text"}""")
             test.runCurrent()
         }
@@ -431,6 +945,7 @@ class RealtimeTurnOwnershipTest {
             buildJsonObject {
                 put("id", "out-$call")
                 put("type", "function_call")
+                put("status", "completed")
                 put("call_id", call)
                 put("name", "eva_tool_${request.catalog.tools.indexOfFirst { it.capabilityId == capability }}")
                 put("arguments", arguments.toString())
@@ -452,6 +967,7 @@ class RealtimeTurnOwnershipTest {
         suspend fun done(
             response: String,
             output: List<JsonObject> = emptyList(),
+            status: String = "completed",
         ) = raw(
             buildJsonObject {
                 put("type", "response.done")
@@ -459,7 +975,7 @@ class RealtimeTurnOwnershipTest {
                     "response",
                     buildJsonObject {
                         put("id", response)
-                        put("status", "completed")
+                        put("status", status)
                         put("output", JsonArray(output))
                     },
                 )

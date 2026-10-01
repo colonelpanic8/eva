@@ -94,7 +94,10 @@ bounded to 15 seconds; a missing connection, rejected response submission, or
 startup failure returns `NOT_EXECUTED`. Sibling calls retain their original voice
 result sink during handoff, including calls arriving after text starts, so moving
 the turn never strands their receipts. Text continuation is one-shot and never
-retries an uncertain mutation. Mutations serialize across turns on the same thread;
+retries an uncertain mutation. Ordinary mutations serialize across turns on the same thread;
+`eva.device.task` runs outside that lock under its own device lease, so background
+SMS and HTTP actions can proceed while it runs. Waiting actions report that they are
+queued through a voice lifecycle note and the conversation status;
 an UNKNOWN or FAILED mutation in any still-running turn blocks further mutations
 while that turn remains active. Read-only tools remain available for verification.
 
@@ -117,15 +120,19 @@ note to a voice attachment on the same thread with its task ID and terminal stat
 Answers, partial findings, and failure reasons are JSON-quoted data under EVA's
 followed wording. Findings are bounded to the model result text budget. Realtime
 puts the trusted instruction in a system item and the attributed JSON in a separate
-assistant item. It requests an announcement with `tool_choice: none`; the controller
+user item marked `contentTrust: external_data` with the background-task source.
+It requests an announcement with `tool_choice: none`; the controller
 also marks that turn announce-only and answers stray calls by asking for a user
 request. The next spoken request has the normal tools. Announcements wait until no
-response, pending tool follow-up, user speech, or assistant audio is active; speech
-ending waits for the server VAD response to finish. Startup failures return only
-the handoff refusal, without a duplicate spoken lifecycle note. Queued notes do
-not interrupt a foreground response. Providers that do not support
-`submitContext` (currently Responses and Broker), and threads without voice,
-retain the notification fallback. Failed or interrupted notifications and thread
+response, user speech, or assistant audio is active. A pending device task does
+not prevent announcements or other calls from receiving follow-ups. Startup
+failures return only the handoff refusal, without a duplicate spoken lifecycle
+note. Queued notes do
+not interrupt a foreground response. Every background result retains its notification
+until the announcement input ends successfully; queue acceptance alone does not
+count as delivery. Rejected context items, interrupted announcements, providers
+without `submitContext` (currently Responses and Broker), and threads without
+voice retain that fallback. Failed or interrupted notifications and thread
 notices retain accumulated partial answers and identify the interruption.
 
 `VoiceSessionService` owns foreground voice lifetime; `TurnWorkService` reserves
@@ -136,6 +143,9 @@ host transition coordinates both services and awaits work promotion before
 stopping voice coverage. Work coverage survives call end and audio-focus loss and
 remains until the last task's dispatched actions and terminal journal writes have
 drained. `ForegroundServiceGate` still postpones an early stop until promotion.
+If Android refuses renewed coverage, affected turns release their coverage demand
+while actions and journal cleanup still drain. Later work can acquire coverage
+again; interrupted cleanup cannot trigger a restart.
 Android can still interrupt background work; process recovery records interruption
 and never replays an action.
 
@@ -208,18 +218,32 @@ and call identity; stale calls cannot gain authority through reconnection.
 Each Realtime response ID has an immutable origin. Output-item, assistant-text,
 and completion events resolve their own response ID, including late events after
 a newer response starts. Completion output also supplies calls, deduplicated against
-item events. An unrecognized response cannot borrow the latest request: its call
+item events by session-unique call ID. Calls wait for a completed response and a
+completed item with valid arguments; cancelled or incomplete output returns
+NOT_EXECUTED. An item missing a response ID can acquire its exact origin from the
+final response output before it is answered. An unrecognized response cannot
+borrow the latest request: its call
 receives a correlated, journaled NOT_EXECUTED result asking for a new user request.
-EVA-created typed, tool-follow-up, and lifecycle responses carry request, input,
-purpose, initiator, and applicable parent-response/speech-item metadata. Automatic
-server-VAD responses bind to committed speech items in conversation order, without
-waiting for transcription. This retains server-side response creation and barge-in;
-client-owned VAD response creation would add a data-channel round trip before model
-startup. These ownership rules have raw-event provider/controller replay coverage;
-voice latency and barge-in have not been measured on a device for this change.
-Realtime asks for a spoken follow-up once every call from the same model response
-has resolved, not once all calls in the session have, so a quick lookup is answered
-while a device task from an earlier response still runs. A follow-up requested while
+Every EVA-created response, including speech, carries request, input, purpose,
+initiator, and applicable parent-response/speech-item metadata. Server VAD keeps
+`interrupt_response: true` for barge-in and uses `create_response: false`; EVA
+requests each speech response immediately on the committed audio item's explicit
+ID, without waiting for transcription or guessing response ownership from FIFO
+order. This adds a data-channel exchange before response creation. These rules have
+raw-event provider/controller replay coverage; device latency and barge-in remain
+unmeasured for this change.
+Speech waiting state clears on commits, buffer clearing, transcription failures,
+and seed cancellation, with a 30-second recovery for an abandoned speech event.
+Unacknowledged response requests release the queue after 10 seconds with a visible
+notice. Errors tied to EVA's response/item event IDs are recoverable notices;
+unattributed session errors still end the connection. User captions are retained,
+and assistant transcripts without a response ID use the sole active response when
+unambiguous. Completed correlation records retain a bounded 256-entry history while
+pending work keeps its identities. Only the provider's terminal input event ends a
+voice turn; starting another response cannot close its queued follow-up.
+Realtime asks for a spoken follow-up when the non-device calls from that response
+resolve. A pending device task does not block sibling results or lifecycle notes.
+A follow-up requested while
 another response is active waits for it to finish. A native tool that declares a
 boolean `quiet` parameter (screen tap and text entry) lets the model skip the
 follow-up: a COMPLETED quiet call ends the input silently, while any other status
@@ -230,7 +254,9 @@ external tool content from EVA's outcome envelope. Action records separately ret
 the initiator (user speech, typed request, text-agent leg, device-task worker, or
 lifecycle-note reply) and the applicable input, response, item, and leg IDs. Android
 and desktop journal version 8 preserves this identity across restart; older records
-keep an absent initiator rather than inventing one. Action details show a small
+keep an absent initiator rather than inventing one. Android refuses a newer journal
+schema with a visible instruction to install a newer build, preserving the database.
+Action details show a small
 “from” label. Provider output is not proof
 that an operation completed. Interrupting speech, ending a call, canceling local
 work, and undoing a remote action are distinct operations.
@@ -584,11 +610,13 @@ wording steers a few visible steps to these tools and longer searches or multi-s
 work to `eva.device.task`, which keeps the realtime context small.
 
 `DeviceTaskCoordinator` owns the task's thread and turn independently of its
-voice/provider attachment. Competing tasks, ordinary mutations and direct UI
-reads queue in arrival order for the device lease rather than being rejected;
+voice/provider attachment. Competing tasks and operations that use the foreground
+UI queue in arrival order for the device lease with an immediate queued notice;
+background SMS, HTTP, and other operations that do not use that UI can continue;
 one cancelled while queued is journaled NOT_EXECUTED. Android intent launches
 also recheck whether a task is running. Within a turn, mutations run one at a
-time in proposal order, while read-only calls run without waiting behind them, so
+time in proposal order except for the separately leased device task. Read-only
+calls run without waiting behind mutations, so
 the voice model can look things up during a long task. Progress reaches the
 owning thread independently of the pending tool result. Typed corrections go
 straight to the running task's mailbox. In voice, the model routes new speech:

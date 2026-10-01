@@ -3,6 +3,7 @@ package com.colonelpanic.eva.data
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import com.colonelpanic.eva.capability.UnsupportedJournalVersionException
 
 class JournalDatabase(
     context: Context,
@@ -65,6 +66,12 @@ class JournalDatabase(
             db.execSQL("ALTER TABLE items ADD COLUMN $name $type")
         }
     }
+
+    override fun onDowngrade(
+        db: SQLiteDatabase,
+        oldVersion: Int,
+        newVersion: Int,
+    ): Unit = throw UnsupportedJournalVersionException(oldVersion, newVersion)
 
     private fun createInvocations(db: SQLiteDatabase) {
         db.execSQL(

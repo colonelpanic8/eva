@@ -29,6 +29,14 @@ class DeclarativeBackend(
     private val host: DeclarativeHost,
     private val budget: (ToolProposal) -> WaitBudget,
 ) : ExecutionBackend {
+    override fun usesDeviceUi(proposal: ToolProposal): Boolean =
+        runCatching {
+            BindingArguments(
+                capability,
+                proposal.arguments,
+            ).select(capability.binding) is DeclarativeBinding.Intent
+        }.getOrDefault(false)
+
     override suspend fun unavailableReason(): String? = host.unavailableReason(capability.binding)
 
     override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome =

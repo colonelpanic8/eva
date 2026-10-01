@@ -3,6 +3,7 @@ package com.colonelpanic.eva.adapters.android
 import com.colonelpanic.eva.capability.ExecutionBackend
 import com.colonelpanic.eva.capability.ExecutionOutcome
 import com.colonelpanic.eva.capability.InvocationStatus
+import com.colonelpanic.eva.capability.ToolProposal
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -21,6 +22,8 @@ class MediaPlayBackend(
     private val handoff: ExecutionBackend,
     private val settle: suspend () -> Unit = { delay(SETTLE_MILLIS) },
 ) : ExecutionBackend {
+    override fun usesDeviceUi(proposal: ToolProposal): Boolean = true
+
     /** The session path needs no screen, so only a fallback to the intent can be unavailable. */
     override suspend fun unavailableReason(): String? = null
 

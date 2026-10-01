@@ -73,6 +73,8 @@ class BudgetedBackend(
     private val execution: BoundedExecution,
     private val budget: (ToolProposal) -> WaitBudget,
 ) : ExecutionBackend {
+    override fun usesDeviceUi(proposal: ToolProposal): Boolean = backend.usesDeviceUi(proposal)
+
     override fun prepare(proposal: ToolProposal): ToolProposal = proposal.copy(waitBudget = budget(proposal))
 
     override fun dispatchRejection(): String? = backend.dispatchRejection()

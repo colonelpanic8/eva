@@ -91,7 +91,7 @@ class DeviceTaskCoordinator(
         val thread = proposal.threadId ?: return execute(proposal.arguments)
         val turn = proposal.turnId ?: return execute(proposal.arguments)
         if (synchronized(monitor) { turn in stoppedTurns }) return stoppedBeforeDispatch()
-        awaitLease(proposal.callId)?.let { return it }
+        awaitLease(proposal)?.let { return it }
         val agent =
             synchronized(monitor) {
                 if (turn in stoppedTurns) {
@@ -200,9 +200,11 @@ class DeviceTaskCoordinator(
      * Queues behind whatever holds the device. Cancellation while queued is reported as not run
      * rather than propagated, because the dispatcher would otherwise journal it as uncertain.
      */
-    private suspend fun awaitLease(callId: String): ExecutionOutcome? {
+    private suspend fun awaitLease(proposal: ToolProposal): ExecutionOutcome? {
+        val callId = proposal.callId
         synchronized(monitor) { mutableWaitingForLease.value += callId }
         return try {
+            if (lease.owner != null) proposal.onQueued()
             lease.acquire(callId)
             null
         } catch (_: CancellationException) {
@@ -219,7 +221,7 @@ class DeviceTaskCoordinator(
     ): ExecutionOutcome {
         if (proposal.capabilityId == CapabilityRegistry.DEVICE_TASK || !needsDevice) return backend.execute(proposal)
         if (synchronized(monitor) { proposal.turnId in stoppedTurns }) return stoppedBeforeDispatch()
-        awaitLease(proposal.callId)?.let { return it }
+        awaitLease(proposal)?.let { return it }
         synchronized(monitor) {
             if (proposal.turnId in stoppedTurns) {
                 lease.releaseIfOwned(proposal.callId)

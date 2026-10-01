@@ -97,6 +97,8 @@ data class CorrelatedToolResult(
     val respond: Boolean = true,
 )
 
+enum class CallRejection { INTERRUPTED_RESPONSE, INCOMPLETE_CALL }
+
 sealed interface ProviderEvent {
     data class Connected(
         val sessionId: String,
@@ -127,6 +129,7 @@ sealed interface ProviderEvent {
         val call: CallIdentity,
         val capabilityId: String,
         val arguments: JsonObject,
+        val rejection: CallRejection? = null,
     ) : ProviderEvent
 
     data class ResponseEnded(
@@ -156,6 +159,16 @@ sealed interface ProviderEvent {
         val itemId: String,
     ) : ProviderEvent
 
+    data class Notice(
+        val message: String,
+    ) : ProviderEvent
+
+    /** Delivery means the announcement reached its terminal response, not merely the send queue. */
+    data class ContextDelivery(
+        val ids: List<String>,
+        val delivered: Boolean,
+    ) : ProviderEvent
+
     data class Failure(
         val message: String,
     ) : ProviderEvent
@@ -177,11 +190,12 @@ interface ConversationSession {
 
     suspend fun submitToolResult(result: CorrelatedToolResult)
 
-    /** Adds an EVA-authored lifecycle note, with external findings quoted as data. False if unsupported. */
+    /** Queues an EVA-authored note with external findings. True means accepted; [ProviderEvent.ContextDelivery] confirms delivery. */
     suspend fun submitContext(
         note: String,
         respond: Boolean,
         data: JsonObject? = null,
+        deliveryId: String? = null,
     ): Boolean = false
 
     suspend fun close()

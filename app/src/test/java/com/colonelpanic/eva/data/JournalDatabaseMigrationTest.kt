@@ -9,6 +9,8 @@ import com.colonelpanic.eva.conversation.ThreadItem
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -19,6 +21,34 @@ import java.util.UUID
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], manifest = Config.NONE, application = Application::class)
 class JournalDatabaseMigrationTest {
+    @Test
+    fun `downgrade refuses clearly and preserves the newer database`() {
+        val context = RuntimeEnvironment.getApplication()
+        val name = "newer-${UUID.randomUUID()}.db"
+        context.openOrCreateDatabase(name, 0, null).use { db ->
+            db.execSQL("CREATE TABLE future_data (value TEXT NOT NULL)")
+            db.execSQL("INSERT INTO future_data VALUES ('keep me')")
+            db.version = 9
+        }
+        val helper = JournalDatabase(context, name)
+        try {
+            val error =
+                assertThrows(com.colonelpanic.eva.capability.UnsupportedJournalVersionException::class.java) { helper.writableDatabase }
+            assertTrue(error.message!!.contains("unchanged"))
+            assertTrue(error.message!!.contains("9"))
+            context.openOrCreateDatabase(name, 0, null).use { db ->
+                assertEquals(9, db.version)
+                db.rawQuery("SELECT value FROM future_data", null).use { row ->
+                    assertTrue(row.moveToFirst())
+                    assertEquals("keep me", row.getString(0))
+                }
+            }
+        } finally {
+            helper.close()
+            context.deleteDatabase(name)
+        }
+    }
+
     @Test
     fun `version seven preserves legacy origins and round trips new initiation identities`() =
         runBlocking<Unit> {

@@ -88,6 +88,8 @@ class ScreenActions(
 
     fun backend(operation: Operation): ExecutionBackend =
         object : ExecutionBackend {
+            override fun usesDeviceUi(proposal: ToolProposal): Boolean = true
+
             override suspend fun unavailableReason(): String? {
                 if (!enabled()) return DISABLED
                 return (select() as? Choice.Unavailable)?.reason

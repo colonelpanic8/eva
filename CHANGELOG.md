@@ -17,6 +17,10 @@ All notable changes to EVA will be documented here.
 
 ### Fixed
 
+- Voice response ownership uses explicit speech-item metadata, so abandoned speech and new utterances cannot strand or close a queued tool follow-up. Interrupted calls return not-executed results, and duplicate call IDs receive one answer.
+- Background findings enter voice context as attributed external data. Notifications remain until the spoken announcement completes, including when context delivery fails.
+- Device tasks allow separate SMS and HTTP actions to proceed while foreground UI actions report when they queue. Lost foreground-service coverage resets while cancelled work drains, so later work can acquire coverage.
+- Realtime captions survive missing IDs, finished correlation history stays bounded, and errors tied to EVA requests leave the call connected with a notice. Opening a newer Android action journal refuses clearly and preserves its data.
 - Subscription Responses streams must receive a completion event before EVA publishes text or tool calls. Dropped replies never return partial actions; regression tests cover the text provider's SSE path and the device worker's subscription WebSocket path.
 - Late Realtime calls and transcripts retain the response and request that produced them. Unknown-origin calls receive a recorded refusal, and action details retain their initiator across restarts.
 - Voice can accept and display new requests while delegated text work continues. Handoffs wait for text startup, preserve sibling action results, and return a task ID for voice status and cancellation.

@@ -5,11 +5,14 @@ import android.net.Uri
 import androidx.core.net.toUri
 import com.colonelpanic.eva.capability.ExecutionBackend
 import com.colonelpanic.eva.capability.ExecutionOutcome
+import com.colonelpanic.eva.capability.ToolProposal
 
 class MessageIntentBackend(
     private val host: AndroidIntentHost,
     private val targets: MessageTargets,
 ) : ExecutionBackend {
+    override fun usesDeviceUi(proposal: ToolProposal): Boolean = true
+
     override suspend fun unavailableReason(): String? = host.unavailableReason()
 
     override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome =
