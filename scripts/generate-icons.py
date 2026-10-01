@@ -170,7 +170,7 @@ def android_vector(mark: ET.Element, *, monochrome: bool) -> ET.Element:
     return root
 
 
-def render_png(source: Path, destination: Path) -> None:
+def render_png(source: Path, destination: Path, size: int = 512) -> None:
     inkscape = shutil.which("inkscape")
     if not inkscape:
         raise RuntimeError("inkscape is required; run this command from the project dev shell")
@@ -182,8 +182,8 @@ def render_png(source: Path, destination: Path) -> None:
                 inkscape,
                 str(source),
                 f"--export-filename={rendered}",
-                "--export-width=512",
-                "--export-height=512",
+                f"--export-width={size}",
+                f"--export-height={size}",
             ],
             check=True,
         )
@@ -242,6 +242,7 @@ def main() -> None:
         android_vector(mark, monochrome=True),
     )
     render_png(fdroid_svg, repository / "fdroid/icon.png")
+    render_png(fdroid_svg, repository / "eva-desktop/src/main/resources/eva-icon.png", size=128)
 
 
 if __name__ == "__main__":

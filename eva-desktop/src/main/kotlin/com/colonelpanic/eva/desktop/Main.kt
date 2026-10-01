@@ -21,14 +21,16 @@ import kotlin.system.exitProcess
 private const val USAGE = """Usage: eva-desktop [command]
 
 Commands:
-  chat [--thread ID | --continue]   Talk to EVA (default; starts a new thread)
+  tray                              Run EVA in the panel tray with a conversation window
+  summon                            Show the running tray app's window (for a keybinding)
+  chat [--thread ID | --continue]   Talk to EVA in this terminal (default)
   threads                           List conversation threads
   login                             Sign in with a ChatGPT account
   logout                            Forget the ChatGPT sign-in
 
 In a chat, /new starts a new thread and /quit leaves."""
 
-private const val LOCKED = "Another eva-desktop chat is running. Quit it first."
+private const val LOCKED = "EVA is already running in another chat or the tray. Quit it first."
 
 fun main(args: Array<String>) {
     val paths = DesktopPaths.fromEnvironment()
@@ -39,6 +41,8 @@ fun main(args: Array<String>) {
             "logout" -> owned(paths) { ChatGptTokenFile(paths.chatGptTokens).clear().let { println("Signed out.").let { 0 } } }
             "threads" -> runBlocking { threads(paths) }
             "chat" -> owned(paths) { lock -> chat(paths, lock, args.drop(1)) }
+            "tray" -> owned(paths) { lock -> tray(paths, lock) }
+            "summon" -> if (SummonListener.summon(paths.summonSocket)) 0 else System.err.println("EVA's tray app is not running.").let { 1 }
             else -> System.err.println(USAGE).let { 2 }
         }
     exitProcess(status)
@@ -71,6 +75,17 @@ private suspend fun threads(paths: DesktopPaths): Int {
     paths.secure()
     JdbcJournal(paths.journal).use { journal -> JdbcConversationStore(journal).threads().forEach { println("${it.id}  ${it.title}") } }
     return 0
+}
+
+private fun tray(
+    paths: DesktopPaths,
+    lock: FileLock,
+): Int {
+    if (!ChatGptTokenFile(paths.chatGptTokens).signedIn) {
+        System.err.println("Sign in first: eva-desktop login")
+        return 1
+    }
+    return runTray(paths, lock)
 }
 
 @OptIn(ExperimentalCoroutinesApi::class, kotlinx.coroutines.DelicateCoroutinesApi::class)
@@ -134,10 +149,7 @@ private suspend fun converse(
             }
 
             line == "/new" -> {
-                // An attachment stays on its thread, so a new thread needs a new connection.
-                withContext(ui) { controller.disconnect() }
-                startThread(controller, ui)
-                connect(controller, ui) ?: return 1
+                reconnectToNewThread(controller, ui) ?: return 1
                 println("New thread.")
                 continue
             }
@@ -165,30 +177,6 @@ private suspend fun converse(
         settled.providerMessage?.let(::println)
     }
     return 0
-}
-
-private suspend fun startThread(
-    controller: ThreadController,
-    ui: CoroutineContext,
-) {
-    val previous = controller.state.value.threadId
-    withContext(ui) { controller.newThread() }
-    controller.state.first { it.threadId != null && it.threadId != previous }
-}
-
-/** The provider label once connected, or null after reporting why it could not connect. */
-private suspend fun connect(
-    controller: ThreadController,
-    ui: CoroutineContext,
-): String? {
-    withContext(ui) { controller.connect("") }
-    val connected =
-        withTimeoutOrNull(CONNECT_TIMEOUT_MILLIS) {
-            controller.state.first { it.providerStatus == ProviderStatus.CONNECTED || it.errorMessage != null }
-        }
-    if (connected?.providerStatus == ProviderStatus.CONNECTED) return connected.providerLabel
-    System.err.println(connected?.errorMessage ?: connected?.providerMessage ?: "Could not connect to the model.")
-    return null
 }
 
 /** Prints each entry once it settles, and again only if it changes. */
@@ -220,5 +208,3 @@ private class Printed {
 
     private fun label(status: EntryStatus) = status.name.lowercase().replace('_', ' ')
 }
-
-private const val CONNECT_TIMEOUT_MILLIS = 30_000L

@@ -975,8 +975,21 @@ editing is preferable if comments must survive.
 `:eva-desktop` is a text-mode EVA for a desktop computer, built on `:eva-core` like
 the phone: the same `ThreadController`, `CapabilityDispatcher` and journal semantics,
 OpenAI Responses provider, and memory tools. `eva-desktop` (`just desktop`) offers
-`login` (ChatGPT device-code sign-in), `chat`, `threads`, and `logout`. One
-single-threaded dispatcher confines controller calls, as the phone's main thread does.
+`tray`, `summon`, `chat`, `threads`, `login` (ChatGPT device-code sign-in), and
+`logout`. One single-threaded dispatcher confines controller calls, as the phone's main
+thread does: the Swing event thread in the tray app, a dedicated thread in the terminal.
+
+- `tray` is a Compose Multiplatform Desktop window (Material 3, the toolkit the phone
+  uses) with a panel icon that toggles it. The icon is a StatusNotifierItem over D-Bus
+  (pure Kotlin through dbus-java) where a panel runs a StatusNotifierWatcher, as on
+  Wayland compositors' bars and KDE; otherwise the X11 system tray; otherwise none, and
+  closing the window quits. `summon` asks the running app, through a socket in the
+  private data directory, to show its window, for a desktop keybinding.
+- Compose's Skia renderer needs `libGL`, `libX11`, `fontconfig`, and `libstdc++` at run
+  time. The dev shell exports them as `EVA_DESKTOP_LIBRARY_PATH`, kept out of the
+  Android tools' environment, and `just desktop-run tray` uses it.
+- One process owns the storage: the tray app, a chat, `login`, and `logout` exclude each
+  other through the lock; `threads` and `summon` do not need it.
 
 - Storage follows the XDG base directories under `eva/`. The journal is SQLite through
   JDBC with the phone's schema (version 7), so claims, expected-state transitions,
@@ -991,8 +1004,11 @@ single-threaded dispatcher confines controller calls, as the phone's main thread
   `eva-wording.yaml`.
 
 Not yet on the desktop: following the instruction catalog, `eva.yaml` configuration,
-declarative packages and grants, MCP servers, voice, a tray UI, and screen control.
-The host is JVM-tested; it is not yet verified against the live subscription backend.
+declarative packages and grants, MCP servers, voice, a D-Bus tray menu, and screen
+control. The terminal host is verified live against the subscription backend on Linux.
+The tray window is verified on an X11 desktop without a tray (window-only), and the
+StatusNotifierItem against an embedded D-Bus daemon; a real panel on Wayland and the
+X11 system tray are not yet verified, nor is macOS.
 
 ## Verification boundaries
 

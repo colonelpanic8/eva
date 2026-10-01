@@ -59,6 +59,10 @@ fdroid-repo:
 desktop:
     ./gradlew --no-daemon :eva-desktop:installDist
 
+# Build and run the desktop EVA with the native libraries its window needs, e.g. `just desktop-run tray`.
+desktop-run *args: desktop
+    LD_LIBRARY_PATH="$EVA_DESKTOP_LIBRARY_PATH" eva-desktop/build/install/eva-desktop/bin/eva-desktop {{args}}
+
 # Build the standalone JVM device-control CLI.
 device-host:
     ./gradlew --no-daemon :device-control-host:installDist

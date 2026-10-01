@@ -33,6 +33,9 @@ class DesktopPaths(
     val journal get() = File(data, "eva-actions.db")
     val memory get() = File(data, "memory")
     val chatGptTokens get() = File(config, "chatgpt.json")
+
+    /** Where the running tray app listens for `eva-desktop summon`. */
+    val summonSocket get() = File(data, "eva.sock")
     private val lockFile get() = File(data, "eva.lock")
 
     /** Creates both directories readable only by the user, and tightens anything already in them. */

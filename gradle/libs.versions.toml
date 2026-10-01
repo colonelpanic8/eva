@@ -21,8 +21,12 @@ jgit = "6.10.1.202505221210-r"
 desugarJdkLibs = "2.1.5"
 slf4j = "2.0.20"
 sqliteJdbc = "3.53.4.0"
+composeMultiplatform = "1.12.1"
+dbusJava = "5.2.2"
 
 [libraries]
+dbus-java-core = { module = "com.github.hypfvieh:dbus-java-core", version.ref = "dbusJava" }
+dbus-java-unixsocket = { module = "com.github.hypfvieh:dbus-java-transport-native-unixsocket", version.ref = "dbusJava" }
 sqlite-jdbc = { module = "org.xerial:sqlite-jdbc", version.ref = "sqliteJdbc" }
 kotlinx-cli = { module = "org.jetbrains.kotlinx:kotlinx-cli", version.ref = "kotlinxCli" }
 robolectric = { module = "org.robolectric:robolectric", version = "4.17" }
@@ -58,4 +62,5 @@ shizuku-provider = { module = "dev.rikka.shizuku:provider", version.ref = "shizu
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }
 ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlintPlugin" }
