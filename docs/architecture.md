@@ -75,7 +75,19 @@ of context. The UI projects these records into grouped turns and session notices
 and shows each text leg as a collapsible block inside its turn, open while it works,
 holding the leg's own actions and its prompt.
 
-One attachment is live at a time. Several turn tasks can be active in the same
+One attachment is live at a time. Selecting or creating a thread during a text
+connection ends the old attachment with a switched-conversations notice and opens
+a fresh text session on the shown thread using the same provider link and that
+thread's history. Send waits for that session to connect. Accepted work on the old
+thread continues in the background. Browsing during voice leaves the call attached
+to its original thread; the composer is disabled with an explanation while another
+thread is shown. Pending submission state clears when the task starts and whenever
+the attachment ends or reconnects. Foreground request admission and working
+indicators follow the shown thread; background work alone does not block a new
+foreground text request. Answered turns without request or response text are hidden;
+request-only turns show no synthetic answer bubble, while action evidence remains.
+
+Several turn tasks can be active in the same
 thread: a delegated text turn and a later foreground voice turn own their calls
 independently. Ownership follows the provider leg and input ID, never whichever
 turn happens to be first in the thread. User transcripts follow their committed

@@ -48,4 +48,22 @@ class VoiceControlsTest {
         assertFalse(RealtimeMediaState.Failed(MediaFailure.PeerFailed).isActive())
         assertFalse(RealtimeMediaState.Closed.isActive())
     }
+
+    @Test
+    fun `browsing another conversation during voice explains the disabled composer`() {
+        val state =
+            ConversationState(
+                isLoading = false,
+                providerStatus = ProviderStatus.CONNECTED,
+                voiceMode = true,
+                threadId = "shown",
+                attachedThreadId = "call",
+                deviceTaskActive = true,
+            )
+        assertFalse(state.acceptsTextInput)
+        assertEquals(
+            "The voice call is in another conversation. Return to it, or disconnect to use text here.",
+            composerHint(state),
+        )
+    }
 }

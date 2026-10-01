@@ -73,6 +73,34 @@ class ThreadProjectionTest {
     }
 
     @Test
+    fun `answered turns without text disappear while requests and action evidence remain`() {
+        val turns =
+            listOf(
+                Turn("silent", thread, "", TurnStatus.ANSWERED, 1),
+                Turn("request", thread, "Open the park", TurnStatus.ANSWERED, 2),
+                Turn("action", thread, "", TurnStatus.ANSWERED, 3),
+            )
+        val items = listOf(assistant("silent", "  ", 1), call("action", "call-1", 4))
+        val entries = projectEntries(turns, items, mapOf("call-1" to receipt("call-1", InvocationStatus.COMPLETED, "Done")))
+
+        assertEquals(listOf("call-1", "request"), entries.map { it.id })
+        assertEquals("Open the park", entries.last().request)
+        assertEquals("", entries.last().response)
+        assertEquals("Done", groups(entries).first().entry.result)
+    }
+
+    @Test
+    fun `interrupted and failed turns keep their meaningful outcomes without text`() {
+        val turns =
+            listOf(
+                Turn("interrupted", thread, "", TurnStatus.INTERRUPTED, 1),
+                Turn("failed", thread, "", TurnStatus.FAILED, 2),
+            )
+        val entries = projectEntries(turns, emptyList(), emptyMap())
+        assertEquals(listOf("Interrupted.", "EVA could not finish this request."), entries.map { it.response })
+    }
+
+    @Test
     fun `an open turn is pending and an action without a receipt is preparing`() {
         val turns = listOf(Turn("turn-1", thread, "map Park", TurnStatus.OPEN, 1))
         val entries = projectEntries(turns, listOf(user("turn-1", "map Park", 1), call("turn-1", "call-1", 2)), emptyMap())

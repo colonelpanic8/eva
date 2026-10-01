@@ -7,9 +7,13 @@ import com.colonelpanic.eva.capability.ActionInitiator
 data class ConversationState(
     /** The thread on screen; null until one exists. */
     val threadId: String? = null,
+    /** The live attachment's thread, which can differ while browsing during a voice call. */
+    val attachedThreadId: String? = null,
     val entries: List<ConversationEntry> = emptyList(),
     /** A turn task is running on the shown thread, attached or not. */
     val working: Boolean = false,
+    /** The shown thread has a request on the live attachment, blocking another typed request. */
+    val foregroundWorking: Boolean = false,
     val deviceTaskActive: Boolean = false,
     /** The shown thread's running device task phase or step note; cleared when the task ends. */
     val deviceTaskProgress: String? = null,
@@ -24,9 +28,11 @@ data class ConversationState(
     val mediaControls: MediaControls = MediaControls(),
     val providerLabel: String = "Not connected",
 ) {
+    val voiceOnAnotherThread: Boolean get() = voiceMode && attachedThreadId != null && attachedThreadId != threadId
+
     val acceptsTextInput: Boolean get() =
-        !isLoading && errorMessage == null &&
-            (deviceTaskActive || (!isSubmitting && providerStatus == ProviderStatus.CONNECTED && !voiceMode))
+        !isLoading && errorMessage == null && !voiceOnAnotherThread &&
+            (deviceTaskActive || (!isSubmitting && !foregroundWorking && providerStatus == ProviderStatus.CONNECTED && !voiceMode))
 }
 
 data class ConversationEntry(
