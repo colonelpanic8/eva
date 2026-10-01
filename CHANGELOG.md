@@ -26,6 +26,7 @@ All notable changes to EVA will be documented here.
 - A turn no longer stops after 32 actions or 24 lookups.
 - Typed requests may be up to 4,000 characters (1,000 with the voice broker); a longer one is refused with its length and the limit.
 - A call shows one notification instead of a separate work notification that refreshed every second.
+- The work notification's Stop background work leaves a live call's turn running, and short typed requests no longer flash the notification.
 - Accepted tasks keep long-running foreground coverage after voice ends, through final journal writes. If Android refuses, a visible short-service fallback runs first.
 
 ### Fixed
@@ -33,6 +34,9 @@ All notable changes to EVA will be documented here.
 - Voice no longer refuses every action when OpenAI omits EVA's request ID from a reply.
 - A screen action waiting for a device task no longer blocks SMS or extension actions in the same conversation.
 - A handoff to text starts without waiting for a sibling device task.
+- Hanging up after another request's slow action now waits until its result is spoken.
+- Accepting work right after a stop no longer leaves it without background coverage.
+- After a force stop, a new action in the same conversation waits for the abandoned one instead of running beside it.
 - A provider error while returning an action result no longer moves a live call's turn to a background text agent.
 - Brief waits between actions stay quiet; a mutation queued behind earlier work announces it after three seconds. Device-lease waits still report at once.
 - Speaking over EVA cancels active and pending replies, so late replies cannot talk over you or run interrupted calls.
