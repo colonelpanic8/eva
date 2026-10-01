@@ -116,13 +116,13 @@ class OpenAiRealtimeProvider(
             // The call request carries the whole configuration, but OpenAI only echoes a session
             // that fits the data channel's advertised message size. A larger one is confirmed
             // through a sideband connection to the same call, which has no such bound.
-            val confirm =
+            val confirm: (suspend () -> JsonObject)? =
                 if (named.isNotEmpty() && sessionBytes > realtimeEchoByteLimit(offer)) {
-                    checkNotNull(callId) {
-                        "OpenAI did not identify the voice call, so EVA cannot confirm its configuration with ${named.size} tools " +
-                            "($sessionBytes bytes), which is too large to confirm over the voice connection."
+                    if (callId == null) {
+                        { error("OpenAI did not identify the call to connect to") }
+                    } else {
+                        { sideband.configuredSession(callId) }
                     }
-                    suspend { sideband.configuredSession(callId) }
                 } else {
                     null
                 }
@@ -355,13 +355,21 @@ private class OpenAiRealtimeSession(
             send(ProviderEvent.Account(accountLabel))
             val forward = launch { for (event in local) send(event) }
 
+            /** Set once the sideband cannot answer: the session OpenAI created is used without its echo. */
+            var unverified = false
+            var bareSession: JsonObject? = null
+
             fun configured(session: JsonObject?) {
                 val acknowledged =
                     (session?.get("tools") as? JsonArray)
                         ?.mapNotNull { (it as? JsonObject)?.str("name") }
                         ?.toSet()
                         .orEmpty()
-                if (sessionId != null || acknowledged != tools.keys) return
+                if (sessionId != null) return
+                if (acknowledged != tools.keys) {
+                    if (confirm != null && session != null) bareSession = session
+                    if (!unverified) return
+                }
                 sessionId = session?.str("id") ?: UUID.randomUUID().toString()
                 val connected =
                     ProviderEvent.Connected(
@@ -583,6 +591,25 @@ private class OpenAiRealtimeSession(
                 )
                 receiving.cancel()
             }
+
+            /**
+             * A sideband that cannot answer is no evidence about the configuration, which OpenAI
+             * applies from the call request, so the call goes on with a loud notice; only a
+             * session that names the wrong tools, or no session at all, ends it.
+             */
+            fun continueUnverified(cause: String) {
+                if (sessionId != null || unverified || unconfirmed) return
+                unverified = true
+                emit(
+                    ProviderEvent.Notice(
+                        "EVA could not confirm that OpenAI configured all ${tools.size} voice tools ($sessionBytes bytes): " +
+                            "its sideband connection to the call failed ($cause). OpenAI normally applies the whole " +
+                            "configuration, so the call continues; if an action seems missing, end the call and try again " +
+                            "or use a typed conversation.",
+                    ),
+                )
+                bareSession?.let(::configured)
+            }
             val confirmation =
                 confirm?.let { read ->
                     launch {
@@ -594,14 +621,19 @@ private class OpenAiRealtimeSession(
                         } catch (error: CancellationException) {
                             throw error
                         } catch (error: Exception) {
-                            failUnconfigured(error.message ?: error::class.simpleName)
+                            continueUnverified(error.message ?: error::class.simpleName.orEmpty())
                         }
                     }
                 }
             val configurationTimeout =
                 launch {
                     delay(REALTIME_CONFIG_ACK_TIMEOUT_MILLIS)
-                    failUnconfigured(null)
+                    if (confirmation?.isActive == true && bareSession != null) {
+                        confirmation.cancel()
+                        continueUnverified("no answer within 8 seconds")
+                    } else {
+                        failUnconfigured(null)
+                    }
                 }
             try {
                 receiving.join()

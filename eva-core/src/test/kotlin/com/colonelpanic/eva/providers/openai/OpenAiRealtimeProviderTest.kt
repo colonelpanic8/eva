@@ -693,19 +693,59 @@ class OpenAiRealtimeProviderTest {
         }
 
     @Test
-    fun `a configuration too large to echo needs the call ID to be confirmed`() =
+    fun `an unreachable sideband continues the call on OpenAI's own session with a loud notice`() =
         runTest {
-            val error =
-                runCatching {
+            for ((callClient, failure) in listOf(locatedClient to "sideband refused", client to "did not identify the call")) {
+                val media = FakeMedia()
+                val session =
                     OpenAiRealtimeProvider(
                         ApiKeyAccess("sk-test", "https://example.test"),
-                        FakeMedia(),
-                        client = client,
+                        media,
+                        client = callClient,
                         ioDispatcher = StandardTestDispatcher(testScheduler),
-                        sideband = { error("not reached") },
+                        sideband = { error("sideband refused") },
                     ).open(SessionOpenRequest(largeInstructions, catalog))
-                }.exceptionOrNull()
-            assertTrue(error is IllegalStateException && error.message!!.contains("did not identify the voice call"))
+                val events = mutableListOf<ProviderEvent>()
+                val collector = launch { session.events.collect { events += it } }
+                runCurrent()
+                media.incoming.send("""{"type":"session.created","session":{"id":"sess_bare","tools":[]}}""")
+                runCurrent()
+                advanceTimeBy(REALTIME_CONFIG_ACK_TIMEOUT_MILLIS)
+                runCurrent()
+                assertEquals("sess_bare", events.filterIsInstance<ProviderEvent.Connected>().single().sessionId)
+                val notice = events.filterIsInstance<ProviderEvent.Notice>().single().message
+                assertTrue(notice.contains("could not confirm") && notice.contains("1 voice tools") && notice.contains(failure))
+                assertTrue(events.none { it is ProviderEvent.Failure })
+                collector.cancel()
+            }
+        }
+
+    @Test
+    fun `a sideband that never answers is abandoned at the deadline instead of ending the call`() =
+        runTest {
+            val media = FakeMedia()
+            val session =
+                OpenAiRealtimeProvider(
+                    ApiKeyAccess("sk-test", "https://example.test"),
+                    media,
+                    client = locatedClient,
+                    ioDispatcher = StandardTestDispatcher(testScheduler),
+                    sideband = { kotlinx.coroutines.awaitCancellation() },
+                ).open(SessionOpenRequest(largeInstructions, catalog))
+            val events = mutableListOf<ProviderEvent>()
+            val collector = launch { session.events.collect { events += it } }
+            media.incoming.send("""{"type":"session.created","session":{"id":"sess_bare","tools":[]}}""")
+            advanceTimeBy(REALTIME_CONFIG_ACK_TIMEOUT_MILLIS)
+            runCurrent()
+            assertTrue(
+                events
+                    .filterIsInstance<ProviderEvent.Notice>()
+                    .single()
+                    .message
+                    .contains("no answer within 8 seconds"),
+            )
+            assertEquals("sess_bare", events.filterIsInstance<ProviderEvent.Connected>().single().sessionId)
+            collector.cancel()
         }
 
     @Test
