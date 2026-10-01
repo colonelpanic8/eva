@@ -107,6 +107,7 @@ sealed interface ProviderEvent {
     data class ResponseStarted(
         val inputId: String,
         val generationId: String,
+        val announceOnly: Boolean = false,
     ) : ProviderEvent
 
     data class AssistantText(
@@ -173,6 +174,7 @@ interface ConversationSession {
     suspend fun submitContext(
         note: String,
         respond: Boolean,
+        data: JsonObject? = null,
     ): Boolean = false
 
     suspend fun close()

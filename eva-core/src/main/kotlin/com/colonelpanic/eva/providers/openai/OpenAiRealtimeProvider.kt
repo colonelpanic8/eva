@@ -154,6 +154,8 @@ private class OpenAiRealtimeSession(
     private var followUpExpected = false
     private var followUpDeferred = false
     private var contextReplyPending = false
+    private var activeAnnounceOnly = false
+    private var awaitingSpeechResponse = false
     private var userSpeaking = false
     private var assistantAudioActive = false
     private var closed = false
@@ -233,6 +235,9 @@ private class OpenAiRealtimeSession(
                                 media.send(responseCancel(id))
                                 return@collect
                             }
+                            val announceOnly = message.obj("response")?.obj("metadata")?.str("eva_announce_only") == "true"
+                            if (!announceOnly) awaitingSpeechResponse = false
+                            activeAnnounceOnly = announceOnly
                             activeResponse = id
                             responseActive = true
                             followUpExpected = false
@@ -243,13 +248,14 @@ private class OpenAiRealtimeSession(
                                 pendingTypedInput = null
                                 activeInput = input
                                 speechInputs.replaceAll { _, value -> value ?: input }
-                                send(ProviderEvent.ResponseStarted(input, input))
+                                send(ProviderEvent.ResponseStarted(input, input, announceOnly = announceOnly))
                             }
                         }
 
                         "input_audio_buffer.speech_started" -> {
                             send(ProviderEvent.UserSpeaking)
                             userSpeaking = true
+                            awaitingSpeechResponse = true
                             message.str("item_id")?.let {
                                 speechInputs[it] = activeInput.takeIf { pending.isNotEmpty() }
                                 if (speechInputs.size > 256) speechInputs.remove(speechInputs.keys.first())
@@ -259,7 +265,6 @@ private class OpenAiRealtimeSession(
 
                         "input_audio_buffer.speech_stopped" -> {
                             userSpeaking = false
-                            requestContextReply()
                         }
 
                         "conversation.item.input_audio_transcription.completed" -> {
@@ -334,7 +339,7 @@ private class OpenAiRealtimeSession(
                             responseActive = false
                             if (followUpDeferred) {
                                 followUpDeferred = false
-                                media.send(responseCreate())
+                                media.send(responseCreate(activeAnnounceOnly))
                                 return@collect
                             }
                             if (followUpExpected || pending.isNotEmpty()) return@collect
@@ -378,6 +383,7 @@ private class OpenAiRealtimeSession(
         check(input.id == request.inputId)
         buffered = null
         pendingTypedInput = input
+        activeAnnounceOnly = false
         media.send(
             buildJsonObject {
                 put("type", "conversation.item.create")
@@ -401,7 +407,7 @@ private class OpenAiRealtimeSession(
                 )
             }.toString(),
         )
-        media.send(responseCreate())
+        media.send(responseCreate(activeAnnounceOnly))
     }
 
     override suspend fun submitToolResult(result: CorrelatedToolResult) {
@@ -426,7 +432,7 @@ private class OpenAiRealtimeSession(
         if (pending.values.any { it.providerTurnId == origin }) return
         if (replyWanted.remove(origin)) {
             followUpExpected = true
-            if (responseActive) followUpDeferred = true else media.send(responseCreate())
+            if (responseActive) followUpDeferred = true else media.send(responseCreate(activeAnnounceOnly))
         } else if (pending.isEmpty() && !responseActive && !followUpExpected) {
             // Every call asked for no spoken follow-up and the response that made them is over.
             val input = activeInput ?: return
@@ -440,9 +446,11 @@ private class OpenAiRealtimeSession(
     override suspend fun submitContext(
         note: String,
         respond: Boolean,
+        data: JsonObject?,
     ): Boolean {
         if (closed || sessionId == null || !seedReady) return false
         media.send(realtimeSeedItem(OpenAiHistoryMessage("developer", note)).event)
+        data?.let { media.send(realtimeSeedItem(OpenAiHistoryMessage("assistant", it.toString())).event) }
         if (respond) {
             contextReplyPending = true
             requestContextReply()
@@ -452,13 +460,14 @@ private class OpenAiRealtimeSession(
 
     private fun requestContextReply() {
         if (!contextReplyPending || responseActive || followUpExpected || pending.isNotEmpty() ||
-            userSpeaking || assistantAudioActive || closed
+            userSpeaking || awaitingSpeechResponse || assistantAudioActive || closed
         ) {
             return
         }
         contextReplyPending = false
+        activeAnnounceOnly = true
         followUpExpected = true
-        media.send(responseCreate())
+        media.send(responseCreate(activeAnnounceOnly))
     }
 
     override suspend fun close() {
@@ -504,7 +513,19 @@ private fun realtimeSeedItem(message: OpenAiHistoryMessage): RealtimeSeedItem {
     return RealtimeSeedItem(id, event.toString())
 }
 
-private fun responseCreate(): String = buildJsonObject { put("type", "response.create") }.toString()
+private fun responseCreate(announceOnly: Boolean = false): String =
+    buildJsonObject {
+        put("type", "response.create")
+        if (announceOnly) {
+            put(
+                "response",
+                buildJsonObject {
+                    put("tool_choice", "none")
+                    put("metadata", buildJsonObject { put("eva_announce_only", "true") })
+                },
+            )
+        }
+    }.toString()
 
 private fun responseCancel(responseId: String): String =
     buildJsonObject {

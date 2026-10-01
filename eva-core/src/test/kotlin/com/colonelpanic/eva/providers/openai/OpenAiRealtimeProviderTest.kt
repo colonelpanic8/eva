@@ -25,9 +25,11 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -544,7 +546,7 @@ class OpenAiRealtimeProviderTest {
         }
 
     @Test
-    fun `lifecycle context is a system item and its reply waits for response and audio idle`() =
+    fun `lifecycle reply has no tools and attributed findings stay outside the system message`() =
         runTest {
             val media = FakeMedia()
             val session = openSession(media).open(SessionOpenRequest("You are EVA.", catalog))
@@ -554,7 +556,7 @@ class OpenAiRealtimeProviderTest {
             media.incoming.send("""{"type":"response.created","response":{"id":"resp_1"}}""")
             media.incoming.send("""{"type":"output_audio_buffer.started"}""")
             runCurrent()
-            assertTrue(session.submitContext("EVA task update\n{\"answer\":\"quoted finding\"}", respond = true))
+            assertTrue(session.submitContext("EVA task update", respond = true, data = buildJsonObject { put("answer", "quoted finding") }))
             assertTrue(session.submitContext("A second task update", respond = true))
             assertEquals(0, media.responseCreates())
             val item =
@@ -575,7 +577,7 @@ class OpenAiRealtimeProviderTest {
                     .jsonPrimitive.content,
             )
             assertEquals(
-                "EVA task update\n{\"answer\":\"quoted finding\"}",
+                "EVA task update",
                 item
                     .getValue("content")
                     .jsonArray
@@ -590,11 +592,38 @@ class OpenAiRealtimeProviderTest {
             media.incoming.send("""{"type":"output_audio_buffer.stopped"}""")
             runCurrent()
             assertEquals(1, media.responseCreates())
-            media.incoming.send("""{"type":"response.created","response":{"id":"resp_2"}}""")
+            val request =
+                Json
+                    .parseToJsonElement(media.sent.last())
+                    .jsonObject
+                    .getValue("response")
+                    .jsonObject
+            assertEquals("none", request.getValue("tool_choice").jsonPrimitive.content)
+            val findings =
+                Json
+                    .parseToJsonElement(media.sent[1])
+                    .jsonObject
+                    .getValue("item")
+                    .jsonObject
+            assertEquals("assistant", findings.getValue("role").jsonPrimitive.content)
+            assertTrue(findings.toString().contains("quoted finding"))
+            media.incoming.send("""{"type":"response.created","response":{"id":"resp_2","metadata":{"eva_announce_only":"true"}}}""")
             media.incoming.send("""{"type":"response.done","response":{"id":"resp_2","status":"completed"}}""")
             runCurrent()
             assertEquals(1, media.responseCreates())
             assertEquals(listOf("voice:resp_1", "voice:resp_2"), events.filterIsInstance<ProviderEvent.ResponseEnded>().map { it.inputId })
+            assertTrue(events.filterIsInstance<ProviderEvent.ResponseStarted>().last().announceOnly)
+            media.incoming.send("""{"type":"input_audio_buffer.speech_started","item_id":"next"}""")
+            media.incoming.send("""{"type":"input_audio_buffer.speech_stopped","item_id":"next"}""")
+            media.incoming.send("""{"type":"response.created","response":{"id":"resp_3"}}""")
+            media.incoming.send(functionCall("requested"))
+            media.incoming.send("""{"type":"response.done","response":{"id":"resp_3","status":"completed"}}""")
+            runCurrent()
+            assertTrue(!events.filterIsInstance<ProviderEvent.ResponseStarted>().last().announceOnly)
+            val call = events.filterIsInstance<ProviderEvent.ToolCallReady>().single().call
+            session.submitToolResult(CorrelatedToolResult(call, "COMPLETED", "Opened"))
+            val followUp = Json.parseToJsonElement(media.sent.last()).jsonObject
+            assertTrue(!followUp.containsKey("response"))
             collector.cancel()
         }
 
@@ -634,7 +663,7 @@ class OpenAiRealtimeProviderTest {
         }
 
     @Test
-    fun `context speech waits until the user stops speaking`() =
+    fun `context waits for the VAD response instead of racing speech stopped`() =
         runTest {
             val media = FakeMedia()
             val session = openSession(media).open(SessionOpenRequest("You are EVA.", catalog))
@@ -645,6 +674,18 @@ class OpenAiRealtimeProviderTest {
             session.submitContext("Task finished", respond = true)
             assertEquals(0, media.responseCreates())
             media.incoming.send("""{"type":"input_audio_buffer.speech_stopped","item_id":"first"}""")
+            runCurrent()
+            assertEquals(0, media.responseCreates())
+            // Even an old playback-stop event cannot race the pending server VAD response.
+            media.incoming.send("""{"type":"output_audio_buffer.stopped"}""")
+            runCurrent()
+            assertEquals(0, media.responseCreates())
+            media.incoming.send("""{"type":"response.created","response":{"id":"vad"}}""")
+            media.incoming.send("""{"type":"output_audio_buffer.started"}""")
+            media.incoming.send("""{"type":"response.done","response":{"id":"vad","status":"completed"}}""")
+            runCurrent()
+            assertEquals(0, media.responseCreates())
+            media.incoming.send("""{"type":"output_audio_buffer.stopped"}""")
             runCurrent()
             assertEquals(1, media.responseCreates())
             collector.cancel()

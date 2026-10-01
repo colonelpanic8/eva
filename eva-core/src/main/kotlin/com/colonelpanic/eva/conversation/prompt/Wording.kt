@@ -70,6 +70,8 @@ data class Wording(
         const val BACKGROUND_NONE = "background-none"
         const val BACKGROUND_STOPPING = "background-stopping"
         const val BACKGROUND_UPDATE = "background-update"
+        const val ANNOUNCEMENT_ACTION = "announcement-action"
+        const val MUTATION_UNCERTAIN = "mutation-uncertain"
         const val UNOWNED_ACTION = "unowned-action"
         const val TURN_STOP_REQUESTED = "turn-stop-requested"
         const val RESPONSE_FAILED = "response-failed"

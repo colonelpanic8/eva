@@ -931,7 +931,7 @@ class ThreadControllerTest {
         }
 
     @Test
-    fun `late voice transcripts after handoff never attach to the background turn`() =
+    fun `late user captions stay separate while the handoff reply keeps its original turn`() =
         runTest {
             val voice = FakeProvider()
             val background = FakeProvider(epoch = "background")
@@ -948,7 +948,7 @@ class ThreadControllerTest {
             advanceUntilIdle()
             val items = store.items(controller.state.value.threadId!!)
             assertNull(items.filterIsInstance<ThreadItem.UserMessage>().last().turnId)
-            assertNull(items.filterIsInstance<ThreadItem.AssistantMessage>().last().turnId)
+            assertEquals(latestTurn(controller), items.filterIsInstance<ThreadItem.AssistantMessage>().last().turnId)
             assertTrue(
                 controller.state.value.entries
                     .any { it.request == "Late caption" },
@@ -1000,6 +1000,8 @@ class ThreadControllerTest {
             advanceTimeBy(1)
             runCurrent()
             assertEquals("NOT_EXECUTED", voice.results.single().status)
+            assertTrue(voice.contexts.isEmpty())
+            assertTrue(answers.isEmpty())
             assertEquals(1, background.closes)
             assertEquals(TurnStatus.FAILED, store.turns(controller.state.value.threadId!!).single().status)
             assertTrue(background.responseRequests.isEmpty())
@@ -1044,6 +1046,8 @@ class ThreadControllerTest {
             background.channel.send(ProviderEvent.Failure("Startup failed"))
             runCurrent()
             assertEquals("NOT_EXECUTED", voice.results.single().status)
+            assertTrue(voice.contexts.isEmpty())
+            assertTrue(answers.isEmpty())
             assertEquals(1, background.closes)
         }
 
@@ -1060,6 +1064,8 @@ class ThreadControllerTest {
             voice.call("delegate", ThreadController.DEFER_TO_TEXT.capabilityId, "task" to "Research")
             advanceUntilIdle()
             assertEquals("NOT_EXECUTED", voice.results.single().status)
+            assertTrue(voice.contexts.isEmpty())
+            assertTrue(answers.isEmpty())
             assertEquals(TurnStatus.FAILED, store.turns(controller.state.value.threadId!!).single().status)
         }
 
@@ -1118,6 +1124,241 @@ class ThreadControllerTest {
                     .call.callId,
             )
             assertTrue(background.results.isEmpty())
+        }
+
+    @Test
+    fun `announcement tools ask for a user request and the next spoken turn can act`() =
+        runTest {
+            val voice = FakeProvider()
+            val controller = controller(voice, media = { VoiceMedia() })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            voice.input = ConversationInput("announcement", "")
+            voice.channel.send(ProviderEvent.ResponseStarted("announcement", "announcement", announceOnly = true))
+            voice.call("stray", action.id, "place" to "Park")
+            voice.call("stray-delegate", ThreadController.DEFER_TO_TEXT.capabilityId, "task" to "Open the park")
+            voice.call("stray-end", ThreadController.END_CONVERSATION.capabilityId)
+            runCurrent()
+            assertEquals(0, executions)
+            assertEquals(3, voice.results.size)
+            assertTrue(voice.results.all { it.status == "NOT_EXECUTED" && it.message.contains("Ask the user") })
+            voice.channel.send(ProviderEvent.ResponseEnded("announcement", "completed"))
+            runCurrent()
+            voice.call("late-stray", action.id, "place" to "Park")
+            runCurrent()
+            assertEquals("NOT_EXECUTED", voice.results.last().status)
+            assertTrue(
+                voice.results
+                    .last()
+                    .message
+                    .contains("Ask the user"),
+            )
+            voice.startVoice("requested", "Open the park")
+            voice.call("requested", action.id, "place" to "Park")
+            runCurrent()
+            assertEquals("HANDED_OFF", voice.results.last().status)
+            assertEquals(1, executions)
+        }
+
+    @Test
+    fun `concurrent turns serialize mutations and expose uncertain receipts while reads remain available`() =
+        runTest { checkConcurrentMutationGate(InvocationStatus.UNKNOWN) }
+
+    @Test
+    fun `a failed mutation on another active turn also requires verification`() =
+        runTest { checkConcurrentMutationGate(InvocationStatus.FAILED) }
+
+    private suspend fun TestScope.checkConcurrentMutationGate(outcome: InvocationStatus) {
+        val gate = CompletableDeferred<Unit>()
+        registry.replace(
+            mapOf(
+                action.id to
+                    object : ExecutionBackend {
+                        override suspend fun unavailableReason(): String? = null
+
+                        override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome {
+                            executions++
+                            gate.await()
+                            return ExecutionOutcome(outcome, "The park may already be open")
+                        }
+                    },
+                lookup.id to backend { ExecutionOutcome(InvocationStatus.COMPLETED, "Checked park") },
+            ),
+            listOf(action, lookup),
+        )
+        val voice = FakeProvider()
+        val background = FakeProvider(epoch = "background")
+        val controller = controller(voice, background = background, media = { VoiceMedia() })
+        advanceUntilIdle()
+        controller.connectVoice("test")
+        advanceUntilIdle()
+        voice.startVoice("first", "Open the park in the background")
+        voice.call("delegate", ThreadController.DEFER_TO_TEXT.capabilityId, "task" to "Open the park")
+        advanceUntilIdle()
+        background.input = ConversationInput(latestTurn(controller), "")
+        background.call("background-open", action.id, "place" to "Park")
+        runCurrent()
+        voice.startVoice("second", "Open it and check")
+        voice.call("voice-open", action.id, "place" to "Park")
+        voice.call("verify", lookup.id, "query" to "Park")
+        runCurrent()
+        assertEquals(2, executions)
+        assertTrue(voice.results.none { it.call.callId == "voice-open" })
+        assertEquals("COMPLETED", voice.results.last().status)
+        gate.complete(Unit)
+        runCurrent()
+        assertEquals(outcome.name, background.results.single().status)
+        assertEquals("NOT_EXECUTED", voice.results.last().status)
+        assertEquals(2, executions)
+        voice.call("status", ThreadController.BACKGROUND_STATUS.capabilityId)
+        runCurrent()
+        val receipt =
+            voice.results
+                .last()
+                .data!!
+                .getValue("tasks")
+                .jsonArray
+                .single()
+                .jsonObject
+                .getValue("recentReceipts")
+                .jsonArray
+                .single()
+                .jsonObject
+        assertEquals(outcome.name, receipt.getValue("status").jsonPrimitive.content)
+        assertEquals("The park may already be open", receipt.getValue("message").jsonPrimitive.content)
+        assertTrue(
+            receipt
+                .getValue("arguments")
+                .jsonPrimitive.content
+                .contains("Park"),
+        )
+    }
+
+    @Test
+    fun `unowned duplicate waits for a dispatching receipt to finish`() =
+        runTest {
+            val gate = CompletableDeferred<Unit>()
+            registry.replace(
+                mapOf(
+                    action.id to
+                        object : ExecutionBackend {
+                            override suspend fun unavailableReason(): String? = null
+
+                            override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome {
+                                executions++
+                                gate.await()
+                                return ExecutionOutcome(InvocationStatus.COMPLETED, "Opened")
+                            }
+                        },
+                ),
+                listOf(action),
+            )
+            val voice = FakeProvider()
+            val controller = controller(voice, media = { VoiceMedia() })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            voice.startVoice("first", "Open park")
+            voice.call("open", action.id, "place" to "Park")
+            runCurrent()
+            assertEquals(InvocationStatus.DISPATCHING, repository.history().single().status)
+            voice.channel.send(ProviderEvent.ResponseEnded(voice.input.id, "completed"))
+            voice.call("open", action.id, "place" to "Park")
+            runCurrent()
+            assertTrue(voice.results.isEmpty())
+            gate.complete(Unit)
+            runCurrent()
+            assertEquals(listOf("COMPLETED", "COMPLETED"), voice.results.map { it.status })
+            assertEquals(1, executions)
+        }
+
+    @Test
+    fun `late handoff speech stays on its turn and lifecycle answers are bounded`() =
+        runTest {
+            val voice = FakeProvider()
+            val background = FakeProvider(epoch = "background")
+            val controller = controller(voice, background = background, media = { VoiceMedia() })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            voice.startVoice("first", "Research")
+            voice.call("delegate", ThreadController.DEFER_TO_TEXT.capabilityId, "task" to "Research")
+            advanceUntilIdle()
+            val turn = latestTurn(controller)
+            voice.channel.send(ProviderEvent.AssistantText(voice.input.id, "I started the research", false))
+            background.channel.send(ProviderEvent.AssistantText(turn, "x".repeat(40000), false))
+            background.channel.send(ProviderEvent.ResponseEnded(turn, "completed"))
+            advanceUntilIdle()
+            voice.channel.send(ProviderEvent.Transcript("assistant", "Research is finished", inputId = "voice:first"))
+            runCurrent()
+            assertEquals(
+                turn,
+                store
+                    .items(controller.state.value.threadId!!)
+                    .filterIsInstance<ThreadItem.AssistantMessage>()
+                    .last()
+                    .turnId,
+            )
+            val spoken = store.items(controller.state.value.threadId!!).filterIsInstance<ThreadItem.AssistantMessage>().first { it.spoken }
+            assertEquals(turn, spoken.turnId)
+            val answer =
+                Json
+                    .parseToJsonElement(
+                        voice.contexts
+                            .single()
+                            .first
+                            .substringAfterLast("\n"),
+                    ).jsonObject
+                    .getValue("answer")
+                    .jsonPrimitive.content
+            assertTrue(answer.length <= 16384)
+            assertTrue(answer.contains("Truncated by EVA"))
+        }
+
+    @Test
+    fun `background status bounds old history and retains active work before recent completions`() =
+        runTest {
+            val voice = FakeProvider()
+            val background = FakeProvider(epoch = "background")
+            val controller = controller(voice, background = background, media = { VoiceMedia() })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            voice.startVoice("first", "Research")
+            voice.call("delegate", ThreadController.DEFER_TO_TEXT.capabilityId, "task" to "Research")
+            advanceUntilIdle()
+            val active = latestTurn(controller)
+            val thread = controller.state.value.threadId!!
+            repeat(600) { index ->
+                val id = "old-$index"
+                store.openTurn(thread, "Old research ".repeat(1000), id)
+                store.append(ThreadItem.TextLeg("leg-$index", thread, id, index.toLong(), "Old research ".repeat(1000), "", 0))
+                store.closeTurn(id, TurnStatus.ANSWERED)
+            }
+            voice.startVoice("second", "Status")
+            voice.call("status", ThreadController.BACKGROUND_STATUS.capabilityId)
+            runCurrent()
+            val data = voice.results.last().data!!
+            assertTrue(data.toString().length < 16384)
+            val summaries = data.getValue("tasks").jsonArray
+            assertEquals(6, summaries.size)
+            assertEquals(
+                active,
+                summaries
+                    .first()
+                    .jsonObject
+                    .getValue("taskId")
+                    .jsonPrimitive.content,
+            )
+            assertEquals(
+                "old-599",
+                summaries[1]
+                    .jsonObject
+                    .getValue("taskId")
+                    .jsonPrimitive.content,
+            )
+            assertEquals("true", data.getValue("historyLimited").jsonPrimitive.content)
         }
 
     @Test
@@ -1291,6 +1532,39 @@ class ThreadControllerTest {
         }
 
     @Test
+    fun `coverage follows non voice turns even when the thread set and voice attachment stay the same`() =
+        runTest {
+            val voice = FakeProvider()
+            val background = FakeProvider(epoch = "background")
+            val controller = controller(voice, background = background, media = { VoiceMedia() })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            voice.startVoice("first", "Research")
+            runCurrent()
+            assertFalse(controller.needsWorkCoverage.value)
+            val working = controller.working.value
+            voice.call("delegate", ThreadController.DEFER_TO_TEXT.capabilityId, "task" to "Research")
+            advanceUntilIdle()
+            assertEquals(working, controller.working.value)
+            assertTrue(controller.needsWorkCoverage.value)
+            background.channel.send(ProviderEvent.AssistantText(latestTurn(controller), "Found it", false))
+            background.channel.send(ProviderEvent.ResponseEnded(latestTurn(controller), "completed"))
+            advanceUntilIdle()
+            assertFalse(controller.needsWorkCoverage.value)
+            controller.disconnect()
+            advanceUntilIdle()
+            controller.connect("test")
+            advanceUntilIdle()
+            controller.submit("Text attached request")
+            advanceUntilIdle()
+            assertTrue(controller.needsWorkCoverage.value)
+            voice.channel.send(ProviderEvent.ResponseEnded(voice.input.id, "completed"))
+            advanceUntilIdle()
+            assertFalse(controller.needsWorkCoverage.value)
+        }
+
+    @Test
     fun `work service interruption leaves the attached voice turn running`() =
         runTest {
             val voice = FakeProvider()
@@ -1318,7 +1592,7 @@ class ThreadControllerTest {
         }
 
     @Test
-    fun `coverage loss preserves a live text device task in another shown thread`() =
+    fun `denied coverage interrupts text attached work with partial findings`() =
         runTest {
             val coordinator =
                 com.colonelpanic.eva.devicecontrol.DeviceTaskCoordinator {
@@ -1358,12 +1632,8 @@ class ThreadControllerTest {
             controller.interruptBackgroundWork("Coverage lost")
             runCurrent()
             assertEquals(TurnStatus.INTERRUPTED, store.turns(backgroundThread).single().status)
-            assertEquals(TurnStatus.OPEN, store.turns(deviceThread).single().status)
-            assertTrue(coordinator.owns(deviceTurn))
-            assertFalse(
-                coordinator.running.value!!
-                    .agent.isStopped,
-            )
+            assertEquals(TurnStatus.INTERRUPTED, store.turns(deviceThread).single().status)
+            assertFalse(coordinator.owns(deviceTurn))
             assertTrue(answers.single().answer.contains("Partial finding"))
             assertEquals(TurnStatus.INTERRUPTED, answers.single().status)
             assertTrue(
@@ -1376,7 +1646,7 @@ class ThreadControllerTest {
             )
             controller.stopTask()
             runCurrent()
-            assertTrue(coordinator.owns(deviceTurn))
+            assertFalse(coordinator.owns(deviceTurn))
             controller.interruptAll("Test finished")
             advanceUntilIdle()
         }
@@ -1418,6 +1688,45 @@ class ThreadControllerTest {
                     .agent.isStopped,
             )
             assertEquals(TurnStatus.INTERRUPTED, store.turns(controller.state.value.threadId!!).single().status)
+            controller.interruptAll("Test finished")
+            advanceUntilIdle()
+        }
+
+    @Test
+    fun `UI stop targets the device owner before another voice turn on the shown thread`() =
+        runTest {
+            val coordinator =
+                com.colonelpanic.eva.devicecontrol.DeviceTaskCoordinator {
+                    com.colonelpanic.eva.devicecontrol.worker.TextTaskAgent(
+                        waitingPhone(),
+                        { kotlinx.coroutines.awaitCancellation() },
+                        com.colonelpanic.eva.devicecontrol
+                            .workerWording(Wording.bundled),
+                    )
+                }
+            val registry = CapabilityRegistry(mapOf(CapabilityRegistry.DEVICE_TASK to coordinator), BundledCapabilities.definitions)
+            val provider = FakeProvider()
+            val voice = FakeProvider(epoch = "voice")
+            val controller =
+                controller(provider, registry = registry, voiceProvider = voice, media = { VoiceMedia() }, deviceTasks = coordinator)
+            advanceUntilIdle()
+            controller.connect("test")
+            advanceUntilIdle()
+            controller.submit("Operate the device")
+            runCurrent()
+            val deviceTurn = latestTurn(controller)
+            provider.call("device", CapabilityRegistry.DEVICE_TASK, "goal" to "Open settings")
+            runCurrent()
+            controller.connectVoice("test")
+            runCurrent()
+            voice.startVoice("other", "Another request")
+            runCurrent()
+            controller.stopTask()
+            runCurrent()
+            assertFalse(coordinator.owns(deviceTurn))
+            val turns = store.turns(controller.state.value.threadId!!).associateBy { it.id }
+            assertEquals(TurnStatus.INTERRUPTED, turns.getValue(deviceTurn).status)
+            assertEquals(TurnStatus.OPEN, turns.getValue(latestTurn(controller)).status)
             controller.interruptAll("Test finished")
             advanceUntilIdle()
         }
@@ -2519,9 +2828,10 @@ class ThreadControllerTest {
         override suspend fun submitContext(
             note: String,
             respond: Boolean,
+            data: kotlinx.serialization.json.JsonObject?,
         ): Boolean {
             if (!supportsContext) return false
-            contexts += note to respond
+            contexts += (note + (data?.let { "\n" + it } ?: "")) to respond
             return true
         }
 

@@ -28,11 +28,13 @@ import com.colonelpanic.eva.providers.ConversationInput
 import com.colonelpanic.eva.providers.ConversationProvider
 import com.colonelpanic.eva.providers.ConversationSession
 import com.colonelpanic.eva.providers.CorrelatedToolResult
+import com.colonelpanic.eva.providers.MODEL_RESULT_CHARS
 import com.colonelpanic.eva.providers.ProviderEvent
 import com.colonelpanic.eva.providers.ProviderToolCatalog
 import com.colonelpanic.eva.providers.ProviderToolDefinition
 import com.colonelpanic.eva.providers.ResponseRequest
 import com.colonelpanic.eva.providers.SessionOpenRequest
+import com.colonelpanic.eva.providers.boundedResultText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -144,6 +146,25 @@ class ThreadController(
 
     private var shownThreadId: String? = null
     private val tasks = mutableMapOf<String, TurnTask>()
+    private val mutationLocks = mutableMapOf<String, Mutex>()
+
+    private data class VoiceTurn(
+        val turnId: String,
+        val announceOnly: Boolean,
+    )
+
+    private val voiceTurns = mutableMapOf<Pair<ConversationSession, String>, VoiceTurn>()
+    private val mutableWorkCoverage = MutableStateFlow(false)
+    val needsWorkCoverage = mutableWorkCoverage.asStateFlow()
+
+    private fun voiceCovered(task: TurnTask): Boolean =
+        session != null && task.leg === session && connectionTools[session]?.voice == true &&
+            state.value.providerStatus == ProviderStatus.CONNECTED && !task.delegated
+
+    private fun updateWorkCoverage() {
+        mutableWorkCoverage.value =
+            tasks.values.any { (it.active || it.dispatches.any { dispatch -> dispatch.isActive }) && !voiceCovered(it) }
+    }
 
     /** Each turn's job until it completes, which can be after the turn leaves [tasks]. */
     private val turnJobs: MutableSet<Job> =
@@ -567,6 +588,7 @@ class ThreadController(
                     }
                     threadId?.let { detach(it, openedSession) }
                     connectionTools.remove(openedSession)
+                    voiceTurns.keys.removeAll { it.first === openedSession }
                     withContext(NonCancellable) {
                         try {
                             openedSession?.close()
@@ -599,6 +621,7 @@ class ThreadController(
                 mutableState.update {
                     it.copy(providerStatus = ProviderStatus.CONNECTED, providerMessage = null, providerModel = model)
                 }
+                updateWorkCoverage()
                 val label = listOfNotNull(if (voice) "Voice session" else "Text session", model).joinToString(" · ")
                 store.append(notice(threadId, null, NoticeKind.SESSION_STARTED, label))
             }
@@ -613,7 +636,7 @@ class ThreadController(
                     attachedTask(opened)?.let { previous ->
                         if (previous.dispatches.none { it.isActive } && deviceTasks?.owns(previous.turnId) != true) previous.complete()
                     }
-                    startTask(threadId, event.inputId, "", opened, spoken = true)
+                    startTask(threadId, event.inputId, "", opened, spoken = true, announceOnly = event.announceOnly)
                 }
             }
 
@@ -658,7 +681,7 @@ class ThreadController(
                             ThreadItem.AssistantMessage(
                                 UUID.randomUUID().toString(),
                                 threadId,
-                                task?.turnId,
+                                event.inputId?.let { voiceTurns[opened to it]?.turnId },
                                 nowMillis(),
                                 event.text,
                                 spoken = true,
@@ -670,7 +693,11 @@ class ThreadController(
 
             is ProviderEvent.ToolCallReady -> {
                 check(event.call.catalogRevision == connectionTools.getValue(opened).catalog.revision)
-                if (voice && event.capabilityId == END_CONVERSATION.capabilityId) {
+                if (voiceTurns[opened to event.call.inputId]?.announceOnly == true) {
+                    opened.submitToolResult(
+                        CorrelatedToolResult(event.call, "NOT_EXECUTED", wording().message(Wording.ANNOUNCEMENT_ACTION)),
+                    )
+                } else if (voice && event.capabilityId == END_CONVERSATION.capabilityId) {
                     // Nothing runs on the phone and, unless the hang-up is deferred, no result is
                     // returned, so the model is not prompted to speak again. Its goodbye plays out first.
                     endCall(ENDED_BY_MODEL, event.call)
@@ -748,7 +775,7 @@ class ThreadController(
                         ThreadItem.AssistantMessage(
                             UUID.randomUUID().toString(),
                             threadId,
-                            null,
+                            voiceTurns[opened to event.inputId]?.turnId,
                             nowMillis(),
                             event.text,
                             true,
@@ -833,38 +860,79 @@ class ThreadController(
             return
         }
         if (event.capabilityId == BACKGROUND_STATUS.capabilityId) {
-            val items = store.items(threadId, limit = Int.MAX_VALUE)
+            val items = store.items(threadId, limit = BACKGROUND_STATUS_ITEMS)
             val legs = items.filterIsInstance<ThreadItem.TextLeg>().associateBy { it.turnId }
-            val records = receipts(items)
-            val summaries =
-                store.turns(threadId).mapNotNull { turn ->
-                    val task = tasks[turn.id]
-                    if (turn.id !in legs && task?.delegated != true && task?.isBackground != true &&
-                        deviceTasks?.owns(turn.id) != true
-                    ) {
-                        return@mapNotNull null
-                    }
-                    val actions = items.filterIsInstance<ThreadItem.ActionCall>().filter { it.turnId == turn.id }.distinctBy { it.callId }
+            val calls = items.filterIsInstance<ThreadItem.ActionCall>().groupBy { it.turnId }
+            val active =
+                tasks.values.filter {
+                    it.threadId == threadId && it.active &&
+                        (it.isBackground || it.delegated || deviceTasks?.owns(it.turnId) == true)
+                }
+            val records = receipts(items) + repository.byCallIds(active.flatMap { it.actionCallIds })
+            val turns = store.turns(threadId)
+            val selected =
+                turns.filter { turn -> active.any { it.turnId == turn.id } } +
+                    turns.filter { it.status != TurnStatus.OPEN && it.id in legs }.takeLast(BACKGROUND_RECENT_TASKS).reversed()
+            val summaries = mutableListOf<JsonObject>()
+            var used = 256
+            for (turn in selected) {
+                val task = tasks[turn.id]
+                val actions = (calls[turn.id].orEmpty().map { it.callId } + task?.actionCallIds.orEmpty()).distinct()
+                val summary =
                     buildJsonObject {
                         put("taskId", turn.id)
-                        put("task", legs[turn.id]?.task ?: task?.request ?: turn.request)
-                        val status =
+                        put("task", (legs[turn.id]?.task ?: task?.request ?: turn.request).take(256))
+                        put(
+                            "state",
                             when {
                                 turn.status != TurnStatus.OPEN -> turn.status.name
                                 deviceTasks?.owns(turn.id) == true -> "WORKING"
                                 else -> task?.backgroundState ?: "CONNECTING"
-                            }
-                        put("state", status)
+                            },
+                        )
                         put("actions", actions.size)
-                        actions.lastOrNull()?.let { action -> records[action.callId]?.let { put("lastActionStatus", it.status.name) } }
+                        put("historyLimited", items.size == BACKGROUND_STATUS_ITEMS && task == null)
+                        actions.lastOrNull()?.let { id -> records[id]?.let { put("lastActionStatus", it.status.name) } }
+                        put(
+                            "recentReceipts",
+                            JsonArray(
+                                actions.takeLast(3).mapNotNull { id ->
+                                    records[id]?.let { record ->
+                                        buildJsonObject {
+                                            put("callId", record.callId.take(200))
+                                            put("capabilityId", record.capabilityId.take(200))
+                                            put("status", record.status.name)
+                                            put(
+                                                "arguments",
+                                                record.arguments
+                                                    ?.toString()
+                                                    ?.take(400)
+                                                    .orEmpty(),
+                                            )
+                                            put("message", record.message.take(600))
+                                            put("contentTrust", "external")
+                                        }
+                                    }
+                                },
+                            ),
+                        )
                     }
-                }
+                val size = summary.toString().length + 1
+                if (used + size > MODEL_RESULT_CHARS) break
+                summaries += summary
+                used += size
+            }
             opened.submitToolResult(
                 CorrelatedToolResult(
                     event.call,
                     "COMPLETED",
                     wording().message(Wording.BACKGROUND_STATUS),
-                    buildJsonObject { put("tasks", JsonArray(summaries)) },
+                    buildJsonObject {
+                        put("tasks", JsonArray(summaries))
+                        put("tasksOmitted", selected.size - summaries.size)
+                        put("historyLimited", items.size == BACKGROUND_STATUS_ITEMS)
+                        put("recentFinishedLimit", BACKGROUND_RECENT_TASKS)
+                    },
                 ),
             )
         } else {
@@ -905,8 +973,7 @@ class ThreadController(
         val title = snapshot.definitions[event.capabilityId]?.title ?: event.capabilityId
         var record: InvocationRecord? = null
         try {
-            record = repository.byCallIds(listOf(id))[id]
-            if (record == null) {
+            if (repository.byCallIds(listOf(id))[id] == null) {
                 store.append(
                     ThreadItem.ActionCall(
                         UUID.randomUUID().toString(),
@@ -919,20 +986,20 @@ class ThreadController(
                         arguments,
                     ),
                 )
-                record =
-                    dispatcher.execute(
-                        ToolProposal(
-                            id,
-                            event.capabilityId,
-                            arguments,
-                            VOICE_REQUEST,
-                            catalogRevision = snapshot.revision,
-                            threadId = threadId,
-                            interactionMode = if (voice) InteractionMode.VOICE else InteractionMode.TYPED,
-                        ),
-                        message,
-                    )
             }
+            record =
+                dispatcher.execute(
+                    ToolProposal(
+                        id,
+                        event.capabilityId,
+                        arguments,
+                        VOICE_REQUEST,
+                        catalogRevision = snapshot.revision,
+                        threadId = threadId,
+                        interactionMode = if (voice) InteractionMode.VOICE else InteractionMode.TYPED,
+                    ),
+                    message,
+                )
         } catch (error: CancellationException) {
             throw error
         } catch (_: InvocationPersistenceException) {
@@ -1049,6 +1116,7 @@ class ThreadController(
                 mediaState = if (it.voiceMode) RealtimeMediaState.Closed else it.mediaState,
             )
         }
+        updateWorkCoverage()
     }
 
     private fun hangUp(reason: String) {
@@ -1102,6 +1170,11 @@ class ThreadController(
 
     fun stopTask() {
         val threadId = shownThreadId ?: return
+        val deviceOwner = deviceTasks?.running?.value?.takeIf { it.threadId == threadId }
+        if (deviceOwner != null) {
+            stopDeviceTask()
+            return
+        }
         val task = foregroundTask(threadId) ?: tasks.values.lastOrNull { it.threadId == threadId && it.active } ?: return
         task.interrupt(wording().message(Wording.TURN_STOP_REQUESTED))
     }
@@ -1115,7 +1188,7 @@ class ThreadController(
     fun interruptBackgroundWork(reason: String) {
         tasks.values
             .filter { task ->
-                task.active && !(session != null && task.leg === session && state.value.providerStatus == ProviderStatus.CONNECTED)
+                task.active && !voiceCovered(task)
             }.forEach { it.interrupt(reason) }
     }
 
@@ -1179,6 +1252,7 @@ class ThreadController(
         request: String,
         leg: ConversationSession,
         spoken: Boolean,
+        announceOnly: Boolean = false,
     ): TurnTask {
         val turnId = UUID.randomUUID().toString()
         store.openTurn(threadId, request, turnId)
@@ -1186,10 +1260,12 @@ class ThreadController(
             store.append(ThreadItem.UserMessage(UUID.randomUUID().toString(), threadId, turnId, nowMillis(), request, spoken))
             titleFrom(threadId, request)
         }
-        val task = TurnTask(threadId, turnId, inputId, request, leg)
+        val task = TurnTask(threadId, turnId, inputId, request, leg, announceOnly)
         tasks[turnId] = task
+        if (spoken) voiceTurns[leg to inputId] = VoiceTurn(turnId, announceOnly)
         mutableState.update { it.copy(working = threadId == shownThreadId) }
         mutableWorking.update { it + threadId }
+        updateWorkCoverage()
         return task
     }
 
@@ -1221,6 +1297,7 @@ class ThreadController(
         var inputId: String,
         var request: String,
         leg: ConversationSession,
+        val announceOnly: Boolean,
     ) {
         val taskScope =
             CoroutineScope(scope.coroutineContext + SupervisorJob()).also { taskScope ->
@@ -1246,7 +1323,8 @@ class ThreadController(
             private set
         private var readOnlyCalls = 0
         private val dispatchLock = Mutex()
-        private val mutationLock = Mutex()
+        private val mutationLock = mutationLocks.getOrPut(threadId) { Mutex() }
+        val actionCallIds = linkedSetOf<String>()
         private val admittedCalls = mutableSetOf<String>()
 
         /** Every call proposed for this turn, so an ending action can tell whether it was proposed alone. */
@@ -1281,6 +1359,7 @@ class ThreadController(
                 }
             val argumentError = if (arguments.values.any { it == null }) "This action binding requires scalar or list arguments." else null
             proposedCalls += event.call
+            actionCallIds += id
             val proposal =
                 ToolProposal(
                     id,
@@ -1308,6 +1387,10 @@ class ThreadController(
                                     wording().message(Wording.TURN_STOPPED)
                                 }
 
+                                announceOnly -> {
+                                    wording().message(Wording.ANNOUNCEMENT_ACTION)
+                                }
+
                                 event.call.catalogRevision != context.catalog.revision || definition == null ||
                                     context.catalog.tools.none {
                                         it.capabilityId == event.capabilityId
@@ -1315,9 +1398,9 @@ class ThreadController(
                                     "This action was not offered in this connection. Nothing was executed."
                                 }
 
-                                !definition.readOnly && !definition.bookkeeping && mutationUncertain -> {
-                                    "A previous action may have changed external state. " +
-                                        "Verify its outcome before requesting more changes. Nothing was executed."
+                                !definition.readOnly && !definition.bookkeeping &&
+                                    tasks.values.any { it.threadId == threadId && it.mutationUncertain } -> {
+                                    wording().message(Wording.MUTATION_UNCERTAIN)
                                 }
 
                                 id !in admittedCalls && admittedCalls.size >= CALLS_PER_TURN -> {
@@ -1545,6 +1628,8 @@ class ThreadController(
             background = null
             leg = null
             tasks.remove(turnId)
+            if (tasks.values.none { it.threadId == threadId }) mutationLocks.remove(threadId)
+            updateWorkCoverage()
             if (!hasActiveTasks(threadId)) mutableWorking.update { it - threadId }
             mutableState.update { if (it.threadId == threadId) it.copy(isSubmitting = false, working = hasActiveTasks(threadId)) else it }
             refresh()
@@ -1556,6 +1641,7 @@ class ThreadController(
             if (!active) return
             detached = true
             leg = null
+            updateWorkCoverage()
             if (delegated) return
             taskScope.launch {
                 dispatches.joinAll()
@@ -1571,6 +1657,7 @@ class ThreadController(
             if (!active || rehomed || delegated) return
             val voiceLeg = leg ?: return
             delegated = true
+            updateWorkCoverage()
             proposedCalls += call
             request = instruction
             // Keep the proposing leg reachable until sibling calls have delivered their receipts.
@@ -1603,21 +1690,24 @@ class ThreadController(
             status: TurnStatus,
             reason: String? = null,
         ) {
-            if (!isBackground && !delegated) return
+            if ((!isBackground && !delegated) || (delegated && backgroundState != "WORKING")) return
             val answer = (if (status == TurnStatus.ANSWERED) backgroundAnswers else answerParts).joinToString("\n\n")
             val data =
                 buildJsonObject {
                     put("taskId", turnId)
                     put("state", status.name)
                     put("task", request)
-                    put("answer", answer)
+                    put("answer", boundedResultText(answer))
                     reason?.let { put("reason", it) }
                 }
-            val voice = session?.takeIf { attachedThreadId == threadId && connectionTools[it]?.voice == true }
+            val voice =
+                session?.takeIf {
+                    backgroundState == "WORKING" && attachedThreadId == threadId && connectionTools[it]?.voice == true
+                }
             val delivered =
                 voice != null &&
                     runCatching {
-                        voice.submitContext(wording().message(Wording.BACKGROUND_UPDATE) + "\n" + data, respond = true)
+                        voice.submitContext(wording().message(Wording.BACKGROUND_UPDATE), respond = true, data = data)
                     }.getOrDefault(false)
             if (!delivered) {
                 val notification = if (status == TurnStatus.ANSWERED) answer else interruptionText(reason.orEmpty())
@@ -1840,6 +1930,8 @@ class ThreadController(
         }
 
         private val BACKGROUND_CONTROLS = setOf("eva.session.background_status", "eva.session.background_cancel")
+        private const val BACKGROUND_STATUS_ITEMS = 512
+        private const val BACKGROUND_RECENT_TASKS = 5
         private const val BACKGROUND_START_TIMEOUT_MILLIS = 15_000L
 
         fun catalogOf(
