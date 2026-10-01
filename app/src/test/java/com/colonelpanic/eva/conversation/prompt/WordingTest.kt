@@ -18,7 +18,8 @@ class WordingTest {
                     (PromptDefaults.END_CONVERSATION_ID to ThreadController.END_CONVERSATION.inputSchema) +
                     listOf(ThreadController.DEVICE_TASK_REVISE, ThreadController.DEVICE_TASK_STOP).map { it.capabilityId to it.inputSchema }
             ).toMap()
-        Wording.bundled.tools.forEach { (id, text) ->
+        // The catalog also words tools that only another host, such as the desktop, offers.
+        Wording.bundled.tools.filterKeys { !it.startsWith("eva.desktop.") }.forEach { (id, text) ->
             val schema = tools[id]
             assertTrue("$id is not one of EVA's tools", schema != null)
             val declared = (schema!!["properties"] as Map<*, *>).keys

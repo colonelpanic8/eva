@@ -20,8 +20,10 @@ kaml = "0.104.0"
 jgit = "6.10.1.202505221210-r"
 desugarJdkLibs = "2.1.5"
 slf4j = "2.0.20"
+sqliteJdbc = "3.53.4.0"
 
 [libraries]
+sqlite-jdbc = { module = "org.xerial:sqlite-jdbc", version.ref = "sqliteJdbc" }
 kotlinx-cli = { module = "org.jetbrains.kotlinx:kotlinx-cli", version.ref = "kotlinxCli" }
 robolectric = { module = "org.robolectric:robolectric", version = "4.17" }
 webrtc = { module = "io.github.webrtc-sdk:android", version = "150.7871.01" }

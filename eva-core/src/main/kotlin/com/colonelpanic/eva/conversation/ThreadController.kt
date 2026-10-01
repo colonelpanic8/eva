@@ -51,6 +51,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.job
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -136,6 +137,11 @@ class ThreadController(
 
     private var shownThreadId: String? = null
     private val tasks = mutableMapOf<String, TurnTask>()
+
+    /** Each turn's job until it completes, which can be after the turn leaves [tasks]. */
+    private val turnJobs: MutableSet<Job> =
+        java.util.concurrent.ConcurrentHashMap
+            .newKeySet()
 
     /** Refreshes run one at a time, so an older read can never publish over a newer one. */
     private val refreshLock = Mutex()
@@ -965,6 +971,16 @@ class ThreadController(
         tasks.values.filter { it.active }.forEach { it.interrupt(reason) }
     }
 
+    /**
+     * Interrupts every running turn and returns once each turn's work has ended, including its
+     * dispatched actions and final journal writes. A host calls this before closing the storage the
+     * controller writes to; turns run outside [scope], so cancelling it does not stop them.
+     */
+    suspend fun drain(reason: String) {
+        interruptAll(reason)
+        turnJobs.toList().joinAll()
+    }
+
     fun submit(text: String) {
         if (text.isNotBlank() && reviseDeviceTask(text)) return
         val current = state.value
@@ -1052,7 +1068,12 @@ class ThreadController(
         var request: String,
         leg: ConversationSession,
     ) {
-        val taskScope = CoroutineScope(scope.coroutineContext + SupervisorJob())
+        val taskScope =
+            CoroutineScope(scope.coroutineContext + SupervisorJob()).also { taskScope ->
+                val job = taskScope.coroutineContext.job
+                turnJobs += job
+                job.invokeOnCompletion { turnJobs -= job }
+            }
         var leg: ConversationSession? = leg
             private set
         private var background: ConversationSession? = null
