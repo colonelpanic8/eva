@@ -1,0 +1,4 @@
+* Upgrade: Update every device: configuration repositories written by this release do not load on 0.49.x, and the action journal cannot be downgraded.
+* Added: Voice and text can research the web and answer with sources without opening the browser.
+* Added: Web research uses your existing OpenAI access; API-key search fees and token billing are shown in settings and recorded in receipts.
+* ...see CHANGELOG.md for the rest.

@@ -4,6 +4,8 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.50.0] - 2026-10-01
+
 ### Upgrade
 
 - Update every device: configuration repositories written by this release do not load on 0.49.x, and the action journal cannot be downgraded.
