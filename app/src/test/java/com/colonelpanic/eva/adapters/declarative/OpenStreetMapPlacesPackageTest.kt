@@ -2,6 +2,7 @@ package com.colonelpanic.eva.adapters.declarative
 
 import android.app.Application
 import com.colonelpanic.eva.capability.BoundedExecution
+import com.colonelpanic.eva.capability.BundledCapabilities
 import com.colonelpanic.eva.capability.CapabilityDispatcher
 import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.capability.ExecutionOutcome
@@ -75,7 +76,7 @@ class OpenStreetMapPlacesPackageTest {
                         this.json = json
                     }
                 }
-            val registry = CapabilityRegistry(emptyMap())
+            val registry = CapabilityRegistry(emptyMap(), BundledCapabilities.definitions)
             ExtensionRuntime(registry, adapter, ExtensionGrants(disk), backgroundScope).adopt(default.identity)
             runCurrent()
             val id = "extension.package.${default.identity.id}.nearby"

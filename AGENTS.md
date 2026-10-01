@@ -51,7 +51,9 @@ experiment READMEs and third-party notices stay beside their code.
 
 ## Code map
 
-Paths below are relative to `app/src/main/java/com/colonelpanic/eva/`:
+Platform-neutral code is in `eva-core/src/main/kotlin/com/colonelpanic/eva/` (module
+`:eva-core`, no Android APIs); Android code is in `app/src/main/java/com/colonelpanic/eva/`.
+Both use the same package names. Paths below are relative to those roots:
 
 | Work | Start here |
 | --- | --- |
@@ -76,7 +78,7 @@ Paths below are relative to `app/src/main/java/com/colonelpanic/eva/`:
   byte-identical catalog copies under `app/src/main/assets/packages/`, listed in
   `adapters/declarative/DefaultPackages.kt`; update both repositories together.
 - Instruction catalog: `colonelpanic8/eva-instructions`. The shipped stock prompt and
-  tool wording are byte-identical copies at `app/src/main/resources/eva-prompt.yaml` and
+  tool wording are byte-identical copies at `eva-core/src/main/resources/eva-prompt.yaml` and
   `eva-wording.yaml`; change wording in the catalog first, then `just prompt-sync`.
   A new native tool adds its description to `eva-wording.yaml`, not to Kotlin. Installations follow the catalog on their own,
   so wording-only changes need no release.
@@ -84,7 +86,8 @@ Paths below are relative to `app/src/main/java/com/colonelpanic/eva/`:
 - HTTP/declarative and AIDL wire fixtures: `docs/examples/`; JSON Schemas for the
   package, tool, descriptor, and result shapes: `docs/schemas/`; canonical branding sources:
   `assets/branding/`.
-- JVM tests mirror production packages in `app/src/test/java/`.
+- JVM tests mirror production packages in `eva-core/src/test/kotlin/` and `app/src/test/java/`;
+  shared fakes are `:eva-core` test fixtures.
 - Device/live tests: `app/src/androidTest/java/`; live providers require opt-in arguments.
 - Voice broker experiment and evidence: `experiments/voice-poc/`.
 - Isolated Shizuku probe/fixture: `experiments/device-control/`.

@@ -105,6 +105,7 @@ ktlint {
 }
 
 dependencies {
+    implementation(project(":eva-core"))
     implementation(project(":device-control-core"))
     implementation(project(":device-control-portal"))
     coreLibraryDesugaring(libs.desugar.jdk.libs.nio)
@@ -131,6 +132,7 @@ dependencies {
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     testImplementation(libs.junit)
+    testImplementation(testFixtures(project(":eva-core")))
     testImplementation(libs.robolectric)
     testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.test.runner)

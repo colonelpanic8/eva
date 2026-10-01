@@ -1,6 +1,7 @@
 package com.colonelpanic.eva.data
 
 import android.app.Application
+import com.colonelpanic.eva.capability.BundledCapabilities
 import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.MemoryCapabilities
@@ -26,24 +27,27 @@ class MemoryStoreTest {
         runTest {
             val context = RuntimeEnvironment.getApplication()
             File(context.filesDir, "memories.json").delete()
-            val store = MemoryStore(context) { 123L }
+            val store = MemoryStore(AndroidMemoryFiles(context.filesDir)) { 123L }
             store.save("Kyoto hotel", "Hotel A, September 23–27")
-            assertEquals(listOf(MemoryNote("Kyoto hotel", "Hotel A, September 23–27", 123L)), MemoryStore(context).all())
+            assertEquals(
+                listOf(MemoryNote("Kyoto hotel", "Hotel A, September 23–27", 123L)),
+                MemoryStore(AndroidMemoryFiles(context.filesDir)).all(),
+            )
             store.save("Kyoto hotel", "Hotel B, September 23–27")
             assertEquals(1, store.all().size)
             assertEquals("Hotel B, September 23–27", store.all().single().text)
             assertFalse(store.forget("hotel"))
             assertTrue(store.forget("Kyoto hotel"))
-            assertTrue(MemoryStore(context).all().isEmpty())
+            assertTrue(MemoryStore(AndroidMemoryFiles(context.filesDir)).all().isEmpty())
         }
 
     @Test fun toolsSearchPageAndDeclareMutations() =
         runTest {
             val context = RuntimeEnvironment.getApplication()
             File(context.filesDir, "memories.json").delete()
-            val store = MemoryStore(context)
+            val store = MemoryStore(AndroidMemoryFiles(context.filesDir))
             val backends = MemoryCapabilities.backends(store)
-            val registry = CapabilityRegistry(backends)
+            val registry = CapabilityRegistry(backends, BundledCapabilities.definitions)
             assertTrue(
                 registry.snapshot.definitions
                     .getValue(MemoryCapabilities.SEARCH)
@@ -92,7 +96,7 @@ class MemoryStoreTest {
                 backends.getValue(MemoryCapabilities.SAVE).execute(mapOf("name" to " ", "text" to "fact")).status,
             )
             backends.getValue(MemoryCapabilities.FORGET).execute(mapOf("name" to "Trip 1"))
-            assertEquals(11, MemoryStore(context).all().size)
+            assertEquals(11, MemoryStore(AndroidMemoryFiles(context.filesDir)).all().size)
         }
 
     @Test fun learnedNotesWaitInTheInboxYetAreSearchable() =
@@ -101,10 +105,10 @@ class MemoryStoreTest {
             File(context.filesDir, "memories.json").delete()
             File(context.filesDir, "memory-inbox.json").delete()
             var now = 0L
-            val store = MemoryStore(context) { now++ }
+            val store = MemoryStore(AndroidMemoryFiles(context.filesDir)) { now++ }
             val backends = MemoryCapabilities.backends(store)
             assertTrue(
-                CapabilityRegistry(backends)
+                CapabilityRegistry(backends, BundledCapabilities.definitions)
                     .snapshot.definitions
                     .getValue(MemoryCapabilities.LEARN)
                     .bookkeeping,
@@ -125,7 +129,7 @@ class MemoryStoreTest {
             assertEquals("false", note.getValue("reviewed").jsonPrimitive.content)
             assertEquals(
                 "thread-1",
-                MemoryStore(context)
+                MemoryStore(AndroidMemoryFiles(context.filesDir))
                     .load()
                     .inbox
                     .single()
@@ -134,7 +138,7 @@ class MemoryStoreTest {
 
             assertTrue(store.keep("Sister"))
             assertFalse(store.keep("Sister"))
-            val kept = MemoryStore(context).load()
+            val kept = MemoryStore(AndroidMemoryFiles(context.filesDir)).load()
             assertEquals(listOf("Coffee", "Sister"), kept.kept.map { it.name })
             assertTrue(kept.inbox.isEmpty())
 
@@ -151,9 +155,9 @@ class MemoryStoreTest {
             val context = RuntimeEnvironment.getApplication()
             File(context.filesDir, "memory-inbox.json").delete()
             var now = 0L
-            val store = MemoryStore(context) { now++ }
+            val store = MemoryStore(AndroidMemoryFiles(context.filesDir)) { now++ }
             for (i in 0..MemoryStore.MAX_INBOX) store.learn("Fact $i", "text", null)
-            val inbox = MemoryStore(context).load().inbox
+            val inbox = MemoryStore(AndroidMemoryFiles(context.filesDir)).load().inbox
             assertEquals(MemoryStore.MAX_INBOX, inbox.size)
             assertFalse(inbox.any { it.name == "Fact 0" })
             assertTrue(inbox.any { it.name == "Fact ${MemoryStore.MAX_INBOX}" })
@@ -165,7 +169,7 @@ class MemoryStoreTest {
             val file = File(context.filesDir, "memories.json")
             file.writeText("broken")
             try {
-                MemoryStore(context).save("hotel", "somewhere")
+                MemoryStore(AndroidMemoryFiles(context.filesDir)).save("hotel", "somewhere")
                 fail("Corruption must fail closed")
             } catch (_: kotlinx.serialization.SerializationException) {
                 assertEquals("broken", file.readText())

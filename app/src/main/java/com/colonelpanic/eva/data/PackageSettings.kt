@@ -226,8 +226,8 @@ class PackageSettings(
                 identity,
                 configured,
                 configured.httpBindings().all { binding ->
-                    binding.credential == null ||
-                        credential(identity, binding.origin, binding.credential)?.scheme == binding.credentialScheme
+                    val reference = binding.credential
+                    reference == null || credential(identity, binding.origin, reference)?.scheme == binding.credentialScheme
                 },
             )
         }

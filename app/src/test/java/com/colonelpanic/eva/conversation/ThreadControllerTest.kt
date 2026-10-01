@@ -234,7 +234,7 @@ class ThreadControllerTest {
                             .workerWording(Wording.bundled),
                     )
                 }
-            val registry = CapabilityRegistry(mapOf(CapabilityRegistry.DEVICE_TASK to coordinator))
+            val registry = CapabilityRegistry(mapOf(CapabilityRegistry.DEVICE_TASK to coordinator), BundledCapabilities.definitions)
             val provider = FakeProvider()
             val controller = controller(provider, registry = registry, deviceTasks = coordinator)
             advanceUntilIdle()

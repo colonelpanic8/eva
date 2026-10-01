@@ -19,6 +19,7 @@ class NativeCommandsTest {
                     }
                 }
             },
+            BundledCapabilities.definitions,
         )
     private val dispatcher = CapabilityDispatcher(registry, MemoryInvocationRepository())
     private val provider = LocalCommandProvider()
