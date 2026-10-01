@@ -34,6 +34,12 @@ class DesktopPaths(
     val memory get() = File(data, "memory")
     val chatGptTokens get() = File(config, "chatgpt.json")
 
+    /** Local MCP servers, in the `mcpServers` form other MCP clients use; their commands are this computer's. */
+    val mcpServers get() = File(config, "mcp-servers.json")
+
+    /** Which extension tools the user allowed, bound to each server's command and tool contract. */
+    val extensionGrants get() = File(data, "extension-grants.json")
+
     /** Where the running tray app listens for `eva-desktop summon`. */
     val summonSocket get() = File(data, "eva.sock")
     private val lockFile get() = File(data, "eva.lock")

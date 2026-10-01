@@ -25,6 +25,9 @@ Commands:
   summon                            Show the running tray app's window (for a keybinding)
   chat [--thread ID | --continue]   Talk to EVA in this terminal (default)
   threads                           List conversation threads
+  tools                             List MCP servers' tools and which EVA may use
+  allow SERVER [TOOL...]            Let EVA use a server's tools (all of them without names)
+  deny SERVER [TOOL...]             Stop EVA using a server's tools
   login                             Sign in with a ChatGPT account
   logout                            Forget the ChatGPT sign-in
 
@@ -33,17 +36,52 @@ In a chat, /new starts a new thread and /quit leaves."""
 private const val LOCKED = "EVA is already running in another chat or the tray. Quit it first."
 
 fun main(args: Array<String>) {
+    // The MCP SDK's logging library otherwise announces itself on stdout.
+    System.setProperty("kotlin-logging.logStartupMessage", "false")
     val paths = DesktopPaths.fromEnvironment()
     val status =
         when (args.firstOrNull() ?: "chat") {
-            "-h", "--help", "help" -> println(USAGE).let { 0 }
-            "login" -> owned(paths) { runBlocking { login(paths) } }
-            "logout" -> owned(paths) { ChatGptTokenFile(paths.chatGptTokens).clear().let { println("Signed out.").let { 0 } } }
-            "threads" -> runBlocking { threads(paths) }
-            "chat" -> owned(paths) { lock -> chat(paths, lock, args.drop(1)) }
-            "tray" -> owned(paths) { lock -> tray(paths, lock) }
-            "summon" -> if (SummonListener.summon(paths.summonSocket)) 0 else System.err.println("EVA's tray app is not running.").let { 1 }
-            else -> System.err.println(USAGE).let { 2 }
+            "-h", "--help", "help" -> {
+                println(USAGE).let { 0 }
+            }
+
+            "login" -> {
+                owned(paths) { runBlocking { login(paths) } }
+            }
+
+            "logout" -> {
+                owned(paths) { ChatGptTokenFile(paths.chatGptTokens).clear().let { println("Signed out.").let { 0 } } }
+            }
+
+            "threads" -> {
+                runBlocking { threads(paths) }
+            }
+
+            "chat" -> {
+                owned(paths) { lock -> chat(paths, lock, args.drop(1)) }
+            }
+
+            "tray" -> {
+                owned(paths) { lock -> tray(paths, lock) }
+            }
+
+            "tools" -> {
+                owned(paths) { lock -> withHost(paths, lock) { host, _ -> listTools(host) } }
+            }
+
+            "allow", "deny" -> {
+                owned(
+                    paths,
+                ) { lock -> withHost(paths, lock) { host, _ -> setTools(host, args[0] == "allow", args.drop(1)) } }
+            }
+
+            "summon" -> {
+                if (SummonListener.summon(paths.summonSocket)) 0 else System.err.println("EVA's tray app is not running.").let { 1 }
+            }
+
+            else -> {
+                System.err.println(USAGE).let { 2 }
+            }
         }
     exitProcess(status)
 }
@@ -98,9 +136,19 @@ private fun chat(
         System.err.println("Sign in first: eva-desktop login")
         return 1
     }
+    return withHost(paths, lock) { host, ui -> converse(host.controller, ui, options) }
+}
+
+/** Runs [block] with a host whose controller calls are confined to one thread, then shuts it down. */
+@OptIn(ExperimentalCoroutinesApi::class, kotlinx.coroutines.DelicateCoroutinesApi::class)
+private fun withHost(
+    paths: DesktopPaths,
+    lock: FileLock,
+    block: suspend (DesktopHost, CoroutineContext) -> Int,
+): Int {
     val ui = newSingleThreadContext("eva-ui")
     try {
-        return DesktopHost(paths, ui, lock).use { host -> runBlocking { converse(host.controller, ui, options) } }
+        return DesktopHost(paths, ui, lock).use { host -> runBlocking { block(host, ui) } }
     } finally {
         ui.close()
     }

@@ -3,16 +3,22 @@ package com.colonelpanic.eva.desktop
 import com.colonelpanic.eva.capability.CapabilityDispatcher
 import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.capability.MemoryCapabilities
+import com.colonelpanic.eva.capability.extensions.ExtensionGrantPersistence
+import com.colonelpanic.eva.capability.extensions.ExtensionGrants
+import com.colonelpanic.eva.capability.extensions.ExtensionRuntime
 import com.colonelpanic.eva.conversation.ThreadController
 import com.colonelpanic.eva.conversation.prompt.PromptConfig
 import com.colonelpanic.eva.conversation.prompt.PromptYaml
 import com.colonelpanic.eva.data.MemoryStore
+import com.colonelpanic.eva.desktop.mcp.McpAdapter
+import com.colonelpanic.eva.desktop.mcp.McpServerConfig
 import com.colonelpanic.eva.providers.ConversationProvider
 import com.colonelpanic.eva.providers.openai.OpenAiAccess
 import com.colonelpanic.eva.providers.openai.OpenAiResponsesProvider
 import com.colonelpanic.eva.providers.openai.SubscriptionAccess
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.job
@@ -46,6 +52,21 @@ class DesktopHost(
         )
     private val scope = CoroutineScope(SupervisorJob() + ui)
     private val access = SubscriptionAccess(tokens, CLIENT_VERSION)
+    private val extensionScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    val mcp = McpAdapter(McpServerConfig.load(paths.mcpServers), extensionScope)
+    val extensions =
+        ExtensionRuntime(
+            registry,
+            mcp,
+            ExtensionGrants(
+                object : ExtensionGrantPersistence {
+                    override suspend fun read() = paths.extensionGrants.takeIf { it.isFile }?.readText()
+
+                    override suspend fun write(json: String) = writePrivately(paths.extensionGrants, json)
+                },
+            ),
+            extensionScope,
+        )
 
     val controller =
         ThreadController(
@@ -56,6 +77,11 @@ class DesktopHost(
             scope = scope,
             providerFactory = { provider?.invoke(access) ?: OpenAiResponsesProvider(access) },
             prompt = { prompt },
+            // A connection never opens with tools silently missing; it reports why instead.
+            awaitCapabilities = {
+                withTimeoutOrNull(CAPABILITY_WAIT_MILLIS) { extensions.awaitReady() }
+                    ?: error("Local MCP servers did not report their tools in time.")
+            },
         )
 
     private var closed = false
@@ -77,8 +103,13 @@ class DesktopHost(
         val job = scope.coroutineContext.job
         job.cancel()
         val stopped = withTimeoutOrNull(timeoutMillis) { job.join() } != null
-        if (!drained || !stopped) return false
+        // Discovery and grant writes finish or stop before their sessions close and storage is released.
+        val extensionWork = extensionScope.coroutineContext.job
+        extensionWork.cancel()
+        val extensionsStopped = withTimeoutOrNull(timeoutMillis) { extensionWork.join() } != null
+        if (!drained || !stopped || !extensionsStopped) return false
         closed = true
+        mcp.close()
         journal.close()
         ownership.release()
         ownership.channel().close()
@@ -94,6 +125,7 @@ class DesktopHost(
         const val CLIENT_VERSION = "0.49.0"
         const val PROMPT_RESOURCE = "/eva-desktop-prompt.yaml"
         const val SHUTDOWN_TIMEOUT_MILLIS = 30_000L
+        private const val CAPABILITY_WAIT_MILLIS = 15_000L
 
         val prompt: PromptConfig by lazy {
             val text = checkNotNull(DesktopHost::class.java.getResourceAsStream(PROMPT_RESOURCE)) { "The desktop prompt is missing." }
