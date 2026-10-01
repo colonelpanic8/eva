@@ -2513,4 +2513,4 @@ internal fun clipped(
     limit: Int,
 ): String = if (text.length <= limit) text else text.take(limit) + CLIPPED
 
-internal const val CLIPPED = "…[cut by EVA]"
+internal const val CLIPPED = "…[Truncated by EVA]"

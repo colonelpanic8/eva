@@ -903,7 +903,7 @@ class ThreadControllerTest {
                         CatalogAdmission.voiceControls(registry.snapshot.catalog),
                     ).overflow
             assertEquals(excluded.map { ExcludedTool(it.id, it.title) }, voice.request.catalog.excludedTools)
-            assertTrue(voice.request.instructions.contains("${excluded.size} enabled actions were excluded"))
+            assertTrue(voice.request.instructions.contains("safety bound (${excluded.size}):"))
             assertTrue(excluded.size in 4..20)
             assertTrue(voice.request.instructions.contains(excluded.joinToString(", ", postfix = ".") { "\"${it.title}\"" }))
             val notice =
@@ -959,8 +959,8 @@ class ThreadControllerTest {
                 provider.request.catalog.excludedTools
                     .map { it.capabilityId },
             )
-            assertTrue(provider.request.instructions.contains("1 enabled actions were excluded"))
-            assertTrue(provider.request.instructions.contains("bound: \"Custom action\"."))
+            assertTrue(provider.request.instructions.contains("safety bound (1):"))
+            assertTrue(provider.request.instructions.contains("bound (1): \"Custom action\"."))
             controller.disconnect()
             advanceUntilIdle()
             val notice =
@@ -2248,7 +2248,7 @@ class ThreadControllerTest {
                     .jsonObject
                     .getValue("task")
                     .jsonPrimitive.content
-            assertEquals(task.take(256) + "…[cut by EVA]", shown)
+            assertEquals(task.take(256) + "…[Truncated by EVA]", shown)
         }
 
     @Test

@@ -352,7 +352,7 @@ class WebResearchBackendTest {
         val kept = outcome.data["sources"]!!.jsonArray.size
         assertTrue(kept < 100)
         assertEquals(JsonPrimitive(true), outcome.data["truncated"])
-        assertTrue(outcome.message, outcome.message.endsWith("EVA omitted ${100 - kept} further sources to fit the result budget."))
+        assertTrue(outcome.message, outcome.message.endsWith("Further sources omitted to fit the result budget: ${100 - kept}."))
         assertTrue(JsonPrimitive(outcome.message).toString().length + outcome.data.toString().length <= 16384)
     }
 

@@ -124,7 +124,7 @@ last action status, and three recent attributed receipts (call ID, capability,
 arguments, status, and message) for verification. The result stays below the model
 result budget; `tasksOmitted` and `historyLimited` expose omitted or partial history,
 and a field shortened to fit (task 256, IDs 200, arguments 400, message 600 characters)
-ends with `…[cut by EVA]`.
+ends with `…[Truncated by EVA]`.
 Active states follow the Running work snapshot, including waits and `RELEASING_DEVICE`;
 `looksStuck` is a separate flag restricted to working or connecting tasks;
 recent terminal states are `ANSWERED`, `FAILED`, or `INTERRUPTED`. Cancel requests interruption of exactly that active task,
