@@ -17,6 +17,10 @@ All notable changes to EVA will be documented here.
 
 ### Fixed
 
+- Force stop waits for device input to unwind, requires fresh observation after an uncertain release, and bounds receipt draining with a second-press escape. Late receipts remain recordable and already answered turns retain their status.
+- Work coverage persists across the whole voice session without gating utterances. Short-service expiry stops promptly when long-running promotion fails, and opening EVA retries an upgrade.
+- Task snapshots distinguish waits from inactivity, publish streamed progress on a one-second tick, and preserve notification navigation across recreation without reopening Running work.
+
 - Subscription Responses streams must receive a completion event before EVA publishes text or tool calls. Dropped replies never return partial actions; regression tests cover the text provider's SSE path and the device worker's subscription WebSocket path.
 - Late Realtime calls and transcripts retain the response and request that produced them. Unknown-origin calls receive a recorded refusal, and action details retain their initiator across restarts.
 - Voice can accept and display new requests while delegated text work continues. Handoffs wait for text startup, preserve sibling action results, and return a task ID for voice status and cancellation.

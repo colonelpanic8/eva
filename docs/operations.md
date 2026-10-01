@@ -285,14 +285,28 @@ not evidence of Android foreground eligibility or OEM background behavior.
   in the list and notification without stopping the task, then clear on progress.
 - Stop a task, Stop all from both surfaces, and Force stop a device task while an
   action is in flight. Verify the force-stop notice and `INTERRUPTED` status, lease
-  release, truthful final receipts, no duplicate action, and continued operation
-  of a subsequent task. The service must stay until receipt/journal draining ends.
+  retention during input unwinding (Releasing device…), truthful final receipts,
+  and no duplicate action. Queue a successor and verify it cannot inject input
+  until the first backend returns or ten seconds elapse. After expiry it must
+  observe the uncertain screen afresh. Simulate a stuck backend: receipt waiting
+  ends within ten seconds, records UNKNOWN and stops coverage; a second Force stop
+  skips that wait. A late backend result must not unlock a successor's lease.
+  Force-stopping an already answered turn must preserve ANSWERED.
 - Exercise Android rejecting specialUse promotion in a controlled test build:
   shortService fallback must visibly state its three-minute limitation. Refusing
   both types must interrupt only uncovered work and retain partial findings.
-  Verify behavior with notification permission denied as well.
-- Check that the work notification disappears after the last task and its journal
-  writes finish, and that restarting after process death reports interruption
+  Let fallback expire while EVA is hidden: it must stop promptly if specialUse is
+  still refused, without attempting shortService renewal. Open EVA during fallback
+  and verify upgrade to specialUse. Repeat with notification permission denied.
+- Start a voice session visibly, lock the phone, then speak several utterances.
+  Work coverage must remain through pauses without a service start per utterance;
+  voice-covered turns must not receive restriction notices or repeated alerts.
+  End the call during delegation and verify continuing work remains covered.
+- While a device task needs input or waits for the lease, exceed the stall period:
+  neither must show looks stuck. Rotate/recreate EVA after opening a thread from
+  Running work: it must not jump back to Running work.
+- Check that the work notification disappears after the voice session ends and
+  the last task and its journal writes finish, and that restarting after process death reports interruption
   without replaying any action.
 
 ### Device-control parity

@@ -157,7 +157,8 @@ class ThreadControllerTest {
             val background = FakeProvider(epoch = "background")
             val controller =
                 controller(voice, background = background, media = { VoiceMedia() }, accepted = {
-                    if (++admissions == 2) promoted.await()
+                    admissions++
+                    promoted.await()
                 })
             advanceUntilIdle()
             controller.connectVoice("test")
@@ -166,7 +167,7 @@ class ThreadControllerTest {
             runCurrent()
             voice.call("delegate", ThreadController.DEFER_TO_TEXT.capabilityId, "task" to "Research")
             runCurrent()
-            assertEquals(2, admissions)
+            assertEquals(1, admissions)
             assertTrue(controller.state.value.voiceMode)
             assertTrue(background.responseRequests.isEmpty())
             promoted.complete(Unit)
@@ -204,7 +205,8 @@ class ThreadControllerTest {
                     .jsonArray
                     .single()
                     .jsonObject
-            assertEquals("LOOKS_STUCK", stalled.getValue("state").jsonPrimitive.content)
+            assertEquals("WORKING", stalled.getValue("state").jsonPrimitive.content)
+            assertEquals("true", stalled.getValue("looksStuck").jsonPrimitive.content)
             assertEquals(
                 controller.taskSnapshots.value
                     .single { it.taskId == task.taskId }
@@ -232,7 +234,7 @@ class ThreadControllerTest {
         }
 
     @Test
-    fun `force stop wins over an answer journal write already in progress`() =
+    fun `force stop preserves an answer journal write already in progress`() =
         runTest {
             val writing = CompletableDeferred<Unit>()
             val release = CompletableDeferred<Unit>()
@@ -264,7 +266,8 @@ class ThreadControllerTest {
             assertTrue(controller.needsWorkCoverage.value)
             release.complete(Unit)
             advanceUntilIdle()
-            assertEquals(TurnStatus.INTERRUPTED, store.turns(task.threadId).single().status)
+            assertEquals(TurnStatus.ANSWERED, store.turns(task.threadId).single().status)
+            assertTrue(store.items(task.threadId).filterIsInstance<ThreadItem.Notice>().any { it.text.contains("Force-stopped by you") })
             assertFalse(controller.needsWorkCoverage.value)
         }
 
@@ -308,6 +311,126 @@ class ThreadControllerTest {
             assertTrue(controller.taskSnapshots.value.isEmpty())
             assertEquals(InvocationStatus.UNKNOWN, repository.history().single().status)
             assertEquals(1, executions)
+        }
+
+    @Test
+    fun `force stop abandons a hung dispatch after ten seconds and second press skips that wait`() =
+        runTest {
+            for (escalate in listOf(false, true)) {
+                val entered = CompletableDeferred<Unit>()
+                val release = CompletableDeferred<Unit>()
+                val hanging =
+                    object : ExecutionBackend {
+                        override suspend fun unavailableReason(): String? = null
+
+                        override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome =
+                            withContext(NonCancellable) {
+                                executions++
+                                entered.complete(Unit)
+                                release.await()
+                                ExecutionOutcome(InvocationStatus.COMPLETED, "Late result")
+                            }
+                    }
+                val provider = FakeProvider(epoch = "hung-$escalate")
+                val controller = controller(provider, registry = CapabilityRegistry(mapOf(action.id to hanging), listOf(action)))
+                advanceUntilIdle()
+                controller.connect("test")
+                advanceUntilIdle()
+                controller.submit("Start")
+                advanceUntilIdle()
+                provider.call("hung-$escalate", action.id, "place" to "Park")
+                entered.await()
+                val task = controller.taskSnapshots.value.single()
+                controller.forceStopTask(task.taskId)
+                runCurrent()
+                assertTrue(controller.needsWorkCoverage.value)
+                if (escalate) controller.forceStopTask(task.taskId) else advanceTimeBy(10_000)
+                runCurrent()
+                assertFalse(controller.needsWorkCoverage.value)
+                assertTrue(controller.taskSnapshots.value.isEmpty())
+                assertEquals(TurnStatus.INTERRUPTED, store.turns(task.threadId).single { it.id == task.taskId }.status)
+                val record = repository.history().last()
+                assertEquals(InvocationStatus.UNKNOWN, record.status)
+                assertTrue(record.message.contains("Stopped waiting"))
+                release.complete(Unit)
+                advanceUntilIdle()
+                assertFalse(controller.needsWorkCoverage.value)
+                assertTrue(repository.history().last().status in setOf(InvocationStatus.COMPLETED, InvocationStatus.UNKNOWN))
+            }
+            assertEquals(2, executions)
+        }
+
+    @Test
+    fun `voice acceptance does not wait for promotion and covered turns receive no limit notice`() =
+        runTest {
+            val voice = FakeProvider()
+            var admissions = 0
+            val controller =
+                controller(voice, media = { VoiceMedia() }, accepted = {
+                    admissions++
+                    kotlinx.coroutines.awaitCancellation()
+                })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            voice.startVoice("first", "Hello")
+            runCurrent()
+            assertEquals(0, admissions)
+            val task = controller.taskSnapshots.value.single()
+            assertFalse(controller.workCoverageNotice("Denied"))
+            runCurrent()
+            assertTrue(store.items(task.threadId).filterIsInstance<ThreadItem.Notice>().none { it.kind == NoticeKind.COVERAGE_LIMIT })
+            controller.stopAllTasks()
+            advanceUntilIdle()
+        }
+
+    @Test
+    fun `streaming progress publishes only on tick and unattributed events do not reset the clock`() =
+        runTest {
+            var now = 1_000L
+            val voice = FakeProvider()
+            val controller = controller(voice, media = { VoiceMedia() }, now = { now })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            voice.startVoice("first", "Hello")
+            runCurrent()
+            val original = controller.taskSnapshots.value.single()
+            val emissions = mutableListOf<List<TaskSnapshot>>()
+            backgroundScope.launch { controller.taskSnapshots.collect { emissions += it } }
+            runCurrent()
+            repeat(30) {
+                now++
+                voice.channel.send(ProviderEvent.Transcript("assistant", "delta-$it", inputId = voice.input.id))
+                runCurrent()
+            }
+            assertEquals(1, emissions.size)
+            controller.refreshTaskSnapshots()
+            assertEquals(
+                now,
+                controller.taskSnapshots.value
+                    .single()
+                    .lastProgressAt,
+            )
+            now += 180_001
+            voice.channel.send(ProviderEvent.Account("Updated account"))
+            voice.channel.send(ProviderEvent.AssistantSpeaking(false))
+            voice.channel.send(ProviderEvent.Transcript("assistant", "unattributed"))
+            runCurrent()
+            controller.refreshTaskSnapshots()
+            assertTrue(
+                controller.taskSnapshots.value
+                    .single()
+                    .looksStuck,
+            )
+            assertEquals(
+                original.startedAt + 30,
+                controller.taskSnapshots.value
+                    .single()
+                    .lastProgressAt,
+            )
+            controller.stopAllTasks()
+            advanceUntilIdle()
         }
 
     @Test
@@ -410,15 +533,20 @@ class ThreadControllerTest {
             assertEquals(TurnStatus.OPEN, store.turns(task.threadId).single().status)
             now += 180_001
             controller.refreshTaskSnapshots()
-            assertEquals(
-                TaskState.LOOKS_STUCK,
+            assertTrue(
                 controller.taskSnapshots.value
                     .single()
-                    .state,
+                    .looksStuck,
             )
             assertEquals(TurnStatus.OPEN, store.turns(task.threadId).single().status)
             provider.channel.send(ProviderEvent.AssistantText(provider.input.id, "Found a source", false))
             runCurrent()
+            controller.refreshTaskSnapshots()
+            assertFalse(
+                controller.taskSnapshots.value
+                    .single()
+                    .looksStuck,
+            )
             assertEquals(
                 TaskState.WORKING,
                 controller.taskSnapshots.value

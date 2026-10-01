@@ -377,6 +377,8 @@ messages:
     This tool call has an unknown origin. Nothing was executed. Ask the user to
     make a new request so the action can be tied to that request.
   unowned-action: No request is active to run this action. Nothing was executed.
+  device-release-uncertain: "The screen is uncertain: a force-stopped device action did not return within ten seconds and may still have effects. Observe the current screen before any further action."
+  force-stop-abandoned: "Stopped waiting for the force-stopped action. Its outcome is unknown; it may still have effects. Check the destination before trying again. Late results will be retained."
   turn-force-stopped: "Force-stopped by you; actions already started may have had effects"
   turn-stop-requested: Stopped.
   response-failed: The model could not complete this response.

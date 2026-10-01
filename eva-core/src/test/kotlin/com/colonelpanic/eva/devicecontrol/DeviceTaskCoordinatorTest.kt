@@ -122,7 +122,7 @@ class DeviceTaskCoordinatorTest {
         runTest {
             val entered = CompletableDeferred<Unit>()
             val finish = CompletableDeferred<Unit>()
-            val coordinator = DeviceTaskCoordinator { error("No device worker expected") }
+            val coordinator = DeviceTaskCoordinator(releaseScope = backgroundScope) { error("No device worker expected") }
             val backend =
                 object : ExecutionBackend {
                     override suspend fun unavailableReason(): String? = null
@@ -139,9 +139,15 @@ class DeviceTaskCoordinatorTest {
                 }
             entered.await()
             coordinator.forceStop("turn")
-            coordinator.lease.acquire("successor")
+            val successor = async { coordinator.lease.acquire("successor") }
+            testScheduler.runCurrent()
+            assertFalse(successor.isCompleted)
+            assertEquals("old", coordinator.lease.owner)
+            assertEquals(setOf("turn"), coordinator.releasing.value)
             finish.complete(Unit)
             task.join()
+            successor.await()
+            assertTrue(coordinator.releasing.value.isEmpty())
             assertEquals("successor", coordinator.lease.owner)
             coordinator.lease.release("successor")
             assertEquals(
@@ -150,7 +156,67 @@ class DeviceTaskCoordinatorTest {
             )
         }
 
-    @Test fun forceStopRevokesLeaseAndDoesNotReplay() =
+    @Test fun expiredReleaseRequiresObservationAndLateCleanupCannotUnlockSuccessor() =
+        runTest {
+            val entered = CompletableDeferred<Unit>()
+            val finish = CompletableDeferred<Unit>()
+            val coordinator = DeviceTaskCoordinator(releaseScope = backgroundScope) { error("No worker") }
+            val hung =
+                object : ExecutionBackend {
+                    override suspend fun unavailableReason(): String? = null
+
+                    override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome {
+                        entered.complete(Unit)
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { finish.await() }
+                        return ExecutionOutcome(InvocationStatus.COMPLETED, "late")
+                    }
+                }
+            var nextExecutions = 0
+            val next =
+                object : ExecutionBackend {
+                    override suspend fun unavailableReason(): String? = null
+
+                    override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome {
+                        nextExecutions++
+                        return ExecutionOutcome(InvocationStatus.COMPLETED, "observed")
+                    }
+                }
+            val old = launch { coordinator.executeAdmitted(proposal("old").copy(capabilityId = CapabilityRegistry.OPEN_APP), hung, true) }
+            entered.await()
+            coordinator.forceStop("turn")
+            old.cancel()
+            val successor =
+                async {
+                    coordinator.executeAdmitted(
+                        proposal("next").copy(turnId = "next-turn", capabilityId = CapabilityRegistry.UI_TAP),
+                        next,
+                        true,
+                    )
+                }
+            testScheduler.runCurrent()
+            testScheduler.advanceTimeBy(9_999)
+            assertFalse(successor.isCompleted)
+            testScheduler.advanceTimeBy(1)
+            testScheduler.runCurrent()
+            val refusal = successor.await()
+            assertEquals(InvocationStatus.NOT_EXECUTED, refusal.status)
+            assertTrue(refusal.message.contains("screen is uncertain"))
+            assertEquals(0, nextExecutions)
+            coordinator.executeAdmitted(
+                proposal("observe").copy(turnId = "next-turn", capabilityId = CapabilityRegistry.UI_OBSERVE),
+                next,
+                true,
+            )
+            coordinator.executeAdmitted(proposal("tap").copy(turnId = "next-turn", capabilityId = CapabilityRegistry.UI_TAP), next, true)
+            assertEquals(2, nextExecutions)
+            coordinator.lease.acquire("successor")
+            finish.complete(Unit)
+            old.join()
+            assertEquals("successor", coordinator.lease.owner)
+            coordinator.lease.release("successor")
+        }
+
+    @Test fun forceStopReleasesLeaseAfterWorkerReturnsAndDoesNotReplay() =
         runTest {
             val entered = CompletableDeferred<Unit>()
             var creates = 0
@@ -163,9 +229,9 @@ class DeviceTaskCoordinatorTest {
             entered.await()
             assertEquals("call", coordinator.lease.owner)
             coordinator.forceStop("turn")
+            task.join()
             assertNull(coordinator.lease.owner)
             assertNull(coordinator.running.value)
-            task.join()
             assertEquals(InvocationStatus.NOT_EXECUTED, coordinator.execute(proposal("late")).status)
             assertEquals(1, creates)
         }

@@ -7,11 +7,17 @@ import com.colonelpanic.eva.capability.ExecutionOutcome
 import com.colonelpanic.eva.capability.InitiatorKind
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.ToolProposal
+import com.colonelpanic.eva.conversation.prompt.Wording
 import com.colonelpanic.eva.devicecontrol.worker.TextTaskAgent
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -20,6 +26,8 @@ import kotlinx.serialization.json.put
 /** Application ownership survives provider/audio attachment changes. */
 class DeviceTaskCoordinator(
     private val unavailable: suspend () -> String? = { null },
+    private val releaseScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    private val wording: () -> Wording = { Wording.bundled },
     private val create: () -> TextTaskAgent,
 ) : ExecutionBackend {
     private val monitor = Any()
@@ -28,6 +36,18 @@ class DeviceTaskCoordinator(
     private val admittedOwners = mutableMapOf<String, String?>()
     private val mutableWaitingForLease = MutableStateFlow<Set<String>>(emptySet())
     val waitingForLease = mutableWaitingForLease.asStateFlow()
+
+    private val releaseJobs = mutableMapOf<String, Job>()
+    private val mutableReleasing = MutableStateFlow<Set<String>>(emptySet())
+    val releasing = mutableReleasing.asStateFlow()
+    private var uncertainScreen = false
+    private var screenEpoch = 0L
+
+    private fun release(callId: String) {
+        releaseJobs.remove(callId)?.cancel()
+        admittedOwners.remove(callId)?.let { mutableReleasing.value -= it }
+        lease.releaseIfOwned(callId)
+    }
 
     data class Running(
         val threadId: String,
@@ -72,13 +92,26 @@ class DeviceTaskCoordinator(
     fun forceStop(turnId: String) =
         synchronized(monitor) {
             stoppedTurns += turnId
-            admittedOwners.filterValues { it == turnId }.keys.forEach(lease::releaseIfOwned)
-            val task = mutableRunning.value?.takeIf { it.turnId == turnId }
-            if (task != null) {
-                task.agent.cancel()
-                task.job.cancel()
-                mutableRunning.value = null
-                lease.releaseIfOwned(task.callId)
+            mutableRunning.value?.takeIf { it.turnId == turnId }?.let {
+                it.agent.cancel()
+                it.job.cancel()
+            }
+            admittedOwners.filterValues { it == turnId }.keys.toList().forEach { callId ->
+                if (callId !in releaseJobs) {
+                    mutableReleasing.value += turnId
+                    releaseJobs[callId] =
+                        releaseScope.launch {
+                            delay(10_000)
+                            synchronized(monitor) {
+                                if (lease.owner == callId) {
+                                    uncertainScreen = true
+                                    screenEpoch++
+                                    if (mutableRunning.value?.callId == callId) mutableRunning.value = null
+                                    release(callId)
+                                }
+                            }
+                        }
+                }
             }
         }
 
@@ -99,7 +132,10 @@ class DeviceTaskCoordinator(
                     return stoppedBeforeDispatch()
                 }
                 try {
-                    create().also { mutableRunning.value = Running(thread, turn, it, callId = proposal.callId, job = Job()) }
+                    create().also {
+                        admittedOwners[proposal.callId] = turn
+                        mutableRunning.value = Running(thread, turn, it, callId = proposal.callId, job = Job())
+                    }
                 } catch (
                     e: Exception,
                 ) {
@@ -114,14 +150,24 @@ class DeviceTaskCoordinator(
         val taskJob =
             synchronized(monitor) { mutableRunning.value?.takeIf { it.agent === agent }?.job }
                 ?: return stoppedBeforeDispatch()
+        val epoch = synchronized(monitor) { screenEpoch }
+        val goal =
+            synchronized(monitor) {
+                if (uncertainScreen) {
+                    wording().message(Wording.DEVICE_RELEASE_UNCERTAIN) + "\n" + proposal.arguments.getValue("goal")
+                } else {
+                    proposal.arguments.getValue("goal")
+                }
+            }
         return withContext(taskJob) {
             try {
                 val result =
-                    agent.run(proposal.arguments.getValue("goal")) { progress ->
+                    agent.run(goal) { progress ->
                         synchronized(monitor) {
                             mutableRunning.value?.takeIf { it.agent === agent }?.let { mutableRunning.value = it.copy(progress = progress) }
                         }
                     }
+                synchronized(monitor) { if (screenEpoch == epoch && result.status == TaskStatus.COMPLETED) uncertainScreen = false }
                 val status =
                     when (result.status) {
                         TaskStatus.COMPLETED -> InvocationStatus.COMPLETED
@@ -187,7 +233,7 @@ class DeviceTaskCoordinator(
             } finally {
                 synchronized(monitor) {
                     if (mutableRunning.value?.agent === agent) mutableRunning.value = null
-                    lease.releaseIfOwned(proposal.callId)
+                    release(proposal.callId)
                     taskJob.complete()
                 }
             }
@@ -225,14 +271,22 @@ class DeviceTaskCoordinator(
                 lease.releaseIfOwned(proposal.callId)
                 return stoppedBeforeDispatch()
             }
+            if (uncertainScreen && proposal.capabilityId != CapabilityRegistry.UI_OBSERVE) {
+                lease.releaseIfOwned(proposal.callId)
+                return ExecutionOutcome(InvocationStatus.NOT_EXECUTED, wording().message(Wording.DEVICE_RELEASE_UNCERTAIN))
+            }
             admittedOwners[proposal.callId] = proposal.turnId
         }
+        val epoch = synchronized(monitor) { screenEpoch }
         return try {
-            backend.execute(proposal)
+            backend.execute(proposal).also {
+                if (proposal.capabilityId == CapabilityRegistry.UI_OBSERVE && it.status == InvocationStatus.COMPLETED) {
+                    synchronized(monitor) { if (screenEpoch == epoch) uncertainScreen = false }
+                }
+            }
         } finally {
             synchronized(monitor) {
-                admittedOwners.remove(proposal.callId)
-                lease.releaseIfOwned(proposal.callId)
+                release(proposal.callId)
             }
         }
     }

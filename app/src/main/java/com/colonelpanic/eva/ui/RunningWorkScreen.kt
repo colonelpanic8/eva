@@ -47,7 +47,15 @@ fun RunningWorkScreen(
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(task.threadTitle, style = MaterialTheme.typography.titleMedium)
                         Text(task.request.ifBlank { "Voice request" })
-                        Text("${task.kind.name.label()} · ${task.state.name.label()}")
+                        Text(
+                            "${task.kind.name.label()} · ${if (task.state == com.colonelpanic.eva.conversation.TaskState.RELEASING_DEVICE) {
+                                "Releasing device…"
+                            } else {
+                                task.state.name
+                                    .label()
+                            }}" +
+                                if (task.looksStuck) " · Looks stuck" else "",
+                        )
                         Text("Started ${time(task.startedAt)} · last progress ${time(task.lastProgressAt)}")
                         Text("${task.actionCount} actions" + (task.lastActionTitle?.let { " · $it: ${task.lastActionStatus}" } ?: ""))
                         Text(if (task.holdsDeviceLease) "Holds device control" else "Does not hold device control")

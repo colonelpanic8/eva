@@ -168,13 +168,14 @@ class EvaApplication :
     override fun workCoverageChanged(coverage: com.colonelpanic.eva.conversation.WorkCoverage) = controller.setWorkCoverage(coverage)
 
     override fun workCoverageLimited(reason: String) {
-        controller.workCoverageNotice(reason)
-        WorkNotifications.limited(this, reason)
+        if (controller.workCoverageNotice(reason)) WorkNotifications.limited(this, reason)
     }
 
     override fun stopAllWork() = controller.stopAllTasks()
 
-    override fun needsWorkCoverage(): Boolean = controller.needsWorkCoverage.value
+    override fun needsWorkCoverage(): Boolean =
+        controller.needsWorkCoverage.value ||
+            (controller.state.value.voiceMode && controller.state.value.providerStatus != ProviderStatus.DISCONNECTED)
 
     override fun interruptWork(reason: String) = controller.interruptBackgroundWork(reason)
 
@@ -269,7 +270,9 @@ class EvaApplication :
 
     val deviceTasks by lazy {
         com.colonelpanic.eva.devicecontrol
-            .DeviceTaskCoordinator(unavailable = ::deviceTaskUnavailableReason) { createDeviceTaskAgent() }
+            .DeviceTaskCoordinator(unavailable = ::deviceTaskUnavailableReason, releaseScope = scope, wording = {
+                prompts.wording.value
+            }) { createDeviceTaskAgent() }
     }
 
     private suspend fun deviceTaskUnavailableReason(): String? {
