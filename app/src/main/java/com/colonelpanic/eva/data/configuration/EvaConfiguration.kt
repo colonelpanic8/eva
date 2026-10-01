@@ -72,6 +72,7 @@ data class EvaConfigurationDocument(
     val screenControl: Boolean? = null,
     val deviceTask: DeviceTaskConfiguration? = null,
     val webResearch: WebResearchPatch? = null,
+    val stallPeriodSeconds: Int? = null,
 )
 
 @Serializable data class WebResearchPatch(
@@ -243,6 +244,7 @@ data class EvaConfiguration(
         val screenControl: Boolean,
         val deviceTask: DeviceTaskConfiguration = DeviceTaskConfiguration(),
         val webResearch: WebResearchConfiguration = WebResearchConfiguration(),
+        val stallPeriodSeconds: Int = 180,
     )
 
     data class Messaging(
@@ -476,6 +478,7 @@ object EvaConfigurationCodec {
                     current.capabilities.webResearch.timeoutSeconds
                         .takeIf { it != base?.capabilities?.webResearch?.timeoutSeconds },
                 ).nonEmpty(),
+                current.capabilities.stallPeriodSeconds.takeIf { it != base?.capabilities?.stallPeriodSeconds },
             ).nonEmpty(),
         messaging =
             MessagingPatch(
@@ -536,6 +539,7 @@ object EvaConfigurationCodec {
                     requireNotNull(capabilities?.screenControl) { "capabilities.screenControl is missing." },
                     capabilities?.deviceTask ?: DeviceTaskConfiguration(),
                     capabilities?.webResearch?.materialize() ?: WebResearchConfiguration(),
+                    capabilities?.stallPeriodSeconds ?: 180,
                 ),
             messaging =
                 EvaConfiguration.Messaging(
@@ -579,6 +583,7 @@ object EvaConfigurationCodec {
         require(models.reasoningEffort in OpenAiModels.TEXT_REASONING_EFFORTS) { "Unknown text reasoning effort." }
         require(models.voiceReasoningEffort in OpenAiModels.VOICE_REASONING_EFFORTS) { "Unknown voice reasoning effort." }
         require(voice.lookupRetries in 0..10) { "voice.lookupRetries must be between 0 and 10." }
+        require(capabilities.stallPeriodSeconds > 0) { "capabilities.stallPeriodSeconds must be positive." }
         require(voice.quietHangUpSeconds in 0..60) { "voice.quietHangUpSeconds must be between 0 and 60." }
         CallEnding.checkOverrides(voice.endCallAfter.keys)
         require(voice.endCallAfter.values.all { CallEnding.of(it) != null }) {
@@ -855,6 +860,7 @@ object EvaConfigurationCodec {
                     override.capabilities?.webResearch?.effort ?: base.capabilities?.webResearch?.effort,
                     override.capabilities?.webResearch?.timeoutSeconds ?: base.capabilities?.webResearch?.timeoutSeconds,
                 ).nonEmpty(),
+                override.capabilities?.stallPeriodSeconds ?: base.capabilities?.stallPeriodSeconds,
             ).nonEmpty(),
         messaging =
             MessagingPatch(
@@ -916,7 +922,11 @@ object EvaConfigurationCodec {
 
     private fun AppearancePatch.nonEmpty() = takeIf { dynamicColor != null }
 
-    private fun CapabilitiesPatch.nonEmpty() = takeIf { screenControl != null || deviceTask != null || webResearch != null }
+    private fun CapabilitiesPatch.nonEmpty() =
+        takeIf {
+            screenControl != null || deviceTask != null || webResearch != null ||
+                stallPeriodSeconds != null
+        }
 
     private fun WebResearchPatch.nonEmpty() = takeIf { enabled != null || model != null || effort != null || timeoutSeconds != null }
 

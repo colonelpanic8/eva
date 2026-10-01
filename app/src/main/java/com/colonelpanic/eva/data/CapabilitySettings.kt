@@ -20,6 +20,17 @@ class CapabilitySettings(
     private val prefs = context.applicationContext.getSharedPreferences("eva.settings", Context.MODE_PRIVATE)
     private val mutableScreenControl = MutableStateFlow(prefs.getBoolean(SCREEN_CONTROL, true))
 
+    private val mutableStallPeriod = MutableStateFlow(prefs.getInt("capabilities.stallPeriodSeconds", 180))
+    val stallPeriodFlow = mutableStallPeriod.asStateFlow()
+    val stallPeriodSeconds get() = mutableStallPeriod.value
+
+    fun saveStallPeriodSeconds(value: Int) {
+        require(value > 0) { "The stall period must be positive." }
+        commit { putInt("capabilities.stallPeriodSeconds", value) }
+        mutableStallPeriod.value = value
+        onChanged()
+    }
+
     private val secrets = SecretStore(context)
     private val mutableDeviceTask =
         MutableStateFlow(

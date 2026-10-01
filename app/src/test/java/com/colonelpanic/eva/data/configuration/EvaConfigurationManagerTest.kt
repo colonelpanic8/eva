@@ -263,6 +263,7 @@ class EvaConfigurationManagerTest {
                     capabilities =
                         EvaConfiguration.Capabilities(
                             screenControl = false,
+                            stallPeriodSeconds = 420,
                             webResearch =
                                 com.colonelpanic.eva.web.WebResearchConfiguration(
                                     enabled = false,
@@ -338,6 +339,7 @@ class EvaConfigurationManagerTest {
             assertTrue(app.appearance.dynamicColor)
             assertFalse(app.capabilities.screenControlEnabled)
             assertEquals(target.capabilities.webResearch, app.capabilities.webResearch)
+            assertEquals(420, app.capabilities.stallPeriodSeconds)
             assertTrue(app.messagingSettings.state.value.enabled)
             assertEquals(setOf(LIVE_REPLY), app.messagingSettings.state.value.replies)
             assertEquals("spotify-portable-client", app.spotify.clientId.value)

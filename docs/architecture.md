@@ -105,8 +105,8 @@ finished tasks from the last 512 thread items. It includes task text, action cou
 last action status, and three recent attributed receipts (call ID, capability,
 arguments, status, and message) for verification. The result stays below the model
 result budget; `tasksOmitted` and `historyLimited` expose omitted or partial history.
-Task states are `CONNECTING`, `WORKING`, `ANSWERED`, `FAILED`, or
-`INTERRUPTED` state. Cancel requests interruption of exactly that active task,
+Active states follow the Running work snapshot, including waits and `LOOKS_STUCK`;
+recent terminal states are `ANSWERED`, `FAILED`, or `INTERRUPTED`. Cancel requests interruption of exactly that active task,
 including its owned device task; unknown, finished, or other-thread IDs return
 `NOT_EXECUTED`. Cancellation does not undo actions already started; their receipts
 still determine effects. `ANSWERED` means the text leg answered, not that every
@@ -128,10 +128,41 @@ not interrupt a foreground response. Providers that do not support
 retain the notification fallback. Failed or interrupted notifications and thread
 notices retain accumulated partial answers and identify the interruption.
 
-`VoiceSessionService` owns foreground voice lifetime; `TurnWorkService` covers
-text and detached turns, including delegated work while voice is attached. Android can interrupt background
-work, so persistence supports recovery and explicit interrupted outcomes, not a
-promise of uninterrupted execution across process death.
+`VoiceSessionService` owns foreground voice lifetime; `TurnWorkService` reserves
+execution coverage when a turn is accepted, including voice turns that may outlive
+the call. Acceptance waits for service promotion while the Activity, assistant
+window, or voice foreground service still provides start eligibility. A single
+host transition coordinates both services and awaits work promotion before
+stopping voice coverage. Work coverage survives call end and audio-focus loss and
+remains until the last task's dispatched actions and terminal journal writes have
+drained. `ForegroundServiceGate` still postpones an early stop until promotion.
+Android can still interrupt background work; process recovery records interruption
+and never replays an action.
+
+**Running work**, reached from the drawer, Settings → Background work, or the
+ongoing notification, lists tasks across all threads. Its one source is
+`ThreadController.taskSnapshots`: stable thread/turn IDs, thread title, request or
+delegation text, kind, execution state, start and last-progress timestamps, action
+count and last action status, device-lease ownership, and actual work-service
+coverage. Finishing tasks remain visible while receipts drain. Voice background
+status uses the same active snapshot state and retains its attributed recent
+receipt/history projection. Open thread navigates without cancelling work.
+
+Stop and Stop all use the existing interruption path: cancellation requests drain
+started actions and preserve their truthful receipts. Force stop cancels the task
+scope immediately, revokes its device lease, and records `INTERRUPTED` with
+“Force-stopped by you; actions already started may have had effects”. Late cleanup
+cannot release a successor's lease. The task remains visible while outstanding
+receipts drain; neither stop path retries actions or claims to undo effects.
+
+Settings → Background work edits `capabilities.stallPeriodSeconds` in the same
+portable configuration model (default 180 seconds, positive, no maximum duration
+cap). The value composes, synchronizes, and restores with the other capability
+settings. Provider events attributed to a task, action starts/completions, and
+device progress refresh its progress clock. A one-second host tick marks inactivity
+as **looks stuck** in the shared snapshot and notification; progress clears it.
+This is advisory and never kills work. Existing per-turn action budgets and
+device-task step/time budgets continue to apply.
 
 A turn can run successive native or extension reads and mutations without another
 user message. Calls execute sequentially with a ceiling of 32 admitted calls,
@@ -653,22 +684,27 @@ not repeat a previous action. Existing notification-message lock restrictions re
 A missing permission still requires device-local setup, while already-granted
 execution remains independent of Activity lifetime.
 
-Foreground-service start or promotion rejection reports the restriction rather
-than crashing or silently losing its service observer. Voice rejection ends the
-attachment and permits accepted work to continue in text; rejection of the
-background-work service rechecks ownership and interrupts only turns without live
-voice coverage. A text attachment relies on the work service too. It stops a device
-task only by the affected turn's ID. Coverage refusal is terminal interruption,
-with partial answers in the notice and notification; it never retries an action.
-`interruptAll` remains the separate controller-shutdown path used by `drain()`.
-The work service remains active while any non-voice turn needs coverage. On Android's
-`shortService` timeout it calls `startForeground` again to renew coverage when Android
-allows it (a visible app or a foreground-start exemption), independently of changes
-to the working-thread set. Only actual promotion/start refusal interrupts dependent
-work; completed work simply stops coverage. The type and permissions are unchanged;
-renewal is subject to Android eligibility, not guaranteed indefinite execution. Voice and
-background work remain non-sticky; force-stop and process death do not trigger action replay. The assistant launch fallback and unlock UI
-require physical-device verification; JVM checks cannot establish OEM behavior.
+The work service uses Android's `specialUse` foreground-service type, declares
+`FOREGROUND_SERVICE_SPECIAL_USE`, and describes user-requested assistant tasks,
+delegated research, and device automation in `PROPERTY_SPECIAL_USE_FGS_SUBTYPE`.
+It has no EVA-side duration cap. Android currently gives `specialUse` no fixed
+three-minute timeout. The manifest also declares `shortService` solely for fallback:
+if long-running promotion is refused, EVA tries short-service promotion and exposes
+the roughly three-minute limit in each affected thread and in notifications. If
+start or both promotions are refused, or a timeout cannot renew coverage, only
+turns without live voice coverage are interrupted, with partial findings retained.
+The service handles both Android timeout callbacks without assuming their type.
+Voice shutdown rechecks coverage, including when an earlier attempt was refused.
+
+The ongoing notification shows the active task count, a task's text and elapsed
+time, any **looks stuck** marker or fallback limit, Stop all, and a link to Running
+work. Notification permission can hide Android notifications; thread notices and
+the in-app task surface still expose restrictions. Services remain non-sticky;
+force-stop and process death do not trigger replay. A foreground service is not a
+wake lock, a lock-screen bypass, or a guarantee against OEM/process termination.
+The assistant launch fallback, locked execution, foreground eligibility, and audio
+handover require physical-device verification; JVM checks cannot establish OEM
+behavior. See the [verification checklist](operations.md#background-work-and-task-manager).
 
 ## Memory
 

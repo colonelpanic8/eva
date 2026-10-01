@@ -25,6 +25,7 @@ data class NativeCallEnding(
 
 /** Everything the settings screens render, collected once by the activity. */
 data class SettingsUiState(
+    val stallPeriodSeconds: Int = 180,
     val configuration: ConfigurationStatus = ConfigurationStatus(),
     val messaging: MessagingPreferences =
         MessagingPreferences(),
@@ -96,6 +97,7 @@ data class SettingsUiState(
  * connection panel behaved, and it left nothing on screen to explain the failure.
  */
 data class SettingsActions(
+    val onStallPeriodSeconds: (Int) -> Unit = {},
     val onSelectConfigurationFolder: () -> Unit = {},
     val onReloadConfiguration: () -> Unit = {},
     val onGitEnabled: (Boolean) -> Unit = {},

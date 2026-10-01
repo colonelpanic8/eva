@@ -7,6 +7,7 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -158,13 +159,15 @@
             android:foregroundServiceType="microphone|mediaPlayback|location"
             tools:targetApi="30" />
 
-        <!-- Finishes a turn after its call ended. Short by design: a turn that cannot finish in
-             the allowance is interrupted and said so, not left half-done in the dark. -->
+        <!-- User-requested work can outlive its voice or activity attachment. -->
         <service
             android:name=".conversation.TurnWorkService"
             android:exported="false"
-            android:foregroundServiceType="shortService"
-            tools:targetApi="34" />
+            android:foregroundServiceType="specialUse|shortService"
+            tools:targetApi="34">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-requested assistant tasks, delegated research, and device automation continuing after the assistant UI or voice call closes; active work is visible and stoppable." />
+        </service>
 
         <!-- Holding the assistant role, rather than only answering ACTION_ASSIST, is what puts
              EVA behind the assist gesture and lets it answer over another app. Only the system

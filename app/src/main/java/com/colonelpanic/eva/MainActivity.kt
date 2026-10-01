@@ -66,6 +66,7 @@ class MainActivity : ComponentActivity() {
         set(value) {
             voice.surface = value
         }
+    private var runningWorkRequest by mutableStateOf(0)
     private var deviceAssistant by mutableStateOf(false)
     private var mediaControlAccess by mutableStateOf(false)
     private var messagingPermissions by mutableStateOf(emptyList<PermissionStatus>())
@@ -308,7 +309,9 @@ class MainActivity : ComponentActivity() {
                 catalogPreview.text.without(hidden(false)),
                 catalogPreview.voice.without(hidden(true)),
             )
+        val stallPeriod by eva.capabilities.stallPeriodFlow.collectAsStateWithLifecycle()
         return SettingsUiState(
+            stallPeriodSeconds = stallPeriod,
             configuration = configuration,
             messaging = messaging,
             messagingApps = messagingApps,
@@ -415,6 +418,7 @@ class MainActivity : ComponentActivity() {
         remember {
             val settings = eva.settings
             SettingsActions(
+                onStallPeriodSeconds = eva.capabilities::saveStallPeriodSeconds,
                 onSelectConfigurationFolder = { configurationFolder.launch(null) },
                 onReloadConfiguration = eva.configuration::reload,
                 onGitEnabled = eva.configuration::setGitEnabled,
@@ -537,9 +541,11 @@ class MainActivity : ComponentActivity() {
         eva.refreshModels()
         val controller = eva.controller
         intent?.getStringExtra(WorkNotifications.EXTRA_THREAD_ID)?.let(controller::showThread)
+        if (intent?.getBooleanExtra(WorkNotifications.EXTRA_RUNNING_WORK, false) == true) runningWorkRequest++
         setContent {
             val state by controller.state.collectAsStateWithLifecycle()
             val threads by controller.threads.collectAsStateWithLifecycle()
+            val tasks by controller.taskSnapshots.collectAsStateWithLifecycle()
             val dynamicColor by eva.appearance.dynamicColorFlow.collectAsStateWithLifecycle()
             EvaTheme(dynamicColor = dynamicColor) {
                 if (surface.locked) {
@@ -560,6 +566,11 @@ class MainActivity : ComponentActivity() {
                     promptActions = promptActions(),
                     about = aboutInfo(),
                     threads = threads,
+                    tasks = tasks,
+                    runningWorkRequest = runningWorkRequest,
+                    onStopWork = controller::stopTask,
+                    onForceStopWork = controller::forceStopTask,
+                    onStopAllWork = controller::stopAllTasks,
                     onNewThread = controller::newThread,
                     onShowThread = controller::showThread,
                     onStopTask = controller::stopTask,
@@ -589,6 +600,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         intent.getStringExtra(WorkNotifications.EXTRA_THREAD_ID)?.let(eva.controller::showThread)
+        if (intent.getBooleanExtra(WorkNotifications.EXTRA_RUNNING_WORK, false)) runningWorkRequest++
         setIntent(intent)
         voice.launchHandled = true
         openHandsFree()
