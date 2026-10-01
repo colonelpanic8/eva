@@ -33,6 +33,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 /** A local MCP server EVA starts over stdio, as `mcpServers` entries name them in other MCP clients. */
 data class McpServerConfig(
@@ -128,8 +129,12 @@ class McpAdapter(
     private val scans = Mutex()
     private val published = ConcurrentHashMap<String, Published>()
 
-    /** Servers that announced changed tools since their last listing. */
-    private val changed: MutableSet<String> = ConcurrentHashMap.newKeySet()
+    /** Servers whose tools changed since their last listing, each with the notice that said so. */
+    private val changed = ConcurrentHashMap<String, Long>()
+    private val notices = AtomicLong()
+
+    /** Sessions started but not yet published, closed if their listing never completes. */
+    private val unpublished: MutableSet<McpSession> = ConcurrentHashMap.newKeySet()
 
     @Volatile var notes: Map<String, Notes> = emptyMap()
         private set
@@ -138,63 +143,84 @@ class McpAdapter(
         scope.launch { scan() }
     }
 
+    /** A listing, with the change notice it already reflects; a newer notice leaves the server withdrawn. */
+    private class Listing(
+        val entry: Published,
+        val notes: Notes,
+        val seenNotice: Long?,
+    )
+
     /** Lists every server in parallel, starting any that is not running, and publishes what EVA can offer. */
     suspend fun scan() =
         scans.withLock {
-            val results = coroutineScope { servers.map { config -> async { config to discover(config) } }.awaitAll() }
-            val collected = mutableMapOf<String, Notes>()
-            mutableInstalled.value =
-                results.map { (config, result) ->
-                    val identity = McpIdentity(config)
-                    result.fold(
-                        onSuccess = { (entry, notes) ->
-                            published
-                                .put(config.name, entry)
-                                ?.session
-                                ?.takeIf { it !== entry.session }
-                                ?.close()
-                            changed -= config.name
-                            collected[config.name] = notes
-                            installed(
-                                config,
-                                identity,
-                                entry.descriptor,
-                                if (entry.descriptor ==
-                                    null
-                                ) {
-                                    "It offers no tools EVA can use."
-                                } else {
-                                    null
-                                },
-                            )
-                        },
-                        onFailure = { failure ->
-                            published.remove(config.name)?.session?.close()
-                            installed(config, identity, null, "It could not be started: ${failure.message ?: failure.javaClass.simpleName}")
-                        },
-                    )
+            try {
+                val results = coroutineScope { servers.map { config -> async { config to discover(config) } }.awaitAll() }
+                val collected = mutableMapOf<String, Notes>()
+                mutableInstalled.value =
+                    results.map { (config, result) ->
+                        val identity = McpIdentity(config)
+                        result.fold(
+                            onSuccess = { listing -> publish(config, identity, listing).also { collected[config.name] = listing.notes } },
+                            onFailure = { failure ->
+                                published.remove(config.name)?.session?.close()
+                                installed(
+                                    config,
+                                    identity,
+                                    null,
+                                    "It could not be started: ${failure.message ?: failure.javaClass.simpleName}",
+                                )
+                            },
+                        )
+                    }
+                notes = collected
+                mutableReady.value = true
+            } finally {
+                // A scan cut short, as at shutdown, must not leave servers it started running unseen.
+                unpublished.toList().forEach { session ->
+                    unpublished -= session
+                    session.close()
                 }
-            notes = collected
-            mutableReady.value = true
+            }
         }
 
-    private suspend fun discover(config: McpServerConfig): Result<Pair<Published, Notes>> {
+    private fun publish(
+        config: McpServerConfig,
+        identity: McpIdentity,
+        listing: Listing,
+    ): InstalledExtension {
+        val entry = listing.entry
+        published
+            .put(config.name, entry)
+            ?.session
+            ?.takeIf { it !== entry.session }
+            ?.close()
+        unpublished -= entry.session
+        // Only the notice this listing already reflects is cleared; one that arrived meanwhile stands.
+        listing.seenNotice?.let { changed.remove(config.name, it) }
+        return installed(config, identity, entry.descriptor, if (entry.descriptor == null) "It offers no tools EVA can use." else null)
+    }
+
+    private suspend fun discover(config: McpServerConfig): Result<Listing> {
         val current = published[config.name]
-        if (current != null && current.session.alive() && config.name !in changed) {
-            return Result.success(current to (notes[config.name] ?: Notes()))
+        val seenNotice = changed[config.name]
+        if (current != null && current.session.alive() && seenNotice == null) {
+            return Result.success(Listing(current, notes[config.name] ?: Notes(), null))
         }
         val reused = current?.session?.takeIf { it.alive() }
         return runCatching {
             val session =
                 reused ?: start(config) {
-                    changed += config.name
+                    changed[config.name] = notices.incrementAndGet()
                     refresh()
-                }
+                }.also { unpublished += it }
             try {
                 val translation = McpTools.translate(config.name, session.serverVersion, session.tools())
-                Published(session, translation.descriptor) to Notes(translation.unsupported, translation.hidden)
+                Listing(Published(session, translation.descriptor), Notes(translation.unsupported, translation.hidden), seenNotice)
             } catch (failure: Exception) {
-                if (session !== reused) session.close()
+                if (session !== reused) {
+                    unpublished -= session
+                    session.close()
+                }
                 throw failure
             }
         }
@@ -231,7 +257,7 @@ class McpAdapter(
     ): McpSession? {
         val name = identity.config.name
         val entry = published[name] ?: return null
-        return entry.session.takeIf { name !in changed && entry.descriptor?.digest == digest && it.alive() }
+        return entry.session.takeIf { name !in changed.keys && entry.descriptor?.digest == digest && it.alive() }
     }
 
     override fun bindings(extension: InstalledExtension): List<CapabilityBinding> {
@@ -244,8 +270,9 @@ class McpAdapter(
     }
 
     override fun close() {
-        published.values.forEach { runCatching { it.session.close() } }
+        (published.values.map { it.session } + unpublished).forEach { runCatching { it.close() } }
         published.clear()
+        unpublished.clear()
     }
 }
 

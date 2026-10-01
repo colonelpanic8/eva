@@ -8,8 +8,13 @@ import com.colonelpanic.eva.capability.ToolProposal
 import com.colonelpanic.eva.capability.extensions.ExtensionGrants
 import com.colonelpanic.eva.capability.extensions.ExtensionRuntime
 import com.colonelpanic.eva.capability.extensions.MemoryGrantPersistence
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -24,7 +29,9 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class McpAdapterTest {
-    private class FakeSession : McpSession {
+    private class FakeSession(
+        val gate: CompletableDeferred<Unit>? = null,
+    ) : McpSession {
         var description = "Move a window"
         override val serverName = "fake"
         override val serverVersion = "1.0"
@@ -35,8 +42,12 @@ class McpAdapterTest {
 
         override fun alive() = running
 
-        override suspend fun tools() =
-            listOf(
+        var gateOverride: CompletableDeferred<Unit>? = null
+
+        override suspend fun tools(): List<McpToolListing> {
+            (gateOverride ?: gate)?.await()
+            gateOverride = null
+            return listOf(
                 McpToolListing(
                     "move_window",
                     "Move window",
@@ -47,6 +58,7 @@ class McpAdapterTest {
                         ).jsonObject,
                 ),
             )
+        }
 
         override suspend fun call(
             tool: String,
@@ -186,5 +198,54 @@ class McpAdapterTest {
                     .isEmpty(),
             )
             assertTrue(registry.catalog.isEmpty())
+        }
+
+    @Test
+    fun `a change announced while another server is still listing keeps the changed server withdrawn`() =
+        runTest {
+            val fast = FakeSession()
+            val slow = FakeSession()
+            // Rescans are driven by hand here, so a notice's own refresh cannot hide the race.
+            val inert = CoroutineScope(Job().apply { cancel() })
+            val adapter =
+                McpAdapter(listOf(config, McpServerConfig("slow", "/bin/slow")), inert) { started, onChanged ->
+                    (if (started.name == "slow") slow else fast).also { it.onChanged = onChanged }
+                }
+            adapter.scan()
+            val listed = adapter.installed.value.first { it.packageName == config.name }
+            val identity = listed.identity as McpIdentity
+            val digest = listed.descriptor!!.digest
+            assertTrue(adapter.available(identity, digest))
+
+            fast.onChanged()
+            assertTrue(!adapter.available(identity, digest))
+            val held = CompletableDeferred<Unit>()
+            slow.gateOverride = held
+            // The slow server relists too, so the fast one's listing waits for it before publication.
+            slow.onChanged()
+            val relisting = backgroundScope.launch { adapter.scan() }
+            runCurrent()
+            fast.onChanged()
+            held.complete(Unit)
+            relisting.join()
+            assertTrue("A notice that arrived during listing must not be cleared", !adapter.available(identity, digest))
+
+            adapter.scan()
+            assertTrue(adapter.available(identity, digest))
+        }
+
+    @Test
+    fun `a scan cut short closes the servers it started but never published`() =
+        runTest {
+            val fast = FakeSession()
+            val slow = FakeSession(CompletableDeferred())
+            val adapter =
+                McpAdapter(listOf(config, McpServerConfig("slow", "/bin/slow")), backgroundScope) { started, _ ->
+                    if (started.name == "slow") slow else fast
+                }
+            val scan = backgroundScope.launch { adapter.scan() }
+            runCurrent()
+            scan.cancelAndJoin()
+            assertTrue(!fast.running && !slow.running)
         }
 }
