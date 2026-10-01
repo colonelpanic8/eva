@@ -153,6 +153,11 @@ private class OpenAiRealtimeSession(
     /** A tool follow-up was requested and its response has not started yet. */
     private var followUpExpected = false
     private var followUpDeferred = false
+    private var contextReplyPending = false
+    private var userSpeaking = false
+    private var assistantAudioActive = false
+    private var closed = false
+    private val speechInputs = linkedMapOf<String, String?>()
     private val pending = mutableMapOf<String, CallIdentity>()
 
     /** Responses with a resolved call that wants the model to speak once all of its calls resolve. */
@@ -237,18 +242,43 @@ private class OpenAiRealtimeSession(
                                 val input = pendingTypedInput?.id ?: "voice:$id"
                                 pendingTypedInput = null
                                 activeInput = input
+                                speechInputs.replaceAll { _, value -> value ?: input }
                                 send(ProviderEvent.ResponseStarted(input, input))
                             }
                         }
 
                         "input_audio_buffer.speech_started" -> {
                             send(ProviderEvent.UserSpeaking)
-                            message.str("item_id")?.let { send(ProviderEvent.SpeechInputStarted(it)) }
+                            userSpeaking = true
+                            message.str("item_id")?.let {
+                                speechInputs[it] = activeInput.takeIf { pending.isNotEmpty() }
+                                if (speechInputs.size > 256) speechInputs.remove(speechInputs.keys.first())
+                                send(ProviderEvent.SpeechInputStarted(it))
+                            }
+                        }
+
+                        "input_audio_buffer.speech_stopped" -> {
+                            userSpeaking = false
+                            requestContextReply()
                         }
 
                         "conversation.item.input_audio_transcription.completed" -> {
                             message.str("transcript")?.takeIf { it.isNotBlank() }?.let {
-                                send(ProviderEvent.Transcript("user", it, message.str("item_id")))
+                                val itemId = message.str("item_id")
+                                send(
+                                    ProviderEvent.Transcript(
+                                        "user",
+                                        it,
+                                        itemId,
+                                        if (itemId ==
+                                            null
+                                        ) {
+                                            activeInput
+                                        } else {
+                                            speechInputs[itemId]
+                                        },
+                                    ),
+                                )
                             }
                         }
 
@@ -288,11 +318,14 @@ private class OpenAiRealtimeSession(
                         // WebRTC only: the server paces audio out after generating it, so these, not
                         // response.done, say when the reply has finished reaching the phone.
                         "output_audio_buffer.started" -> {
+                            assistantAudioActive = true
                             send(ProviderEvent.AssistantSpeaking(true))
                         }
 
                         "output_audio_buffer.stopped", "output_audio_buffer.cleared" -> {
+                            assistantAudioActive = false
                             send(ProviderEvent.AssistantSpeaking(false))
+                            requestContextReply()
                         }
 
                         "response.done" -> {
@@ -310,6 +343,7 @@ private class OpenAiRealtimeSession(
                             activeInput = null
                             activeResponse = null
                             send(ProviderEvent.ResponseEnded(input, status))
+                            requestContextReply()
                         }
 
                         "error" -> {
@@ -326,6 +360,7 @@ private class OpenAiRealtimeSession(
                     }
                 }
             } finally {
+                closed = true
                 seedTimeout?.cancel()
                 forward.cancel()
             }
@@ -398,10 +433,38 @@ private class OpenAiRealtimeSession(
             activeInput = null
             activeResponse = null
             local.send(ProviderEvent.ResponseEnded(input, "completed"))
+            requestContextReply()
         }
     }
 
-    override suspend fun close() = Unit
+    override suspend fun submitContext(
+        note: String,
+        respond: Boolean,
+    ): Boolean {
+        if (closed || sessionId == null || !seedReady) return false
+        media.send(realtimeSeedItem(OpenAiHistoryMessage("developer", note)).event)
+        if (respond) {
+            contextReplyPending = true
+            requestContextReply()
+        }
+        return true
+    }
+
+    private fun requestContextReply() {
+        if (!contextReplyPending || responseActive || followUpExpected || pending.isNotEmpty() ||
+            userSpeaking || assistantAudioActive || closed
+        ) {
+            return
+        }
+        contextReplyPending = false
+        followUpExpected = true
+        media.send(responseCreate())
+    }
+
+    override suspend fun close() {
+        closed = true
+        contextReplyPending = false
+    }
 }
 
 /** The Realtime API rejects an item id longer than this, so the random part is cut to fit. */

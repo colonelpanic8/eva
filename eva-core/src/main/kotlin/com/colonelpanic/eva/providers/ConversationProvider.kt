@@ -130,6 +130,7 @@ sealed interface ProviderEvent {
         val role: String,
         val text: String,
         val itemId: String? = null,
+        val inputId: String? = null,
     ) : ProviderEvent
 
     /**
@@ -167,6 +168,12 @@ interface ConversationSession {
     suspend fun requestResponse(request: ResponseRequest)
 
     suspend fun submitToolResult(result: CorrelatedToolResult)
+
+    /** Adds an EVA-authored lifecycle note, with external findings quoted as data. False if unsupported. */
+    suspend fun submitContext(
+        note: String,
+        respond: Boolean,
+    ): Boolean = false
 
     suspend fun close()
 }

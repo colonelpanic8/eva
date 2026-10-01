@@ -543,6 +543,148 @@ class OpenAiRealtimeProviderTest {
             collector.cancel()
         }
 
+    @Test
+    fun `lifecycle context is a system item and its reply waits for response and audio idle`() =
+        runTest {
+            val media = FakeMedia()
+            val session = openSession(media).open(SessionOpenRequest("You are EVA.", catalog))
+            val events = mutableListOf<ProviderEvent>()
+            val collector = launch { session.events.collect { events += it } }
+            media.incoming.send("""{"type":"session.created","session":{"id":"sess_1"}}""")
+            media.incoming.send("""{"type":"response.created","response":{"id":"resp_1"}}""")
+            media.incoming.send("""{"type":"output_audio_buffer.started"}""")
+            runCurrent()
+            assertTrue(session.submitContext("EVA task update\n{\"answer\":\"quoted finding\"}", respond = true))
+            assertTrue(session.submitContext("A second task update", respond = true))
+            assertEquals(0, media.responseCreates())
+            val item =
+                Json
+                    .parseToJsonElement(media.sent.first())
+                    .jsonObject
+                    .getValue("item")
+                    .jsonObject
+            assertEquals("system", item.getValue("role").jsonPrimitive.content)
+            assertEquals(
+                "input_text",
+                item
+                    .getValue("content")
+                    .jsonArray
+                    .single()
+                    .jsonObject
+                    .getValue("type")
+                    .jsonPrimitive.content,
+            )
+            assertEquals(
+                "EVA task update\n{\"answer\":\"quoted finding\"}",
+                item
+                    .getValue("content")
+                    .jsonArray
+                    .single()
+                    .jsonObject
+                    .getValue("text")
+                    .jsonPrimitive.content,
+            )
+            media.incoming.send("""{"type":"response.done","response":{"id":"resp_1","status":"completed"}}""")
+            runCurrent()
+            assertEquals(0, media.responseCreates())
+            media.incoming.send("""{"type":"output_audio_buffer.stopped"}""")
+            runCurrent()
+            assertEquals(1, media.responseCreates())
+            media.incoming.send("""{"type":"response.created","response":{"id":"resp_2"}}""")
+            media.incoming.send("""{"type":"response.done","response":{"id":"resp_2","status":"completed"}}""")
+            runCurrent()
+            assertEquals(1, media.responseCreates())
+            assertEquals(listOf("voice:resp_1", "voice:resp_2"), events.filterIsInstance<ProviderEvent.ResponseEnded>().map { it.inputId })
+            collector.cancel()
+        }
+
+    @Test
+    fun `context waits behind pending tool results and silent context never starts a response`() =
+        runTest {
+            val media = FakeMedia()
+            val session = openSession(media).open(SessionOpenRequest("You are EVA.", catalog))
+            val events = mutableListOf<ProviderEvent>()
+            val collector = launch { session.events.collect { events += it } }
+            media.incoming.send("""{"type":"session.created","session":{"id":"sess_1"}}""")
+            runCurrent()
+            assertTrue(session.submitContext("Silent update", respond = false))
+            assertEquals(0, media.responseCreates())
+            media.incoming.send("""{"type":"response.created","response":{"id":"resp_1"}}""")
+            media.incoming.send(functionCall("task"))
+            media.incoming.send("""{"type":"response.done","response":{"id":"resp_1","status":"completed"}}""")
+            runCurrent()
+            assertTrue(session.submitContext("Task finished", respond = true))
+            assertEquals(0, media.responseCreates())
+            session.submitToolResult(
+                CorrelatedToolResult(
+                    events.filterIsInstance<ProviderEvent.ToolCallReady>().single().call,
+                    "COMPLETED",
+                    "Done",
+                    respond = false,
+                ),
+            )
+            runCurrent()
+            assertEquals(1, media.responseCreates())
+            // No second response is submitted while that response is awaiting its created event.
+            assertTrue(session.submitContext("Another finding", respond = true))
+            assertEquals(1, media.responseCreates())
+            session.close()
+            assertTrue(!session.submitContext("Closed", respond = true))
+            collector.cancel()
+        }
+
+    @Test
+    fun `context speech waits until the user stops speaking`() =
+        runTest {
+            val media = FakeMedia()
+            val session = openSession(media).open(SessionOpenRequest("You are EVA.", catalog))
+            val collector = launch { session.events.collect {} }
+            media.incoming.send("""{"type":"session.created","session":{"id":"sess_1"}}""")
+            media.incoming.send("""{"type":"input_audio_buffer.speech_started","item_id":"first"}""")
+            runCurrent()
+            session.submitContext("Task finished", respond = true)
+            assertEquals(0, media.responseCreates())
+            media.incoming.send("""{"type":"input_audio_buffer.speech_stopped","item_id":"first"}""")
+            runCurrent()
+            assertEquals(1, media.responseCreates())
+            collector.cancel()
+        }
+
+    @Test
+    fun `late speech transcripts retain their input while speech during a device call reuses it`() =
+        runTest {
+            val media = FakeMedia()
+            val session = openSession(media).open(SessionOpenRequest("You are EVA.", catalog))
+            val events = mutableListOf<ProviderEvent>()
+            val collector = launch { session.events.collect { events += it } }
+            media.incoming.send("""{"type":"session.created","session":{"id":"sess_1"}}""")
+            media.incoming.send("""{"type":"input_audio_buffer.speech_started","item_id":"first"}""")
+            media.incoming.send("""{"type":"input_audio_buffer.speech_stopped","item_id":"first"}""")
+            media.incoming.send("""{"type":"response.created","response":{"id":"resp_1"}}""")
+            media.incoming.send("""{"type":"response.done","response":{"id":"resp_1","status":"completed"}}""")
+            media.incoming.send("""{"type":"input_audio_buffer.speech_started","item_id":"second"}""")
+            media.incoming.send("""{"type":"input_audio_buffer.speech_stopped","item_id":"second"}""")
+            media.incoming.send("""{"type":"response.created","response":{"id":"resp_2"}}""")
+            media.incoming.send(functionCall("device"))
+            media.incoming.send("""{"type":"response.done","response":{"id":"resp_2","status":"completed"}}""")
+            media.incoming.send(
+                """{"type":"conversation.item.input_audio_transcription.completed","item_id":"first","transcript":"First request"}""",
+            )
+            media.incoming.send(
+                """{"type":"conversation.item.input_audio_transcription.completed","item_id":"second","transcript":"Device request"}""",
+            )
+            media.incoming.send("""{"type":"input_audio_buffer.speech_started","item_id":"correction"}""")
+            media.incoming.send(
+                """{"type":"conversation.item.input_audio_transcription.completed","item_id":"correction","transcript":"Use the home network"}""",
+            )
+            runCurrent()
+            assertEquals(
+                listOf("voice:resp_1", "voice:resp_2", "voice:resp_2"),
+                events.filterIsInstance<ProviderEvent.Transcript>().map { it.inputId },
+            )
+            collector.cancel()
+        }
+
     private class FakeMedia : RealtimeMediaSession {
         override val state = MutableStateFlow<RealtimeMediaState>(RealtimeMediaState.Idle)
         override val controls = MutableStateFlow(MediaControls())
