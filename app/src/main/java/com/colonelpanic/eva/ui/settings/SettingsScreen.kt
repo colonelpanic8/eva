@@ -114,6 +114,8 @@ fun SettingsScreen(
             SpotifySection(state, actions)
             SettingsDivider()
             AppearanceSection(state, actions)
+            SettingsDivider()
+            DiagnosticsSection(state, actions)
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -557,6 +559,35 @@ private fun AppearanceSection(
             checked = state.dynamicColor,
             onCheckedChange = actions.onDynamicColorChange,
         )
+    }
+}
+
+@Composable
+private fun DiagnosticsSection(
+    state: SettingsUiState,
+    actions: SettingsActions,
+) {
+    SettingsSection("Diagnostics") {
+        SettingsSwitchRow(
+            title = "Verbose logging",
+            supporting = "Also record speech and transcript timing events. Message text and credentials are never logged.",
+            checked = state.verboseLogging,
+            onCheckedChange = actions.onVerboseLogging,
+        )
+        SettingsBlock {
+            Text(
+                "Exports are JSON files for the share sheet. Credential values are redacted; " +
+                    "a conversation export includes its messages and action details.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = actions.onExportLogs) { Text("Export recent logs") }
+                OutlinedButton(onClick = actions.onShareThreadDiagnostics, enabled = state.hasCurrentThread) {
+                    Text("Share diagnostics for current thread")
+                }
+            }
+        }
     }
 }
 

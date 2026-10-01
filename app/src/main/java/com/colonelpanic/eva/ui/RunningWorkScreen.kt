@@ -2,7 +2,7 @@ package com.colonelpanic.eva.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -31,6 +31,7 @@ fun RunningWorkScreen(
     onStop: (String) -> Unit,
     onForceStop: (String) -> Unit,
     onStopAll: () -> Unit,
+    onShareDiagnostics: (String) -> Unit,
     onOpenThread: (String) -> Unit,
 ) {
     Scaffold(topBar = {
@@ -67,10 +68,11 @@ fun RunningWorkScreen(
                             },
                         )
                         Text("Task ${task.taskId}", style = MaterialTheme.typography.bodySmall)
-                        Row {
+                        FlowRow {
                             TextButton(onClick = { onStop(task.taskId) }) { Text("Stop") }
                             TextButton(onClick = { onForceStop(task.taskId) }) { Text("Force stop") }
                             TextButton(onClick = { onOpenThread(task.threadId) }) { Text("Open thread") }
+                            TextButton(onClick = { onShareDiagnostics(task.threadId) }) { Text("Share diagnostics") }
                         }
                         Text(
                             "Stop drains started actions. Force stop cancels immediately; actions already started may have had effects.",

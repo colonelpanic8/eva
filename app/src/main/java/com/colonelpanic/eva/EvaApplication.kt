@@ -54,6 +54,7 @@ import com.colonelpanic.eva.data.AppearanceSettings
 import com.colonelpanic.eva.data.CapabilitySettings
 import com.colonelpanic.eva.data.ChatGptAccountStore
 import com.colonelpanic.eva.data.ChosenNumbers
+import com.colonelpanic.eva.data.DiagnosticsSettings
 import com.colonelpanic.eva.data.ExtensionGrantFile
 import com.colonelpanic.eva.data.JournalDatabase
 import com.colonelpanic.eva.data.MessagingSettings
@@ -64,6 +65,7 @@ import com.colonelpanic.eva.data.SqliteConversationStore
 import com.colonelpanic.eva.data.SqliteInvocationRepository
 import com.colonelpanic.eva.data.configuration.EvaConfigurationManager
 import com.colonelpanic.eva.devicecontrol.ScreenActions
+import com.colonelpanic.eva.diagnostics.EvaTrace
 import com.colonelpanic.eva.messaging.MessagingBackend
 import com.colonelpanic.eva.messaging.NotificationMessages
 import com.colonelpanic.eva.providers.BrokerConversationProvider
@@ -129,6 +131,7 @@ class EvaApplication :
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val settings by lazy { OpenAiSettings(this, configuration::onLocalChange, configuration::onCredentialChange) }
     val appearance by lazy { AppearanceSettings(this, configuration::onLocalChange) }
+    val diagnostics by lazy { DiagnosticsSettings(this, configuration::onLocalChange) }
     val capabilities by lazy { CapabilitySettings(this, configuration::onLocalChange, configuration::onCredentialChange) }
     val prompts by lazy { PromptStore(this, onChanged = configuration::onLocalChange) }
     val chatGpt by lazy {
@@ -387,6 +390,7 @@ class EvaApplication :
                         problem = { backendProblem(name) },
                     ) { deviceBackend(name, onDeviceTiming) }
                 },
+                onFallback = { name, problem -> EvaTrace.info("device_task.backend_fallback", "backend" to name, "problem" to problem) },
             )
         screenActions.reset()
         return com.colonelpanic.eva.devicecontrol.worker.TextTaskAgent(
@@ -722,10 +726,12 @@ class EvaApplication :
 
     private fun logExtensionFailure(failure: Throwable) {
         android.util.Log.e("EvaExtensions", "Extension startup or refresh failed", failure)
+        EvaTrace.info("extensions.failed", "error" to failure.javaClass.simpleName)
     }
 
     override fun onCreate() {
         super.onCreate()
+        diagnosticsExport.install(scope, diagnostics.verboseLoggingFlow)
         if (settings.takeLegacyOneShotExternal() == false) {
             editPrompt { update { it.selectCallMode(VoiceCallMode.OPEN_CONVERSATION) } }
         }
@@ -743,21 +749,29 @@ class EvaApplication :
     }
 
     private val contactKeywords by lazy { ContactNameKeywords(this, ::contactHistory) }
+    private val journal by lazy { JournalDatabase(this, SqliteInvocationRepository.DATABASE_NAME) }
+    val invocations by lazy { SqliteInvocationRepository(journal) }
+    val conversations by lazy { SqliteConversationStore(journal) }
+    val diagnosticsExport by lazy {
+        com.colonelpanic.eva.diagnostics
+            .AndroidDiagnostics(this)
+    }
+
     val controller by lazy {
-        val journal = JournalDatabase(this, SqliteInvocationRepository.DATABASE_NAME)
-        val repository = SqliteInvocationRepository(journal)
+        val repository = invocations
         ThreadController(
             registry = registry,
             dispatcher =
                 CapabilityDispatcher(registry, repository, onBackendFailure = { capability, error ->
                     android.util.Log.w("EvaDispatch", "$capability threw before reporting an outcome", error)
+                    EvaTrace.info("tool.backend_threw", "capability" to capability, "error" to error.javaClass.simpleName)
                 }, executeAdmitted = { proposal, backend ->
                     deviceTasks.executeAdmitted(proposal, backend, backend.usesDeviceUi(proposal))
                 }),
             deviceTasks = deviceTasks,
             onWorkAccepted = { TurnWorkService.ensureStarted(this) },
             stallPeriodMillis = { capabilities.stallPeriodSeconds * 1_000L },
-            store = SqliteConversationStore(journal),
+            store = conversations,
             onBackgroundAnswer = { WorkNotifications.answered(this, it) },
             onBackgroundAnswerDelivered = { WorkNotifications.delivered(this, it) },
             // A blank link means the phone talks to OpenAI itself; a link means the paired host bridge.
@@ -782,13 +796,16 @@ class EvaApplication :
             repository = repository,
             scope = scope,
             awaitCapabilities = {
-                check(
+                var configured = false
+                val ready =
                     kotlinx.coroutines.withTimeoutOrNull(15_000) {
                         configuration.awaitReady()
+                        configured = true
                         extensions.awaitReady()
                         true
-                    } == true,
-                ) { "EVA is still loading configuration and extensions. Try connecting again shortly." }
+                    } == true
+                if (!ready) EvaTrace.info("readiness.timeout", "configuration" to configured, "extensions" to false)
+                check(ready) { "EVA is still loading configuration and extensions. Try connecting again shortly." }
             },
             voiceLookupRetries = { settings.voiceLookupRetries },
             quietHangUpMillis = { settings.quietHangUpSeconds * 1_000L },

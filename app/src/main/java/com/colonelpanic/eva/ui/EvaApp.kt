@@ -63,6 +63,7 @@ fun EvaApp(
     onStopWork: (String) -> Unit = {},
     onForceStopWork: (String) -> Unit = {},
     onStopAllWork: () -> Unit = {},
+    onShareDiagnostics: (String) -> Unit = {},
     onSubmit: (String) -> Unit,
     onConnect: () -> Unit = {},
     onVoice: () -> Unit = {},
@@ -138,12 +139,13 @@ fun EvaApp(
                         showScreenControl = true
                         destination = EvaDestination.SETTINGS
                     },
+                    onShareDiagnostics = onShareDiagnostics,
                 )
             }
 
             EvaDestination.RUNNING_WORK -> {
                 val runningTasks by tasks.collectAsStateWithLifecycle()
-                RunningWorkScreen(runningTasks, { openDrawer() }, onStopWork, onForceStopWork, onStopAllWork) { id ->
+                RunningWorkScreen(runningTasks, { openDrawer() }, onStopWork, onForceStopWork, onStopAllWork, onShareDiagnostics) { id ->
                     onShowThread(id)
                     destination = EvaDestination.CONVERSATION
                 }

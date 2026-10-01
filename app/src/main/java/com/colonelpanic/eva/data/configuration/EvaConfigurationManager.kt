@@ -666,6 +666,7 @@ class EvaConfigurationManager(
                         ) + contentAuthorizations()
                     ).distinct().sorted(),
                 ),
+            diagnostics = EvaConfiguration.Diagnostics(app.diagnostics.verboseLogging),
         )
     }
 
@@ -790,6 +791,7 @@ class EvaConfigurationManager(
         app.settings.saveQuietHangUpSeconds(configuration.voice.quietHangUpSeconds)
         app.settings.saveCallEndings(configuration.voice.callEndings())
         app.appearance.saveDynamicColor(configuration.appearance.dynamicColor)
+        app.diagnostics.saveVerboseLogging(configuration.diagnostics.verboseLogging)
         app.capabilities.saveScreenControl(configuration.capabilities.screenControl)
         app.capabilities.saveDeviceTask(configuration.capabilities.deviceTask)
         app.capabilities.saveWebResearch(configuration.capabilities.webResearch)
@@ -965,6 +967,7 @@ class EvaConfigurationManager(
         attempt("quiet hang-up") { app.settings.saveQuietHangUpSeconds(before.voice.quietHangUpSeconds) }
         attempt("voice call endings") { app.settings.saveCallEndings(before.voice.callEndings()) }
         attempt("appearance") { app.appearance.saveDynamicColor(before.appearance.dynamicColor) }
+        attempt("diagnostics") { app.diagnostics.saveVerboseLogging(before.diagnostics.verboseLogging) }
         attempt("capabilities") {
             app.capabilities.saveScreenControl(before.capabilities.screenControl)
             app.capabilities.saveDeviceTask(before.capabilities.deviceTask)

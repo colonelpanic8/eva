@@ -86,6 +86,9 @@ data class SettingsUiState(
     val spotifyPremium: Boolean? = null,
     val spotifyConnect: SpotifyConnectState = SpotifyConnectState.Idle,
     val dynamicColor: Boolean = false,
+    val verboseLogging: Boolean = false,
+    /** Whether a conversation is shown, so its diagnostics can be shared. */
+    val hasCurrentThread: Boolean = false,
 ) {
     /** Whether any of the three ways to reach a provider is configured. */
     val hasCredential: Boolean get() = account != null || hasApiKey || hasHostLink
@@ -157,4 +160,7 @@ data class SettingsActions(
     val onCancelSpotifyConnect: () -> Unit = {},
     val onDisconnectSpotify: () -> Unit = {},
     val onDynamicColorChange: (Boolean) -> Unit = {},
+    val onVerboseLogging: (Boolean) -> Unit = {},
+    val onExportLogs: () -> Unit = {},
+    val onShareThreadDiagnostics: () -> Unit = {},
 )

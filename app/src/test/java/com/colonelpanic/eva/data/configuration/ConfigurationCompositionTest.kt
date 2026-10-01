@@ -147,6 +147,27 @@ class ConfigurationCompositionTest {
     }
 
     @Test
+    fun `verbose logging round trips composes and is absent from files that leave it off`() {
+        val base = fullConfiguration()
+        assertFalse(base.diagnostics.verboseLogging)
+        assertFalse(EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(base)).contains("diagnostics"))
+        val verbose = base.copy(diagnostics = EvaConfiguration.Diagnostics(verboseLogging = true))
+        val encoded = EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(verbose))
+        assertTrue(encoded.contains("diagnostics:\n  verboseLogging: true"))
+        assertEquals(verbose, EvaConfigurationCodec.resolve(reader(mapOf(EvaConfigurationCodec.FILE_NAME to encoded))).configuration)
+
+        val override = EvaConfigurationCodec.overrides(base, EvaConfigurationCodec.complete(verbose), listOf("base.yaml"))
+        assertEquals(DiagnosticsPatch(verboseLogging = false), override.diagnostics)
+        assertEquals(
+            base,
+            EvaConfigurationCodec
+                .resolve(
+                    reader(mapOf(EvaConfigurationCodec.FILE_NAME to EvaConfigurationCodec.encode(override), "base.yaml" to encoded)),
+                ).configuration,
+        )
+    }
+
+    @Test
     fun `bearer reference kind round trips and mismatched kinds are rejected`() {
         val current = fullConfiguration()
         val reference = EvaConfigurationCodec.serviceSecretId(SERVICE_NAME, "bearer")

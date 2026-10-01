@@ -325,6 +325,7 @@ class EvaConfigurationManagerTest {
                         ),
                     remembered = EvaConfiguration.Remembered(mapOf("+14155551212" to 1_700_000_000_000)),
                     device = EvaConfiguration.Device(listOf("android.role.ASSISTANT", "android.notification-listener")),
+                    diagnostics = EvaConfiguration.Diagnostics(verboseLogging = true),
                 )
             val directory = MemoryDirectory(EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(target)))
             val manager = EvaConfigurationManager(app, availableMessagingReplies = { setOf(LIVE_REPLY) })
@@ -340,6 +341,7 @@ class EvaConfigurationManagerTest {
             assertFalse(app.capabilities.screenControlEnabled)
             assertEquals(target.capabilities.webResearch, app.capabilities.webResearch)
             assertEquals(420, app.capabilities.stallPeriodSeconds)
+            assertTrue(app.diagnostics.verboseLogging)
             assertTrue(app.messagingSettings.state.value.enabled)
             assertEquals(setOf(LIVE_REPLY), app.messagingSettings.state.value.replies)
             assertEquals("spotify-portable-client", app.spotify.clientId.value)

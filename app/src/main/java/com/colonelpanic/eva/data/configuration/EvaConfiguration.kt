@@ -40,6 +40,7 @@ data class EvaConfigurationDocument(
     val credentials: CredentialsPatch? = null,
     val remembered: RememberedPatch? = null,
     val device: DevicePatch? = null,
+    val diagnostics: DiagnosticsPatch? = null,
 ) {
     companion object {
         const val FORMAT = "eva"
@@ -202,6 +203,11 @@ data class SecretReference(
     val authorizations: List<String>? = null,
 )
 
+@Serializable data class DiagnosticsPatch(
+    /** Adds speech, transcript-length, and other high-volume events to EVA's lifecycle trace. */
+    val verboseLogging: Boolean? = null,
+)
+
 data class EvaConfiguration(
     val models: Models,
     val voice: Voice,
@@ -216,6 +222,7 @@ data class EvaConfiguration(
     val credentials: Credentials,
     val remembered: Remembered,
     val device: Device,
+    val diagnostics: Diagnostics = Diagnostics(),
 ) {
     data class Models(
         val text: String,
@@ -294,6 +301,10 @@ data class EvaConfiguration(
 
     data class Device(
         val authorizations: List<String>,
+    )
+
+    data class Diagnostics(
+        val verboseLogging: Boolean = false,
     )
 }
 
@@ -514,6 +525,8 @@ object EvaConfigurationCodec {
         credentials = CredentialsPatch(current.credentials.required.takeIf { it != base?.credentials?.required }).nonEmpty(),
         remembered = RememberedPatch(current.remembered.chosenNumbers.takeIf { it != base?.remembered?.chosenNumbers }).nonEmpty(),
         device = DevicePatch(current.device.authorizations.takeIf { it != base?.device?.authorizations }).nonEmpty(),
+        diagnostics =
+            DiagnosticsPatch(current.diagnostics.verboseLogging.takeIf { it != (base?.diagnostics?.verboseLogging ?: false) }).nonEmpty(),
     )
 
     private fun EvaConfigurationDocument.materialize(): EvaConfiguration =
@@ -575,6 +588,7 @@ object EvaConfigurationCodec {
                 EvaConfiguration.Remembered(requireNotNull(remembered?.chosenNumbers) { "remembered.chosenNumbers is missing." }),
             device =
                 EvaConfiguration.Device(requireNotNull(device?.authorizations) { "device.authorizations is missing." }),
+            diagnostics = EvaConfiguration.Diagnostics(diagnostics?.verboseLogging ?: false),
         )
 
     private fun EvaConfiguration.validated(): EvaConfiguration {
@@ -896,6 +910,7 @@ object EvaConfigurationCodec {
         credentials = CredentialsPatch(override.credentials?.required ?: base.credentials?.required).nonEmpty(),
         remembered = RememberedPatch(override.remembered?.chosenNumbers ?: base.remembered?.chosenNumbers).nonEmpty(),
         device = DevicePatch(override.device?.authorizations ?: base.device?.authorizations).nonEmpty(),
+        diagnostics = DiagnosticsPatch(override.diagnostics?.verboseLogging ?: base.diagnostics?.verboseLogging).nonEmpty(),
     )
 
     private fun validateInclude(path: String) {
@@ -950,6 +965,8 @@ object EvaConfigurationCodec {
     private fun RememberedPatch.nonEmpty() = takeIf { chosenNumbers != null }
 
     private fun DevicePatch.nonEmpty() = takeIf { authorizations != null }
+
+    private fun DiagnosticsPatch.nonEmpty() = takeIf { verboseLogging != null }
 
     private fun String.modelName() = require(length in 1..100 && none(Char::isWhitespace)) { "Invalid model name." }
 
