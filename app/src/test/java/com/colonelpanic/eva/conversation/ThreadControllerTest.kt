@@ -3769,6 +3769,43 @@ class ThreadControllerTest {
             watcher.cancel()
         }
 
+    @Test
+    fun `each connection and background leg records the catalog it was offered`() =
+        runTest {
+            val voice = FakeProvider()
+            val background = FakeProvider(epoch = "background")
+            val controller = controller(voice, background = background, media = { VoiceMedia() })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            voice.input = ConversationInput("voice:leg-turn", "")
+            voice.channel.send(ProviderEvent.ResponseStarted("voice:leg-turn", "voice:leg-turn"))
+            voice.channel.send(ProviderEvent.Transcript("user", "Check status"))
+            advanceUntilIdle()
+            voice.call("delegate", ThreadController.DEFER_TO_TEXT.capabilityId, "task" to "Check status")
+            advanceUntilIdle()
+
+            val threadId = controller.state.value.threadId!!
+            val records = store.sessionCatalogs(threadId)
+            assertEquals(listOf(SessionKind.VOICE, SessionKind.TEXT_LEG), records.map { it.kind })
+            assertEquals(
+                voice.request.catalog.tools
+                    .map { it.capabilityId },
+                records[0].tools.map { it.capabilityId },
+            )
+            assertEquals(voice.request.catalog.revision, records[0].catalogRevision)
+            assertNull(records[0].turnId)
+            val leg = store.items(threadId).filterIsInstance<ThreadItem.TextLeg>().single()
+            assertEquals(leg.id, records[1].legId)
+            assertEquals(leg.turnId, records[1].turnId)
+            assertEquals(
+                background.request.catalog.tools
+                    .map { it.capabilityId },
+                records[1].tools.map { it.capabilityId },
+            )
+            assertEquals(background.request.catalog.excludedTools, records[1].excludedTools)
+        }
+
     private class FakeProvider(
         val openGate: CompletableDeferred<Unit>? = null,
         epoch: String = "epoch",

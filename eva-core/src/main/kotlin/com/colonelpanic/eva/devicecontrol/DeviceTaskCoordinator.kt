@@ -9,6 +9,7 @@ import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.ToolProposal
 import com.colonelpanic.eva.conversation.prompt.Wording
 import com.colonelpanic.eva.devicecontrol.worker.TextTaskAgent
+import com.colonelpanic.eva.diagnostics.EvaTrace
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -151,6 +152,7 @@ class DeviceTaskCoordinator(
             synchronized(monitor) { mutableRunning.value?.takeIf { it.agent === agent }?.job }
                 ?: return stoppedBeforeDispatch()
         val epoch = synchronized(monitor) { screenEpoch }
+        EvaTrace.info("device_task.started", "call" to proposal.callId, "turn" to turn, "uncertainScreen" to uncertainScreen.takeIf { it })
         val goal =
             synchronized(monitor) {
                 if (uncertainScreen) {
@@ -168,6 +170,14 @@ class DeviceTaskCoordinator(
                         }
                     }
                 synchronized(monitor) { if (screenEpoch == epoch && result.status == TaskStatus.COMPLETED) uncertainScreen = false }
+                EvaTrace.info(
+                    "device_task.ended",
+                    "call" to proposal.callId,
+                    "turn" to turn,
+                    "status" to result.status,
+                    "effects" to agent.effects,
+                    "steps" to agent.steps.size,
+                )
                 val status =
                     when (result.status) {
                         TaskStatus.COMPLETED -> InvocationStatus.COMPLETED
@@ -231,6 +241,7 @@ class DeviceTaskCoordinator(
                     },
                 )
             } finally {
+                EvaTrace.info("device_task.released", "call" to proposal.callId, "turn" to turn)
                 synchronized(monitor) {
                     if (mutableRunning.value?.agent === agent) mutableRunning.value = null
                     release(proposal.callId)
@@ -250,7 +261,10 @@ class DeviceTaskCoordinator(
         val callId = proposal.callId
         synchronized(monitor) { mutableWaitingForLease.value += callId }
         return try {
-            if (lease.owner != null) proposal.onQueued()
+            if (lease.owner != null) {
+                EvaTrace.info("device.queued", "call" to callId, "capability" to proposal.capabilityId, "turn" to proposal.turnId)
+                proposal.onQueued()
+            }
             lease.acquire(callId)
             null
         } catch (_: CancellationException) {

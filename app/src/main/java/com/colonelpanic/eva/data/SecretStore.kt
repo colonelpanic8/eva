@@ -44,6 +44,9 @@ open class SecretStore(
         prefs.edit { putString(name, stored) }
     }
 
+    /** Every stored secret, decrypted; only for redacting them out of diagnostics. */
+    open fun values(): List<String> = prefs.all.keys.mapNotNull(::read)
+
     open fun clear(name: String) {
         prefs.edit { remove(name) }
     }

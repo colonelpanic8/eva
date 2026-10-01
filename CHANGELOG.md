@@ -17,6 +17,9 @@ All notable changes to EVA will be documented here.
 - Settings → Background work sets a portable inactivity warning. Tasks that look stuck are flagged, never killed.
 - Extensions shows tool-budget meters and lists actions excluded from a session.
 - Voice says once that it is still working when a lookup runs longer than eight seconds.
+- Share a conversation's diagnostics as one JSON file from its ⋮ menu, Running work, or Settings → Diagnostics. Credentials are redacted.
+- Settings → Diagnostics exports recent logs and toggles portable verbose logging. Lifecycle events log under `EvaTrace` without message text or arguments.
+- The action journal moves to version 9 to record the tools each session was offered.
 
 ### Changed
 

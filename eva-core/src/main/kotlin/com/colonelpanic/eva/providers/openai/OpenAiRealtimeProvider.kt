@@ -6,6 +6,7 @@ import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.capability.CatalogAdmission
 import com.colonelpanic.eva.capability.InitiatorKind
 import com.colonelpanic.eva.capability.ToolSchema
+import com.colonelpanic.eva.diagnostics.ProviderEventLog
 import com.colonelpanic.eva.providers.CallIdentity
 import com.colonelpanic.eva.providers.CallRejection
 import com.colonelpanic.eva.providers.ConversationInput
@@ -246,6 +247,14 @@ private class OpenAiRealtimeSession(
     private var pendingConnected: ProviderEvent.Connected? = null
     private val json = Json { ignoreUnknownKeys = true }
 
+    private fun transmit(raw: String) {
+        ProviderEventLog.realtime.recordOutbound(
+            connectionEpoch,
+            raw,
+        ) { runCatching { json.parseToJsonElement(it).jsonObject }.getOrNull() }
+        media.send(raw)
+    }
+
     override val events: Flow<ProviderEvent> =
         channelFlow {
             eventScope = this
@@ -255,6 +264,7 @@ private class OpenAiRealtimeSession(
                 launch {
                     media.events.collect { raw ->
                         val message = runCatching { json.parseToJsonElement(raw).jsonObject }.getOrNull() ?: return@collect
+                        ProviderEventLog.realtime.record(connectionEpoch, outbound = false, message)
                         if (sessionId == null &&
                             message.str("type") !in setOf("session.created", "session.updated", "error")
                         ) {
@@ -306,7 +316,7 @@ private class OpenAiRealtimeSession(
                             "response.created" -> {
                                 val response = message.obj("response") ?: return@collect
                                 if (!seedReady) {
-                                    response.str("id")?.let { media.send(responseCancel(it)) }
+                                    response.str("id")?.let { transmit(responseCancel(it)) }
                                     clearSpeech()
                                     return@collect
                                 }
@@ -531,8 +541,8 @@ private class OpenAiRealtimeSession(
     }
 
     private fun cancelResponse(id: String) {
-        media.send(responseCancel(id))
-        media.send("""{"type":"output_audio_buffer.clear"}""")
+        transmit(responseCancel(id))
+        transmit("""{"type":"output_audio_buffer.clear"}""")
     }
 
     private fun interruptForSpeech() {
@@ -545,7 +555,7 @@ private class OpenAiRealtimeSession(
             cancelResponse(id)
         }
         if (activeResponses.isEmpty() && assistantAudioActive) {
-            media.send("""{"type":"output_audio_buffer.clear"}""")
+            transmit("""{"type":"output_audio_buffer.clear"}""")
         }
         queued.filter { it.purpose == "user_speech" }.forEach { origin ->
             queued.remove(origin)
@@ -788,7 +798,7 @@ private class OpenAiRealtimeSession(
         val id = eventId()
         itemRequests[id] = request
         while (itemRequests.size > REALTIME_CORRELATION_HISTORY) itemRequests.remove(itemRequests.keys.first())
-        media.send(JsonObject(json.parseToJsonElement(raw).jsonObject + ("event_id" to JsonPrimitive(id))).toString())
+        transmit(JsonObject(json.parseToJsonElement(raw).jsonObject + ("event_id" to JsonPrimitive(id))).toString())
     }
 
     private fun handleError(error: JsonObject?) {
@@ -846,7 +856,7 @@ private class OpenAiRealtimeSession(
     private fun failInput(inputId: String) {
         inputStatus[inputId] = "failed"
         queued.removeAll { it.inputId == inputId }
-        activeResponses.filter { responses[it]?.origin?.inputId == inputId }.forEach { media.send(responseCancel(it)) }
+        activeResponses.filter { responses[it]?.origin?.inputId == inputId }.forEach { transmit(responseCancel(it)) }
         finishInput(inputId)
     }
 
@@ -902,7 +912,7 @@ private class OpenAiRealtimeSession(
                 }
                 pumpRequests()
             }
-        media.send(
+        transmit(
             buildJsonObject {
                 put("type", "response.create")
                 put("event_id", id)

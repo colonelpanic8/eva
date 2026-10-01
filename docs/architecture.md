@@ -1288,6 +1288,74 @@ their own untrusted wording. A prompt component's `describe` still rewords a too
 top of this file. UI writes normalize YAML and remove comments; file-based
 editing is preferable if comments must survive.
 
+## Diagnostics
+
+EVA keeps two kinds of evidence. The **journal** (threads, turns, items, invocation
+records) is the durable record. The **trace** is a lifecycle log for diagnosing what
+happened around it.
+
+`EvaTrace` events carry identities, kinds, statuses, counts, and EVA-authored reasons:
+session connecting/connected/closed (with reason), the offered catalog's size and
+excluded count, response started/ended, tool calls proposed, admitted, rejected,
+completed or cancelled (call ID, capability ID, initiator kind, status), handoff
+started/connected and task failure or interruption, task-state changes from the
+Running work snapshot, force stop, turn closure, work and voice foreground-service
+start, refusal, timeout, and stop, device-task start, end, queueing and backend
+fallback, readiness timeouts, and exports. Events never contain message or transcript
+text, tool arguments, or credentials; field values still pass through the redactor
+and are capped at 240 characters. Verbose events (speech starts, transcript and reply
+lengths, assistant audio) are recorded only while `diagnostics.verboseLogging` is on.
+On Android each event goes to Logcat at INFO under `EvaTrace` and into a ring of the
+latest 2,000 events, persisted as two rotating JSON-lines files under the app's
+private `files/diagnostics/`, so a restarted process restores the full ring.
+
+Journal version 9 (Android and desktop) adds `session_catalogs`: when a connection or
+background text leg connects, EVA records its kind, model, catalog revision, offered
+tool IDs and titles, and excluded tool IDs. Writing it is best effort; a failure is
+traced and never ends the session. Each insert drops the thread's records beyond the
+newest 50. Older journals upgrade in place.
+
+Realtime sessions also feed an in-memory ring of the last 1,000 raw wire events, both
+directions (`ProviderEventLog`). Each keeps its type, event/response/item/call IDs,
+response metadata, item type, role, name and status, response status with its reason,
+error type and code, and up to 2,000 characters of transcript, text, arguments, or
+error text. Audio payloads and session bodies (instructions, tool schemas) are never
+kept; a session event records only its tool count, and outbound events over 64 KiB
+keep only their type. Consecutive deltas for one item coalesce into one entry with a
+count and first/last times. Recording only reads fields from the already-parsed
+event; the ring never goes to Logcat and is lost when the process ends.
+
+A thread export (`DiagnosticsExport`) is one JSON document:
+
+- `summary` lines, `environment` (app version, version code, build type, application
+  ID, device, Android version, access mode, configured models, verbose flag), and the
+  thread's ID and title.
+- `items` in thread order with their absolute index and turn ID: user and assistant
+  messages with `spoken`; notices; text legs with task, exact instructions, and seeded
+  history size; action calls with arguments, leg ID, and initiator, joined to their
+  invocation record (status, message, structured data, provenance, initiator,
+  request, catalog revision, claim time). A call without a record says so.
+- `turns`, `sessions` (the catalog records above), the thread's `tasks` from the
+  Running work snapshot, `deviceTasks` (goal, status, effects, and each step's kind,
+  result, and timings from the receipt), the whole `trace` ring, and the
+  `providerEvents` wire ring. The recent-logs export includes the wire ring without
+  its text.
+
+Bounds are explicit: the newest 400 items (`bounds.items` gives the total, the
+omitted count, and an “N earlier items omitted” statement), the newest 50 session
+records, and 32,000 characters per text field, cut with a “…[N more characters
+omitted]” marker. Device-step results are cut at 600 characters.
+
+Redaction runs over the finished document. A value under a credential-like key
+(token, secret, password, API key, authorization, cookie, credential, signature, PIN,
+OTP, in any naming style) is replaced whole. Every value in the device's secret store
+is replaced wherever it appears. Free text loses bearer/basic authorization,
+credential headers and `key=value` assignments, credential URL query parameters, URL
+user info, OpenAI/GitHub/Slack/Google key shapes, and JWTs. Message text, arguments,
+and results are otherwise kept: they are the user's own evidence. The export is
+written to the app cache, replaced by the next export, and leaves the device only
+through Android's share sheet with a one-time read grant.
+
 ## Desktop host
 
 `:eva-desktop` is a text-mode EVA for a desktop computer, built on `:eva-core` like

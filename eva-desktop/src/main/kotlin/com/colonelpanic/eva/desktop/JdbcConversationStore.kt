@@ -3,6 +3,9 @@ package com.colonelpanic.eva.desktop
 import com.colonelpanic.eva.capability.ActionInitiator
 import com.colonelpanic.eva.conversation.ConversationStore
 import com.colonelpanic.eva.conversation.NoticeKind
+import com.colonelpanic.eva.conversation.SessionCatalogColumns
+import com.colonelpanic.eva.conversation.SessionCatalogRecord
+import com.colonelpanic.eva.conversation.SessionKind
 import com.colonelpanic.eva.conversation.Thread
 import com.colonelpanic.eva.conversation.ThreadItem
 import com.colonelpanic.eva.conversation.Turn
@@ -142,6 +145,59 @@ class JdbcConversationStore(
         recovered.map { it.threadId }.distinct().forEach(changes::tryEmit)
         return recovered
     }
+
+    override suspend fun recordSessionCatalog(record: SessionCatalogRecord) {
+        journal.transaction { db ->
+            db.update(
+                "INSERT INTO session_catalogs (id, thread_id, turn_id, created_at, kind, leg_id, model, catalog_revision, " +
+                    "tools_json, excluded_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                record.id,
+                record.threadId,
+                record.turnId,
+                record.createdAtMillis,
+                record.kind.name,
+                record.legId,
+                record.model,
+                record.catalogRevision,
+                SessionCatalogColumns.tools(record.tools),
+                SessionCatalogColumns.ids(record.excludedTools),
+            )
+            db.update(
+                "DELETE FROM session_catalogs WHERE thread_id = ? AND rowid NOT IN " +
+                    "(SELECT rowid FROM session_catalogs WHERE thread_id = ? ORDER BY rowid DESC LIMIT ?)",
+                record.threadId,
+                record.threadId,
+                ConversationStore.SESSION_CATALOG_LIMIT,
+            )
+        }
+    }
+
+    override suspend fun sessionCatalogs(
+        threadId: String,
+        limit: Int,
+    ): List<SessionCatalogRecord> {
+        require(limit >= 0)
+        return journal.read { db ->
+            db
+                .query("SELECT * FROM session_catalogs WHERE thread_id = ? ORDER BY rowid DESC LIMIT ?", threadId, limit) {
+                    SessionCatalogRecord(
+                        it.getString("id"),
+                        it.getString("thread_id"),
+                        it.nullableString("turn_id"),
+                        it.getLong("created_at"),
+                        SessionKind.valueOf(it.getString("kind")),
+                        it.nullableString("leg_id"),
+                        it.nullableString("model"),
+                        it.getString("catalog_revision"),
+                        SessionCatalogColumns.tools(it.getString("tools_json")),
+                        SessionCatalogColumns.ids(it.getString("excluded_json")),
+                    )
+                }.reversed()
+        }
+    }
+
+    override suspend fun itemCount(threadId: String): Int =
+        journal.read { db -> db.query("SELECT COUNT(*) FROM items WHERE thread_id = ?", threadId) { it.getInt(1) }.single() }
 
     private fun bump(
         db: Connection,

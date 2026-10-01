@@ -24,10 +24,14 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -84,6 +88,7 @@ internal fun ConversationScreen(
     onDismissDenial: () -> Unit,
     screenControl: ScreenControlStatus = ScreenControlStatus(),
     onOpenScreenControl: () -> Unit = {},
+    onShareDiagnostics: (String) -> Unit = {},
 ) {
     var draft by rememberSaveable { mutableStateOf("") }
     val storageFailed = state.errorMessage != null
@@ -114,7 +119,10 @@ internal fun ConversationScreen(
                     }
                 },
                 navigationIcon = { MenuButton(onOpenDrawer) },
-                actions = { ScreenControlChip(screenControl, state.deviceTaskActive, onOpenScreenControl) },
+                actions = {
+                    ScreenControlChip(screenControl, state.deviceTaskActive, onOpenScreenControl)
+                    ThreadMenu(state.threadId, onShareDiagnostics)
+                },
                 colors = evaTopAppBarColors(),
             )
         },
@@ -267,6 +275,27 @@ private fun LoadingHistory(modifier: Modifier = Modifier) {
                 text = "Loading your action history…",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ThreadMenu(
+    threadId: String?,
+    onShareDiagnostics: (String) -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "Conversation options") }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(
+                text = { Text("Share diagnostics") },
+                enabled = threadId != null,
+                onClick = {
+                    open = false
+                    threadId?.let(onShareDiagnostics)
+                },
             )
         }
     }

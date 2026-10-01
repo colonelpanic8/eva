@@ -6,6 +6,9 @@ import android.database.sqlite.SQLiteDatabase
 import com.colonelpanic.eva.capability.ActionInitiator
 import com.colonelpanic.eva.conversation.ConversationStore
 import com.colonelpanic.eva.conversation.NoticeKind
+import com.colonelpanic.eva.conversation.SessionCatalogColumns
+import com.colonelpanic.eva.conversation.SessionCatalogRecord
+import com.colonelpanic.eva.conversation.SessionKind
 import com.colonelpanic.eva.conversation.Thread
 import com.colonelpanic.eva.conversation.ThreadItem
 import com.colonelpanic.eva.conversation.Turn
@@ -154,6 +157,77 @@ class SqliteConversationStore(
         recovered.map { it.threadId }.distinct().forEach(changes::tryEmit)
         return recovered
     }
+
+    override suspend fun recordSessionCatalog(record: SessionCatalogRecord) {
+        withContext(Dispatchers.IO) {
+            transaction { db ->
+                db.insertCatalog(record)
+                db.execSQL(
+                    "DELETE FROM session_catalogs WHERE thread_id = ? AND rowid NOT IN " +
+                        "(SELECT rowid FROM session_catalogs WHERE thread_id = ? ORDER BY rowid DESC LIMIT ?)",
+                    arrayOf<Any>(record.threadId, record.threadId, ConversationStore.SESSION_CATALOG_LIMIT),
+                )
+            }
+        }
+    }
+
+    private fun SQLiteDatabase.insertCatalog(record: SessionCatalogRecord) {
+        insertOrThrow(
+            "session_catalogs",
+            null,
+            ContentValues().apply {
+                put("id", record.id)
+                put("thread_id", record.threadId)
+                put("turn_id", record.turnId)
+                put("created_at", record.createdAtMillis)
+                put("kind", record.kind.name)
+                put("leg_id", record.legId)
+                put("model", record.model)
+                put("catalog_revision", record.catalogRevision)
+                put("tools_json", SessionCatalogColumns.tools(record.tools))
+                put("excluded_json", SessionCatalogColumns.ids(record.excludedTools))
+            },
+        )
+    }
+
+    override suspend fun sessionCatalogs(
+        threadId: String,
+        limit: Int,
+    ): List<SessionCatalogRecord> {
+        require(limit >= 0)
+        return withContext(Dispatchers.IO) {
+            helper.readableDatabase
+                .query("session_catalogs", null, "thread_id = ?", arrayOf(threadId), null, null, "rowid DESC", limit.toString())
+                .use { cursor ->
+                    buildList {
+                        while (cursor.moveToNext()) {
+                            add(
+                                SessionCatalogRecord(
+                                    cursor.string("id"),
+                                    cursor.string("thread_id"),
+                                    cursor.nullableString("turn_id"),
+                                    cursor.long("created_at"),
+                                    SessionKind.valueOf(cursor.string("kind")),
+                                    cursor.nullableString("leg_id"),
+                                    cursor.nullableString("model"),
+                                    cursor.string("catalog_revision"),
+                                    SessionCatalogColumns.tools(cursor.string("tools_json")),
+                                    SessionCatalogColumns.ids(cursor.string("excluded_json")),
+                                ),
+                            )
+                        }
+                    }.reversed()
+                }
+        }
+    }
+
+    override suspend fun itemCount(threadId: String): Int =
+        withContext(Dispatchers.IO) {
+            helper.readableDatabase.rawQuery("SELECT COUNT(*) FROM items WHERE thread_id = ?", arrayOf(threadId)).use { cursor ->
+                cursor.moveToFirst()
+                cursor.getInt(0)
+            }
+        }
 
     private fun bump(
         db: SQLiteDatabase,

@@ -16,6 +16,7 @@ import androidx.core.content.ContextCompat
 import com.colonelpanic.eva.ForegroundServiceGate
 import com.colonelpanic.eva.MainActivity
 import com.colonelpanic.eva.adapters.android.CurrentLocationBackend
+import com.colonelpanic.eva.diagnostics.EvaTrace
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -86,12 +87,14 @@ class VoiceSessionService : Service() {
     }
 
     private fun foregroundRejected() {
+        EvaTrace.info("voice_service.rejected")
         gate.startRejected()
         host?.voiceUnavailable(START_DENIED)
         stopSelf()
     }
 
     override fun onDestroy() {
+        EvaTrace.info("voice_service.destroyed", "foreground" to foreground)
         scope.cancel()
         gate.destroyed()
         foreground = false
@@ -202,6 +205,7 @@ class VoiceSessionService : Service() {
 
         fun start(context: Context) {
             if (!gate.requestStart { ContextCompat.startForegroundService(context, Intent(context, VoiceSessionService::class.java)) }) {
+                EvaTrace.info("voice_service.start_denied")
                 (context.applicationContext as? VoiceSessionHost)?.voiceUnavailable(START_DENIED)
             }
         }

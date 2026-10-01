@@ -17,6 +17,7 @@ class MemoryConversationStore : ConversationStore {
     private val threadRecords = linkedMapOf<String, Thread>()
     private val turnRecords = linkedMapOf<String, Turn>()
     private val itemRecords = linkedMapOf<String, ThreadItem>()
+    private val catalogRecords = mutableListOf<SessionCatalogRecord>()
 
     override suspend fun createThread(title: String): Thread {
         val created =
@@ -107,6 +108,21 @@ class MemoryConversationStore : ConversationStore {
         recovered.map { it.threadId }.distinct().forEach(changes::tryEmit)
         return recovered
     }
+
+    override suspend fun recordSessionCatalog(record: SessionCatalogRecord) {
+        mutex.withLock {
+            catalogRecords += record
+            val thread = catalogRecords.filter { it.threadId == record.threadId }
+            catalogRecords.removeAll(thread.dropLast(ConversationStore.SESSION_CATALOG_LIMIT).toSet())
+        }
+    }
+
+    override suspend fun sessionCatalogs(
+        threadId: String,
+        limit: Int,
+    ) = mutex.withLock { catalogRecords.filter { it.threadId == threadId }.takeLast(limit) }
+
+    override suspend fun itemCount(threadId: String) = mutex.withLock { itemRecords.values.count { it.threadId == threadId } }
 
     private fun bump(threadId: String) {
         val current = checkNotNull(threadRecords[threadId])

@@ -28,16 +28,16 @@ class JournalDatabaseMigrationTest {
         context.openOrCreateDatabase(name, 0, null).use { db ->
             db.execSQL("CREATE TABLE future_data (value TEXT NOT NULL)")
             db.execSQL("INSERT INTO future_data VALUES ('keep me')")
-            db.version = 9
+            db.version = JournalDatabase.VERSION + 1
         }
         val helper = JournalDatabase(context, name)
         try {
             val error =
                 assertThrows(com.colonelpanic.eva.capability.UnsupportedJournalVersionException::class.java) { helper.writableDatabase }
             assertTrue(error.message!!.contains("unchanged"))
-            assertTrue(error.message!!.contains("9"))
+            assertTrue(error.message!!.contains((JournalDatabase.VERSION + 1).toString()))
             context.openOrCreateDatabase(name, 0, null).use { db ->
-                assertEquals(9, db.version)
+                assertEquals(JournalDatabase.VERSION + 1, db.version)
                 db.rawQuery("SELECT value FROM future_data", null).use { row ->
                     assertTrue(row.moveToFirst())
                     assertEquals("keep me", row.getString(0))
@@ -48,6 +48,76 @@ class JournalDatabaseMigrationTest {
             context.deleteDatabase(name)
         }
     }
+
+    @Test
+    fun `version eight keeps its history and gains session catalog records`() =
+        runBlocking<Unit> {
+            val context = RuntimeEnvironment.getApplication()
+            val name = "catalogs-${UUID.randomUUID()}.db"
+            context.openOrCreateDatabase(name, 0, null).use { db ->
+                db.execSQL(
+                    "CREATE TABLE invocations (call_id TEXT PRIMARY KEY NOT NULL, fingerprint TEXT NOT NULL, request TEXT NOT NULL, destination TEXT, status TEXT NOT NULL, message TEXT NOT NULL, created_at INTEGER NOT NULL, capability_id TEXT NOT NULL, catalog_revision TEXT NOT NULL, title TEXT, thread_id TEXT, turn_id TEXT, arguments_json TEXT, provenance_json TEXT, data_json TEXT, initiator_json TEXT)",
+                )
+                db.execSQL(
+                    "CREATE TABLE threads (id TEXT PRIMARY KEY NOT NULL, title TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
+                )
+                db.execSQL(
+                    "CREATE TABLE turns (id TEXT PRIMARY KEY NOT NULL, thread_id TEXT NOT NULL, request TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, side_effect_call_id TEXT)",
+                )
+                db.execSQL(
+                    "CREATE TABLE items (id TEXT PRIMARY KEY NOT NULL, thread_id TEXT NOT NULL, turn_id TEXT, created_at INTEGER NOT NULL, type TEXT NOT NULL, text TEXT, spoken INTEGER, truncated INTEGER, call_id TEXT, capability_id TEXT, title TEXT, arguments TEXT, notice_kind TEXT, leg_id TEXT, instructions TEXT, history_items INTEGER, initiator_json TEXT)",
+                )
+                db.execSQL("INSERT INTO threads VALUES ('thread','Old',1,1)")
+                db.execSQL(
+                    "INSERT INTO items (id,thread_id,created_at,type,text,spoken) VALUES ('old','thread',1,'USER_MESSAGE','Hello',1)",
+                )
+                db.execSQL(
+                    "INSERT INTO invocations (call_id,fingerprint,request,status,message,created_at,capability_id,catalog_revision,initiator_json) VALUES ('call','f','r','COMPLETED','Done',1,'eva.test','rev','{\"kind\":\"user_typed\"}')",
+                )
+                db.version = 8
+            }
+            val record =
+                com.colonelpanic.eva.conversation.SessionCatalogRecord(
+                    "session",
+                    "thread",
+                    "turn",
+                    2,
+                    com.colonelpanic.eva.conversation.SessionKind.TEXT_LEG,
+                    "leg",
+                    "gpt-test",
+                    "rev",
+                    listOf(
+                        com.colonelpanic.eva.conversation
+                            .OfferedTool("eva.test", "Test, \"quoted\""),
+                    ),
+                    listOf("extension.excluded"),
+                )
+            val journal = JournalDatabase(context, name)
+            try {
+                val store = SqliteConversationStore(journal)
+                assertEquals("Hello", (store.items("thread").single() as ThreadItem.UserMessage).text)
+                assertEquals(
+                    InitiatorKind.USER_TYPED,
+                    SqliteInvocationRepository(journal)
+                        .history()
+                        .single()
+                        .initiator
+                        ?.kind,
+                )
+                assertEquals(1, store.itemCount("thread"))
+                store.recordSessionCatalog(record)
+            } finally {
+                journal.close()
+            }
+            val reopened = JournalDatabase(context, name)
+            try {
+                assertEquals(JournalDatabase.VERSION, reopened.readableDatabase.version)
+                assertEquals(listOf(record), SqliteConversationStore(reopened).sessionCatalogs("thread"))
+            } finally {
+                reopened.close()
+                context.deleteDatabase(name)
+            }
+        }
 
     @Test
     fun `version seven preserves legacy origins and round trips new initiation identities`() =

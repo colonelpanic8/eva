@@ -41,6 +41,7 @@ import com.colonelpanic.eva.conversation.WorkNotifications
 import com.colonelpanic.eva.conversation.prompt.PromptYaml
 import com.colonelpanic.eva.conversation.prompt.VoiceCallMode
 import com.colonelpanic.eva.data.PromptState
+import com.colonelpanic.eva.diagnostics.AndroidDiagnostics
 import com.colonelpanic.eva.providers.openai.ModelKind
 import com.colonelpanic.eva.ui.EvaApp
 import com.colonelpanic.eva.ui.HandsFreeSurface
@@ -310,7 +311,11 @@ class MainActivity : ComponentActivity() {
                 catalogPreview.voice.without(hidden(true)),
             )
         val stallPeriod by eva.capabilities.stallPeriodFlow.collectAsStateWithLifecycle()
+        val verboseLogging by eva.diagnostics.verboseLoggingFlow.collectAsStateWithLifecycle()
+        val shownThread by eva.controller.state.collectAsStateWithLifecycle()
         return SettingsUiState(
+            verboseLogging = verboseLogging,
+            hasCurrentThread = shownThread.threadId != null,
             stallPeriodSeconds = stallPeriod,
             configuration = configuration,
             messaging = messaging,
@@ -526,8 +531,33 @@ class MainActivity : ComponentActivity() {
                     eva.spotify.clear()
                 },
                 onDynamicColorChange = eva.appearance::saveDynamicColor,
+                onVerboseLogging = eva.diagnostics::saveVerboseLogging,
+                onExportLogs = { shareDiagnostics { logsExport() } },
+                onShareThreadDiagnostics = {
+                    eva.controller.state.value.threadId
+                        ?.let(::shareThreadDiagnostics)
+                },
             )
         }
+
+    private fun shareThreadDiagnostics(threadId: String) = shareDiagnostics { threadExport(threadId) }
+
+    private fun shareDiagnostics(export: suspend AndroidDiagnostics.() -> AndroidDiagnostics.Export) {
+        lifecycleScope.launch {
+            try {
+                eva.diagnosticsExport.share(this@MainActivity, eva.diagnosticsExport.export())
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Toast
+                    .makeText(
+                        this@MainActivity,
+                        "Could not export diagnostics: ${error.message ?: error.javaClass.simpleName}",
+                        Toast.LENGTH_LONG,
+                    ).show()
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -573,6 +603,7 @@ class MainActivity : ComponentActivity() {
                     onStopWork = controller::stopTask,
                     onForceStopWork = controller::forceStopTask,
                     onStopAllWork = controller::stopAllTasks,
+                    onShareDiagnostics = ::shareThreadDiagnostics,
                     onNewThread = controller::newThread,
                     onShowThread = controller::showThread,
                     onStopTask = controller::stopTask,

@@ -94,6 +94,7 @@ Both use the same package names. Paths below are relative to those roots:
 | Portable configuration, composition, restore | `data/configuration/` |
 | Managed Git checkout, validation, sync | `data/configuration/ManagedGitRepository.kt`, `EvaConfigurationManager.kt` |
 | Persistence, settings, secrets | `data/` |
+| Lifecycle trace, diagnostics export, redaction | `diagnostics/` |
 | Prompt YAML, composition, following its source | `conversation/prompt/`, `data/PromptStore.kt` |
 | App navigation and settings | `ui/EvaApp.kt`, `ui/settings/`, `ui/prompt/` |
 

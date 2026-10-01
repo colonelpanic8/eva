@@ -212,6 +212,32 @@ catalog. Official inclusion is a separate future effort involving a source-build
 recipe and policy/reproducibility review. The checked-in fastlane metadata is
 reusable input, not evidence of acceptance.
 
+## Collecting diagnostics
+
+A production build is not debuggable, so its journal cannot be pulled over adb.
+Collect evidence from the phone itself:
+
+- **One conversation**: open it and choose ⋮ → **Share diagnostics**, or use
+  **Share diagnostics** on its row in Running work, or Settings → Diagnostics →
+  **Share diagnostics for current thread**. The share sheet receives one JSON file
+  (`eva-thread-<id>-<time>.json`) and a short summary as text. Save it to Drive or
+  send it to yourself; attach it to the bug report.
+- **Recent logs only**: Settings → Diagnostics → **Export recent logs** shares the
+  trace ring without any conversation content.
+- **Live Logcat**: every trace event is also logged at INFO under one tag, without
+  message text, arguments, or credentials:
+
+  ```sh
+  adb -s "$EVA_TEST_DEVICE" logcat -s EvaTrace
+  ```
+
+Turn on Settings → Diagnostics → **Verbose logging** before reproducing a speech
+problem: it adds speech start, transcript and reply lengths, and assistant-audio
+events. It is part of the portable configuration (`diagnostics.verboseLogging`) and
+defaults to off. The export's `summary`, `bounds`, and `redaction` fields say what was
+included, what a bound omitted, and what was redacted; see
+[diagnostics](architecture.md#diagnostics).
+
 ## Device verification
 
 Do not infer device support from Robolectric or synthetic audio. Record the build,
