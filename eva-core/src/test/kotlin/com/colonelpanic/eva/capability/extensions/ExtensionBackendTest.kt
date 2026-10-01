@@ -83,6 +83,29 @@ class ExtensionBackendTest {
         }
 
     @Test
+    fun `an oversized reply names the byte limit and stays unknown unless the capability only reads`() =
+        runTest {
+            val fake = FakeExtensionConnector().apply { reply = "x".repeat(extensionCapability.maxResultBytes + 1) }
+            val limit = "exceeded EVA's ${extensionCapability.maxResultBytes}-byte result limit"
+
+            fun backend(capability: Capability) =
+                ExtensionBackend(
+                    extensionIdentity,
+                    descriptor,
+                    capability,
+                    ExtensionConnectionManager(fake) { testScheduler.currentTime },
+                    StandardTestDispatcher(testScheduler),
+                )
+            val read = backend(extensionCapability.copy(effect = Effect.READ)).execute(proposal)
+            assertEquals(InvocationStatus.FAILED, read.status)
+            assertTrue(read.message, read.message.contains(limit))
+            val write = backend(extensionCapability.copy(effect = Effect.WRITE)).execute(proposal)
+            assertEquals(InvocationStatus.UNKNOWN, write.status)
+            assertTrue(write.message, write.message.contains(limit) && write.message.contains("may have run"))
+            assertEquals(JsonPrimitive(ExtensionBackend.invocationId("call-1")), write.data!!["invocationId"])
+        }
+
+    @Test
     fun `structured content reaches the outcome and schema violations stay unknown`() =
         runTest {
             val output = """{"type":"object","properties":{"count":{"type":"integer"}},"required":["count"],"additionalProperties":false}"""

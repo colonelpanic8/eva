@@ -17,6 +17,11 @@ class BindingNotSubmitted(
     message: String,
 ) : IllegalStateException(message)
 
+/** The request was sent, but its response was larger than the binding's approved [limit] and was discarded. */
+class ResponseTooLarge(
+    val limit: Int,
+) : IllegalStateException("Response exceeded the approved byte limit")
+
 class PackageHttpClient(
     private val credential: (String, String) -> HttpCredential?,
     client: OkHttpClient = OkHttpClient(),
@@ -74,7 +79,7 @@ class PackageHttpClient(
                 while (buffer.size <= request.maxResponseBytes) {
                     if (source.read(buffer, minOf(8192L, request.maxResponseBytes + 1L - buffer.size)) == -1L) break
                 }
-                check(buffer.size <= request.maxResponseBytes) { "Response exceeded the approved byte limit" }
+                if (buffer.size > request.maxResponseBytes) throw ResponseTooLarge(request.maxResponseBytes)
                 val text = buffer.readUtf8()
                 val normalized =
                     if (authorization ==

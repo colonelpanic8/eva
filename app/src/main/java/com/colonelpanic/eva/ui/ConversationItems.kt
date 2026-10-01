@@ -3,6 +3,7 @@ package com.colonelpanic.eva.ui
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,6 +48,7 @@ import com.colonelpanic.eva.conversation.EntryGroup
 import com.colonelpanic.eva.conversation.EntryStatus
 import com.colonelpanic.eva.conversation.TextLegDetails
 import com.colonelpanic.eva.conversation.TurnStatus
+import com.colonelpanic.eva.providers.ProviderToolCatalog
 
 internal fun Constraints.withMaxWidthFraction(fraction: Float): Constraints {
     if (!hasBoundedWidth) return this
@@ -131,9 +133,10 @@ internal fun StorageErrorBanner(message: String) {
 internal fun ConversationEntryItem(
     entry: ConversationEntry,
     children: List<EntryGroup> = emptyList(),
+    onOpenExtensions: () -> Unit = {},
 ) {
     if (entry.status == EntryStatus.SESSION) {
-        SessionDivider(entry.response)
+        SessionDivider(entry.response, onOpenExtensions.takeIf { entry.response.endsWith(ProviderToolCatalog.SEE_EXTENSIONS) })
         return
     }
     entry.textLeg?.let {
@@ -368,9 +371,17 @@ private fun DetailText(
 }
 
 @Composable
-private fun SessionDivider(label: String) {
+private fun SessionDivider(
+    label: String,
+    onClick: (() -> Unit)? = null,
+) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).semantics { contentDescription = label },
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .then(if (onClick != null) Modifier.clickable(onClickLabel = "Open Extensions", onClick = onClick) else Modifier)
+                .padding(vertical = 4.dp)
+                .semantics { contentDescription = label },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -378,7 +389,8 @@ private fun SessionDivider(label: String) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = if (onClick != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(4f, fill = false),
         )
         HorizontalDivider(modifier = Modifier.weight(1f))
     }

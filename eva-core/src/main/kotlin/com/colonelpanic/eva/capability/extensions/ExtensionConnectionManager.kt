@@ -91,6 +91,11 @@ sealed interface ExtensionExchange {
     ) : ExtensionExchange
 
     data object Uncertain : ExtensionExchange
+
+    /** A reply arrived after submission but was larger than [limit] bytes, so EVA discarded it unread. */
+    data class Oversized(
+        val limit: Int,
+    ) : ExtensionExchange
 }
 
 /** One in-flight transaction per package; no queue and no automatic retry. */
@@ -148,7 +153,7 @@ class ExtensionConnectionManager(
                     if (uid == identity.uid && requestId == id && elapsedMillis() < deadline && !reply.isCompleted) {
                         reply.complete(
                             if (json.length > maxBytes || json.toByteArray(Charsets.UTF_8).size > maxBytes) {
-                                ExtensionExchange.Uncertain
+                                ExtensionExchange.Oversized(maxBytes)
                             } else {
                                 ExtensionExchange.Reply(json)
                             },

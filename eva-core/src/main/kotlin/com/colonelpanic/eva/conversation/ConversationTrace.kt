@@ -130,7 +130,7 @@ internal suspend fun ConversationStore.recordOffered(
                 model,
                 catalog.revision,
                 catalog.tools.map { OfferedTool(it.capabilityId, it.title) },
-                catalog.excludedTools,
+                catalog.excludedTools.map { it.capabilityId },
             ),
         )
     } catch (error: kotlinx.coroutines.CancellationException) {

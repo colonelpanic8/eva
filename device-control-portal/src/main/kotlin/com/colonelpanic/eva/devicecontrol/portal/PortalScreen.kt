@@ -28,6 +28,9 @@ class MappedScreen(
  * interaction flags, numbered in visit order, with layout wrappers collapsed into their parent.
  */
 object PortalScreenMapper {
+    /** Set by EVA's own Shizuku capture when it stopped at a node or depth cap; Portal never sends it. */
+    const val CAPTURE_CAPPED = "capture_capped"
+
     private val packageRe = Regex("^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$")
     private val activityRe = Regex("^[A-Za-z0-9_.$]{1,255}$")
 
@@ -89,6 +92,7 @@ object PortalScreenMapper {
                     },
                 elements = elements,
                 sequence = sequence,
+                elementsCapped = (state[CAPTURE_CAPPED] as? JsonPrimitive)?.booleanOrNull == true,
             ),
             passwords,
         )

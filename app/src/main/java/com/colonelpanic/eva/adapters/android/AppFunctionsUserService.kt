@@ -27,16 +27,18 @@ class AppFunctionsUserService : IAppFunctionsShell.Stub() {
         val readers = Executors.newFixedThreadPool(2)
         return try {
             val process = ProcessBuilder(listOf(CMD) + args).start()
-            val stdout = readers.submit<String> { process.inputStream.readBounded() }
-            val stderr = readers.submit<String> { process.errorStream.readBounded() }
+            val stdout = readers.submit<Pair<String, Boolean>> { process.inputStream.readBounded() }
+            val stderr = readers.submit<Pair<String, Boolean>> { process.errorStream.readBounded() }
             val finished = process.waitFor(timeoutMillis, TimeUnit.MILLISECONDS)
             if (!finished) {
                 process.destroy()
                 if (!process.waitFor(200, TimeUnit.MILLISECONDS)) process.destroyForcibly()
             }
             Bundle().apply {
-                putString(ShizukuShellHost.STDOUT, runCatching { stdout.get(2, TimeUnit.SECONDS) }.getOrDefault(""))
-                putString(ShizukuShellHost.STDERR, runCatching { stderr.get(2, TimeUnit.SECONDS) }.getOrDefault(""))
+                val (output, cut) = runCatching { stdout.get(2, TimeUnit.SECONDS) }.getOrDefault("" to false)
+                putString(ShizukuShellHost.STDOUT, output)
+                putBoolean(ShizukuShellHost.STDOUT_TRUNCATED, cut)
+                putString(ShizukuShellHost.STDERR, runCatching { stderr.get(2, TimeUnit.SECONDS) }.getOrDefault("" to false).first)
                 putInt(ShizukuShellHost.EXIT_CODE, if (finished) process.exitValue() else -1)
                 putBoolean(ShizukuShellHost.TIMED_OUT, !finished)
                 putInt(ShizukuShellHost.UID, Process.myUid())
@@ -54,10 +56,12 @@ class AppFunctionsUserService : IAppFunctionsShell.Stub() {
         }
     }
 
-    private fun InputStream.readBounded(): String {
+    /** The first [MAX_OUTPUT_BYTES] of the stream, and whether more followed. */
+    private fun InputStream.readBounded(): Pair<String, Boolean> {
         val output = ByteArrayOutputStream()
         val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
         var kept = 0
+        var cut = false
         while (true) {
             val count = read(buffer)
             if (count < 0) break
@@ -66,8 +70,9 @@ class AppFunctionsUserService : IAppFunctionsShell.Stub() {
                 output.write(buffer, 0, writable)
                 kept += writable
             }
+            if (writable < count) cut = true
         }
-        return output.toString(StandardCharsets.UTF_8)
+        return output.toString(StandardCharsets.UTF_8) to cut
     }
 
     private fun requireAllowedCommand(args: Array<out String>) {

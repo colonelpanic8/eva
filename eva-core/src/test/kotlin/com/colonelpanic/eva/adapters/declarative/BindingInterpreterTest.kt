@@ -59,6 +59,16 @@ class BindingInterpreterTest {
     }
 
     @Test
+    fun `structured data over the result budget is omitted and the text says so`() {
+        val capability = PackageCodec.decode(packageJson(httpBinding, "synchronous", false)).capabilities.single()
+        val large = BindingResults.http(capability, HttpResponse(200, """{"status":"created","notes":"${"n".repeat(20_000)}"}"""))
+        assertEquals(null, large.data)
+        assertTrue(large.message.endsWith(BindingResults.DATA_OMITTED))
+        val small = BindingResults.http(capability, HttpResponse(200, """{"status":"created"}"""))
+        assertTrue(small.data != null && !small.message.contains(BindingResults.DATA_OMITTED))
+    }
+
+    @Test
     fun `results project approved fields and report truncation without leaking other content columns`() {
         val binding =
             PackageCodec

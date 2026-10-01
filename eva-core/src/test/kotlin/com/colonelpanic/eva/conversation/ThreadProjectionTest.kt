@@ -150,4 +150,14 @@ class ThreadProjectionTest {
         assertEquals("COMPLETED", evidence.status)
         assertEquals("Done", evidence.message)
     }
+
+    @Test
+    fun `a bounded store read and a cut-off answer are both said to the model`() {
+        val items =
+            (1..45).map { user("turn-$it", "message $it", it.toLong()) } +
+                ThreadItem.AssistantMessage("a", thread, "turn-45", 46, "The first half", spoken = false, truncated = true)
+        val history = projectHistory(items, emptyMap(), readBounded = true)
+        assertEquals(HistoryItem.Note("At least 6 earlier items in this conversation are not shown."), history.first())
+        assertEquals(HistoryItem.Assistant("The first half\n[This response was cut off before it finished.]"), history.last())
+    }
 }

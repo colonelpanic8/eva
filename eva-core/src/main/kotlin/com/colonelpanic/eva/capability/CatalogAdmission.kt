@@ -1,29 +1,21 @@
 package com.colonelpanic.eva.capability
 
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
+import com.colonelpanic.eva.providers.ExcludedTool
 
 object CatalogAdmission {
-    /** Highest tool count verified with subscription Responses and Realtime; not a published provider maximum. */
+    /**
+     * Highest tool count verified with both subscription Responses and Realtime; not a published
+     * provider maximum. Realtime alone accepted 4096, but a 2048-tool voice prompt left the model no
+     * room to answer, so the bound stays at the count both providers were shown to use.
+     */
     const val LIMIT = 512
-
-    /** Native WebRTC advertises 256 KiB; reserve 32 KiB for instructions, controls and server fields. */
-    const val VOICE_TOOL_BYTES = 224 * 1024
-    const val VOICE_SESSION_BYTES = 248 * 1024
 
     data class Selection(
         val admitted: List<CapabilityDefinition>,
         val overflow: List<CapabilityDefinition>,
-        val metadataBytes: Int,
         val reservedControls: Int,
     ) {
-        fun excludedIds(hidden: Set<String>): List<String> = overflow.filterNot { it.id in hidden }.map { it.id }
-
-        fun without(hidden: Set<String>): Selection =
-            copy(
-                admitted = admitted.filterNot { it.id in hidden },
-                overflow = overflow.filterNot { it.id in hidden },
-            )
+        fun excluded(): List<ExcludedTool> = overflow.map { ExcludedTool(it.id, it.title) }
     }
 
     data class Preview(
@@ -31,48 +23,29 @@ object CatalogAdmission {
         val voice: Selection,
     )
 
-    fun preview(definitions: List<CapabilityDefinition>): Preview =
-        Preview(select(definitions), select(definitions, voiceControls(definitions)))
+    /** Each mode drops its own prompt-hidden actions before selection, so hidden tools take no capacity. */
+    fun preview(
+        definitions: List<CapabilityDefinition>,
+        textHidden: Set<String> = emptySet(),
+        voiceHidden: Set<String> = emptySet(),
+    ): Preview {
+        val text = definitions.filterNot { it.id in textHidden }
+        val voice = definitions.filterNot { it.id in voiceHidden }
+        return Preview(select(text), select(voice, voiceControls(voice)))
+    }
 
     fun select(
         definitions: List<CapabilityDefinition>,
         controls: Int = 0,
-        voiceBytes: Int = VOICE_TOOL_BYTES,
     ): Selection {
         require(controls in 0..LIMIT)
         val (extensions, bundled) = definitions.partition { it.id.startsWith("extension.") }
         val orderedBundled = bundled.sortedBy { it.id }
         val admitted = mutableListOf<CapabilityDefinition>()
         val overflow = mutableListOf<CapabilityDefinition>()
-        var bytes = 2L
-        val guidanceSources = mutableSetOf<String>()
 
         fun admit(tools: List<CapabilityDefinition>) {
-            val guidance =
-                tools
-                    .filter { it.source != null && it.guidance != null }
-                    .distinctBy { it.source!!.id }
-                    .filterNot { it.source!!.id in guidanceSources }
-            val guidanceBytes =
-                guidance.sumOf { definition ->
-                    JsonObject(
-                        mapOf(
-                            "source" to JsonPrimitive(definition.source!!.title),
-                            "guidance" to JsonPrimitive(definition.guidance),
-                        ),
-                    ).toString()
-                        .toByteArray(Charsets.UTF_8)
-                        .size
-                        .toLong() + 1
-                }
-            val addedBytes = tools.sumOf { metadataBytes(it).toLong() + 1 } + guidanceBytes
-            if (tools.size <= LIMIT - controls - admitted.size && (controls == 0 || bytes + addedBytes <= voiceBytes)) {
-                admitted.addAll(tools)
-                bytes += addedBytes
-                guidanceSources.addAll(guidance.map { it.source!!.id })
-            } else {
-                overflow.addAll(tools)
-            }
+            if (tools.size <= LIMIT - controls - admitted.size) admitted.addAll(tools) else overflow.addAll(tools)
         }
         orderedBundled.forEach { admit(listOf(it)) }
         val groups =
@@ -88,18 +61,8 @@ object CatalogAdmission {
             val tools = group.value.sortedBy { it.id }
             admit(tools)
         }
-        return Selection(admitted, overflow, bytes.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(), controls)
+        return Selection(admitted, overflow, controls)
     }
-
-    private fun metadataBytes(definition: CapabilityDefinition): Int =
-        JsonObject(
-            mapOf(
-                "type" to JsonPrimitive("function"),
-                "name" to JsonPrimitive("eva_tool_${LIMIT - 1}"),
-                "description" to JsonPrimitive(definition.modelDescription()),
-                "parameters" to definition.inputSchema,
-            ),
-        ).toString().toByteArray(Charsets.UTF_8).size
 
     private fun CapabilityDefinition.isInstalledService(): Boolean =
         source?.id?.contains('/') == true ||
@@ -121,10 +84,9 @@ object CatalogAdmission {
                 .map { it.id }
                 .toSet()
         val policy =
-            "Voice reserves session controls and a ${VOICE_TOOL_BYTES / 1024} KiB tool-metadata budget " +
-                "below the native WebRTC message-size boundary. " +
-                "Text uses a $LIMIT-tool verified safety bound. Bundled actions and installed services come first; " +
-                "remaining whole groups follow in stable order, skipping groups that do not fit."
+            "Sessions offer at most $LIMIT tools, the count verified with OpenAI; voice also reserves its session controls. " +
+                "Bundled actions and installed services come first; remaining whole groups follow in stable order, " +
+                "skipping groups that do not fit."
         return (typed + voice).sorted().associateWith { id ->
             when {
                 id !in typed -> "Unavailable in voice. Available in typed conversations. $policy"

@@ -123,7 +123,10 @@ class ExtensionConnectionTest {
             fake.died()
             assertEquals(ExtensionExchange.Uncertain, pending.await())
             fake.reply = "é".repeat(9000)
-            assertEquals(ExtensionExchange.Uncertain, manager.execute(extensionIdentity, "next", "v1", extensionCapability, "{}"))
+            assertEquals(
+                ExtensionExchange.Oversized(extensionCapability.maxResultBytes),
+                manager.execute(extensionIdentity, "next", "v1", extensionCapability, "{}"),
+            )
         }
 
     @Test

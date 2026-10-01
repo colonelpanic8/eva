@@ -130,7 +130,15 @@ private class OpenAiResponsesSession(
                                     .flatMap { it["content"]?.jsonArray.orEmpty() }
                                     .mapNotNull { (it as? JsonObject)?.takeIf { part -> part.str("type") == "output_text" }?.str("text") }
                                     .joinToString("\n")
-                            if (text.isNotBlank()) emit(ProviderEvent.AssistantText(response.inputId, text, false))
+                            if (text.isNotBlank()) {
+                                emit(
+                                    ProviderEvent.AssistantText(
+                                        response.inputId,
+                                        text,
+                                        body.str("status") == "incomplete",
+                                    ),
+                                )
+                            }
                             emit(ProviderEvent.ResponseEnded(response.inputId, body.str("status") ?: "completed"))
                             break
                         }

@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.ui.settings
 
+import com.colonelpanic.eva.devicecontrol.ScreenControlStatus
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -12,5 +13,24 @@ class DeviceTaskBackendsTest {
         assertEquals(listOf("shizuku"), toggleBackend(listOf("shizuku"), "shizuku"))
         assertEquals(listOf("shizuku", "portal"), toggleBackend(listOf("shizuku"), "portal"))
         assertEquals(listOf("shizuku", "portal"), backendRows(listOf("shizuku")))
+    }
+
+    @Test
+    fun aBackendNobodyCheckedClaimsNothingAndOthersSayWhy() {
+        val now = 10 * 60_000L
+        assertEquals("Not checked yet.", backendState(null, now))
+        assertEquals("Ready.", backendState(ScreenControlStatus.Route("Portal", null, ScreenControlStatus.Health.READY), now))
+        assertEquals(
+            "The last screen action through it failed · 3 min ago. Shizuku couldn't read the screen: helper didn't connect",
+            backendState(
+                ScreenControlStatus.Route(
+                    "Shizuku",
+                    "Shizuku couldn't read the screen: helper didn't connect",
+                    ScreenControlStatus.Health.UNHEALTHY,
+                    sinceMillis = now - 3 * 60_000 - 5_000,
+                ),
+                now,
+            ),
+        )
     }
 }

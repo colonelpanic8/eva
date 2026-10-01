@@ -120,8 +120,18 @@ object MemoryCapabilities {
         arguments: Map<String, String>,
         threadId: String?,
     ): ExecutionOutcome {
-        store.learn(arguments.getValue("name"), arguments.getValue("text"), threadId)
-        return ExecutionOutcome(InvocationStatus.COMPLETED, "Note learned; it waits for the user's review and is searchable meanwhile.")
+        val dropped = store.learn(arguments.getValue("name"), arguments.getValue("text"), threadId).dropped
+        return ExecutionOutcome(
+            InvocationStatus.COMPLETED,
+            "Note learned; it waits for the user's review and is searchable meanwhile." +
+                if (dropped.isEmpty()) "" else " " + inboxFull(dropped.map(MemoryNote::name)),
+        )
+    }
+
+    fun inboxFull(dropped: List<String>): String {
+        val names = dropped.joinToString(", ") { "\"$it\"" }
+        return "The review inbox holds at most ${MemoryStore.MAX_INBOX} notes, so the oldest unreviewed " +
+            (if (dropped.size == 1) "note, $names, was" else "notes, $names, were") + " dropped."
     }
 
     private suspend fun forget(

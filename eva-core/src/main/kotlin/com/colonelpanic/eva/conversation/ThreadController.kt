@@ -372,6 +372,9 @@ class ThreadController(
 
     private val connectionTools = mutableMapOf<ConversationSession, ConnectionTools>()
 
+    /** Persistent provider notices waiting for their session's start notice; absent once it is written. */
+    private val heldNotices = mutableMapOf<ConversationSession, MutableList<String>>()
+
     /**
      * Read when a session opens, not once at construction, so switching a capability off takes
      * effect on the next connection. A live session keeps the catalog it was opened with.
@@ -379,8 +382,10 @@ class ThreadController(
     private fun phoneTools(
         snapshot: CapabilityRegistry.Snapshot,
         voice: Boolean,
+        promptHidden: Set<String>,
     ): Pair<com.colonelpanic.eva.capability.CatalogAdmission.Selection, List<ProviderToolDefinition>> {
-        val offered = snapshot.catalog.filterNot { it.id in hiddenCapabilities() }
+        // Prompt-hidden tools leave before admission so they never take capacity from offered ones.
+        val offered = snapshot.catalog.filterNot { it.id in hiddenCapabilities() || it.id in promptHidden }
         val controls =
             if (voice) {
                 com.colonelpanic.eva.capability.CatalogAdmission
@@ -421,7 +426,11 @@ class ThreadController(
             if (catalog.excludedTools.isEmpty()) {
                 ""
             } else {
-                "\n\n" + wording().message(Wording.CATALOG_UNAVAILABLE).replace("{count}", catalog.excludedTools.size.toString())
+                "\n\n" +
+                    wording()
+                        .message(Wording.CATALOG_UNAVAILABLE)
+                        .replace("{count}", catalog.excludedTools.size.toString())
+                        .replace("{names}", catalog.excludedNames(ProviderToolCatalog.NOTE_NAMES, quoted = true))
             }
         return unavailable +
             if (notes.isEmpty()) {
@@ -677,7 +686,7 @@ class ThreadController(
                     // which tools are offered and what they say.
                     val snapshot = registry.snapshot
                     val endings = if (voice) callEndings(snapshot) else emptyMap()
-                    val phone = phoneTools(snapshot, voice)
+                    val phone = phoneTools(snapshot, voice, assembled.hidden)
                     val deviceControls =
                         if (voice && phone.second.any { it.capabilityId == CapabilityRegistry.DEVICE_TASK }) {
                             listOf(DEVICE_TASK_REVISE, DEVICE_TASK_STOP).map(wording()::describe)
@@ -704,8 +713,7 @@ class ThreadController(
                                 ).map { tool -> endingNote(bridgeNote(tool), endings[tool.capabilityId]) },
                             snapshot.revision,
                         ).copy(
-                            excludedTools =
-                                phone.first.excludedIds(assembled.hidden),
+                            excludedTools = phone.first.excluded(),
                         )
                     val provider =
                         if (!voice) {
@@ -742,11 +750,18 @@ class ThreadController(
                                 connectionCatalog,
                                 // Captions only; a typed session has no audio to transcribe.
                                 if (voice) voiceKeywords() else emptyList(),
-                                history = projectHistory(items, receipts(items)),
+                                history =
+                                    projectHistory(
+                                        items,
+                                        receipts(items),
+                                        readBounded =
+                                            items.size >= ConversationStore.DEFAULT_ITEM_LIMIT,
+                                    ),
                             ),
                         )
                     openedSession = opened
                     connectionTools[opened] = ConnectionTools(snapshot, connectionCatalog, voice, assembled.callMode, endings)
+                    heldNotices[opened] = mutableListOf()
                     currentCoroutineContext().ensureActive()
                     session = opened
                     opened.events.takeWhile { it != ProviderEvent.Closed }.collect { event ->
@@ -795,6 +810,7 @@ class ThreadController(
                     }
                     threadId?.let { detach(it, openedSession) }
                     connectionTools.remove(openedSession)
+                    heldNotices.remove(openedSession)
                     voiceTurns.keys.removeAll { it.first === openedSession }
                     pendingAnnouncements.keys.removeAll { it.first === openedSession }
                     withContext(NonCancellable) {
@@ -827,14 +843,16 @@ class ThreadController(
                         .distinct()
                         .joinToString(" · ")
                         .ifBlank { null }
+                val held = heldNotices.remove(opened).orEmpty()
                 mutableState.update {
-                    it.copy(providerStatus = ProviderStatus.CONNECTED, providerMessage = null, providerModel = model)
+                    it.copy(providerStatus = ProviderStatus.CONNECTED, providerMessage = held.lastOrNull(), providerModel = model)
                 }
                 updateWorkCoverage()
                 val label = listOfNotNull(if (voice) "Voice session" else "Text session", model).joinToString(" · ")
                 store.append(
                     notice(threadId, null, NoticeKind.SESSION_STARTED, connectionTools.getValue(opened).catalog.sessionNotice(label)),
                 )
+                held.forEach { store.append(notice(threadId, null, NoticeKind.SESSION_STARTED, it)) }
                 store.recordOffered(
                     threadId,
                     null,
@@ -1035,6 +1053,10 @@ class ThreadController(
 
             is ProviderEvent.Notice -> {
                 mutableState.update { it.copy(providerMessage = event.message) }
+                if (event.persistent) {
+                    heldNotices[opened]?.add(event.message)
+                        ?: store.append(notice(threadId, null, NoticeKind.SESSION_STARTED, event.message))
+                }
             }
 
             is ProviderEvent.ContextDelivery -> {
@@ -1132,7 +1154,7 @@ class ThreadController(
                 val summary =
                     buildJsonObject {
                         put("taskId", turn.id)
-                        put("task", (live[turn.id]?.request ?: legs[turn.id]?.task ?: turn.request).take(256))
+                        put("task", clipped(live[turn.id]?.request ?: legs[turn.id]?.task ?: turn.request, 256))
                         put("state", live[turn.id]?.state?.name ?: turn.status.name)
                         put("looksStuck", live[turn.id]?.looksStuck ?: false)
                         put("actions", live[turn.id]?.actionCount ?: actions.size)
@@ -1144,17 +1166,11 @@ class ThreadController(
                                 actions.takeLast(3).mapNotNull { id ->
                                     records[id]?.let { record ->
                                         buildJsonObject {
-                                            put("callId", record.callId.take(200))
-                                            put("capabilityId", record.capabilityId.take(200))
+                                            put("callId", clipped(record.callId, 200))
+                                            put("capabilityId", clipped(record.capabilityId, 200))
                                             put("status", record.status.name)
-                                            put(
-                                                "arguments",
-                                                record.arguments
-                                                    ?.toString()
-                                                    ?.take(400)
-                                                    .orEmpty(),
-                                            )
-                                            put("message", record.message.take(600))
+                                            put("arguments", clipped(record.arguments?.toString().orEmpty(), 400))
+                                            put("message", clipped(record.message, 600))
                                             put("contentTrust", "external")
                                         }
                                     }
@@ -2229,10 +2245,10 @@ class ThreadController(
                         awaitCapabilities()
                         val assembled = assemble(voice = false)
                         val snapshot = registry.snapshot
-                        val phone = phoneTools(snapshot, false)
+                        val phone = phoneTools(snapshot, false, assembled.hidden)
                         val catalog =
                             catalogOf(assembled.apply(phone.second), snapshot.revision)
-                                .copy(excludedTools = phone.first.excludedIds(assembled.hidden))
+                                .copy(excludedTools = phone.first.excluded())
                         tools = ConnectionTools(snapshot, catalog, false)
                         val instructions =
                             assembled.instructions + extensionGuidance(snapshot, catalog) + "\n\n" +
@@ -2240,7 +2256,13 @@ class ThreadController(
                                     instruction?.let { wording().message(Wording.HANDOFF_INSTRUCTIONS) + "\n" + JsonPrimitive(it) }
                                         ?: wording().message(Wording.CONTINUATION)
                                 )
-                        val history = projectHistory(items, receipts(items))
+                        val history =
+                            projectHistory(
+                                items,
+                                receipts(items),
+                                readBounded =
+                                    items.size >= ConversationStore.DEFAULT_ITEM_LIMIT,
+                            )
                         val textLeg =
                             ThreadItem.TextLeg(
                                 UUID.randomUUID().toString(),
@@ -2498,3 +2520,11 @@ fun progressLabel(phase: TaskPhase): String =
         TaskPhase.NEEDS_INPUT -> "Waiting for your answer…"
         TaskPhase.PROGRESS -> "Working on the screen…"
     }
+
+/** Cuts a status field to [limit] characters and ends a cut one with [CLIPPED], which background-status explains. */
+internal fun clipped(
+    text: String,
+    limit: Int,
+): String = if (text.length <= limit) text else text.take(limit) + CLIPPED
+
+internal const val CLIPPED = "…[cut by EVA]"

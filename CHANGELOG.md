@@ -4,6 +4,21 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Voice offers every admitted tool regardless of metadata size; the 224 KiB voice budget is gone. A configuration too large for the data channel's echo is confirmed over a sideband connection.
+- If the sideband is unreachable, the call continues with an "unconfirmed configuration" notice. A confirmation naming the wrong tools still ends the call.
+- Prompt-hidden tools are removed before catalog admission, so they take no capacity and Settings → Extensions matches what sessions offer.
+- Excluded tools are named: the session notice lists the first few and opens Extensions; the model's note lists up to 20.
+- Screen-control health is failure-driven: a backend turns unhealthy with its reason and age when a real read or input fails, and recovers on the next success.
+- Settings shows "Not checked yet." for a screen-control backend that was never checked.
+
+### Fixed
+
+- Direct screen tools fall back to the next backend when one cannot read the screen, before any input is sent. Inputs are never repeated.
+- Truncated results now say what was cut, across status, history, screen reads, messages, device tasks, extension replies, web sources, contacts, and memory review.
+- A bridge search trimmed for size no longer reports a false "no match", and an oversized read-only reply fails instead of reporting an unknown outcome.
+
 ## [0.50.0] - 2026-10-01
 
 ### Upgrade

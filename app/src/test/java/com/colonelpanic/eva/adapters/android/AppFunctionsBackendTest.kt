@@ -60,6 +60,19 @@ class AppFunctionsBackendTest {
     }
 
     @Test
+    fun `output the shell stopped reading is disclosed rather than read as complete`() {
+        val yaml =
+            """
+            - jsonValue: 30 s
+              purpose: The current screen timeout duration
+              key: display/screen_timeout
+            """.trimIndent()
+        assertTrue(AppFunctionOutput.summarizeState(yaml, outputCut = true).endsWith("output capped; narrow the request for more."))
+        assertFalse(AppFunctionOutput.summarizeState(yaml).contains("output capped"))
+        assertEquals(AppFunctionOutput.OUTPUT_CUT_EMPTY, AppFunctionOutput.summarizeMetadata(yaml, "bluetooth", outputCut = true))
+    }
+
+    @Test
     fun `metadata summary filters writable entries by purpose key and possible values`() {
         val yaml =
             """

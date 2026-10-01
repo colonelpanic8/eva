@@ -93,6 +93,16 @@ class DeclarativeBackend(
                 failure.outcome
             } catch (notSubmitted: BindingNotSubmitted) {
                 ExecutionOutcome(InvocationStatus.NOT_EXECUTED, notSubmitted.message.orEmpty())
+            } catch (tooLarge: ResponseTooLarge) {
+                val discarded = "The response exceeded this package's ${tooLarge.limit}-byte limit and was discarded."
+                if (capability.effect == PackageEffect.READ) {
+                    ExecutionOutcome(InvocationStatus.FAILED, "$discarded Ask for less, such as a narrower query or a smaller limit.")
+                } else {
+                    ExecutionOutcome(
+                        InvocationStatus.UNKNOWN,
+                        "$discarded The action may have run. ${CapabilityDispatcher.UNKNOWN_MESSAGE}",
+                    )
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {

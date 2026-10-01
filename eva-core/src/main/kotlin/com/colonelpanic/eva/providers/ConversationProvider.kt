@@ -4,6 +4,7 @@ import com.colonelpanic.eva.capability.ActionInitiator
 import com.colonelpanic.eva.capability.ReceiptProvenance
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 data class ProviderToolDefinition(
     val capabilityId: String,
@@ -12,13 +13,42 @@ data class ProviderToolDefinition(
     val inputSchema: JsonObject,
 )
 
+/** An enabled action the session could not offer, named so the model and the person can tell what is missing. */
+data class ExcludedTool(
+    val capabilityId: String,
+    val title: String,
+)
+
 data class ProviderToolCatalog(
     val revision: String,
     val tools: List<ProviderToolDefinition>,
-    val excludedTools: List<String> = emptyList(),
+    val excludedTools: List<ExcludedTool> = emptyList(),
 ) {
     fun sessionNotice(label: String): String =
-        if (excludedTools.isEmpty()) label else "$label · ${excludedTools.size} tools unavailable — see Extensions"
+        if (excludedTools.isEmpty()) {
+            label
+        } else {
+            "$label · ${excludedTools.size} tools unavailable: ${excludedNames(NOTICE_NAMES)} — $SEE_EXTENSIONS"
+        }
+
+    /**
+     * The first [limit] excluded titles, then how many more were left unnamed. Titles can come from
+     * extensions, so model-facing text passes [quoted] to keep them as quoted data.
+     */
+    fun excludedNames(
+        limit: Int,
+        quoted: Boolean = false,
+    ): String {
+        val named = excludedTools.take(limit).joinToString(", ") { if (quoted) JsonPrimitive(it.title).toString() else it.title }
+        val rest = excludedTools.size - limit
+        return if (rest > 0) "$named and $rest more" else named
+    }
+
+    companion object {
+        const val SEE_EXTENSIONS = "see Extensions"
+        const val NOTICE_NAMES = 3
+        const val NOTE_NAMES = 20
+    }
 }
 
 data class SessionOpenRequest(
@@ -161,6 +191,8 @@ sealed interface ProviderEvent {
 
     data class Notice(
         val message: String,
+        /** Also kept in the thread, after the session-start notice, so later banners cannot hide it. */
+        val persistent: Boolean = false,
     ) : ProviderEvent
 
     /** Delivery means the announcement reached its terminal response, not merely the send queue. */

@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.messaging
 
+import com.colonelpanic.eva.adapters.android.ConversationSummaries
 import com.colonelpanic.eva.adapters.declarative.BearerCredential
 import com.colonelpanic.eva.adapters.declarative.PackageHttpClient
 import com.colonelpanic.eva.capability.InvocationStatus
@@ -291,6 +292,35 @@ class BridgeMessagingTest {
                     .jsonPrimitive.content,
             )
             assertEquals(InvocationStatus.FAILED, bridges.read(whatsapp, "missing", 5).status)
+        }
+
+    @Test
+    fun `a read trimmed to the result budget says how many older messages were left out`() =
+        runTest {
+            fake.conversations = "[$chat]"
+            val long = "x".repeat(ConversationSummaries.MAX_BODY + 50)
+            fake.messages =
+                (1..25).joinToString(",", "[", "]") { index ->
+                    """{"id":"m$index","conversation_id":"chat-1","sender_id":"alice@s","time":"2026-09-26T09:00:00Z",""" +
+                        """"text":"$long","direction":"incoming","deleted":false,"attachments":[],"reactions":[]}"""
+                }
+            val outcome = bridges.read(whatsapp, "chat-1", 25)
+            val shown = data(outcome.message).getValue("messages").jsonArray.size
+            assertTrue(shown in 1 until 25)
+            assertTrue(outcome.message, outcome.message.contains(BridgeMessaging.leftOut(25 - shown)))
+            assertTrue(outcome.message, outcome.message.contains(ConversationSummaries.CUT))
+        }
+
+    @Test
+    fun `a search whose rows exceed the budget counts them and does not claim no match`() =
+        runTest {
+            val name = "N".repeat(3_000)
+            fake.conversations = (1..3).joinToString(",", "[", "]") { conversation("chat-$it", name, "$alice,$me") }
+            val outcome = bridges.search(whatsapp, "N", emptyList(), 5)
+            val shown = data(outcome.message).getValue("conversations").jsonArray.size
+            assertTrue(shown < 3)
+            assertTrue(outcome.message, outcome.message.contains(BridgeMessaging.furtherConversations(3 - shown)))
+            assertFalse(outcome.message, outcome.message.contains("No WhatsApp conversation"))
         }
 
     @Test

@@ -31,6 +31,7 @@ import com.colonelpanic.eva.devicecontrol.proto.TapPoint
 import com.colonelpanic.eva.devicecontrol.proto.TextMismatch
 import com.colonelpanic.eva.devicecontrol.proto.Timeout
 import com.colonelpanic.eva.devicecontrol.proto.renderCompact
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.UUID
@@ -45,31 +46,48 @@ class ScreenActions(
     private val select: suspend () -> Choice,
     private val elapsedMillis: () -> Long,
 ) {
-    /** The backend to use now: [key] identifies its configuration, so a change starts a new session. */
+    /** The backends to use now: [key] identifies their configuration, so a change starts a new session. */
     sealed interface Choice {
+        /** Backends in preference order; one that is not ready or cannot read the screen hands over to the next. */
         data class Ready(
             val key: String,
-            val create: () -> DeviceBackend,
-        ) : Choice
+            val routes: List<Route>,
+        ) : Choice {
+            constructor(key: String, create: () -> DeviceBackend) : this(key, listOf(Route(key, { null }, create)))
+        }
 
         data class Unavailable(
             val reason: String,
         ) : Choice
     }
 
+    class Route(
+        val name: String,
+        val problem: suspend () -> String?,
+        val create: () -> DeviceBackend,
+    )
+
     enum class Operation { OBSERVE, TAP, SET_TEXT, SCROLL, NAVIGATE, PRESS_ENTER }
 
     private class Recorded(
         val observation: Observation,
         val capturedAt: Long,
+        val backend: DeviceBackend,
     )
 
     private class Session(
         val key: String,
-        val backend: DeviceBackend,
+        val routes: List<Route>,
     ) {
         val refs = LinkedHashMap<String, Recorded>()
+        val opened = mutableMapOf<String, DeviceBackend>()
     }
+
+    /** A screen read and the backend that read it, which any input bound to it must use. */
+    private class Read(
+        val observation: Observation,
+        val backend: DeviceBackend,
+    )
 
     private val lock = Mutex()
     private var session: Session? = null
@@ -92,7 +110,16 @@ class ScreenActions(
 
             override suspend fun unavailableReason(): String? {
                 if (!enabled()) return DISABLED
-                return (select() as? Choice.Unavailable)?.reason
+                return when (val choice = select()) {
+                    is Choice.Unavailable -> {
+                        choice.reason
+                    }
+
+                    is Choice.Ready -> {
+                        val problems = choice.routes.map { "${it.name}: ${it.problem() ?: return null}" }
+                        "No screen control backend is ready. ${problems.joinToString(" ")}"
+                    }
+                }
             }
 
             override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome =
@@ -116,7 +143,7 @@ class ScreenActions(
 
                     is Choice.Ready -> {
                         synchronized(this) {
-                            session?.takeIf { it.key == choice.key } ?: Session(choice.key, choice.create()).also { session = it }
+                            session?.takeIf { it.key == choice.key } ?: Session(choice.key, choice.routes).also { session = it }
                         }
                     }
                 }
@@ -126,14 +153,45 @@ class ScreenActions(
                     Operation.NAVIGATE -> navigate(current, arguments, callId)
                     else -> targeted(current, operation, arguments, callId)
                 }
+            } catch (failure: Unreadable) {
+                ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "$UNREADABLE ${failure.message}")
             } catch (_: ObservationFailure) {
                 ExecutionOutcome(InvocationStatus.NOT_EXECUTED, UNREADABLE)
             }
         }
 
+    private class Unreadable(
+        message: String,
+    ) : Exception(message)
+
+    /**
+     * Reads the screen through the first backend that can, before any input of this call is sent,
+     * so a backend that passes its check but cannot read hands over like it does for device tasks.
+     */
+    private suspend fun read(session: Session): Read {
+        val failures = mutableListOf<String>()
+        for (route in session.routes) {
+            val problem = route.problem()
+            if (problem != null) {
+                failures += "${route.name}: $problem"
+                continue
+            }
+            val backend = synchronized(this) { session.opened.getOrPut(route.name) { route.create() } }
+            try {
+                return Read(backend.observe(), backend)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (session.routes.size == 1 && error is ObservationFailure) throw error
+                failures += "${route.name}: ${error.message ?: error.javaClass.simpleName}"
+            }
+        }
+        throw Unreadable(failures.joinToString(" "))
+    }
+
     private suspend fun observe(session: Session): ExecutionOutcome {
-        val observation = session.backend.observe()
-        return ExecutionOutcome(InvocationStatus.COMPLETED, project(session, observation))
+        val read = read(session)
+        return ExecutionOutcome(InvocationStatus.COMPLETED, project(session, read))
     }
 
     private suspend fun navigate(
@@ -142,7 +200,8 @@ class ScreenActions(
         callId: String,
     ): ExecutionOutcome {
         // A global button needs no element, so it binds to a screen read here rather than one the model saw.
-        val bound = session.backend.observe().observationId
+        val read = read(session)
+        val bound = read.observation.observationId
         val action =
             when (arguments["button"]) {
                 "back" -> Back(actionId(callId), TASK, 0, bound)
@@ -156,7 +215,7 @@ class ScreenActions(
                 is Home -> "Went to the home screen."
                 else -> "Opened the notification shade."
             }
-        return outcome(session, session.backend.perform(action), label)
+        return outcome(session, read.backend, read.backend.perform(action), label)
     }
 
     private suspend fun targeted(
@@ -204,11 +263,12 @@ class ScreenActions(
                     // An element index makes the backend recheck the screen; a bare scroll would not.
                     val target = element ?: mainScrollable(observation)
                     if (target == null) {
-                        val now = session.backend.observe()
+                        val now = recorded.backend.observe()
                         if (fingerprint(now) != fingerprint(observation)) {
                             return ExecutionOutcome(
                                 InvocationStatus.NOT_EXECUTED,
-                                "Nothing was sent: the screen changed since that observation.\n${project(session, now)}",
+                                "Nothing was sent: the screen changed since that observation.\n" +
+                                    project(session, Read(now, recorded.backend)),
                             )
                         }
                         Scroll(id, TASK, 0, now.observationId, direction) to "Scrolled the screen ${direction.name.lowercase()}."
@@ -222,7 +282,7 @@ class ScreenActions(
                     error("Unexpected $operation")
                 }
             }
-        return outcome(session, session.backend.perform(action), label)
+        return outcome(session, recorded.backend, recorded.backend.perform(action), label)
     }
 
     /**
@@ -256,11 +316,12 @@ class ScreenActions(
 
     private fun outcome(
         session: Session,
+        backend: DeviceBackend,
         result: ActionResult,
         label: String,
     ): ExecutionOutcome {
         val after =
-            result.observation?.let { project(session, it) }
+            result.observation?.let { project(session, Read(it, backend)) }
                 ?: "EVA could not read the screen afterwards; look at it again before continuing."
         val unsettled = if (result.unsettled) " The screen was still changing; look again before relying on it." else ""
         val readBack = (result.details as? SetTextDetails)?.takeIf { !it.verified }?.let(::mismatch)
@@ -291,12 +352,12 @@ class ScreenActions(
 
     private fun project(
         session: Session,
-        observation: Observation,
+        read: Read,
     ): String {
         val reference = "screen-$namespace-${++issued}"
-        session.refs[reference] = Recorded(observation, elapsedMillis())
+        session.refs[reference] = Recorded(read.observation, elapsedMillis(), read.backend)
         while (session.refs.size > MAX_REFERENCES) session.refs.remove(session.refs.keys.first())
-        return observation.renderCompact(reference)
+        return read.observation.renderCompact(reference)
     }
 
     /** Reserves a recorded screen for one input, even when the backend then refuses that input. */
@@ -327,10 +388,19 @@ class ScreenActions(
         return "the field reads ${quote(details.actual.orEmpty())} instead of ${quote(expected)}."
     }
 
-    private fun quote(text: String) =
-        kotlinx.serialization.json
-            .JsonPrimitive(text.take(200))
-            .toString()
+    /** Quotes on-screen text, saying so when only its start fits. */
+    private fun quote(text: String): String {
+        if (text.length <= QUOTE_CHARS) {
+            return kotlinx.serialization.json
+                .JsonPrimitive(text)
+                .toString()
+        }
+        val start =
+            kotlinx.serialization.json
+                .JsonPrimitive(text.take(QUOTE_CHARS) + "…")
+                .toString()
+        return "$start (first $QUOTE_CHARS of ${text.length} characters)"
+    }
 
     private fun describe(element: Element): String {
         val label = if (element.password) null else element.text?.takeIf(String::isNotBlank) ?: element.contentDescription
@@ -343,6 +413,7 @@ class ScreenActions(
 
     companion object {
         private const val TASK = "eva-direct"
+        private const val QUOTE_CHARS = 200
         const val MAX_REFERENCES = 8
         const val LIFETIME_MILLIS = 180_000L
         const val DISABLED = "Screen control is switched off in EVA's settings."

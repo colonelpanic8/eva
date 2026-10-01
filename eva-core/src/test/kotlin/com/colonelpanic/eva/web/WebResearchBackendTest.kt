@@ -349,8 +349,10 @@ class WebResearchBackendTest {
         assertTrue(outcome.message.startsWith(answer.trim()))
         assertFalse(outcome.data!!.toString().contains("Distinct research answer"))
         assertTrue(outcome.data["sources"]!!.jsonArray.isNotEmpty())
-        assertTrue(outcome.data["sources"]!!.jsonArray.size < 100)
+        val kept = outcome.data["sources"]!!.jsonArray.size
+        assertTrue(kept < 100)
         assertEquals(JsonPrimitive(true), outcome.data["truncated"])
+        assertTrue(outcome.message, outcome.message.endsWith("EVA omitted ${100 - kept} further sources to fit the result budget."))
         assertTrue(JsonPrimitive(outcome.message).toString().length + outcome.data.toString().length <= 16384)
     }
 

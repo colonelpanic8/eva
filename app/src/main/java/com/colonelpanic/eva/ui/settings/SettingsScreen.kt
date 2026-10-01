@@ -451,7 +451,7 @@ private fun ScreenControlSection(
         }
         DeviceTaskBackendList(
             backends = state.deviceTask.backends,
-            problems = state.screenControlStatus.routes.associate { it.name to it.problem },
+            routes = state.screenControlStatus.routes.associateBy { it.name },
             onChange = { actions.onDeviceTaskChange(state.deviceTask.copy(backends = it)) },
         )
         var token by remember { mutableStateOf("") }

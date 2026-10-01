@@ -140,6 +140,7 @@ fun EvaApp(
                         destination = EvaDestination.SETTINGS
                     },
                     onShareDiagnostics = onShareDiagnostics,
+                    onOpenExtensions = { destination = EvaDestination.EXTENSIONS },
                 )
             }
 

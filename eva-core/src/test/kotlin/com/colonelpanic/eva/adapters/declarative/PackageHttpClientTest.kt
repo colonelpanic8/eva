@@ -41,7 +41,7 @@ class PackageHttpClientTest {
             assertEquals(302, host.execute(request, 1000).status)
             assertEquals(1, calls)
             body = "x".repeat(65)
-            assertTrue(runCatching { host.execute(request, 1000) }.isFailure)
+            assertEquals(64, (runCatching { host.execute(request, 1000) }.exceptionOrNull() as ResponseTooLarge).limit)
             assertEquals(2, calls)
             assertTrue(
                 runCatching { host.execute(request.copy(url = "https://elsewhere.example/capture"), 1000) }.exceptionOrNull()

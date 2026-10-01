@@ -1,6 +1,7 @@
 package com.colonelpanic.eva.capability
 
 import com.colonelpanic.eva.capability.extensions.extensionSchema
+import com.colonelpanic.eva.providers.ExcludedTool
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -57,7 +58,7 @@ class CatalogAdmissionTest {
         val native = bundled(CatalogAdmission.LIMIT - 10)
         val extensions = List(20) { definition("extension.test-${it.toString().padStart(2, '0')}.action") }
         val definitions = native + extensions
-        val voice = CatalogAdmission.select(definitions, controls = CatalogAdmission.voiceControls(definitions), voiceBytes = Int.MAX_VALUE)
+        val voice = CatalogAdmission.select(definitions, controls = CatalogAdmission.voiceControls(definitions))
         assertEquals(CatalogAdmission.LIMIT - 4, voice.admitted.size)
         val reasons = CatalogAdmission.overflowReasons(definitions)
         assertEquals(14, reasons.size)
@@ -67,7 +68,7 @@ class CatalogAdmissionTest {
         assertTrue(CatalogAdmission.overflowReasons(native + extensions.take(6)).isEmpty())
         val withTasks = listOf(definition(CapabilityRegistry.DEVICE_TASK)) + definitions
         assertEquals(6, CatalogAdmission.voiceControls(withTasks))
-        assertEquals(CatalogAdmission.LIMIT - 6, CatalogAdmission.select(withTasks, 6, voiceBytes = Int.MAX_VALUE).admitted.size)
+        assertEquals(CatalogAdmission.LIMIT - 6, CatalogAdmission.select(withTasks, 6).admitted.size)
     }
 
     @Test
@@ -121,53 +122,48 @@ class CatalogAdmissionTest {
     fun `voice reserves four session controls and two more for an offered device task`() {
         val native = bundled(CatalogAdmission.LIMIT)
         assertEquals(4, CatalogAdmission.voiceControls(native))
-        val voice = CatalogAdmission.select(native, CatalogAdmission.voiceControls(native), voiceBytes = Int.MAX_VALUE)
+        val voice = CatalogAdmission.select(native, CatalogAdmission.voiceControls(native))
         assertEquals(CatalogAdmission.LIMIT - 4, voice.admitted.size)
         val withTask = native.take(CatalogAdmission.LIMIT - 1) + definition(CapabilityRegistry.DEVICE_TASK)
         assertEquals(6, CatalogAdmission.voiceControls(withTask))
-        assertEquals(CatalogAdmission.LIMIT - 6, CatalogAdmission.select(withTask, 6, voiceBytes = Int.MAX_VALUE).admitted.size)
+        assertEquals(CatalogAdmission.LIMIT - 6, CatalogAdmission.select(withTask, 6).admitted.size)
     }
 
     @Test
-    fun `voice enforces metadata bytes instead of an arbitrary low tool count`() {
-        val compact = bundled(200)
-        val voice = CatalogAdmission.select(compact, controls = 4)
-        assertTrue(voice.admitted.size > 128)
-        assertTrue(voice.metadataBytes <= CatalogAdmission.VOICE_TOOL_BYTES)
-        val large = service().map { it.copy(description = "é".repeat(40_000)) }
+    fun `voice offers large tool metadata because the call request carries it whole`() {
+        val large = service().map { it.copy(description = "é".repeat(40_000), guidance = "g".repeat(100_000)) }
         val later = group("extension.package.zzz", 1, "package:zzz")
-        val selected = CatalogAdmission.select(large + later, controls = 4)
-        assertEquals(later, selected.admitted)
-        assertEquals(large, selected.overflow)
-        assertTrue(CatalogAdmission.select(large + later).overflow.isEmpty())
         val preview = CatalogAdmission.preview(large + later)
-        assertEquals(selected, preview.voice)
-        assertTrue(
-            CatalogAdmission.overflowReasons(preview).values.all {
-                it.contains("Unavailable in voice") && it.contains("session controls") && it.contains("224 KiB")
-            },
-        )
+        assertEquals(large + later, preview.voice.admitted)
+        assertTrue(preview.voice.overflow.isEmpty())
+        assertTrue(CatalogAdmission.overflowReasons(preview).isEmpty())
     }
 
     @Test
-    fun `shared extension guidance consumes bytes once per admitted source`() {
-        val workflow = service().map { it.copy(guidance = "g".repeat(100_000)) }
-        val selection = CatalogAdmission.select(workflow, controls = 4)
-        assertEquals(workflow, selection.admitted)
-        assertTrue(selection.overflow.isEmpty())
-        assertTrue(selection.metadataBytes in 100_000..110_000)
+    fun `prompt-hidden actions leave before admission so they take no capacity in either mode`() {
+        val native = bundled(CatalogAdmission.LIMIT - 4)
+        val hiddenGroup = group("extension.package.aaa", 3, "package:aaa")
+        val wanted = group("extension.package.bbb", 3, "package:bbb")
+        val definitions = native + hiddenGroup + wanted
+        val hidden = hiddenGroup.map { it.id }.toSet()
+        val shown = CatalogAdmission.preview(definitions)
+        assertEquals(wanted, shown.text.overflow)
+        val preview = CatalogAdmission.preview(definitions, textHidden = hidden, voiceHidden = hidden + native.first().id)
+        assertEquals(native + wanted, preview.text.admitted)
+        assertTrue(preview.text.overflow.isEmpty())
+        // Voice reserves four session controls, so the wanted group still does not fit there.
+        assertEquals(native.drop(1), preview.voice.admitted)
+        assertEquals(wanted.map { ExcludedTool(it.id, it.title) }, preview.voice.excluded())
+        assertTrue(CatalogAdmission.overflowReasons(preview).keys == wanted.map { it.id }.toSet())
     }
 
     @Test
-    fun `text safety bound is the highest verified count and prompt-hidden actions are not reported as overflow`() {
+    fun `text safety bound is the highest verified count`() {
         assertEquals(512, CatalogAdmission.LIMIT)
         val definitions = bundled(513)
         val selected = CatalogAdmission.select(definitions)
         assertEquals(512, selected.admitted.size)
         assertEquals(definitions.last(), selected.overflow.single())
-        val visible = selected.without(setOf(definitions.last().id, definitions.first().id))
-        assertTrue(visible.overflow.isEmpty())
-        assertEquals(511, visible.admitted.size)
     }
 
     @Test
@@ -178,12 +174,12 @@ class CatalogAdmissionTest {
         val alwaysOverflow = group("extension.package.ccc", 7, "package:ccc")
         val definitions = native + large + small + alwaysOverflow
         assertEquals(native + large, CatalogAdmission.select(definitions).admitted)
-        assertEquals(native + small, CatalogAdmission.select(definitions, controls = 4, voiceBytes = Int.MAX_VALUE).admitted)
+        assertEquals(native + small, CatalogAdmission.select(definitions, controls = 4).admitted)
         val reasons =
             CatalogAdmission.overflowReasons(
                 CatalogAdmission.Preview(
                     CatalogAdmission.select(definitions),
-                    CatalogAdmission.select(definitions, controls = 4, voiceBytes = Int.MAX_VALUE),
+                    CatalogAdmission.select(definitions, controls = 4),
                 ),
             )
         assertEquals((large + small + alwaysOverflow).map { it.id }.toSet(), reasons.keys)

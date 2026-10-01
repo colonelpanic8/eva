@@ -16,6 +16,7 @@ import android.view.MotionEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import androidx.annotation.RequiresApi
+import com.colonelpanic.eva.devicecontrol.portal.PortalScreenMapper
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
@@ -51,8 +52,10 @@ internal object PortalState {
             root = automation.rootInActiveWindow
         }
         val (width, height) = screenSize(root)
+        val capture = Capture()
         return buildJsonObject {
-            if (root != null) put("a11y_tree", node(root, 0, intArrayOf(0)))
+            if (root != null) put("a11y_tree", node(root, 0, capture))
+            if (capture.capped) put(PortalScreenMapper.CAPTURE_CAPPED, true)
             put(
                 "phone_state",
                 buildJsonObject {
@@ -80,36 +83,32 @@ internal object PortalState {
         }
     }
 
+    private class Capture {
+        var nodes = 0
+        var capped = false
+    }
+
     private fun node(
         node: AccessibilityNodeInfo,
         depth: Int,
-        count: IntArray,
+        capture: Capture,
     ): JsonObject {
-        count[0]++
+        capture.nodes++
         val bounds = Rect()
         node.getBoundsInScreen(bounds)
         return buildJsonObject {
             put("className", node.className?.toString().orEmpty())
             put(
                 "text",
-                node.text
-                    ?.toString()
-                    .orEmpty()
-                    .take(if (node.isEditable) MAX_FIELD_CHARS else MAX_TEXT_CHARS),
+                clip(node.text?.toString().orEmpty(), if (node.isEditable) MAX_FIELD_CHARS else MAX_TEXT_CHARS),
             )
             put(
                 "contentDescription",
-                node.contentDescription
-                    ?.toString()
-                    .orEmpty()
-                    .take(MAX_TEXT_CHARS),
+                clip(node.contentDescription?.toString().orEmpty(), MAX_TEXT_CHARS),
             )
             put(
                 "hint",
-                node.hintText
-                    ?.toString()
-                    .orEmpty()
-                    .take(MAX_TEXT_CHARS),
+                clip(node.hintText?.toString().orEmpty(), MAX_TEXT_CHARS),
             )
             put("resourceId", node.viewIdResourceName.orEmpty())
             put(
@@ -136,16 +135,22 @@ internal object PortalState {
             if (node.collectionInfo != null) put("collectionInfo", JsonObject(emptyMap()))
             val children =
                 buildList {
-                    if (depth < MAX_DEPTH) {
-                        for (index in 0 until node.childCount) {
-                            if (count[0] >= MAX_NODES) break
-                            node.getChild(index)?.let { add(node(it, depth + 1, count)) }
+                    for (index in 0 until node.childCount) {
+                        if (depth >= MAX_DEPTH || capture.nodes >= MAX_NODES) {
+                            capture.capped = true
+                            break
                         }
+                        node.getChild(index)?.let { add(node(it, depth + 1, capture)) }
                     }
                 }
             put("children", JsonArray(children))
         }
     }
+
+    private fun clip(
+        text: String,
+        max: Int,
+    ) = if (text.length <= max) text else text.take(max) + "…"
 
     private fun screenSize(root: AccessibilityNodeInfo?): Pair<Int, Int> {
         runCatching {

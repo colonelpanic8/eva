@@ -77,6 +77,9 @@ class WebResearchBackend(
 
     companion object {
         const val ID = "eva.web.research"
+        private const val MAX_TITLE = 240
+        private const val MAX_QUERIES = 10
+        private const val MAX_QUERY = 1000
         val definition =
             tool(
                 ID,
@@ -161,7 +164,7 @@ class WebResearchBackend(
                 if (existing != null && (!cited || existing.string("title") != url)) return
                 sources[url] =
                     buildJsonObject {
-                        put("title", value.string("title")?.take(240)?.trimEndSurrogate() ?: url)
+                        put("title", value.string("title")?.let { clip(it, MAX_TITLE) } ?: url)
                         put("url", url)
                     }
             }
@@ -184,7 +187,13 @@ class WebResearchBackend(
                                 val queries =
                                     (action["queries"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.content }
                                         ?: listOfNotNull(action.string("query"))
-                                if (queries.isNotEmpty()) put("queries", JsonArray(queries.take(10).map { JsonPrimitive(it.take(1000)) }))
+                                if (queries.isNotEmpty()) {
+                                    put(
+                                        "queries",
+                                        JsonArray(queries.take(MAX_QUERIES).map { JsonPrimitive(clip(it, MAX_QUERY)) }),
+                                    )
+                                }
+                                if (queries.size > MAX_QUERIES) put("queriesOmitted", queries.size - MAX_QUERIES)
                                 action.string("url")?.takeIf { validUrl(it) }?.let { put("url", it) }
                             }
                     }
@@ -200,6 +209,7 @@ class WebResearchBackend(
             val answer = if (truncated) excerpt + "\n" + text.message("web-research-truncated") else rawAnswer
             val keptSources = mutableListOf<JsonObject>()
             val keptSearches = mutableListOf<JsonObject>()
+            val allSources = citedUrls.mapNotNull(sources::get) + sources.filterKeys { it !in citedUrls }.values
 
             val note =
                 when {
@@ -219,6 +229,8 @@ class WebResearchBackend(
                                 text.message("web-research-sources") + "\n" +
                                     it.joinToString("\n") { source -> "${source.string("title")}: ${source.string("url")}" }
                             }.orEmpty(),
+                        omitted(text, "web-research-sources-omitted", allSources.size - keptSources.size),
+                        omitted(text, "web-research-searches-omitted", searches.size - keptSearches.size),
                     ).filter { it.isNotBlank() }.joinToString("\n"),
                 )
 
@@ -231,19 +243,32 @@ class WebResearchBackend(
                     put("retrievedAt", retrievedAt.toString())
                     put("truncated", truncated)
                 }
-            (citedUrls.mapNotNull(sources::get) + sources.filterKeys { it !in citedUrls }.values).forEach { source ->
+
+            fun fits() = data().toString().length + JsonPrimitive(message()).toString().length <= MODEL_RESULT_CHARS - 1024
+            allSources.forEach { source ->
                 keptSources += source
-                if (data().toString().length + JsonPrimitive(message()).toString().length > MODEL_RESULT_CHARS - 1024) {
+                if (!fits()) {
                     keptSources.removeAt(keptSources.lastIndex)
                     truncated = true
                 }
             }
             searches.forEach { search ->
                 keptSearches += search
-                if (data().toString().length + JsonPrimitive(message()).toString().length > MODEL_RESULT_CHARS - 1024) {
+                if (!fits()) {
                     keptSearches.removeAt(keptSearches.lastIndex)
                     truncated = true
                 }
+            }
+            // The omission notes themselves take room, so trim again once they are in the message.
+            while (!fits() && (keptSearches.isNotEmpty() || keptSources.isNotEmpty())) {
+                if (keptSearches.isNotEmpty()) {
+                    keptSearches.removeAt(
+                        keptSearches.lastIndex,
+                    )
+                } else {
+                    keptSources.removeAt(keptSources.lastIndex)
+                }
+                truncated = true
             }
             return ExecutionOutcome(
                 InvocationStatus.COMPLETED,
@@ -261,6 +286,17 @@ class WebResearchBackend(
                 url.length <= 2048 && uri.scheme in (if (httpsOnly) setOf("https") else setOf("http", "https")) &&
                     !uri.host.isNullOrBlank() && uri.rawUserInfo == null
             }.getOrDefault(false)
+
+        private fun omitted(
+            text: Wording,
+            key: String,
+            count: Int,
+        ) = if (count > 0) text.message(key).replace("{count}", count.toString()) else ""
+
+        private fun clip(
+            value: String,
+            max: Int,
+        ) = if (value.length <= max) value else value.take(max - 1).trimEndSurrogate() + "…"
 
         private fun JsonObject.string(key: String) = (this[key] as? JsonPrimitive)?.content
 

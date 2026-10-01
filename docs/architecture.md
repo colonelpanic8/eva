@@ -62,7 +62,9 @@ a **provider leg** performs the model work for a task.
 
 `ThreadController` runs tasks in a thread-owned scope. Ending an attachment with
 unfinished work can continue that turn on a background Responses leg, seeded with
-thread history. Voice can also hand a long request to that leg with its
+thread history: the last 40 items, after a note saying how many earlier items are not
+shown ("at least N" when the store read of 200 items was itself bounded); an earlier
+answer that was cut off says so. Voice can also hand a long request to that leg with its
 continue-in-text session tool. The text leg receives a fresh catalog from the
 same capability registry, including enabled extensions, and retains the turn's
 action claims and receipts. Turn IDs belong to the store rather than a provider's session-local
@@ -120,7 +122,9 @@ and delegated tasks plus any running device task, followed by up to five recentl
 finished tasks from the last 512 thread items. It includes task text, action count,
 last action status, and three recent attributed receipts (call ID, capability,
 arguments, status, and message) for verification. The result stays below the model
-result budget; `tasksOmitted` and `historyLimited` expose omitted or partial history.
+result budget; `tasksOmitted` and `historyLimited` expose omitted or partial history,
+and a field shortened to fit (task 256, IDs 200, arguments 400, message 600 characters)
+ends with `…[cut by EVA]`.
 Active states follow the Running work snapshot, including waits and `RELEASING_DEVICE`;
 `looksStuck` is a separate flag restricted to working or connecting tasks;
 recent terminal states are `ANSWERED`, `FAILED`, or `INTERRUPTED`. Cancel requests interruption of exactly that active task,
@@ -298,9 +302,12 @@ work, and undoing a remote action are distinct operations.
 
 ## Capability execution
 
-Adapters contribute capabilities to a registry snapshot. Admission is deterministic
-with a shared 512-tool safety bound, including session controls: the highest count
-verified with subscription Responses and Realtime, not a published provider maximum. Voice
+Adapters contribute capabilities to a registry snapshot. Settings switches and the
+assembled prompt's `hide` lists remove tools first, so hidden tools take no capacity
+(a hidden `eva.device.task` also drops its revise/stop controls). Admission is
+deterministic with a shared 512-tool safety bound, including session controls: the
+highest count verified with subscription Responses and Realtime, not a published
+provider maximum. Voice
 reserves four base session controls (end, defer, background status, background cancel),
 plus device-task revise/stop when `eva.device.task` is offered. Bundled native tools
 come first, then whole installed-service extension groups, then remaining whole
@@ -311,12 +318,14 @@ the same app. A group that cannot fit is skipped and smaller later groups are tr
 admission never splits an extension or package instance's offered workflow. Overflow
 reasons report typed and voice admission separately, since skipping a larger group
 can leave room for a smaller group in only one mode. Unavailable or excess entries
-remain explainable in the UI. Extensions shows admitted phone/extension counts,
-reserved voice metadata bytes, and an always-visible list of excluded actions with
-mode-specific reasons. An attached session or background text leg with exclusions persists “N tools unavailable — see
-Extensions” in its session-start notice. The same selection supplies the session
-catalog, exclusion IDs and model note (`catalog-unavailable` in `eva-wording.yaml`);
-Settings uses the same selection and removes prompt-hidden entries from its preview.
+remain explainable in the UI. Extensions shows admitted phone/extension counts and an
+always-visible list of excluded actions with mode-specific reasons. An attached session
+or background text leg with exclusions persists “N tools unavailable: A, B, C and K more
+— see Extensions” in its session-start notice, which opens Extensions when tapped. The
+same selection supplies the session catalog, the excluded IDs and titles, and the model
+note (`catalog-unavailable` in `eva-wording.yaml`), which lists up to 20 excluded titles
+as quoted data plus a count of the rest. Settings runs the same selection per mode after
+removing that mode's prompt-hidden tools.
 No speculative cost/response-quality warning band is used: the measured latency is
 configuration latency, not response latency. New tools reach the model on the next connection;
 revocation blocks new execution immediately even if the model still sees an older catalog. For packages
@@ -353,55 +362,64 @@ rounds took 0.30–0.34 / 0.43–0.59 / 0.56–2.91 seconds. For 512 tools, upda
 300,522 bytes and took 1.52–1.60 seconds. These are small samples of configuration
 latency, not controlled response benchmarks.
 
-The WebRTC probe matched EVA's multipart `POST /v1/realtime/calls` session config
-(`gpt-realtime-2.1`, low reasoning, Marin, audio output, `gpt-transcribe`, English)
-and used synthetic silence, without opening a microphone. It also sent three
-matching `session.update` events per successful call. The initial aiortc offer
-advertised `max-message-size:65536`: 128 tools with shorter descriptions succeeded,
-and a 65,532-byte acknowledgement arrived, but the next 128-byte size step did
-not. This was the probe's negotiated receive limit, **not an OpenAI count limit**.
-Changing only the advertised receive size to 1 GiB allowed all 128/256/512 tools
-with 300-character descriptions; their initial configurations were
-75,431/150,439/300,455 bytes and all echoed the exact tool counts.
+Voice sends the whole session configuration, including instructions and every tool, in
+the multipart `POST /v1/realtime/calls` request
+([WebRTC guide](https://developers.openai.com/api/docs/guides/realtime-webrtc),
+[create call](https://developers.openai.com/api/reference/resources/realtime/subresources/calls/methods/create)).
+That request has no message-size limit and OpenAI applies it in full. Only the
+`session.created`/`session.updated` echo travels over the data channel, so only the echo
+is bound by the offer's advertised `max-message-size`. EVA's pinned native WebRTC SDK
+advertises the upstream
+[256 KiB SCTP bound](https://webrtc.googlesource.com/src/+/refs/heads/main/api/sctp_transport_interface.h)
+([offer generation](https://webrtc.googlesource.com/src/+/refs/heads/main/pc/media_session.cc)).
+OpenAI does not send an echo larger than that: an earlier probe at the native bound
+received a 262,140-byte echo for 512 tools with 224-character descriptions and none
+for 225, and a probe advertising aiortc's 64 KiB default stopped at a 65,532-byte echo.
+A missing echo is therefore not evidence that the configuration failed.
 
-EVA's pinned native WebRTC SDK uses the upstream
-[256 KiB SCTP bound](https://webrtc.googlesource.com/src/+/refs/heads/main/api/sctp_transport_interface.h),
-which [offer generation advertises](https://webrtc.googlesource.com/src/+/refs/heads/main/pc/media_session.cc).
-The probe repeated the test with this advertised limit:
+A live subscription probe on 2026-10-01 (aiortc advertising the native 262,144 bytes,
+synthetic silence, EVA's model, voice, transcription and headers, with a code word in
+the instructions and a per-tool suffix in each description) confirmed that oversized
+configurations are applied:
 
-| Functions / description characters | Initial config bytes | Update request / acknowledged event bytes | Result |
-| --- | ---: | ---: | --- |
-| 128 / 300 | 75,431 | 75,513 / 76,028 | Created and three updates, all 128 tools |
-| 256 / 300 | 150,439 | 150,521 / 151,036 | Created and three updates, all 256 tools |
-| 512 / 200 | 249,255 | 249,337 / 249,852 | Bare created, then initial configured update; three matching updates |
-| 512 / 224 | 261,543 | 261,625 / 262,140 | Created and three updates, all 512 tools |
-| 512 / 225 | 262,055 | 262,137 / no acknowledgement | Bare initial session; update timed out after 8 s |
-| 512 / 300 | 300,455 | 300,537 / no acknowledgement | Bare initial session; update timed out after 8 s |
+| Functions / description characters | Initial config bytes | Data-channel echo | Sideband echo | Model call to the last tool |
+| --- | ---: | --- | --- | --- |
+| 128 / 300 | 59,050 | created with 128 tools | 128 tools | `eva_tool_127`, code word and suffix correct |
+| 512 / 300 | 235,306 | bare created, then configured update | — | `eva_tool_511` |
+| 512 / 600 | 388,906 | bare created only | 512 tools | `eva_tool_511`, code word and suffix correct |
+| 1024 / 300 | 470,338 | bare created only | 1,024 tools | `eva_tool_1023`, code word and suffix correct |
+| 2048 / 200 | 736,605 | bare created only | 2,048 tools | response `incomplete` (`max_output_tokens`) at ~106k input tokens |
+| 4096 / 100 | 1,064,285 | bare created only | 4,096 tools | not measured |
 
-The failed 225-character update would add 512 bytes to the successful echo
-(inferred 262,652 bytes), crossing 262,144 bytes. HTTP 201 and an open data channel
-therefore do not establish that the tool configuration succeeded. This is a
-transport constraint, not a lower tool-count ceiling.
+The data channel kept working after a suppressed echo. The call request took 0.9,
+1.5–1.8, 3.0–3.4, 5.1–5.5 and 9.8 seconds at 128, 512, 1,024, 2,048 and 4,096 tools.
 
-Voice admission allocates 224 KiB to serialized tool metadata (including quoted
-source metadata and one guidance note per source), leaving 32 KiB
-below the native transport bound for instructions, session controls and server
-fields. Whole groups that cannot fit either this byte budget or the verified
-512-tool safety bound are skipped with a visible explanation. The provider also
-checks the **final** session configuration after prompt/wording/bridge changes:
-at most 248 KiB, or the SDP-advertised receive size minus 8 KiB, whichever is smaller
-(absent SDP size defaults to 64 KiB). Oversize configuration fails before the HTTP
-call with the tool count, byte size and remediation. Missing acknowledgement of
-the expected tool names within eight seconds emits a connection error naming the
-catalog/prompt size cause; a bare session with missing tools is not accepted as
-configured. Existing history acknowledgement remains a separate gate.
+Voice admission has no byte budget. A configuration whose echo fits the advertised
+receive size minus 8 KiB (64 KiB when the offer names none) is confirmed by that echo.
+A larger one is confirmed through a
+[sideband WebSocket](https://developers.openai.com/api/docs/guides/realtime-server-controls)
+to the same call (`wss://…/v1/realtime?call_id=` from the response's `Location` header,
+same authorization; subscription access works): EVA sends an unchanged `session.update`
+(`tool_choice: auto`), checks the echoed tool names, and closes the sideband, which
+leaves the call running. The sideband is a second network dependency of setup, so its
+failure is loud but not fatal: when it errors, does not answer within the
+eight-second window, or cannot be addressed because the call ID is missing, the call
+continues on the session OpenAI created and EVA shows a notice naming the tool count,
+size and cause, also kept in the thread after the session-start notice, since the configuration was sent whole and nothing indicates it was
+rejected. Falling back to a byte budget instead would drop tools OpenAI already
+applied and would need a second call. A confirmation that names the wrong tools, or no
+session at all within eight seconds, still fails the connection with the tool count,
+byte size and cause. History acknowledgement remains a separate gate. EVA sends no later
+`session.update` over the data channel.
 
-These probes verify configuration acceptance, not tool-selection quality, Android
-execution or audio behavior. Public API-key live acceptance and the pinned Android
-SDK's actual on-device SDP remain unverified. Prompt `hide` still applies after
-admission, by ownership agreement with the controller's concurrent changes; hidden
-entries are excluded from warnings, but can still consume reserved capacity. Moving
-`assembled.hidden` filtering before selection is the remaining integration hook.
+The 512-tool bound stays because it is the highest count verified with both providers;
+Realtime accepted more, but at 2,048 tools the prompt left the model no room to answer,
+so the context window, not a count, is the real ceiling beyond it.
+
+These probes verify configuration acceptance and that the model can call the last
+tool, not tool-selection quality, Android execution or audio behavior. Public API-key
+live acceptance, the sideband on a phone, and the pinned Android SDK's actual on-device
+SDP remain unverified.
 
 The dispatcher validates identity, arguments, binding revision, availability, and
 grants, then journals a claim before dispatch. Duplicate call IDs cannot execute
@@ -571,9 +589,21 @@ Admission skips backends that are not ready: Portal is probed with an authentica
 `/version` request, and Shizuku with its binder and EVA's grant. A task is refused only
 when none is ready, with each backend's reason. `PreferredDeviceBackend` also falls
 back when the chosen backend cannot read the screen, but only until the first action;
-after that the task stays on that backend, so no mutation is repeated elsewhere. The
-conversation bar shows each backend's readiness, which direct screen tools share,
-refreshed every five seconds while EVA is in front, and a running task's phase.
+after that the task stays on that backend, so no mutation is repeated elsewhere.
+
+The conversation bar and Settings show each backend's health, which direct screen
+tools share, and a running task's phase. Health is failure-driven
+(`ScreenControlMonitor`): a set-up backend is assumed ready. Every device backend is
+wrapped in `ReportingDeviceBackend`, so a real screen read or input that fails because
+of the backend (an exception, `BackendUnavailable`, or a timeout; not a protected or
+changed screen) marks it unhealthy with the backend, reason and time, such as
+"Shizuku couldn't read the screen: … · 3 min ago"; the next successful read or input
+through it, including a plain direct observe, clears that. Missing
+setup (Shizuku not installed, stopped or not allowed; no Portal token) is a separate
+setup-needed state with its fix-it action. The five-second probe while EVA is in front
+is secondary evidence: a failing probe marks a backend degraded only when nothing has
+worked through it since the probe started failing, and a passing probe never clears a
+real failure. A backend that was never checked reads "Not checked yet."
 
 Portal on the same phone is the first default backend. Its full typed action set
 includes Unicode replace/append text, password redaction, screenshot PNGs, Enter
@@ -622,8 +652,12 @@ The conversation model can also act on the screen itself, one input per call,
 without the worker: `eva.device.observe`, `tap`, `set_text`, `scroll`, `press_enter`,
 and `navigate` (Back, Home, notification shade). They run through
 `devicecontrol/ScreenActions.kt` on the same `PortalBackend` as tasks, so rechecks,
-settling and text read-back are shared. They use the first ready backend in the same
-order as tasks, without a task's mid-call fallback. Element inputs name an observation
+settling and text read-back are shared. They use the backends in the same order as
+tasks: each call starts at the preferred backend, and one that is not ready or passes
+its check but cannot read the screen hands over to the next before any input of that
+call is sent. An input goes to the backend whose observation it names and is never
+repeated on another; when none can read the screen, nothing is sent and each backend's
+reason is returned. Element inputs name an observation
 reference and element number from a projection of at most 60 addressable elements
 and 3,500 characters; a reference serves one input, expires after three minutes,
 and is dropped when a device task starts or the backend configuration changes, and

@@ -89,6 +89,7 @@ internal fun ConversationScreen(
     screenControl: ScreenControlStatus = ScreenControlStatus(),
     onOpenScreenControl: () -> Unit = {},
     onShareDiagnostics: (String) -> Unit = {},
+    onOpenExtensions: () -> Unit = {},
 ) {
     var draft by rememberSaveable { mutableStateOf("") }
     val storageFailed = state.errorMessage != null
@@ -186,7 +187,7 @@ internal fun ConversationScreen(
                     }
                 }
                 items(groups.asReversed(), key = { it.entry.id }) { group ->
-                    ConversationEntryItem(group.entry, group.children)
+                    ConversationEntryItem(group.entry, group.children, onOpenExtensions)
                 }
             }
         }

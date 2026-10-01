@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.colonelpanic.eva.data.ChosenNumbers
 import com.colonelpanic.eva.data.MessagingPreferences
 import com.colonelpanic.eva.data.configuration.MessagingBridgeDefinition
 import com.colonelpanic.eva.messaging.MessagingApp
@@ -278,7 +279,9 @@ private fun RememberedNumbersSection(
                     1 -> "1 number remembered"
                     else -> "${state.rememberedNumbers} numbers remembered"
                 },
-            supporting = "The numbers EVA last texted or called, kept so repeating a name reaches the same person.",
+            supporting =
+                "The numbers EVA last texted or called, kept so repeating a name reaches the same person. " +
+                    "Keeps the ${ChosenNumbers.MAX_NUMBERS} most recently used numbers.",
         ) {
             if (state.rememberedNumbers > 0) {
                 TextButton(onClick = actions.onForgetRememberedNumbers) { Text("Forget") }

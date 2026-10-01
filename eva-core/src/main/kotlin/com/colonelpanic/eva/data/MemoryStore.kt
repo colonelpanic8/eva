@@ -71,12 +71,18 @@ class MemoryStore(
             }
         }
 
+    /** The learned note, and the unreviewed notes a full inbox dropped to make room. */
+    data class Learned(
+        val note: MemoryNote,
+        val dropped: List<MemoryNote>,
+    )
+
     /** A full inbox drops its oldest unreviewed note rather than refusing what EVA just learned. */
     suspend fun learn(
         name: String,
         text: String,
         threadId: String?,
-    ): MemoryNote =
+    ): Learned =
         withContext(Dispatchers.IO) {
             requireNote(name, text)
             mutex.withLock {
@@ -85,13 +91,9 @@ class MemoryStore(
                     "The user already kept a note with this name. Learned notes never replace kept ones."
                 }
                 val note = MemoryNote(name, text, clock(), threadId)
-                val inbox =
-                    (memories.inbox.filterNot { it.name == name } + note)
-                        .sortedByDescending { it.updatedAtMillis }
-                        .take(MAX_INBOX)
-                        .sortedBy { it.name }
-                write(memories.copy(inbox = inbox))
-                note
+                val newest = (memories.inbox.filterNot { it.name == name } + note).sortedByDescending { it.updatedAtMillis }
+                write(memories.copy(inbox = newest.take(MAX_INBOX).sortedBy { it.name }))
+                Learned(note, newest.drop(MAX_INBOX))
             }
         }
 

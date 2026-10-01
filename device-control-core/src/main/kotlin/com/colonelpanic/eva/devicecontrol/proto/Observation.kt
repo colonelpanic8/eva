@@ -2,6 +2,7 @@
 
 package com.colonelpanic.eva.devicecontrol.proto
 
+import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonClassDiscriminator
@@ -77,6 +78,10 @@ data class Observation(
     val locked: Boolean = false,
     @SerialName("unavailable_reason")
     val unavailableReason: UnavailableReason? = null,
+    /** The capture stopped at a node or depth cap, so the screen holds more than [elements]. Omitted when false. */
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    @SerialName("elements_capped")
+    val elementsCapped: Boolean = false,
 )
 
 @Serializable

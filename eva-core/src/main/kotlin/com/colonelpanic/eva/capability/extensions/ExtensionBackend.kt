@@ -58,6 +58,10 @@ class ExtensionBackend(
                     unknown(invocation)
                 }
 
+                is ExtensionExchange.Oversized -> {
+                    oversized(invocation, exchange.limit)
+                }
+
                 is ExtensionExchange.Reply -> {
                     val result =
                         runCatching {
@@ -89,11 +93,26 @@ class ExtensionBackend(
                     .joinToString("") { "%02x".format(it) }
     }
 
+    /** A read-only capability changed nothing, so its discarded reply is a plain failure; anything else may have run. */
+    private fun oversized(
+        invocation: String,
+        limit: Int,
+    ): ExecutionOutcome {
+        val discarded = "The extension's reply exceeded EVA's $limit-byte result limit and was discarded."
+        return if (definition.readOnly) {
+            ExecutionOutcome(InvocationStatus.FAILED, "$discarded Ask it for less, such as a narrower query or a smaller limit.")
+        } else {
+            unknown(invocation, "$discarded The action may have run.")
+        }
+    }
+
     /** The ID lets a provider's own status read reconcile a reply EVA never received. */
-    private fun unknown(invocation: String) =
-        ExecutionOutcome(
-            InvocationStatus.UNKNOWN,
-            "${CapabilityDispatcher.UNKNOWN_MESSAGE} Invocation ID: $invocation.",
-            buildJsonObject { put("invocationId", invocation) },
-        )
+    private fun unknown(
+        invocation: String,
+        reason: String? = null,
+    ) = ExecutionOutcome(
+        InvocationStatus.UNKNOWN,
+        listOfNotNull(reason, CapabilityDispatcher.UNKNOWN_MESSAGE, "Invocation ID: $invocation.").joinToString(" "),
+        buildJsonObject { put("invocationId", invocation) },
+    )
 }

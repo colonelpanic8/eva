@@ -203,11 +203,20 @@ class TextTaskAgent(
                             ),
                         )
                     if (steps.isNotEmpty()) {
+                        val earlier = steps.dropLast(if (exchange.isEmpty()) 0 else 1)
+                        val shown = earlier.takeLast(settings.historyLines)
                         messages +=
                             WorkerMessage(
                                 "user",
                                 wording.note("history") + "\n" +
-                                    steps.dropLast(if (exchange.isEmpty()) 0 else 1).takeLast(settings.historyLines).joinToString("\n") {
+                                    (
+                                        if (shown.size < earlier.size) {
+                                            wording.note("history_omitted", "count" to earlier.size - shown.size) + "\n"
+                                        } else {
+                                            ""
+                                        }
+                                    ) +
+                                    shown.joinToString("\n") {
                                         "step ${it.step}: ${callHistory[it.step] ?: it.kind} → ${it.result}"
                                     },
                             )
@@ -280,7 +289,7 @@ class TextTaskAgent(
                     } else {
                         call.arguments
                     }
-                callHistory[step] = "${call.name}(${safeArgs.toString().take(800)})"
+                callHistory[step] = "${call.name}(${clip(safeArgs.toString(), MAX_REPLAYED_ARGS)})"
                 if (safeArgs != call.arguments) {
                     val redacted = call.copy(arguments = safeArgs)
                     pendingReply = reply.copy(calls = listOf(redacted) + reply.calls.drop(1), output = emptyList())
@@ -291,7 +300,7 @@ class TextTaskAgent(
                             ?.jsonPrimitive
                             ?.content
                             .orEmpty()
-                            .take(500)
+                            .let { clip(it, MAX_QUESTION) }
                     if (question.isBlank()) {
                         note = wording.note("invalid_call")
                         refused++
@@ -311,7 +320,7 @@ class TextTaskAgent(
                             ?.jsonPrimitive
                             ?.content
                             .orEmpty()
-                            .take(1000)
+                            .let(::boundedSummary)
                     steps[steps.lastIndex] = steps.last().copy(result = status.orEmpty())
                     return result(if (status == "completed") TaskStatus.COMPLETED else TaskStatus.FAILED, summary)
                 }
@@ -486,7 +495,7 @@ class TextTaskAgent(
             return result(if (isStopped) TaskStatus.CANCELLED else TaskStatus.FAILED, if (isStopped) "cancelled" else "timeout")
         } catch (e: Exception) {
             val cause = e.message?.takeIf { it.isNotBlank() }?.let { "${e.javaClass.simpleName}: $it" } ?: e.javaClass.simpleName
-            return result(TaskStatus.FAILED, "worker_error: ${cause.take(MAX_ERROR_CHARS)}")
+            return result(TaskStatus.FAILED, "worker_error: ${clip(cause, MAX_ERROR_CHARS)}")
         } finally {
             model.close()
         }
@@ -569,6 +578,15 @@ class TextTaskAgent(
             ScrollDirection.RIGHT -> ScrollDirection.LEFT
         }
 
+    private fun boundedSummary(summary: String) =
+        if (summary.length <=
+            MAX_SUMMARY
+        ) {
+            summary
+        } else {
+            summary.take(MAX_SUMMARY) + " " + wording.note("summary_cut", "count" to MAX_SUMMARY)
+        }
+
     private data class ScrollState(
         val direction: ScrollDirection,
         val target: String,
@@ -578,6 +596,15 @@ class TextTaskAgent(
 
     companion object {
         private const val MAX_ERROR_CHARS = 200
+        private const val MAX_REPLAYED_ARGS = 800
+        private const val MAX_QUESTION = 500
+        const val MAX_SUMMARY = 1000
+
+        private fun clip(
+            value: String,
+            max: Int,
+        ) = if (value.length <= max) value else value.take(max - 1) + "…"
+
         private val FILLER =
             "the and you your for with was are has have this that from not but its will been is on in at of to a an it i my me what when where who which how does did time tell find according page open chrome app screen phone please can"
                 .split(

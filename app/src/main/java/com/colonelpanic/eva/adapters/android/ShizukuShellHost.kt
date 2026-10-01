@@ -20,6 +20,7 @@ data class ShellResult(
     val exitCode: Int,
     val timedOut: Boolean,
     val uid: Int,
+    val stdoutTruncated: Boolean = false,
 )
 
 class ShizukuUnavailableException(
@@ -122,6 +123,7 @@ class ShizukuShellHost(
                 exitCode = result.getInt(EXIT_CODE, -1),
                 timedOut = result.getBoolean(TIMED_OUT),
                 uid = result.getInt(UID, -1),
+                stdoutTruncated = result.getBoolean(STDOUT_TRUNCATED),
             )
         }
     }
@@ -175,6 +177,7 @@ class ShizukuShellHost(
 
     companion object {
         const val STDOUT = "stdout"
+        const val STDOUT_TRUNCATED = "stdoutTruncated"
         const val STDERR = "stderr"
         const val EXIT_CODE = "exitCode"
         const val TIMED_OUT = "timedOut"
