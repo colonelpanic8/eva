@@ -25,7 +25,7 @@ jobs:
         with:
           packages: ""
       - name: Formatting, lint, tests, and debug build
-        run: ./gradlew --no-daemon ktlintCheck :app:lintDebug :eva-core:test :app:testDebugUnitTest :app:assembleDebug
+        run: ./gradlew --no-daemon ktlintCheck :app:lintDebug :eva-core:test :eva-desktop:test :app:testDebugUnitTest :app:assembleDebug
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:

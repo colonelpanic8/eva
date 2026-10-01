@@ -970,6 +970,30 @@ their own untrusted wording. A prompt component's `describe` still rewords a too
 top of this file. UI writes normalize YAML and remove comments; file-based
 editing is preferable if comments must survive.
 
+## Desktop host
+
+`:eva-desktop` is a text-mode EVA for a desktop computer, built on `:eva-core` like
+the phone: the same `ThreadController`, `CapabilityDispatcher` and journal semantics,
+OpenAI Responses provider, and memory tools. `eva-desktop` (`just desktop`) offers
+`login` (ChatGPT device-code sign-in), `chat`, `threads`, and `logout`. One
+single-threaded dispatcher confines controller calls, as the phone's main thread does.
+
+- Storage follows the XDG base directories under `eva/`. The journal is SQLite through
+  JDBC with the phone's schema (version 7), so claims, expected-state transitions,
+  startup recovery, and uncertain outcomes behave the same; an executed call ID is not
+  run again after a restart. ChatGPT tokens and memory notes are files only the user
+  can read, replaced atomically.
+- Tools are the memory tools and `eva.desktop.open_url`, which hands an http(s)
+  address to `xdg-open` (or `open` on macOS) and reports `HANDED_OFF`, not a loaded page.
+- The prompt is the catalog's `eva-desktop-prompt.yaml`, shipped byte-identical in
+  `eva-desktop/src/main/resources`, because prompt components cannot yet vary by
+  platform and the phone prompt names Android. Tool wording is shared
+  `eva-wording.yaml`.
+
+Not yet on the desktop: following the instruction catalog, `eva.yaml` configuration,
+declarative packages and grants, MCP servers, voice, a tray UI, and screen control.
+The host is JVM-tested; it is not yet verified against the live subscription backend.
+
 ## Verification boundaries
 
 Focused JVM tests cover core behavior and Android hosts through fakes/Robolectric.

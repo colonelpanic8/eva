@@ -21,6 +21,13 @@ tools:
   eva.device.task.revise: {"description": "Change the running device task's goal when the user corrects, narrows, or adds to what it is doing. Not for an unrelated request, which should be its own action and runs after the task. An answer to a question the task showed on screen reaches it without this tool.", "parameters": {"correction": "The user's correction, in their words, with any detail needed to apply it."}}
   eva.device.task.stop: {"description": "Stop the running device task when the user wants it to stop or has changed their mind. Actions queued after it still run. The task's own result reports what it did before stopping."}
 
+  eva.desktop.open_url:
+    description: >-
+      Open an http or https web address in this computer's default browser, or the app registered
+      for it. The result says the address was handed over, not that the page loaded.
+    parameters:
+      url: An absolute http:// or https:// address.
+
   eva.session.end:
     description: >-
       Hang up this voice conversation after a brief spoken goodbye; the goodbye finishes playing
