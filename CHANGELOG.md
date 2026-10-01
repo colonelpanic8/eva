@@ -22,7 +22,7 @@ All notable changes to EVA will be documented here.
 ### Fixed
 
 - Direct screen tools fall back to the next backend when one passes its check but cannot read the screen, before any input is sent, as device tasks already did. Inputs are never repeated on another backend.
-- Background status, resumed-leg history, incomplete text answers and long on-screen quotes say when they were cut instead of truncating silently.
+- Results no longer truncate silently: background status, resumed-leg history, incomplete text answers, on-screen quotes and capped screen captures, SMS and bridge message reads and searches, device-task summaries and history, oversized extension and package replies, web research sources, contact numbers, and the memory review inbox each say what was cut or left out. A bridge search trimmed for size no longer reports a false "no match", and an oversized read-only reply fails instead of reporting an unknown outcome.
 - Brief waits between actions stay quiet. A mutation waiting behind earlier work announces its queue status after three seconds, and starting sooner cancels the delayed notice. Device-lease waits still report immediately.
 - Resuming speech cancels both active voice responses and replies still awaiting acknowledgement, preventing late replies from talking over the user or executing interrupted calls. Tool follow-ups retain their original turn and resume after the new speech response. Long dictation keeps queued replies silent; speech recovery starts after speaking stops, and late transcription failures report only a missing caption.
 - Hardware Enter and numpad Enter send the composer request. Silent completed turns no longer add "Response completed." bubbles.
