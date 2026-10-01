@@ -86,7 +86,7 @@ class WebResearchBackend(
                 "Research the web",
                 Json
                     .parseToJsonElement(
-                        """{"type":"object","properties":{"question":{"type":"string","minLength":1,"maxLength":1000},"sourceUrl":{"type":"string","minLength":1,"maxLength":2048}},"required":["question"],"additionalProperties":false}""",
+                        """{"type":"object","properties":{"question":{"type":"string","minLength":1},"sourceUrl":{"type":"string","minLength":1,"maxLength":2048}},"required":["question"],"additionalProperties":false}""",
                     ).jsonObject,
                 readOnly = true,
                 validateOperation = { args ->

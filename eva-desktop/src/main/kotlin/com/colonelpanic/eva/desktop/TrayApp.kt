@@ -155,10 +155,6 @@ private fun Conversation(
     fun send() {
         val text = draft.trim()
         if (text.isEmpty() || !canSend) return
-        if (text.length > ThreadController.MAX_REQUEST_CHARS) {
-            problem = ThreadController.requestTooLong(text.length, ThreadController.MAX_REQUEST_CHARS)
-            return
-        }
         controller.submit(text)
         // The controller marks an accepted request at once; a refused one keeps its draft.
         if (controller.state.value.isSubmitting) {

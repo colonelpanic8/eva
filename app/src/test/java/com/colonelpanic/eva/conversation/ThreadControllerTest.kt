@@ -29,7 +29,6 @@ import com.colonelpanic.eva.providers.ConversationSession
 import com.colonelpanic.eva.providers.CorrelatedToolResult
 import com.colonelpanic.eva.providers.ExcludedTool
 import com.colonelpanic.eva.providers.HistoryItem
-import com.colonelpanic.eva.providers.MAX_INPUT_CHARS
 import com.colonelpanic.eva.providers.ProviderEvent
 import com.colonelpanic.eva.providers.ResponseRequest
 import com.colonelpanic.eva.providers.SessionOpenRequest
@@ -1109,7 +1108,11 @@ class ThreadControllerTest {
             runCurrent()
             assertEquals("Found weather", voice.results.single().message)
 
-            voice.call("fix", ThreadController.DEVICE_TASK_REVISE.capabilityId, "correction" to "Bluetooth, not Wi-Fi")
+            voice.call(
+                "fix",
+                ThreadController.DEVICE_TASK_REVISE.capabilityId,
+                "correction" to "Bluetooth, not Wi-Fi. " + "x".repeat(6_000),
+            )
             runCurrent()
             assertEquals("COMPLETED", voice.results.last().status)
             assertEquals(
@@ -1514,22 +1517,20 @@ class ThreadControllerTest {
         }
 
     @Test
-    fun `a typed request up to the provider bound is accepted and a longer one says the limit`() =
+    fun `a long typed request reaches the provider and its action receipt whole`() =
         runTest {
             val provider = FakeProvider()
             val controller = controller(provider)
             advanceUntilIdle()
             controller.connect("unused")
             advanceUntilIdle()
-            controller.submit("x".repeat(MAX_INPUT_CHARS + 1))
+            val request = "Plan this trip: " + "x".repeat(20_000)
+            controller.submit(request)
             advanceUntilIdle()
-            assertEquals(
-                "This request is 4001 characters; the connected provider accepts up to 4000. Shorten it or split it into parts.",
-                controller.state.value.providerMessage,
-            )
-            controller.submit("x".repeat(3000))
+            assertEquals(request, provider.input.text)
+            provider.call("action", action.id, "place" to "Ferry Building")
             advanceUntilIdle()
-            assertEquals(3000, provider.input.text.length)
+            assertEquals(request, repository.history().single().request)
         }
 
     @Test
@@ -1728,6 +1729,23 @@ class ThreadControllerTest {
                 controller.state.value.entries
                     .any { it.request == "Late caption" },
             )
+        }
+
+    @Test
+    fun `a long handoff task reaches the text agent whole`() =
+        runTest {
+            val voice = FakeProvider()
+            val background = FakeProvider(epoch = "background")
+            val controller = controller(voice, background = background, media = { VoiceMedia() })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            voice.startVoice("first", "Research")
+            val task = "Research and compare: " + "y".repeat(5_000)
+            voice.call("delegate", ThreadController.DEFER_TO_TEXT.capabilityId, "task" to task)
+            advanceUntilIdle()
+            assertEquals(listOf("HANDED_OFF"), voice.results.map { it.status })
+            assertTrue(background.request.instructions.contains(task))
         }
 
     @Test

@@ -146,6 +146,5 @@ class CapabilityRegistry(
 
         /** Reading and driving another app's screen, which the user can withhold as a group. */
         val SCREEN_CONTROL = setOf(UI_OBSERVE, UI_TAP, UI_SET_TEXT, UI_SCROLL, UI_PRESS_ENTER, UI_NAVIGATE, DEVICE_TASK)
-        const val MAX_DESTINATION_LENGTH = 500
     }
 }

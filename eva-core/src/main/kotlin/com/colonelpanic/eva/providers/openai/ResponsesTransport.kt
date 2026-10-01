@@ -50,10 +50,14 @@ internal suspend fun responsesPost(
                         if (!it.isSuccessful) {
                             throw ResponsesHttpException(
                                 it.code,
-                                openAiErrorMessage(it.code, it.body.string(), "the request"),
+                                openAiErrorMessage(it.code, it.body.string(), "the request", payload.str("model")),
                             )
                         }
-                        if (access.serverKeepsHistory) Json.parseToJsonElement(it.body.string()).jsonObject else collectResponsesStream(it)
+                        if (access.serverKeepsHistory) {
+                            Json.parseToJsonElement(it.body.string()).jsonObject
+                        } else {
+                            collectResponsesStream(it, payload.str("model"))
+                        }
                     }
                 if (continuation.isActive) continuation.resume(result)
             } catch (e: Exception) {
@@ -63,7 +67,10 @@ internal suspend fun responsesPost(
     }
 }
 
-internal fun collectResponsesStream(response: Response): JsonObject {
+internal fun collectResponsesStream(
+    response: Response,
+    model: String? = null,
+): JsonObject {
     val items = mutableListOf<JsonElement>()
     var id: String? = null
     var status: String? = null
@@ -82,7 +89,7 @@ internal fun collectResponsesStream(response: Response): JsonObject {
             }
 
             "error" -> {
-                error(streamError(event.obj("error")))
+                error(streamError(event.obj("error"), model))
             }
 
             else -> {
@@ -94,7 +101,7 @@ internal fun collectResponsesStream(response: Response): JsonObject {
                         completed = true
                         finalOutput = body["output"] as? JsonArray
                     }
-                    body.obj("error")?.let { error(streamError(it)) }
+                    body.obj("error")?.let { error(streamError(it, model)) }
                     if (type in setOf("response.completed", "response.failed", "response.incomplete")) break
                 }
             }
@@ -108,8 +115,11 @@ internal fun collectResponsesStream(response: Response): JsonObject {
     }
 }
 
-private fun streamError(error: JsonObject?) =
-    "OpenAI rejected the request: ${error?.str("message")?.trim()?.take(300) ?: "no reason was given"}"
+private fun streamError(
+    error: JsonObject?,
+    model: String?,
+) = contextOverflow(error, model)
+    ?: "OpenAI rejected the request: ${error?.str("message")?.trim()?.take(300) ?: "no reason was given"}"
 
 internal class ResponsesHttpException(
     val statusCode: Int,

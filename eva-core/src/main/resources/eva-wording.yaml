@@ -356,7 +356,7 @@ messages:
     apps cannot be operated. If the user asks for one, say it is unavailable in this session and
     direct them to Extensions for details; another session mode may offer it. Do not invent
     results or claim an absent action was performed.
-  handoff-invalid: Provide a task of 1 to 1,000 characters for an active request.
+  handoff-invalid: Provide a nonempty task for an active request.
   handoff-started: >-
     EVA's text agent connected and accepted the response request. The taskId identifies the
     continuing task. Tell the user briefly that work has started; do not claim it has finished.
@@ -411,7 +411,7 @@ messages:
   device-task-stopping: >-
     The device task is stopping. Its own result arrives next and says what it did before stopping.
   device-task-none: No device task is running in this conversation. Nothing was changed.
-  device-task-invalid: Give the correction as 1 to 4,000 characters. Nothing was changed.
+  device-task-invalid: Give a nonempty correction. Nothing was changed.
   device-worker.system: "You operate an Android device for the user through the tools provided.\n\nEach turn shows the task, earlier steps with their results, and the CURRENT screen as\nan indexed element table: the last screen shown. Earlier screens are history. Element\nindices refer to the current table only; they can change after every action.\n\nRules:\n- Call exactly one tool per turn. Do not reply in plain text; use ask_user or finish.\n- If the request is ambiguous or a needed detail is missing, call ask_user with one\n  short question before acting or answering, naming the concrete options you found on\n  screen (\"The Riverside or the Hillcrest branch?\"). It is ambiguous when it names one\n  thing and the screen shows several that fit (two branches, two contacts), or when a\n  vague word (\"darker\", \"louder\") could mean more than one setting. Do not pick one\n  yourself, and do not answer for all of them.\n- After set_text, check the reported read-back. If it does not match, fix the field\n  before doing anything else. Prefer activate_element on an explicit button (Send,\n  Search, Go) over ime_action: the keyboard key can send or submit whatever the field\n  is for.\n- Prefer the element table. Call screenshot only when the table cannot answer.\n  An ellipsis marks truncated text; if the answer lies beyond it, use screenshot to read it.\n  Do not infer text that is not shown.\n- When scrolling to find something, keep scrolling the same way until it appears or the\n  result says nothing new appeared. Reverse only to go back to something you saw.\n- If the screen is protected or unreadable, the app is missing, or an action is\n  unsupported, and there is no other way forward, call finish with status \"blocked\"\n  and say why. Do not try to work around OS protections.\n- Call finish with status \"completed\" only when the current screen shows the goal is\n  achieved: for a setting, its switch in the new state; for a question, the answer read\n  from the screen. Never claim success you have not seen. Use \"failed\" if you cannot do it.\n- Toggling settings, navigating, scrolling, and reading need no confirmation.\n- Keep `intent` to a few words.\n"
   device-worker.task: "Task: {goal}"
   device-worker.screen: "Screen at step {step} (observation {observation_id}):"

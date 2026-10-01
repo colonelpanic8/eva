@@ -70,8 +70,7 @@ export function attachDeviceConnections(wss: WebSocketServer, token: string): vo
             typeof msg.catalogRevision !== "string" ||
             !msg.catalogRevision ||
             msg.catalogRevision.length > 128 ||
-            typeof msg.instructions !== "string" ||
-            msg.instructions.length > 4000
+            typeof msg.instructions !== "string"
           )
             throw new Error("Invalid catalog revision or instructions");
           if (msg.mode !== undefined && msg.mode !== "voice")
@@ -160,8 +159,7 @@ export function attachDeviceConnections(wss: WebSocketServer, token: string): vo
             msg.catalogRevision !== relay.catalogRevision ||
             typeof msg.inputId !== "string" ||
             typeof msg.text !== "string" ||
-            !msg.text.trim() ||
-            msg.text.length > 1000
+            !msg.text.trim()
           )
             throw new Error("Invalid input or session");
           relay.beginInput(msg.inputId);

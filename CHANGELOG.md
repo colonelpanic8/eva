@@ -12,6 +12,9 @@ All notable changes to EVA will be documented here.
 - Excluded tools are named: the session notice lists the first few and opens Extensions; the model's note lists up to 20.
 - Screen-control health is failure-driven: a backend turns unhealthy with its reason and age when a real read or input fails, and recovers on the next success.
 - Settings shows "Not checked yet." for a screen-control backend that was never checked.
+- Typed requests, voice handoff tasks, and device-task goals and corrections no longer have EVA length limits; receipts keep the full request.
+- A request too long for the model's context now says so plainly instead of showing a generic provider error.
+- The experimental voice broker accepts long requests and full prompts.
 
 ### Fixed
 

@@ -206,9 +206,11 @@ budgets continue to apply.
 A turn can run successive native or extension reads and mutations without another
 user message. EVA does not cap the number of calls a turn or its background leg
 makes; the user stops runaway work from Running work. Every call retains
-dispatcher validation, grants, and journaling. A typed request may be as long as
-the connected session accepts (4,000 characters for OpenAI, 1,000 for the voice
-broker); a longer one is refused with its length and that bound.
+dispatcher validation, grants, and journaling. EVA sets no length limit on typed
+requests, handoff tasks, device-task goals or corrections, and receipts record the
+request whole. The model's context window is the only bound: when OpenAI reports
+an overflow, EVA says the request is too long for that model's context, with the
+window size when OpenAI states it.
 An unknown or failed mutation blocks further mutations in that turn because partial
 external effects may exist; read-only verification remains available. Process
 recovery marks interrupted work and never automatically repeats it. The legacy

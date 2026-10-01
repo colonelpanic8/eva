@@ -43,10 +43,6 @@ class SessionController(
         val current = mutableState.value
         if (current.isLoading || current.isSubmitting || current.errorMessage != null || input.isBlank()) return
         val id = newCallId()
-        if (input.length > 1000) {
-            append(ConversationEntry(id, input.take(1000), "Keep requests under 1,000 characters.", EntryStatus.NOT_EXECUTED))
-            return
-        }
         val proposal = provider.propose(id, input, dispatcher.catalogRevision)
         if (proposal == null) {
             append(

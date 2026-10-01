@@ -867,7 +867,7 @@ private class OpenAiRealtimeSession(
 
     override suspend fun submit(input: ConversationInput) {
         check(sessionId != null && buffered == null)
-        require(input.text.isNotBlank() && input.text.length <= maxInputChars) { "A request must be 1 to $maxInputChars characters." }
+        require(input.text.isNotBlank()) { "A request must not be empty." }
         buffered = input
     }
 
@@ -964,6 +964,7 @@ private class OpenAiRealtimeSession(
     private fun handleError(error: JsonObject?) {
         if (error?.str("code") == "response_cancel_not_active") return
         val id = error?.str("event_id")
+        val reason = contextOverflow(error, model) ?: error?.str("message")
         val own = id?.let { requested.remove(it) }
         if (own != null) {
             requestTimers.remove(id)?.cancel()
@@ -988,7 +989,7 @@ private class OpenAiRealtimeSession(
                 return
             }
             failInput(own.origin.inputId)
-            emit(ProviderEvent.Notice(error.str("message") ?: "OpenAI could not start that response. You can keep talking."))
+            emit(ProviderEvent.Notice(reason ?: "OpenAI could not start that response. You can keep talking."))
             pumpRequests()
             return
         }
@@ -1002,14 +1003,14 @@ private class OpenAiRealtimeSession(
             }
             emit(
                 ProviderEvent.Notice(
-                    error?.str("message") ?: "OpenAI could not accept the conversation item. The call is still connected.",
+                    reason ?: "OpenAI could not accept the conversation item. The call is still connected.",
                 ),
             )
             pumpRequests()
         } else if (id in retiredRequests) {
-            emit(ProviderEvent.Notice(error?.str("message") ?: "OpenAI could not complete an earlier response request."))
+            emit(ProviderEvent.Notice(reason ?: "OpenAI could not complete an earlier response request."))
         } else {
-            emit(ProviderEvent.Failure(error?.str("message") ?: "The provider reported an error."))
+            emit(ProviderEvent.Failure(reason ?: "The provider reported an error."))
         }
     }
 
