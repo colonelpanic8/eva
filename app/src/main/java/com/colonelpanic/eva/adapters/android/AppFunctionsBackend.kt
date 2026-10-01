@@ -71,10 +71,12 @@ object AppFunctionCommands {
 }
 
 object AppFunctionOutput {
+    /** [outputCut] when the shell stopped reading the command's output, so items past it are missing. */
     fun summarizeState(
         yaml: String,
         maxChars: Int = MAX_SUMMARY_CHARS,
         maxItems: Int = MAX_STATE_ITEMS,
+        outputCut: Boolean = false,
     ): String {
         val items = mutableListOf<StateItem>()
         var value: String? = null
@@ -119,12 +121,12 @@ object AppFunctionOutput {
         }
         flush()
 
-        if (items.isEmpty()) return "No device-state items were returned."
+        if (items.isEmpty()) return if (outputCut) OUTPUT_CUT_EMPTY else "No device-state items were returned."
         val lines =
             items.take(maxItems).map { item ->
                 "- ${item.key}: ${item.value ?: "unknown"} (${item.name ?: item.purpose ?: "unnamed"})"
             }
-        return cap(lines, maxChars, items.size >= maxItems)
+        return cap(lines, maxChars, items.size >= maxItems || outputCut)
     }
 
     fun summarizeMetadata(
@@ -132,6 +134,7 @@ object AppFunctionOutput {
         search: String,
         maxChars: Int = MAX_SUMMARY_CHARS,
         maxItems: Int = MAX_METADATA_ITEMS,
+        outputCut: Boolean = false,
     ): String {
         val matches = mutableListOf<MetadataItem>()
         var writable = false
@@ -170,9 +173,9 @@ object AppFunctionOutput {
             }
         }
 
-        if (matches.isEmpty()) return "No writable settings matched '$search'."
+        if (matches.isEmpty()) return if (outputCut) OUTPUT_CUT_EMPTY else "No writable settings matched '$search'."
         val lines = matches.map { "- ${it.key}: ${it.purpose}; values=${it.possibleValues}" }
-        return cap(lines, maxChars, matches.size >= maxItems)
+        return cap(lines, maxChars, matches.size >= maxItems || outputCut)
     }
 
     fun summarizeSet(yaml: String): ExecutionOutcome {
@@ -246,6 +249,8 @@ object AppFunctionOutput {
         val possibleValues: String,
     )
 
+    const val OUTPUT_CUT_EMPTY =
+        "Settings returned more output than EVA reads, and nothing matched in the part it read; narrow the request."
     private const val MAX_SUMMARY_CHARS = 4_000
     private const val MAX_STATE_ITEMS = 40
     private const val MAX_METADATA_ITEMS = 30
@@ -309,7 +314,8 @@ class AppFunctionsBackend(
                         val category = arguments.getValue("category")
                         ExecutionOutcome(
                             InvocationStatus.COMPLETED,
-                            "$category device state:\n${AppFunctionOutput.summarizeState(result.stdout)}",
+                            "$category device state:\n" +
+                                AppFunctionOutput.summarizeState(result.stdout, outputCut = result.stdoutTruncated),
                         )
                     }
 
@@ -321,7 +327,8 @@ class AppFunctionsBackend(
                         val search = arguments.getValue("search")
                         ExecutionOutcome(
                             InvocationStatus.COMPLETED,
-                            "Writable settings matching '$search':\n${AppFunctionOutput.summarizeMetadata(result.stdout, search)}",
+                            "Writable settings matching '$search':\n" +
+                                AppFunctionOutput.summarizeMetadata(result.stdout, search, outputCut = result.stdoutTruncated),
                         )
                     }
                 }

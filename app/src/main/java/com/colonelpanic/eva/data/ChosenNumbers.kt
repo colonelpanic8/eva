@@ -86,7 +86,7 @@ class ChosenNumbers(
         onChanged()
     }
 
-    private companion object {
+    companion object {
         const val MAX_NUMBERS = 500
     }
 }

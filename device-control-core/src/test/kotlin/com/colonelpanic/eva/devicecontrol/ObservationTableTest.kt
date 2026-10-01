@@ -1,6 +1,7 @@
 package com.colonelpanic.eva.devicecontrol
 
 import com.colonelpanic.eva.devicecontrol.proto.Bounds
+import com.colonelpanic.eva.devicecontrol.proto.CAPPED_NOTICE
 import com.colonelpanic.eva.devicecontrol.proto.Element
 import com.colonelpanic.eva.devicecontrol.proto.Observation
 import com.colonelpanic.eva.devicecontrol.proto.Orientation
@@ -106,6 +107,26 @@ class ObservationTableTest {
         val text = screen.renderCompact("screen-1", maxChars = 400)
 
         assertTrue(text.length <= 400)
-        assertTrue(text.endsWith("scroll or narrow the screen first."))
+        val shown = text.lines().count { it.startsWith("[") }
+        assertTrue(text, text.endsWith("… ${50 - shown} more elements were not shown; scroll to reach them."))
+    }
+
+    @Test fun aCappedCaptureSaysTheScreenHadMoreInBothRendersAndOnlyThenOnTheWire() {
+        val screen =
+            Observation(
+                "obs",
+                "2026-01-01T00:00:00Z",
+                "fake",
+                screen = Screen(100, 200, Orientation.PORTRAIT),
+                elements = listOf(Element(0, Role.BUTTON, "OK", bounds = Bounds(0, 0, 10, 10), clickable = true, depth = 0)),
+                elementsCapped = true,
+            )
+        assertTrue(screen.renderTable().endsWith(CAPPED_NOTICE))
+        assertTrue(screen.renderCompact("s", maxChars = 200).endsWith(CAPPED_NOTICE))
+        val wire = ProtocolJson.encodeToString(Observation.serializer(), screen)
+        assertEquals(screen, ProtocolJson.decodeFromString(Observation.serializer(), wire))
+        val uncapped = screen.copy(elementsCapped = false)
+        assertFalse(ProtocolJson.encodeToString(Observation.serializer(), uncapped).contains("elements_capped"))
+        assertFalse(uncapped.renderTable().contains(CAPPED_NOTICE))
     }
 }

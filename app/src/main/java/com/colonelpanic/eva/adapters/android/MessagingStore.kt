@@ -26,14 +26,16 @@ class MessagingStore(
     suspend fun conversations(
         query: ConversationQuery,
         limit: Int,
-    ): List<Conversation> =
+    ): ConversationListing =
         withContext(Dispatchers.IO) {
             val names = NameCache()
             if (query.isEmpty) {
-                return@withContext readThreads(null).take(limit).map { it.toConversation(names) }
+                val threads = readThreads(null, limit + 1).threads
+                return@withContext ConversationListing(threads.take(limit).map { it.toConversation(names) }, more = threads.size > limit)
             }
             // Numbers are matched before naming anyone, so a number search can afford a deeper scan.
-            val threads = readThreads(null, if (query.names.isEmpty()) MAX_SEARCHED_THREADS else MAX_SCANNED_THREADS)
+            val cap = if (query.names.isEmpty()) MAX_SEARCHED_THREADS else MAX_SCANNED_THREADS
+            val (threads, capped) = readThreads(null, cap)
             val numbers =
                 threads
                     .flatMap(Thread::recipientIds)
@@ -46,7 +48,8 @@ class MessagingStore(
                     if (!query.includesNumbers(addresses)) return@mapNotNull null
                     Conversation(thread.id, addresses.map(names::participant), thread.dateMillis, thread.snippet)
                 }
-            query.rank(conversations).take(limit)
+            val ranked = query.rank(conversations)
+            ConversationListing(ranked.take(limit), more = ranked.size > limit, searched = cap.takeIf { capped })
         }
 
     fun phoneNumberKey(): PhoneNumberKey = PlatformPhoneNumberKey(app)
@@ -55,9 +58,10 @@ class MessagingStore(
         withContext(Dispatchers.IO) {
             val names = NameCache()
             readThreads("${Telephony.Threads._ID} = ?" to arrayOf(id.toString()))
+                .threads
                 .firstOrNull()
                 ?.toConversation(names)
-                ?: readThreads(null).take(MAX_SCANNED_THREADS).firstOrNull { it.id == id }?.toConversation(names)
+                ?: readThreads(null).threads.firstOrNull { it.id == id }?.toConversation(names)
         }
 
     /**
@@ -70,7 +74,7 @@ class MessagingStore(
             if (ContextCompat.checkSelfPermission(app, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
                 return@withContext emptyMap()
             }
-            val direct = readThreads(null).filter { it.recipientIds.size == 1 }
+            val direct = readThreads(null).threads.filter { it.recipientIds.size == 1 }
             val numbers =
                 direct
                     .map { it.recipientIds.single() }
@@ -90,12 +94,12 @@ class MessagingStore(
     suspend fun messages(
         threadId: Long,
         limit: Int,
-    ): List<ConversationMessage> =
+    ): MessageListing =
         withContext(Dispatchers.IO) {
             val names = NameCache()
-            (readSms(threadId, limit, names) + readMms(threadId, limit, names))
-                .sortedBy { it.sentMillis }
-                .takeLast(limit)
+            // One extra row from each side is enough to know whether anything older exists.
+            val messages = (readSms(threadId, limit + 1, names) + readMms(threadId, limit + 1, names)).sortedBy { it.sentMillis }
+            MessageListing(messages.takeLast(limit), older = messages.size > limit)
         }
 
     private data class Thread(
@@ -105,30 +109,42 @@ class MessagingStore(
         val snippet: String?,
     )
 
+    private data class ThreadScan(
+        val threads: List<Thread>,
+        val capped: Boolean,
+    )
+
     private fun Thread.toConversation(names: NameCache) =
         Conversation(id, addresses(recipientIds).map { names.participant(it) }, dateMillis, snippet)
 
     private fun readThreads(
         selection: Pair<String, Array<String>>?,
         cap: Int = MAX_SCANNED_THREADS,
-    ): List<Thread> {
+    ): ThreadScan {
         val cursor =
             runCatching {
                 resolver.query(THREADS, THREAD_COLUMNS, selection?.first, selection?.second, "${Telephony.Threads.DATE} DESC")
-            }.getOrNull() ?: return emptyList()
-        return cursor.use {
-            buildList {
-                while (it.moveToNext() && size < cap) {
-                    val recipients =
-                        it
-                            .getString(1)
-                            ?.split(' ')
-                            ?.mapNotNull(String::toLongOrNull)
-                            .orEmpty()
-                    add(Thread(it.getLong(0), recipients, it.getLong(2), it.string(3)))
+            }.getOrNull() ?: return ThreadScan(emptyList(), capped = false)
+        var capped = false
+        val threads =
+            cursor.use {
+                buildList {
+                    while (it.moveToNext()) {
+                        if (size >= cap) {
+                            capped = true
+                            break
+                        }
+                        val recipients =
+                            it
+                                .getString(1)
+                                ?.split(' ')
+                                ?.mapNotNull(String::toLongOrNull)
+                                .orEmpty()
+                        add(Thread(it.getLong(0), recipients, it.getLong(2), it.string(3)))
+                    }
                 }
             }
-        }
+        return ThreadScan(threads, capped)
     }
 
     /** Thread rows name their recipients by ID; the numbers themselves live in one shared table. */
@@ -204,17 +220,20 @@ class MessagingStore(
             }
         return rows.map { (id, seconds, box) ->
             val incoming = box == Telephony.Mms.MESSAGE_BOX_INBOX
+            val (text, cut) = mmsText(id)
             ConversationMessage(
                 incoming = incoming,
                 sender = if (incoming) mmsSender(id)?.let(names::participant) else null,
                 // MMS timestamps are seconds since the epoch where SMS timestamps are milliseconds.
                 sentMillis = seconds * 1000,
-                body = mmsText(id),
+                body = text,
+                cut = cut,
             )
         }
     }
 
-    private fun mmsText(messageId: Long): String {
+    /** The message's text, and whether a part or part count cap cut it short. */
+    private fun mmsText(messageId: Long): Pair<String, Boolean> {
         val cursor =
             runCatching {
                 resolver.query(
@@ -224,21 +243,32 @@ class MessagingStore(
                     arrayOf(messageId.toString(), "text/plain"),
                     null,
                 )
-            }.getOrNull() ?: return ""
-        return cursor
-            .use {
+            }.getOrNull() ?: return "" to false
+        var cut = false
+        val parts =
+            cursor.use {
                 buildList {
-                    while (it.moveToNext() && size < MAX_TEXT_PARTS) add(it.string(2) ?: partText(it.getLong(0)))
+                    while (it.moveToNext()) {
+                        if (size >= MAX_TEXT_PARTS) {
+                            cut = true
+                            break
+                        }
+                        val part = it.string(2) ?: partText(it.getLong(0))
+                        if (part.length > MAX_PART_CHARS) cut = true
+                        add(part.take(MAX_PART_CHARS))
+                    }
                 }
-            }.filter(String::isNotBlank)
-            .joinToString(" ")
+            }
+        val text = parts.filter(String::isNotBlank).joinToString(" ")
+        return (if (cut) text.trimEnd() + "…" else text) to cut
     }
 
     /** Longer part bodies are stored as files instead of in the `text` column. */
     private fun partText(partId: Long): String =
         runCatching {
             resolver.openInputStream(Uri.withAppendedPath(PARTS, partId.toString()))?.use { stream ->
-                stream.bufferedReader().readText().take(MAX_PART_CHARS)
+                // One character past the cap is how the caller knows it was cut.
+                stream.bufferedReader().readText().take(MAX_PART_CHARS + 1)
             }
         }.getOrNull().orEmpty()
 

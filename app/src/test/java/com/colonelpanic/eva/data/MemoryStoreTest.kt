@@ -156,7 +156,14 @@ class MemoryStoreTest {
             File(context.filesDir, "memory-inbox.json").delete()
             var now = 0L
             val store = MemoryStore(AndroidMemoryFiles(context.filesDir)) { now++ }
-            for (i in 0..MemoryStore.MAX_INBOX) store.learn("Fact $i", "text", null)
+            for (i in 0 until MemoryStore.MAX_INBOX) assertTrue(store.learn("Fact $i", "text", null).dropped.isEmpty())
+            val learned =
+                MemoryCapabilities
+                    .backends(store)
+                    .getValue(MemoryCapabilities.LEARN)
+                    .execute(mapOf("name" to "Fact ${MemoryStore.MAX_INBOX}", "text" to "text"))
+            assertEquals(InvocationStatus.COMPLETED, learned.status)
+            assertTrue(learned.message, learned.message.endsWith(MemoryCapabilities.inboxFull(listOf("Fact 0"))))
             val inbox = MemoryStore(AndroidMemoryFiles(context.filesDir)).load().inbox
             assertEquals(MemoryStore.MAX_INBOX, inbox.size)
             assertFalse(inbox.any { it.name == "Fact 0" })

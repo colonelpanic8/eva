@@ -34,6 +34,8 @@ class TextTaskAgentTest {
                 "extra_call",
                 "screen_content",
                 "history",
+                "history_omitted",
+                "summary_cut",
                 "revisions",
                 "screen",
                 "one_call",
@@ -47,7 +49,7 @@ class TextTaskAgentTest {
                 "text_verified",
                 "screenshot_attached",
             ).associateWith {
-                "$it {goal} {revisions} {result}"
+                "$it {goal} {revisions} {result} {count}"
             },
             emptyList(),
         )
@@ -328,6 +330,43 @@ class TextTaskAgentTest {
             assertTrue(messages.last().text.contains("observation after"))
             assertEquals(1, phone.observations)
             assertEquals(1, phone.actions.size)
+        }
+
+    @Test fun aSummaryLongerThanTheCapSaysEvaCutIt() =
+        runTest {
+            val long = "a".repeat(TextTaskAgent.MAX_SUMMARY + 10)
+            val agent = TextTaskAgent(phone(), WorkerModel { reply("finish", """{"status":"completed","summary":"$long"}""") }, wording)
+            val result = agent.run("goal") {}
+            assertTrue(result.summary.endsWith("summary_cut {goal} {revisions} {result} ${TextTaskAgent.MAX_SUMMARY}"))
+            assertEquals("a".repeat(TextTaskAgent.MAX_SUMMARY) + " ", result.summary.substringBefore("summary_cut"))
+        }
+
+    @Test fun historyBeyondItsLineLimitSaysHowManyStepsAreNotShown() =
+        runTest {
+            val requests = mutableListOf<WorkerRequest>()
+            val agent =
+                TextTaskAgent(
+                    phone(),
+                    WorkerModel { request ->
+                        requests += request
+                        when (requests.size) {
+                            1 -> reply("home")
+                            2 -> reply("back")
+                            3 -> reply("observe")
+                            else -> finish()
+                        }
+                    },
+                    wording,
+                    WorkerSettings(maxScreens = 1, historyLines = 1),
+                )
+            assertEquals(TaskStatus.COMPLETED, agent.run("goal") {}.status)
+            val history =
+                requests
+                    .last()
+                    .messages
+                    .first { it.text.startsWith("history ") }
+                    .text
+            assertTrue(history, history.contains("history_omitted {goal} {revisions} {result} 1"))
         }
 
     @Test fun repeatedActionStopsBeforeThirdDispatchAndContextAppends() =

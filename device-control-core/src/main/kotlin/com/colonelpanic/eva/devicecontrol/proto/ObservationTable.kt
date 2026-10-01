@@ -47,8 +47,13 @@ fun Observation.renderTable(
         lines += parts.joinToString(" ")
     }
     if (elements.size > maxElements) lines += "… ${elements.size - maxElements} more elements not shown"
+    if (elementsCapped) lines += CAPPED_NOTICE
     return lines.joinToString("\n")
 }
+
+const val CAPPED_NOTICE = "… the screen had more elements than EVA reads at once; scroll to reach the rest."
+
+fun omittedNotice(count: Int) = "… $count more ${if (count == 1) "element was" else "elements were"} not shown; scroll to reach them."
 
 fun Element.flagLetters(): String =
     buildString {
@@ -94,7 +99,9 @@ fun Observation.renderCompact(
                 text.substring(0, text.offsetByCodePoints(0, maxText - 1)) + "…"
             },
         ).toString()
-    val truncated = "\n… more elements were not shown; scroll or narrow the screen first."
+    val capped = if (elementsCapped) "\n" + CAPPED_NOTICE else ""
+    // Room for the omission line at its longest, so it always fits once the count is known.
+    val reserve = "\n".length + omittedNotice(addressable.size).length + capped.length
     val body = StringBuilder(header)
     var shown = 0
     for (element in addressable) {
@@ -117,11 +124,12 @@ fun Observation.renderCompact(
         }.let(parts::addAll)
         with(element.bounds) { parts += "at ($left,$top)-($right,$bottom)" }
         val line = "\n" + parts.joinToString(" ")
-        if (body.length + line.length > maxChars - truncated.length) break
+        if (body.length + line.length > maxChars - reserve) break
         body.append(line)
         shown++
     }
-    if (shown < addressable.size) body.append(truncated)
+    if (shown < addressable.size) body.append("\n").append(omittedNotice(addressable.size - shown))
+    body.append(capped)
     return body.toString()
 }
 

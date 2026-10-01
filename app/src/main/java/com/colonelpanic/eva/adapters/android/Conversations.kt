@@ -24,6 +24,21 @@ data class ConversationMessage(
     val sender: ConversationParticipant?,
     val sentMillis: Long,
     val body: String,
+    /** The phone's store gave more text than EVA read; [body] already ends with "…". */
+    val cut: Boolean = false,
+)
+
+/** [more] when further matches exist; [searched] when only that many of the newest threads were scanned. */
+data class ConversationListing(
+    val conversations: List<Conversation>,
+    val more: Boolean = false,
+    val searched: Int? = null,
+)
+
+/** [older] when the conversation has messages before the first one listed. */
+data class MessageListing(
+    val messages: List<ConversationMessage>,
+    val older: Boolean = false,
 )
 
 /**
@@ -111,18 +126,34 @@ object ConversationSummaries {
         "That conversation has no messages EVA can read. A chat carried over RCS looks empty here, " +
             "because the messaging app keeps those messages rather than the phone's text message store."
 
+    const val MORE_CONVERSATIONS = "More conversations match than are listed; name a person or number to narrow the search."
+    const val CUT = "Long messages are cut short and end with \"…\"."
+
+    fun searchedOnly(threads: Int) = "Only the $threads most recent conversations were searched; an older conversation may exist."
+
+    fun olderMessages(shown: Int) =
+        "Earlier messages in this conversation are not shown" +
+            (if (shown < MAX_MESSAGES) "; a limit up to $MAX_MESSAGES shows more." else ".")
+
     fun describeConversations(
         asked: String,
         query: ConversationQuery,
-        conversations: List<Conversation>,
+        listing: ConversationListing,
         now: Long,
     ): String {
+        val shown = listing.conversations.take(MAX_CONVERSATIONS)
+        val more = listing.more || listing.conversations.size > shown.size
+        val limits =
+            listOfNotNull(
+                MORE_CONVERSATIONS.takeIf { more },
+                listing.searched?.let(::searchedOnly),
+                CUT.takeIf { shown.any { isCut(it.snippet.orEmpty()) } },
+            ).joinToString("") { " $it" }
         if (query.isEmpty) {
-            if (conversations.isEmpty()) return "No text conversations are on this phone."
-            return "Recent conversations: ${lines(conversations, now)}. $USE_THE_ID"
+            if (shown.isEmpty()) return "No text conversations are on this phone."
+            return "Recent conversations: ${lines(shown, now)}. $USE_THE_ID$limits"
         }
-        if (conversations.isEmpty()) return "No text conversation matches $asked. $STARTS_ONE"
-        val shown = conversations.take(MAX_CONVERSATIONS)
+        if (shown.isEmpty()) return "No text conversation matches $asked.$limits $STARTS_ONE"
         val (exact, wider) = shown.partition(query::isExact)
         return buildString {
             if (exact.isEmpty()) {
@@ -133,21 +164,22 @@ object ConversationSummaries {
             if (wider.isNotEmpty()) append(" Conversations that also include others: ${lines(wider, now)}.")
             append(" ")
             append(USE_THE_ID)
+            append(limits)
         }
     }
 
     private fun lines(
         conversations: List<Conversation>,
         now: Long,
-    ) = conversations.take(MAX_CONVERSATIONS).joinToString("; ") { line(it, now) }
+    ) = conversations.joinToString("; ") { line(it, now) }
 
     fun describeMessages(
         conversation: Conversation,
-        messages: List<ConversationMessage>,
+        listing: MessageListing,
         now: Long,
     ): String {
-        if (messages.isEmpty()) return NO_MESSAGES
-        val shown = messages.takeLast(MAX_MESSAGES)
+        if (listing.messages.isEmpty()) return NO_MESSAGES
+        val shown = listing.messages.takeLast(MAX_MESSAGES)
         return buildString {
             append("Conversation ${conversation.id} with ${participants(conversation)}, oldest message first: ")
             append(
@@ -156,6 +188,8 @@ object ConversationSummaries {
                 },
             )
             append(". ")
+            if (listing.older || listing.messages.size > shown.size) append(olderMessages(shown.size)).append(" ")
+            if (shown.any { it.cut || isCut(it.body) }) append(CUT).append(" ")
             append(PARTIAL)
         }
     }
@@ -163,8 +197,12 @@ object ConversationSummaries {
     /** Whoever is not the user needs a name; the user's own side is only ever "You". */
     private fun speaker(message: ConversationMessage): String = if (message.incoming) message.sender?.label ?: "Unknown number" else "You"
 
+    private fun flatten(value: String) = value.replace(Regex("\\s+"), " ").trim()
+
+    private fun isCut(value: String) = flatten(value).length > MAX_BODY
+
     private fun body(value: String): String {
-        val flattened = value.replace(Regex("\\s+"), " ").trim()
+        val flattened = flatten(value)
         return when {
             flattened.isEmpty() -> "(no text)"
             flattened.length <= MAX_BODY -> flattened

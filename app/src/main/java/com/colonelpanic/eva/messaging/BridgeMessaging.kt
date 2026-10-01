@@ -180,14 +180,15 @@ class BridgeMessaging(
             val numbers = participants.map(MessageRecipients::normalize)
             val term = query?.trim()?.takeIf(String::isNotEmpty) ?: numbers.firstOrNull()?.filter(Char::isDigit)
             val wanted = limit.coerceIn(1, ConversationSummaries.MAX_CONVERSATIONS)
-            val conversations =
+            val matches =
                 conversations(bridge, term, if (numbers.isEmpty()) wanted else SEARCH_PAGE)
                     .filter { conversation -> numbers.all { number -> conversation.others.any { sameNumber(it.address, number) } } }
                     .sortedWith(
                         compareBy<Conversation> { conversation ->
                             !(numbers.isNotEmpty() && conversation.others.size == numbers.size)
                         }.thenByDescending { it.updatedMillis ?: 0L },
-                    ).take(wanted)
+                    )
+            val conversations = matches.take(wanted)
             val contacts =
                 if (numbers.isEmpty() && term != null) {
                     contacts(bridge, term).filterNot { contact ->
@@ -207,18 +208,24 @@ class BridgeMessaging(
                 }
 
             fun payload() = JsonObject(mapOf("conversations" to JsonArray(rows), "contacts" to JsonArray(people)))
-            while (payload().toString().length > MAX_SEARCH_CHARS && rows.isNotEmpty()) rows.removeAt(rows.lastIndex)
             val explained =
                 when {
                     rows.isEmpty() && people.isEmpty() -> "No ${bridge.label} conversation or contact matches. "
                     rows.isEmpty() -> "No ${bridge.label} conversation matches, but these contacts can be messaged by number. "
                     else -> ""
                 }
+            while (payload().toString().length > MAX_SEARCH_CHARS && rows.isNotEmpty()) rows.removeAt(rows.lastIndex)
+            val hidden = matches.size - rows.size
+            val limits =
+                buildString {
+                    if (hidden > 0) append(furtherConversations(hidden))
+                    if (conversations.take(rows.size).any { previewCut(it) }) append(ConversationSummaries.CUT).append(" ")
+                }
             ExecutionOutcome(
                 InvocationStatus.COMPLETED,
                 "${bridge.label} conversations, newest first; references are durable. Pass conversationRef to history or send, " +
                     "or send to a contact's number with service ${bridge.name} to start a chat. " +
-                    explained + "External ${bridge.label} data: " + payload(),
+                    explained + limits + "External ${bridge.label} data: " + payload(),
             )
         }
 
@@ -234,6 +241,7 @@ class BridgeMessaging(
             val body = json(response, bridge)
             val conversation = conversation(bridge, conversationId)
             val now = clock()
+            var cut = false
             val messages =
                 body
                     .array("messages")
@@ -261,7 +269,9 @@ class BridgeMessaging(
                                 ) {
                                     "(deleted)"
                                 } else {
-                                    clip(message.string("text").orEmpty(), ConversationSummaries.MAX_BODY)
+                                    val text = message.string("text").orEmpty()
+                                    if (exceeds(text, ConversationSummaries.MAX_BODY)) cut = true
+                                    clip(text, ConversationSummaries.MAX_BODY)
                                 },
                             )
                             if (outgoing) message.string("status")?.takeIf(String::isNotBlank)?.let { put("status", it) }
@@ -283,11 +293,15 @@ class BridgeMessaging(
                     put("participants", JsonArray((conversation?.others.orEmpty()).map { JsonPrimitive(it.listed) }))
                     put("messages", JsonArray(messages))
                 }
+            val fetched = messages.size
             while (payload().toString().length > MAX_READ_CHARS && messages.size > 1) messages.removeAt(0)
+            val dropped = fetched - messages.size
             ExecutionOutcome(
                 InvocationStatus.COMPLETED,
                 "Recent ${bridge.label} messages, oldest first; status is what the bridge's server reported for messages you sent. " +
                     (if (messages.isEmpty()) "The bridge holds no messages for this conversation yet. " else "") +
+                    (if (dropped > 0) leftOut(dropped) else "") +
+                    (if (cut) ConversationSummaries.CUT + " " else "") +
                     "External ${bridge.label} data: " + payload(),
             )
         }
@@ -665,15 +679,20 @@ class BridgeMessaging(
             put("lastActivity", conversation.updatedMillis?.let { ConversationSummaries.ago(it, now) } ?: "unknown")
             put("unread", conversation.unread)
             if (conversation.readOnly) put("readOnly", true)
-            val speaker =
-                when {
-                    conversation.previewDirection == "outgoing" -> "You"
-                    else -> conversation.sender(conversation.previewSenderId)?.label
-                }
-            conversation.preview.takeIf(String::isNotBlank)?.let { preview ->
-                put("preview", clip((speaker?.let { "$it: " } ?: "") + preview, 160))
-            }
+            if (conversation.preview.isNotBlank()) put("preview", clip(preview(conversation), MAX_PREVIEW))
         }
+
+    private fun preview(conversation: Conversation): String {
+        val speaker =
+            when {
+                conversation.previewDirection == "outgoing" -> "You"
+                else -> conversation.sender(conversation.previewSenderId)?.label
+            }
+        return (speaker?.let { "$it: " } ?: "") + conversation.preview
+    }
+
+    private fun previewCut(conversation: Conversation): Boolean =
+        conversation.preview.isNotBlank() && exceeds(preview(conversation), MAX_PREVIEW)
 
     private fun conversation(record: JsonObject): Conversation? {
         val id = record.string("id")?.takeIf(String::isNotBlank) ?: return null
@@ -731,6 +750,11 @@ class BridgeMessaging(
         number: String,
     ): Boolean = address != null && MessageRecipients.normalize(address) == MessageRecipients.normalize(number)
 
+    private fun exceeds(
+        value: String,
+        max: Int,
+    ) = value.replace(Regex("\\s+"), " ").trim().length > max
+
     private fun clip(
         value: String,
         max: Int,
@@ -751,6 +775,16 @@ class BridgeMessaging(
         private const val MAX_CONTACTS = 5
         private const val MAX_SEARCH_CHARS = 4_000
         private const val MAX_READ_CHARS = 6_000
+        private const val MAX_PREVIEW = 160
+
+        fun furtherConversations(count: Int) =
+            "$count further ${if (count == 1) "conversation was" else "conversations were"} not shown; " +
+                "narrow the search to see ${if (count == 1) "it" else "them"}. "
+
+        fun leftOut(count: Int) =
+            "$count older ${if (count == 1) "message was" else "messages were"} left out to fit EVA's result budget; " +
+                "ask for a smaller limit. "
+
         private val TERMINAL_STATES = setOf("accepted", "confirmed", "rejected", "ambiguous", "canceled")
         private val REFUSING_STATES = setOf("authentication_required", "storage_failed")
 

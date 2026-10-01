@@ -52,10 +52,10 @@ object BindingResults {
         val root = BoundedJson.parse(response.body, binding.maxResponseBytes)
         binding.result.items?.let {
             val projected = ItemResults.project(root, it, binding.result.maxBytes, arguments)
-            return ExecutionOutcome(
+            return withData(
                 if (read) InvocationStatus.COMPLETED else InvocationStatus.UNKNOWN,
                 projected.text,
-                boundedData(projected.data),
+                projected.data,
             )
         }
         val result =
@@ -66,10 +66,10 @@ object BindingResults {
         val confirmed = read || binding.result.evidence?.let { pointer(root, it.pointer) == it.expected } == true
         val status = if (confirmed) InvocationStatus.COMPLETED else InvocationStatus.UNKNOWN
         val projection = boundedText(result, binding.result.maxBytes)
-        return ExecutionOutcome(
+        return withData(
             status,
             (if (confirmed) "" else "The response did not establish completion of the write. ") + projection,
-            (result as? JsonObject)?.let(::boundedData),
+            result as? JsonObject,
         )
     }
 
@@ -103,9 +103,18 @@ object BindingResults {
         )
     }
 
-    /** Structured data is never cut mid-document; an oversized object is omitted and the text form stands. */
-    internal fun boundedData(data: JsonObject): JsonObject? =
-        data.takeIf { it.toString().toByteArray(Charsets.UTF_8).size <= ExtensionProtocol.RESULT_BYTES }
+    const val DATA_OMITTED =
+        "[Structured data exceeded EVA's ${ExtensionProtocol.RESULT_BYTES}-byte result budget and was omitted; the text above is the result.]"
+
+    /** Structured data is never cut mid-document; an oversized object is omitted, said so, and the text form stands. */
+    private fun withData(
+        status: InvocationStatus,
+        text: String,
+        data: JsonObject?,
+    ): ExecutionOutcome {
+        val bounded = data?.takeIf { it.toString().toByteArray(Charsets.UTF_8).size <= ExtensionProtocol.RESULT_BYTES }
+        return ExecutionOutcome(status, if (data != null && bounded == null) "$text\n$DATA_OMITTED" else text, bounded)
+    }
 
     internal fun pointer(
         root: JsonElement,

@@ -52,6 +52,13 @@ class ContactMatchesTest {
     }
 
     @Test
+    fun `numbers beyond the per-contact limit are counted`() {
+        val phones = (1..ContactMatches.MAX_PHONES + 2).map { ContactPhone("20255501$it", "mobile") }
+        val described = ContactMatches.describe("Sam", listOf(ContactMatch("Sam", phones)))
+        assertTrue(described, described.endsWith(" (+2 more numbers). " + ContactMatches.PICK_BEST))
+    }
+
+    @Test
     fun `a misheard surname picks the person rather than every contact sharing the first name`() {
         val alexes =
             listOf("Alex Adams", "Alex Baker", "Alex Chen", "Alex Diaz", "Alex Evans", "Alex Malison", "Alex Smith")

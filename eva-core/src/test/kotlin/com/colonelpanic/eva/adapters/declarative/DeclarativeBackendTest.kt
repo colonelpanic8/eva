@@ -17,6 +17,7 @@ class DeclarativeBackendTest {
         var calls = 0
         var timeout = 0L
         var fail = false
+        var tooLarge = false
 
         override suspend fun unavailableReason(binding: DeclarativeBinding): String? = null
 
@@ -41,6 +42,7 @@ class DeclarativeBackendTest {
             calls++
             timeout = timeoutMillis
             check(!fail)
+            if (tooLarge) throw ResponseTooLarge(request.maxResponseBytes)
             return HttpResponse(200, """{"status":"created"}""")
         }
     }
@@ -63,6 +65,25 @@ class DeclarativeBackendTest {
             host.fail = true
             assertEquals(InvocationStatus.UNKNOWN, backend.execute(proposal.copy(callId = "second")).status)
             assertEquals(2, host.calls)
+        }
+
+    @Test
+    fun `an oversized response names the byte limit and leaves a write's outcome unknown`() =
+        runTest {
+            val host = FakeHost().apply { tooLarge = true }
+            val budget = WaitBudget(InteractionMode.VOICE, 20_000, 30_000, 90_000)
+            val capability = PackageCodec.decode(packageJson(httpBinding, "synchronous", false)).capabilities.single()
+            val proposal = ToolProposal("call", "extension.test.capture", mapOf("title" to "Test"), "capture", "revision")
+            val limit = (capability.binding as DeclarativeBinding.Http).maxResponseBytes
+            val write = DeclarativeBackend(capability, host) { budget }.execute(proposal)
+            assertEquals(InvocationStatus.UNKNOWN, write.status)
+            assertTrue(
+                write.message,
+                write.message.contains("exceeded this package's $limit-byte limit") && write.message.contains("may have run"),
+            )
+            val read = DeclarativeBackend(capability.copy(effect = PackageEffect.READ), host) { budget }.execute(proposal)
+            assertEquals(InvocationStatus.FAILED, read.status)
+            assertTrue(read.message, read.message.contains("$limit-byte limit"))
         }
 
     @Test

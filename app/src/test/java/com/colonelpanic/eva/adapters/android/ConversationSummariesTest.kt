@@ -16,7 +16,12 @@ class ConversationSummariesTest {
         assertEquals(
             "Recent conversations: 7 — Alice Smith (+12025550100), Bob (+12025550101) (group of 2) — 2 hours ago — " +
                 "\"See you then\". " + ConversationSummaries.USE_THE_ID,
-            ConversationSummaries.describeConversations("", ConversationQuery.of(null, emptyList(), usPhoneNumbers), listOf(group), now),
+            ConversationSummaries.describeConversations(
+                "",
+                ConversationQuery.of(null, emptyList(), usPhoneNumbers),
+                ConversationListing(listOf(group)),
+                now,
+            ),
         )
     }
 
@@ -27,7 +32,7 @@ class ConversationSummariesTest {
             ConversationSummaries.describeConversations(
                 "\"climbing\"",
                 ConversationQuery.of("climbing", emptyList(), usPhoneNumbers),
-                emptyList(),
+                ConversationListing(emptyList()),
                 now,
             ),
         )
@@ -45,7 +50,7 @@ class ConversationSummariesTest {
             "Conversations with only those people: 7 — Alice Smith (+12025550100), Bob (+12025550101) (group of 2) — " +
                 "2 hours ago — \"See you then\". Conversations that also include others: 8 — Alice Smith (+12025550100), " +
                 "Bob (+12025550101), +12025550102 (group of 3) — 1 minute ago. " + ConversationSummaries.USE_THE_ID,
-            ConversationSummaries.describeConversations("those people", query, ranked, now),
+            ConversationSummaries.describeConversations("those people", query, ConversationListing(ranked), now),
         )
     }
 
@@ -74,7 +79,13 @@ class ConversationSummariesTest {
     @Test
     fun `without an exact match the search says a send starts one`() {
         val query = ConversationQuery.of(null, listOf("+12025550100"), usPhoneNumbers)
-        val summary = ConversationSummaries.describeConversations("+12025550100", query, query.rank(listOf(group)), now)
+        val summary =
+            ConversationSummaries.describeConversations(
+                "+12025550100",
+                query,
+                ConversationListing(query.rank(listOf(group))),
+                now,
+            )
         assertTrue(summary.startsWith(ConversationSummaries.NO_EXACT + " Conversations that also include others: 7 — "))
     }
 
@@ -88,7 +99,7 @@ class ConversationSummariesTest {
         assertEquals(
             "Conversation 7 with Alice Smith, Bob, oldest message first: " +
                 "[2 hours ago] Alice Smith: Are we on? | [just now] You: Yes see you. " + ConversationSummaries.PARTIAL,
-            ConversationSummaries.describeMessages(group, messages, now),
+            ConversationSummaries.describeMessages(group, MessageListing(messages), now),
         )
     }
 
@@ -99,9 +110,64 @@ class ConversationSummariesTest {
             (1..total).map { index ->
                 ConversationMessage(true, alice, now - (total - index) * MINUTE, "message $index")
             }
-        val summary = ConversationSummaries.describeMessages(group, messages, now)
+        val summary = ConversationSummaries.describeMessages(group, MessageListing(messages), now)
         assertTrue(summary.contains("message $total"))
         assertTrue(!summary.contains("message 5 "))
+        assertTrue(summary.contains(ConversationSummaries.olderMessages(ConversationSummaries.MAX_MESSAGES)))
+    }
+
+    @Test
+    fun `a search that stopped at the scan cap does not claim the conversation is absent`() {
+        val summary =
+            ConversationSummaries.describeConversations(
+                "\"climbing\"",
+                ConversationQuery.of("climbing", emptyList(), usPhoneNumbers),
+                ConversationListing(emptyList(), searched = 200),
+                now,
+            )
+        assertEquals(
+            "No text conversation matches \"climbing\". Only the 200 most recent conversations were searched; " +
+                "an older conversation may exist. " + ConversationSummaries.STARTS_ONE,
+            summary,
+        )
+    }
+
+    @Test
+    fun `a listing cut at the limit says more conversations exist`() {
+        val query = ConversationQuery.of(null, emptyList(), usPhoneNumbers)
+        val summary = ConversationSummaries.describeConversations("", query, ConversationListing(listOf(group), more = true), now)
+        assertTrue(summary.endsWith(ConversationSummaries.MORE_CONVERSATIONS))
+        val complete = ConversationSummaries.describeConversations("", query, ConversationListing(listOf(group)), now)
+        assertTrue(!complete.contains(ConversationSummaries.MORE_CONVERSATIONS))
+    }
+
+    @Test
+    fun `a short read of a long thread says earlier messages exist and how to see more`() {
+        val messages = listOf(ConversationMessage(true, alice, now - MINUTE, "latest"))
+        val summary = ConversationSummaries.describeMessages(group, MessageListing(messages, older = true), now)
+        assertTrue(summary.contains("Earlier messages in this conversation are not shown; a limit up to 25 shows more."))
+    }
+
+    @Test
+    fun `clipped message bodies are disclosed once per result`() {
+        val long = "word ".repeat(ConversationSummaries.MAX_BODY)
+        val messages =
+            listOf(
+                ConversationMessage(true, alice, now - 2 * MINUTE, long),
+                ConversationMessage(true, alice, now - MINUTE, long),
+                ConversationMessage(false, null, now, "short"),
+            )
+        val summary = ConversationSummaries.describeMessages(group, MessageListing(messages), now)
+        assertEquals(1, Regex(Regex.escape(ConversationSummaries.CUT)).findAll(summary).count())
+        val plain = ConversationSummaries.describeMessages(group, MessageListing(messages.takeLast(1)), now)
+        assertTrue(!plain.contains(ConversationSummaries.CUT))
+    }
+
+    @Test
+    fun `a message the store cut short is disclosed even when it fits the body limit`() {
+        val messages = listOf(ConversationMessage(true, alice, now, "first part…", cut = true))
+        val summary = ConversationSummaries.describeMessages(group, MessageListing(messages), now)
+        assertTrue(summary.contains(ConversationSummaries.CUT))
     }
 
     private companion object {

@@ -37,6 +37,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
@@ -285,6 +286,12 @@ class PortalBackendTest {
             task.join()
             assertEquals(listOf("tap"), phone.commands.map { it.method })
         }
+
+    @Test fun aCaptureThatStoppedAtItsCapIsFlaggedOnTheObservation() {
+        val capped = JsonObject(stateOf() + (PortalScreenMapper.CAPTURE_CAPPED to JsonPrimitive(true)))
+        assertTrue(PortalScreenMapper.map(capped, "o", "now", "shizuku", 1).observation.elementsCapped)
+        assertFalse(PortalScreenMapper.map(stateOf(), "o", "now", "portal", 1).observation.elementsCapped)
+    }
 
     companion object {
         val PNG: ByteArray =

@@ -185,8 +185,9 @@ object ContactMatches {
                 val used = index == 0 && match.phones.size > 1 && history.lastUsed(phone.number) != null
                 "${phone.kind} ${phone.number}" + if (used) " (last used)" else ""
             }
+        val more = match.phones.size - phones.size
         return match.name + notes.joinToString("; ", " (", ")").takeIf { notes.isNotEmpty() }.orEmpty() +
-            ": " + phones.joinToString(", ")
+            ": " + phones.joinToString(", ") + if (more > 0) " (+$more more ${if (more == 1) "number" else "numbers"})" else ""
     }
 
     private fun ago(
