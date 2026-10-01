@@ -20,6 +20,12 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.colonelpanic.eva.data.configuration.DeviceTaskConfiguration
+import com.colonelpanic.eva.devicecontrol.ScreenControlStatus
+import com.colonelpanic.eva.ui.routeSummary
+
+/** A backend that screen control has not checked, because it is off or the check has not run, claims nothing. */
+internal fun backendState(route: ScreenControlStatus.Route?): String =
+    if (route == null) "Not checked yet." else routeSummary(route).replaceFirstChar(Char::uppercase)
 
 /** Enabled backends first, in preference order, then the ones left out. */
 internal fun backendRows(backends: List<String>): List<String> = backends + DeviceTaskConfiguration.BACKENDS.filterNot { it in backends }
@@ -49,7 +55,7 @@ internal fun moveBackend(
 @Composable
 internal fun DeviceTaskBackendList(
     backends: List<String>,
-    problems: Map<String, String?>,
+    routes: Map<String, ScreenControlStatus.Route>,
     onChange: (List<String>) -> Unit,
 ) {
     SettingsBlock {
@@ -65,7 +71,7 @@ internal fun DeviceTaskBackendList(
         val label = if (backend == "portal") "Portal" else "Shizuku"
         val enabled = backend in backends
         val position = backends.indexOf(backend)
-        val problem = problems[label]
+        val route = routes[label]
         Row(
             modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -82,9 +88,16 @@ internal fun DeviceTaskBackendList(
                     when {
                         backend == "portal" -> "Portal app on this phone. "
                         else -> "EVA's own helper through Shizuku. "
-                    } + (problem ?: "Ready."),
+                    } + backendState(route),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if (problem == null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+                    color =
+                        if (route?.health == ScreenControlStatus.Health.DEGRADED ||
+                            route?.health == ScreenControlStatus.Health.UNHEALTHY
+                        ) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                 )
             }
             if (enabled) {

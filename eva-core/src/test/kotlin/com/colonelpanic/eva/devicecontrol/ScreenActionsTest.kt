@@ -215,6 +215,102 @@ class ScreenActionsTest {
         assertTrue(phone.performed.isEmpty())
     }
 
+    private class Unreadable(
+        val message: String,
+    ) : DeviceBackend {
+        var observations = 0
+        val performed = mutableListOf<Action>()
+
+        override suspend fun observe(): Observation {
+            observations++
+            throw java.io.IOException(message)
+        }
+
+        override suspend fun perform(action: Action): ActionResult {
+            performed += action
+            error("unused")
+        }
+    }
+
+    @Test
+    fun `a backend that passes its check but cannot read hands over before any input`() {
+        val portal = Unreadable("Portal returned no screen")
+        choice =
+            Choice.Ready(
+                "portal,shizuku",
+                listOf(
+                    ScreenActions.Route("Portal", { null }) { portal },
+                    ScreenActions.Route("Shizuku", { null }) { phone },
+                ),
+            )
+
+        val ref = reference(call(Operation.OBSERVE).message)
+        val tap = call(Operation.TAP, "observationRef" to ref, "node" to "1")
+        val back = call(Operation.NAVIGATE, "button" to "back")
+
+        assertEquals(InvocationStatus.COMPLETED, tap.status)
+        assertEquals(InvocationStatus.COMPLETED, back.status)
+        // Each call starts again at the preferred backend, so a recovered Portal is used again.
+        assertEquals(2, portal.observations)
+        assertTrue(portal.performed.isEmpty())
+        assertEquals(2, phone.performed.size)
+    }
+
+    @Test
+    fun `an input is never repeated on another backend after it was sent`() {
+        phone.next = { _, _ -> throw java.io.IOException("helper disconnected") }
+        val spare = Phone()
+        choice =
+            Choice.Ready(
+                "shizuku,portal",
+                listOf(
+                    ScreenActions.Route("Shizuku", { null }) { phone },
+                    ScreenActions.Route("Portal", { null }) { spare },
+                ),
+            )
+        val ref = reference(call(Operation.OBSERVE).message)
+
+        val failure = runCatching { call(Operation.TAP, "observationRef" to ref, "node" to "1") }.exceptionOrNull()
+
+        assertTrue(failure is java.io.IOException)
+        assertEquals(1, phone.performed.size)
+        assertTrue(spare.performed.isEmpty())
+    }
+
+    @Test
+    fun `when no backend can read the screen each one is named and nothing is sent`() {
+        choice =
+            Choice.Ready(
+                "portal,shizuku",
+                listOf(
+                    ScreenActions.Route("Portal", { "Portal is not running." }) { error("not opened") },
+                    ScreenActions.Route("Shizuku", { null }) { Unreadable("Shizuku helper didn't connect") },
+                ),
+            )
+
+        val outcome = call(Operation.NAVIGATE, "button" to "home")
+
+        assertEquals(InvocationStatus.NOT_EXECUTED, outcome.status)
+        assertEquals(
+            "${ScreenActions.UNREADABLE} Portal: Portal is not running. Shizuku: Shizuku helper didn't connect",
+            outcome.message,
+        )
+        assertEquals(
+            "No screen control backend is ready. Portal: Portal is not running. Shizuku: ok",
+            runBlocking {
+                choice =
+                    Choice.Ready(
+                        "both",
+                        listOf(
+                            ScreenActions.Route("Portal", { "Portal is not running." }) { phone },
+                            ScreenActions.Route("Shizuku", { "ok" }) { phone },
+                        ),
+                    )
+                actions.backend(Operation.OBSERVE).unavailableReason()
+            },
+        )
+    }
+
     private companion object {
         fun result(
             action: Action,

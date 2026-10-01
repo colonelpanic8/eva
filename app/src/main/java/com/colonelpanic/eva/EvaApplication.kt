@@ -296,7 +296,7 @@ class EvaApplication :
     private val portalHttp by lazy { okhttp3.OkHttpClient() }
 
     private suspend fun portalProblem(): String? {
-        val token = capabilities.portalToken() ?: return "Provision the Portal token in EVA's Screen control settings."
+        val token = capabilities.portalToken() ?: return PORTAL_TOKEN_MISSING
         val health =
             com.colonelpanic.eva.devicecontrol.portal
                 .PortalClient(capabilities.deviceTask.portalPort, { token }, portalHttp)
@@ -327,14 +327,15 @@ class EvaApplication :
         com.colonelpanic.eva.devicecontrol.ScreenControlMonitor(
             enabled = { capabilities.screenControlEnabled },
             backends = { capabilities.deviceTask.backends },
-            problem = { backend ->
+            setup = { backend ->
                 if (backend == "portal") {
-                    portalProblem()
+                    if (capabilities.portalToken() == null) PORTAL_TOKEN_MISSING else null
                 } else {
                     val host = deviceControlHost
                     if (host == null) SCREEN_CONTROL_API else host.accessStatus().takeUnless { it == DeviceControlHost.ALLOWED }
                 }
             },
+            probe = { backend -> if (backend == "portal") portalProblem() else null },
             label = ::backendLabel,
         )
     }
@@ -355,27 +356,31 @@ class EvaApplication :
                     checkNotNull(deviceControlHost) { SCREEN_CONTROL_API },
                 )
             }
-        return com.colonelpanic.eva.devicecontrol.portal.PortalBackend(
-            transport,
-            launchAliases = options.launchAliases,
-            timing = onDeviceTiming,
-            backend = name,
-        )
+        return com.colonelpanic.eva.devicecontrol.ReportingDeviceBackend(
+            backendLabel(name),
+            com.colonelpanic.eva.devicecontrol.portal.PortalBackend(
+                transport,
+                launchAliases = options.launchAliases,
+                timing = onDeviceTiming,
+                backend = name,
+            ),
+        ) { failure -> screenControl.record(name, failure) }
     }
 
-    /** Direct screen tools use the first ready backend in the device-task order. */
-    private suspend fun screenActionBackend(): ScreenActions.Choice {
+    /** Direct screen tools use the device-task order, handing over before any input like tasks do. */
+    private fun screenActionBackend(): ScreenActions.Choice {
         val options = capabilities.deviceTask
-        val problems = mutableListOf<String>()
-        for (name in options.backends) {
-            val problem = backendProblem(name)
-            if (problem == null) {
-                return ScreenActions.Choice.Ready("$name:${options.portalPort}:${options.launchAliases}") { deviceBackend(name) }
-            }
-            problems += "${backendLabel(name)}: $problem"
+        if (options.backends.isEmpty()) {
+            return ScreenActions.Choice.Unavailable(
+                "Every screen control backend is turned off in EVA's settings.",
+            )
         }
-        if (problems.isEmpty()) return ScreenActions.Choice.Unavailable("Every screen control backend is turned off in EVA's settings.")
-        return ScreenActions.Choice.Unavailable("No screen control backend is ready. ${problems.joinToString(" ")}")
+        return ScreenActions.Choice.Ready(
+            "${options.backends}:${options.portalPort}:${options.launchAliases}",
+            options.backends.map { name ->
+                ScreenActions.Route(backendLabel(name), { backendProblem(name) }) { deviceBackend(name) }
+            },
+        )
     }
 
     internal fun createDeviceTaskAgent(
@@ -842,3 +847,4 @@ class EvaApplication :
 }
 
 private const val SCREEN_CONTROL_API = "Screen control requires Android 11 or newer."
+private const val PORTAL_TOKEN_MISSING = "Provision the Portal token in EVA's Screen control settings."

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
@@ -21,6 +22,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.unit.dp
 import com.colonelpanic.eva.devicecontrol.ScreenControlStatus
+import com.colonelpanic.eva.devicecontrol.ScreenControlStatus.Health
 
 /** Always on the conversation bar: a broken screen route otherwise stays invisible until a task fails. */
 @Composable
@@ -42,11 +44,20 @@ internal fun ScreenControlChip(
                                 CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
                             }
 
-                            route.problem == null -> {
+                            route.health == Health.READY -> {
                                 Icon(
                                     Icons.Filled.CheckCircle,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
+
+                            route.health == Health.SETUP_NEEDED -> {
+                                Icon(
+                                    Icons.Filled.Settings,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(16.dp),
                                 )
                             }
@@ -78,6 +89,15 @@ internal fun screenControlDescription(
     taskRunning: Boolean,
 ): String {
     if (!status.enabled) return "Screen control is off. Open settings."
-    val routes = status.routes.joinToString(" ") { "${it.name}: ${it.problem ?: "ready."}" }
+    val routes = status.routes.joinToString(" ") { "${it.name}: ${routeSummary(it)}" }
     return "Screen control. ${if (taskRunning) "A device task is running. " else ""}$routes Open settings."
 }
+
+/** What a route's health means in words, with the reason when it is not ready. */
+internal fun routeSummary(route: ScreenControlStatus.Route): String =
+    when (route.health) {
+        Health.READY -> "ready."
+        Health.SETUP_NEEDED -> "needs setup. ${route.problem}"
+        Health.DEGRADED -> "its check is failing. ${route.problem}"
+        Health.UNHEALTHY -> "the last screen action through it failed. ${route.problem}"
+    }
