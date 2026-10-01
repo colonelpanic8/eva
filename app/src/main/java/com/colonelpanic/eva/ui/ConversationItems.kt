@@ -339,6 +339,10 @@ private fun ActionRow(action: ConversationEntry) {
             }
             if (expanded) {
                 action.capabilityId?.let { DetailText(it) }
+                action.initiator?.let { origin ->
+                    DetailText("from: ${origin.kind.label}")
+                    origin.legId?.let { DetailText("leg: $it") }
+                }
                 action.arguments.forEach { (name, value) -> DetailText("$name: $value") }
                 if (action.arguments.isNotEmpty()) HorizontalDivider()
                 Text(text = action.response, style = MaterialTheme.typography.bodyMedium)

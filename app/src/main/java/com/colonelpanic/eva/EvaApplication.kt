@@ -162,7 +162,9 @@ class EvaApplication :
 
     override fun endVoiceSession() = controller.disconnect()
 
-    override fun interruptWork(reason: String) = controller.interruptAll(reason)
+    override fun needsWorkCoverage(): Boolean = controller.needsWorkCoverage.value
+
+    override fun interruptWork(reason: String) = controller.interruptBackgroundWork(reason)
 
     private val packageInfo by lazy { runCatching { packageManager.getPackageInfo(packageName, 0) }.getOrNull() }
 
@@ -804,10 +806,7 @@ class EvaApplication :
                     }
             }
             scope.launch {
-                // A turn that outlives its call needs the process kept alive; the voice service already does that.
-                combine(controller.working, controller.state) { working, state ->
-                    working.isNotEmpty() && !(state.voiceMode && state.providerStatus != ProviderStatus.DISCONNECTED)
-                }.distinctUntilChanged()
+                controller.needsWorkCoverage
                     .collect { active ->
                         if (active) TurnWorkService.start(this@EvaApplication) else TurnWorkService.stop(this@EvaApplication)
                     }

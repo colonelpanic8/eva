@@ -3,6 +3,7 @@ package com.colonelpanic.eva.data
 import android.content.ContentValues
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
+import com.colonelpanic.eva.capability.ActionInitiator
 import com.colonelpanic.eva.conversation.ConversationStore
 import com.colonelpanic.eva.conversation.NoticeKind
 import com.colonelpanic.eva.conversation.Thread
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import java.util.UUID
 
 class SqliteConversationStore(
@@ -225,6 +227,7 @@ class SqliteConversationStore(
                     put("title", title)
                     put("arguments", Json.encodeToString(arguments))
                     put("leg_id", legId)
+                    put("initiator_json", initiator?.toJson()?.toString())
                 }
 
                 is ThreadItem.TextLeg -> {
@@ -284,6 +287,7 @@ class SqliteConversationStore(
                     string("title"),
                     Json.decodeFromString(string("arguments")),
                     nullableString("leg_id"),
+                    nullableString("initiator_json")?.let { ActionInitiator.fromJson(Json.parseToJsonElement(it).jsonObject) },
                 )
             }
 

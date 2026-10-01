@@ -11,6 +11,12 @@ All notable changes to EVA will be documented here.
 ### Fixed
 
 - Subscription Responses streams must receive a completion event before EVA publishes text or tool calls. Dropped replies never return partial actions; regression tests cover the text provider's SSE path and the device worker's subscription WebSocket path.
+- Late Realtime calls and transcripts retain the response and request that produced them. Unknown-origin calls receive a recorded refusal, and action details retain their initiator across restarts.
+- Voice can accept and display new requests while delegated text work continues. Handoffs wait for text startup, preserve sibling action results, and return a task ID for voice status and cancellation.
+- Background answers and partial failures return to an attached voice session when it is idle, with notification fallback. Stop targets the shown thread, working indicators account for concurrent tasks, and duplicate unowned calls return their existing receipts.
+- Lifecycle announcements cannot execute tools; the next spoken request retains its normal tools. Concurrent turns serialize mutations and can inspect recent background receipts before further changes.
+- Stop prioritizes the shown thread's running device task. Background status keeps active work and a bounded recent history; duplicate calls wait for final receipts.
+- Text and delegated turns keep work-service coverage even during a call. A service timeout attempts renewal; Android refusing coverage interrupts only dependent turns and preserves partial findings.
 
 ## [0.49.1] - 2026-10-01
 

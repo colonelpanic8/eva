@@ -1,5 +1,7 @@
 package com.colonelpanic.eva.conversation
 
+import com.colonelpanic.eva.capability.ActionInitiator
+
 /**
  * A durable conversation. Sessions attach to a thread and detach again; the thread and
  * the work its turns are doing outlive them. See docs/architecture.md.
@@ -62,6 +64,7 @@ sealed interface ThreadItem {
         val arguments: Map<String, String>,
         /** The [TextLeg] that proposed this call; null for the turn's own connection. */
         val legId: String? = null,
+        val initiator: ActionInitiator? = null,
     ) : ThreadItem
 
     /**

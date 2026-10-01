@@ -1,8 +1,10 @@
 package com.colonelpanic.eva.devicecontrol
 
+import com.colonelpanic.eva.capability.ActionInitiator
 import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.capability.ExecutionBackend
 import com.colonelpanic.eva.capability.ExecutionOutcome
+import com.colonelpanic.eva.capability.InitiatorKind
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.ToolProposal
 import com.colonelpanic.eva.devicecontrol.worker.TextTaskAgent
@@ -137,6 +139,18 @@ class DeviceTaskCoordinator(
                                         put("step", step.step)
                                         put("revision", step.revision)
                                         put("kind", step.kind)
+                                        step.callId?.let { put("callId", it) }
+                                        put(
+                                            "initiator",
+                                            ActionInitiator(
+                                                InitiatorKind.DEVICE_TASK_WORKER,
+                                                inputId = proposal.initiator?.inputId,
+                                                responseId = step.responseId,
+                                                legId = result.taskId,
+                                                parentResponseId = proposal.initiator?.responseId,
+                                                outputItemId = step.outputItemId,
+                                            ).toJson(),
+                                        )
                                         put("result", step.result)
                                         put("observationMillis", step.timing.observationMillis)
                                         put("modelMillis", step.timing.modelMillis)

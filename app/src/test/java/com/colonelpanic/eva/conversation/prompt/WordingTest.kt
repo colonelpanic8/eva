@@ -16,7 +16,13 @@ class WordingTest {
                         "device-worker.$name" to schema
                     } +
                     (PromptDefaults.END_CONVERSATION_ID to ThreadController.END_CONVERSATION.inputSchema) +
-                    listOf(ThreadController.DEVICE_TASK_REVISE, ThreadController.DEVICE_TASK_STOP).map { it.capabilityId to it.inputSchema }
+                    listOf(
+                        ThreadController.DEVICE_TASK_REVISE,
+                        ThreadController.DEVICE_TASK_STOP,
+                        ThreadController.DEFER_TO_TEXT,
+                        ThreadController.BACKGROUND_STATUS,
+                        ThreadController.BACKGROUND_CANCEL,
+                    ).map { it.capabilityId to it.inputSchema }
             ).toMap()
         // The catalog also words tools that only another host, such as the desktop, offers.
         Wording.bundled.tools.filterKeys { !it.startsWith("eva.desktop.") }.forEach { (id, text) ->
@@ -31,6 +37,32 @@ class WordingTest {
         listOf(Wording.DEVICE_TASK_REVISED, Wording.DEVICE_TASK_STOPPING, Wording.DEVICE_TASK_NONE, Wording.DEVICE_TASK_INVALID)
             .forEach { assertTrue(Wording.bundled.message(it).isNotBlank()) }
         assertTrue(ThreadController.DEVICE_TASK_REVISE.description.isNotBlank())
+    }
+
+    @Test
+    fun `a followed catalog predating new tools retains their bundled descriptions and notes`() {
+        val followed = Wording.decode("tools: {}")
+        val controls =
+            listOf(
+                ThreadController.END_CONVERSATION,
+                ThreadController.DEFER_TO_TEXT,
+                ThreadController.BACKGROUND_STATUS,
+                ThreadController.BACKGROUND_CANCEL,
+                ThreadController.DEVICE_TASK_REVISE,
+                ThreadController.DEVICE_TASK_STOP,
+            )
+        val tools =
+            BundledCapabilities.definitions.map {
+                com.colonelpanic.eva.providers
+                    .ProviderToolDefinition(it.id, it.title, it.description, it.inputSchema)
+            } + controls
+        tools.forEach { tool ->
+            val described = followed.describe(tool)
+            assertTrue("${tool.capabilityId} lost its description", described.description.isNotBlank())
+            assertEquals(tool.description, described.description)
+            assertEquals(tool.inputSchema, described.inputSchema)
+        }
+        Wording.bundled.messages.forEach { (key, text) -> assertEquals(text, followed.message(key)) }
     }
 
     @Test

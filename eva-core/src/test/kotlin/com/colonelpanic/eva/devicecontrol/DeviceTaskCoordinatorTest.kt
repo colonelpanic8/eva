@@ -2,9 +2,11 @@
 
 package com.colonelpanic.eva.devicecontrol
 
+import com.colonelpanic.eva.capability.ActionInitiator
 import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.capability.ExecutionBackend
 import com.colonelpanic.eva.capability.ExecutionOutcome
+import com.colonelpanic.eva.capability.InitiatorKind
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.ToolProposal
 import com.colonelpanic.eva.conversation.prompt.Wording
@@ -22,7 +24,9 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -64,6 +68,55 @@ class DeviceTaskCoordinatorTest {
             )
         }
     }
+
+    @Test fun workerStepsRetainTheirOwnOriginInsideTheParentReceipt() =
+        runTest {
+            val coordinator =
+                DeviceTaskCoordinator(create = {
+                    TextTaskAgent(
+                        phone,
+                        WorkerModel {
+                            WorkerReply(
+                                listOf(
+                                    WorkerCall(
+                                        "finish-call",
+                                        "finish",
+                                        Json.parseToJsonElement("""{"status":"completed","summary":"done"}""").jsonObject,
+                                        responseId = "worker-response",
+                                        outputItemId = "worker-output",
+                                    ),
+                                ),
+                            )
+                        },
+                        workerWording(Wording.bundled),
+                    )
+                })
+            val outcome =
+                coordinator.execute(
+                    proposal().copy(
+                        initiator = ActionInitiator(InitiatorKind.USER_SPEECH, inputId = "speech", responseId = "parent-response"),
+                    ),
+                )
+            assertEquals(InvocationStatus.COMPLETED, outcome.status)
+            val step =
+                outcome.data!!
+                    .getValue("steps")
+                    .jsonArray
+                    .single()
+                    .jsonObject
+            assertEquals("finish-call", step.getValue("callId").jsonPrimitive.content)
+            val origin = ActionInitiator.fromJson(step.getValue("initiator").jsonObject)
+            assertEquals(InitiatorKind.DEVICE_TASK_WORKER, origin.kind)
+            assertEquals("worker-response", origin.responseId)
+            assertEquals("parent-response", origin.parentResponseId)
+            assertEquals("worker-output", origin.outputItemId)
+            assertEquals(
+                outcome.data!!
+                    .getValue("taskId")
+                    .jsonPrimitive.content,
+                origin.legId,
+            )
+        }
 
     @Test fun actionsQueueBehindARunningTaskAndControlsBypassIt() =
         runTest {

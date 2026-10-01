@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.providers
 
+import com.colonelpanic.eva.capability.ActionInitiator
 import com.colonelpanic.eva.capability.ReceiptProvenance
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.JsonObject
@@ -63,6 +64,7 @@ sealed interface HistoryItem {
 
 data class Continuation(
     val turnId: String,
+    val legId: String? = null,
 )
 
 data class ConversationInput(
@@ -82,6 +84,7 @@ data class CallIdentity(
     val providerTurnId: String,
     val catalogRevision: String,
     val callId: String,
+    val initiator: ActionInitiator? = null,
 )
 
 data class CorrelatedToolResult(
@@ -111,6 +114,7 @@ sealed interface ProviderEvent {
     data class ResponseStarted(
         val inputId: String,
         val generationId: String,
+        val announceOnly: Boolean = false,
     ) : ProviderEvent
 
     data class AssistantText(
@@ -134,6 +138,7 @@ sealed interface ProviderEvent {
         val role: String,
         val text: String,
         val itemId: String? = null,
+        val inputId: String? = null,
     ) : ProviderEvent
 
     /**
@@ -171,6 +176,13 @@ interface ConversationSession {
     suspend fun requestResponse(request: ResponseRequest)
 
     suspend fun submitToolResult(result: CorrelatedToolResult)
+
+    /** Adds an EVA-authored lifecycle note, with external findings quoted as data. False if unsupported. */
+    suspend fun submitContext(
+        note: String,
+        respond: Boolean,
+        data: JsonObject? = null,
+    ): Boolean = false
 
     suspend fun close()
 }

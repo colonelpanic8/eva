@@ -1,6 +1,8 @@
 package com.colonelpanic.eva.conversation
 
+import com.colonelpanic.eva.capability.ActionInitiator
 import com.colonelpanic.eva.capability.CapabilityRegistry
+import com.colonelpanic.eva.capability.InitiatorKind
 import com.colonelpanic.eva.capability.ToolProposal
 
 interface TypedInputProvider {
@@ -25,6 +27,7 @@ class LocalCommandProvider : TypedInputProvider {
                 mapOf("recipient" to it.groupValues[1].trim(), "message" to it.groupValues[2].trim()),
                 input,
                 catalogRevision,
+                initiator = ActionInitiator(InitiatorKind.USER_TYPED, inputId = callId),
             )
         }
         return null

@@ -24,6 +24,8 @@ data class WorkerCall(
     val id: String,
     val name: String,
     val arguments: JsonObject,
+    val responseId: String? = null,
+    val outputItemId: String? = null,
 )
 
 @Serializable

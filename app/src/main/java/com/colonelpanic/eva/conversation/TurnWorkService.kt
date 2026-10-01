@@ -18,13 +18,15 @@ import com.colonelpanic.eva.MainActivity
 
 /** The application supplies the controller so the service can interrupt work Android will not let it finish. */
 interface TurnWorkHost {
+    fun needsWorkCoverage(): Boolean
+
+    /** Interrupt only dependent work after Android refuses coverage. */
     fun interruptWork(reason: String)
 }
 
 /**
- * Keeps the process alive while a turn finishes with nothing attached to its thread: after a
- * call was hung up, or a text connection dropped. Short by Android's definition, which fits;
- * a turn that cannot finish inside the allowance is interrupted rather than left half-done.
+ * Covers text and detached turns, including work delegated during a call. Renews short-service
+ * coverage when Android permits it; only a live voice turn has another service of its own.
  */
 class TurnWorkService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
@@ -34,6 +36,15 @@ class TurnWorkService : Service() {
         flags: Int,
         startId: Int,
     ): Int {
+        if (!promote()) {
+            foregroundRejected()
+            return START_NOT_STICKY
+        }
+        if (gate.foregrounded()) stopCoverage()
+        return START_NOT_STICKY
+    }
+
+    private fun promote(): Boolean {
         WorkNotifications.channels(this)
         val notification =
             NotificationCompat
@@ -53,17 +64,11 @@ class TurnWorkService : Service() {
                 startForeground(NOTIFICATION_ID, notification)
             }
         } catch (_: SecurityException) {
-            foregroundRejected()
-            return START_NOT_STICKY
+            return false
         } catch (_: IllegalStateException) {
-            foregroundRejected()
-            return START_NOT_STICKY
+            return false
         }
-        if (gate.foregrounded()) {
-            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
-            stopSelf()
-        }
-        return START_NOT_STICKY
+        return true
     }
 
     private fun foregroundRejected() {
@@ -78,7 +83,15 @@ class TurnWorkService : Service() {
     }
 
     override fun onTimeout(startId: Int) {
-        (application as? TurnWorkHost)?.interruptWork("EVA ran out of background time before this request finished.")
+        val host = application as? TurnWorkHost
+        if (host?.needsWorkCoverage() == true) {
+            if (promote()) return
+            host.interruptWork(START_DENIED)
+        }
+        stopCoverage()
+    }
+
+    private fun stopCoverage() {
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -134,8 +147,15 @@ object WorkNotifications {
             NotificationCompat
                 .Builder(context, WORK_CHANNEL)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentTitle(answer.title)
-                .setContentText(answer.answer.lineSequence().firstOrNull { it.isNotBlank() } ?: "Finished.")
+                .setContentTitle(
+                    if (answer.status ==
+                        TurnStatus.ANSWERED
+                    ) {
+                        answer.title
+                    } else {
+                        "${answer.title} · ${answer.status.name.lowercase()}"
+                    },
+                ).setContentText(answer.answer.lineSequence().firstOrNull { it.isNotBlank() } ?: "Finished.")
                 .setStyle(NotificationCompat.BigTextStyle().bigText(answer.answer))
                 .setAutoCancel(true)
                 .setContentIntent(open(context, answer.threadId))

@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.desktop
 
+import com.colonelpanic.eva.capability.ActionInitiator
 import com.colonelpanic.eva.capability.CapabilityDispatcher
 import com.colonelpanic.eva.capability.ClaimResult
 import com.colonelpanic.eva.capability.InvocationRecord
@@ -40,8 +41,8 @@ class JdbcInvocationRepository(
             find(db, record.callId)?.let { return@transaction ClaimResult(it, false) }
             db.update(
                 "INSERT INTO invocations (call_id, fingerprint, request, destination, status, message, created_at, capability_id, " +
-                    "catalog_revision, title, thread_id, turn_id, arguments_json, provenance_json, data_json) " +
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "catalog_revision, title, thread_id, turn_id, arguments_json, provenance_json, data_json, initiator_json) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 record.callId,
                 record.fingerprint,
                 record.request,
@@ -57,6 +58,7 @@ class JdbcInvocationRepository(
                 record.arguments?.let { arguments -> JsonObject(arguments.mapValues { JsonPrimitive(it.value) }).toString() },
                 record.provenance?.toJson()?.toString(),
                 record.data?.toString(),
+                record.initiator?.toJson()?.toString(),
             )
             ClaimResult(record, true)
         }
@@ -119,6 +121,7 @@ class JdbcInvocationRepository(
             threadId = nullableString("thread_id"),
             turnId = nullableString("turn_id"),
             data = json("data_json"),
+            initiator = json("initiator_json")?.let(ActionInitiator::fromJson),
         )
 
     private fun ResultSet.json(column: String): JsonObject? = nullableString(column)?.let { Json.parseToJsonElement(it).jsonObject }

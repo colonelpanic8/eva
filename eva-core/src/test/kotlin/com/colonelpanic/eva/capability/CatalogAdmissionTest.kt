@@ -53,6 +53,24 @@ class CatalogAdmissionTest {
     }
 
     @Test
+    fun `voice reserves four control slots and settings distinguishes typed and voice overflow`() {
+        val native = bundled(CatalogAdmission.LIMIT - 10)
+        val extensions = List(20) { definition("extension.test-${it.toString().padStart(2, '0')}.action") }
+        val definitions = native + extensions
+        val voice = CatalogAdmission.select(definitions, controls = CatalogAdmission.voiceControls(definitions), voiceBytes = Int.MAX_VALUE)
+        assertEquals(CatalogAdmission.LIMIT - 4, voice.admitted.size)
+        val reasons = CatalogAdmission.overflowReasons(definitions)
+        assertEquals(14, reasons.size)
+        assertTrue(reasons.getValue(extensions[6].id).contains("Available in typed"))
+        assertTrue(reasons.getValue(extensions[9].id).contains("Available in typed"))
+        assertTrue(reasons.getValue(extensions[10].id).startsWith("Unavailable in typed and voice"))
+        assertTrue(CatalogAdmission.overflowReasons(native + extensions.take(6)).isEmpty())
+        val withTasks = listOf(definition(CapabilityRegistry.DEVICE_TASK)) + definitions
+        assertEquals(6, CatalogAdmission.voiceControls(withTasks))
+        assertEquals(CatalogAdmission.LIMIT - 6, CatalogAdmission.select(withTasks, 6, voiceBytes = Int.MAX_VALUE).admitted.size)
+    }
+
+    @Test
     fun `package instances with the same title remain separate atomic groups`() {
         val native = bundled(CatalogAdmission.LIMIT - 3)
         val first = group("extension.package.first", 2, "package:first", "Maps")

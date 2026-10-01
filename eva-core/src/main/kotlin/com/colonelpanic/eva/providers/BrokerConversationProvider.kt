@@ -1,6 +1,8 @@
 package com.colonelpanic.eva.providers
 
+import com.colonelpanic.eva.capability.ActionInitiator
 import com.colonelpanic.eva.capability.CatalogAdmission
+import com.colonelpanic.eva.capability.InitiatorKind
 import com.colonelpanic.eva.capability.ToolSchema
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.Channel
@@ -226,6 +228,16 @@ private class BrokerSession(
                                     turn,
                                     request.catalog.revision,
                                     id,
+                                    ActionInitiator(
+                                        when {
+                                            request.continuation != null -> InitiatorKind.TEXT_AGENT
+                                            offerSdp != null -> InitiatorKind.USER_SPEECH
+                                            else -> InitiatorKind.USER_TYPED
+                                        },
+                                        inputId = checkNotNull(active).id,
+                                        responseId = turn,
+                                        legId = request.continuation?.legId,
+                                    ),
                                 )
                             val args = message["arguments"] as? JsonObject ?: error("Tool arguments must be an object")
                             pending[id] = identity

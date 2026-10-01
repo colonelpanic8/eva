@@ -2,6 +2,7 @@ package com.colonelpanic.eva.conversation
 
 import com.colonelpanic.eva.audio.MediaControls
 import com.colonelpanic.eva.audio.RealtimeMediaState
+import com.colonelpanic.eva.capability.ActionInitiator
 
 data class ConversationState(
     /** The thread on screen; null until one exists. */
@@ -43,6 +44,7 @@ data class ConversationEntry(
     val parentId: String? = null,
     /** Set when this entry is a text leg rather than an action. */
     val textLeg: TextLegDetails? = null,
+    val initiator: ActionInitiator? = null,
 )
 
 data class TextLegDetails(
