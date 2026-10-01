@@ -14,6 +14,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.net.URI
+import java.nio.file.Files
+import java.nio.file.attribute.PosixFilePermissions
 
 class DesktopHostTest {
     @get:Rule val folder = TemporaryFolder()
@@ -22,11 +24,17 @@ class DesktopHostTest {
     fun `the host starts from empty storage with the desktop prompt and tools`() =
         runBlocking {
             val paths = DesktopPaths(folder.root.resolve("config"), folder.root.resolve("data"))
-            DesktopHost(paths, Dispatchers.Default) { null }.use { host ->
+            val lock = checkNotNull(paths.lock())
+            DesktopHost(paths, Dispatchers.Default, lock) { Opening.Opened }.use { host ->
                 val state = host.controller.state.first { !it.isLoading }
                 assertNull(state.errorMessage)
                 assertFalse(host.tokens.signedIn)
+                assertNull("A second process must not recover the journal while this one runs", paths.lock())
             }
+            assertFalse(lock.isValid)
+            val again = checkNotNull(paths.lock())
+            again.release()
+            again.channel().close()
             val identity =
                 DesktopHost.prompt.components
                     .first { it.id == "identity" }
@@ -56,7 +64,7 @@ class DesktopHostTest {
                 DesktopCapabilities
                     .backends {
                         opened += it
-                        null
+                        Opening.Opened
                     }.getValue(DesktopCapabilities.OPEN_URL)
 
             assertEquals(InvocationStatus.HANDED_OFF, backend.execute(mapOf("url" to "https://example.org/a")).status)
@@ -64,7 +72,23 @@ class DesktopHostTest {
             assertEquals(InvocationStatus.NOT_EXECUTED, backend.execute(mapOf("url" to "https://user@example.org")).status)
             assertEquals(listOf(URI("https://example.org/a")), opened)
 
-            val refusing = DesktopCapabilities.backends { "no browser" }.getValue(DesktopCapabilities.OPEN_URL)
+            val refusing = DesktopCapabilities.backends { Opening.Refused("no browser") }.getValue(DesktopCapabilities.OPEN_URL)
             assertEquals(InvocationStatus.FAILED, refusing.execute(mapOf("url" to "https://example.org")).status)
+            val lingering = DesktopCapabilities.backends { Opening.Pending }.getValue(DesktopCapabilities.OPEN_URL)
+            assertEquals(InvocationStatus.UNKNOWN, lingering.execute(mapOf("url" to "https://example.org")).status)
         }
+
+    @Test
+    fun `storage is readable only by the user`() {
+        val paths = DesktopPaths(folder.root.resolve("config"), folder.root.resolve("data"))
+        paths.data.mkdirs()
+        paths.journal.writeText("")
+        Files.setPosixFilePermissions(paths.journal.toPath(), PosixFilePermissions.fromString("rw-r--r--"))
+
+        paths.secure()
+
+        assertEquals("rwx------", PosixFilePermissions.toString(Files.getPosixFilePermissions(paths.data.toPath())))
+        assertEquals("rwx------", PosixFilePermissions.toString(Files.getPosixFilePermissions(paths.config.toPath())))
+        assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(paths.journal.toPath())))
+    }
 }

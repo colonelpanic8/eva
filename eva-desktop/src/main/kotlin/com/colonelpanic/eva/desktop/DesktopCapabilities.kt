@@ -10,6 +10,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import java.net.URI
+import java.util.concurrent.TimeUnit
 
 /** Tools only the desktop host offers; their wording comes from the followed catalog like any native tool. */
 object DesktopCapabilities {
@@ -37,18 +38,39 @@ object DesktopCapabilities {
         }
 }
 
+/** What became of handing an address to the desktop's opener. */
+sealed interface Opening {
+    data object Opened : Opening
+
+    data class Refused(
+        val reason: String,
+    ) : Opening
+
+    /** The opener was still running at the deadline, as some do for the browser's lifetime. */
+    data object Pending : Opening
+}
+
 /** Hands an address to whatever the desktop uses to open it. */
 fun interface UrlOpener {
-    /** Null when the opener accepted the address, otherwise why it did not. */
-    fun open(url: URI): String?
+    fun open(url: URI): Opening
 
     companion object {
-        fun system(os: String = System.getProperty("os.name").orEmpty()): UrlOpener =
+        fun system(
+            os: String = System.getProperty("os.name").orEmpty(),
+            timeoutMillis: Long = 10_000,
+        ): UrlOpener =
             UrlOpener { url ->
                 val command = if (os.startsWith("Mac", ignoreCase = true)) "open" else "xdg-open"
-                val process = ProcessBuilder(command, url.toString()).redirectErrorStream(true).start()
-                val exit = process.waitFor()
-                if (exit == 0) null else "$command exited with status $exit"
+                val process =
+                    ProcessBuilder(command, url.toString())
+                        .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                        .redirectError(ProcessBuilder.Redirect.DISCARD)
+                        .start()
+                when {
+                    !process.waitFor(timeoutMillis, TimeUnit.MILLISECONDS) -> Opening.Pending
+                    process.exitValue() == 0 -> Opening.Opened
+                    else -> Opening.Refused("$command exited with status ${process.exitValue()}")
+                }
             }
     }
 }
@@ -62,16 +84,16 @@ private class OpenUrlBackend(
         val url =
             DesktopCapabilities.webAddress(arguments["url"].orEmpty())
                 ?: return ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "That is not an http or https address. Nothing was opened.")
-        val problem =
+        val opening =
             try {
                 withContext(Dispatchers.IO) { opener.open(url) }
             } catch (error: java.io.IOException) {
                 return ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "No browser opener is available: ${error.message}")
             }
-        return if (problem == null) {
-            ExecutionOutcome(InvocationStatus.HANDED_OFF, "Handed $url to the browser.")
-        } else {
-            ExecutionOutcome(InvocationStatus.FAILED, "The browser did not take the address: $problem")
+        return when (opening) {
+            Opening.Opened -> ExecutionOutcome(InvocationStatus.HANDED_OFF, "Handed $url to the browser.")
+            is Opening.Refused -> ExecutionOutcome(InvocationStatus.FAILED, "The browser did not take the address: ${opening.reason}")
+            Opening.Pending -> ExecutionOutcome(InvocationStatus.UNKNOWN, "The opener was still running; check whether $url opened.")
         }
     }
 }

@@ -5,6 +5,7 @@ import com.colonelpanic.eva.conversation.ConversationState
 import com.colonelpanic.eva.conversation.EntryGroup
 import com.colonelpanic.eva.conversation.EntryStatus
 import com.colonelpanic.eva.conversation.ProviderStatus
+import com.colonelpanic.eva.conversation.ThreadController
 import com.colonelpanic.eva.conversation.groups
 import com.colonelpanic.eva.providers.openai.ChatGptLogin
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -13,6 +14,8 @@ import kotlinx.coroutines.newSingleThreadContext
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import java.nio.channels.FileLock
+import kotlin.coroutines.CoroutineContext
 import kotlin.system.exitProcess
 
 private const val USAGE = """Usage: eva-desktop [command]
@@ -25,92 +28,100 @@ Commands:
 
 In a chat, /new starts a new thread and /quit leaves."""
 
-@OptIn(ExperimentalCoroutinesApi::class, kotlinx.coroutines.DelicateCoroutinesApi::class)
+private const val LOCKED = "Another eva-desktop chat is running. Quit it first."
+
 fun main(args: Array<String>) {
     val paths = DesktopPaths.fromEnvironment()
-    val command = args.firstOrNull() ?: "chat"
-    if (command in setOf("-h", "--help", "help")) {
-        println(USAGE)
-        return
-    }
-    val ui = newSingleThreadContext("eva-ui")
     val status =
-        DesktopHost(paths, ui).use { host ->
-            runBlocking {
-                when (command) {
-                    "login" -> login(host)
-                    "logout" -> host.tokens.clear().let { println("Signed out.").let { 0 } }
-                    "threads" -> threads(host)
-                    "chat" -> chat(host, ui, args.drop(1))
-                    else -> System.err.println(USAGE).let { 2 }
-                }
-            }
+        when (args.firstOrNull() ?: "chat") {
+            "-h", "--help", "help" -> println(USAGE).let { 0 }
+            "login" -> owned(paths) { runBlocking { login(paths) } }
+            "logout" -> owned(paths) { ChatGptTokenFile(paths.chatGptTokens).clear().let { println("Signed out.").let { 0 } } }
+            "threads" -> runBlocking { threads(paths) }
+            "chat" -> owned(paths) { lock -> chat(paths, lock, args.drop(1)) }
+            else -> System.err.println(USAGE).let { 2 }
         }
-    ui.close()
     exitProcess(status)
 }
 
-private suspend fun login(host: DesktopHost): Int {
+/** Runs [block] holding the storage lock, so it cannot overlap a chat's recovery or token refresh. */
+private fun owned(
+    paths: DesktopPaths,
+    block: (FileLock) -> Int,
+): Int {
+    val lock = paths.lock() ?: return System.err.println(LOCKED).let { 1 }
+    return try {
+        block(lock)
+    } finally {
+        if (lock.isValid) {
+            lock.release()
+            lock.channel().close()
+        }
+    }
+}
+
+private suspend fun login(paths: DesktopPaths): Int {
     val login = ChatGptLogin()
     val code = login.requestCode()
     println("Open ${code.verificationUrl} and enter the code ${code.userCode}")
     val tokens = login.awaitApproval(code)
-    host.tokens.save(tokens)
+    ChatGptTokenFile(paths.chatGptTokens).save(tokens)
     println("Signed in${tokens.email?.let { " as $it" }.orEmpty()}.")
     return 0
 }
 
-private suspend fun threads(host: DesktopHost): Int {
-    host.store.threads().forEach { println("${it.id}  ${it.title}") }
+/** Reads the thread list without recovering anything, so it is safe beside a running chat. */
+private suspend fun threads(paths: DesktopPaths): Int {
+    paths.secure()
+    JdbcJournal(paths.journal).use { journal -> JdbcConversationStore(journal).threads().forEach { println("${it.id}  ${it.title}") } }
     return 0
 }
 
-private suspend fun chat(
-    host: DesktopHost,
-    ui: kotlin.coroutines.CoroutineContext,
+@OptIn(ExperimentalCoroutinesApi::class, kotlinx.coroutines.DelicateCoroutinesApi::class)
+private fun chat(
+    paths: DesktopPaths,
+    lock: FileLock,
     options: List<String>,
 ): Int {
-    if (!host.tokens.signedIn) {
+    if (!ChatGptTokenFile(paths.chatGptTokens).signedIn) {
         System.err.println("Sign in first: eva-desktop login")
         return 1
     }
-    val controller = host.controller
+    val ui = newSingleThreadContext("eva-ui")
+    try {
+        return DesktopHost(paths, ui, lock).use { host -> runBlocking { converse(host.controller, ui, options) } }
+    } finally {
+        ui.close()
+    }
+}
+
+private suspend fun converse(
+    controller: ThreadController,
+    ui: CoroutineContext,
+    options: List<String>,
+): Int {
     val loaded = controller.state.first { !it.isLoading }
     loaded.errorMessage?.let {
         System.err.println(it)
         return 1
     }
-    // Thread changes land asynchronously; connecting first would attach to the thread shown before.
-    val previous = loaded.threadId
-    when {
-        options.firstOrNull() == "--thread" -> {
+    when (options.firstOrNull()) {
+        "--thread" -> {
             val id = requireNotNull(options.getOrNull(1)) { "--thread needs an ID" }
             withContext(ui) { controller.showThread(id) }
             controller.state.first { it.threadId == id }
         }
 
-        options.firstOrNull() == "--continue" -> {
+        "--continue" -> {
             Unit
         }
 
         else -> {
-            withContext(ui) { controller.newThread() }
-            controller.state.first { it.threadId != null && it.threadId != previous }
+            startThread(controller, ui)
         }
     }
-    withContext(ui) { controller.connect("") }
-    val connected =
-        withTimeoutOrNull(CONNECT_TIMEOUT_MILLIS) {
-            controller.state.first {
-                it.providerStatus == ProviderStatus.CONNECTED ||
-                    it.errorMessage != null
-            }
-        }
-    if (connected?.providerStatus != ProviderStatus.CONNECTED) {
-        System.err.println(connected?.errorMessage ?: connected?.providerMessage ?: "Could not connect to the model.")
-        return 1
-    }
-    println("EVA (${connected.providerLabel}). /new starts a new thread, /quit leaves.")
+    val label = connect(controller, ui) ?: return 1
+    println("EVA ($label). /new starts a new thread, /quit leaves.")
     val shown = Printed()
     shown.print(controller.state.value)
     while (true) {
@@ -127,9 +138,10 @@ private suspend fun chat(
             }
 
             line == "/new" -> {
-                val shownBefore = controller.state.value.threadId
-                withContext(ui) { controller.newThread() }
-                controller.state.first { it.threadId != shownBefore }
+                // An attachment stays on its thread, so a new thread needs a new connection.
+                withContext(ui) { controller.disconnect() }
+                startThread(controller, ui)
+                connect(controller, ui) ?: return 1
                 println("New thread.")
                 continue
             }
@@ -156,14 +168,36 @@ private suspend fun chat(
         shown.print(settled)
         settled.providerMessage?.let(::println)
     }
-    withContext(ui) { controller.disconnect() }
     return 0
+}
+
+private suspend fun startThread(
+    controller: ThreadController,
+    ui: CoroutineContext,
+) {
+    val previous = controller.state.value.threadId
+    withContext(ui) { controller.newThread() }
+    controller.state.first { it.threadId != null && it.threadId != previous }
+}
+
+/** The provider label once connected, or null after reporting why it could not connect. */
+private suspend fun connect(
+    controller: ThreadController,
+    ui: CoroutineContext,
+): String? {
+    withContext(ui) { controller.connect("") }
+    val connected =
+        withTimeoutOrNull(CONNECT_TIMEOUT_MILLIS) {
+            controller.state.first { it.providerStatus == ProviderStatus.CONNECTED || it.errorMessage != null }
+        }
+    if (connected?.providerStatus == ProviderStatus.CONNECTED) return connected.providerLabel
+    System.err.println(connected?.errorMessage ?: connected?.providerMessage ?: "Could not connect to the model.")
+    return null
 }
 
 /** Prints each entry once it settles, and again only if it changes. */
 private class Printed {
     private val seen = mutableMapOf<String, ConversationEntry>()
-    val ids: Set<String> get() = seen.keys
 
     fun print(state: ConversationState) = groups(state.entries).forEach(::print)
 
@@ -175,9 +209,7 @@ private class Printed {
         seen[entry.id] = entry
         when {
             entry.capabilityId != null -> {
-                println(
-                    "  · ${entry.actionTitle ?: entry.capabilityId}: ${label(entry.status)}${entry.result?.let { " — $it" }.orEmpty()}",
-                )
+                println("  · ${entry.actionTitle ?: entry.capabilityId}: ${label(entry.status)}${entry.result?.let { " — $it" }.orEmpty()}")
             }
 
             entry.status == EntryStatus.SESSION -> {

@@ -1,6 +1,7 @@
 package com.colonelpanic.eva.desktop
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -59,7 +60,8 @@ class JdbcJournal(
 
     suspend fun <T> read(block: (Connection) -> T): T = withContext(Dispatchers.IO) { mutex.withLock { block(connection) } }
 
-    override fun close() = connection.close()
+    /** Waits for the statement in progress, so nothing is cut off mid-transaction. */
+    override fun close() = runBlocking { mutex.withLock { connection.close() } }
 
     companion object {
         const val VERSION = 7
