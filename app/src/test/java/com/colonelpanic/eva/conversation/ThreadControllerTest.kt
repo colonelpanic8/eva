@@ -127,6 +127,7 @@ class ThreadControllerTest {
         now: () -> Long = System::currentTimeMillis,
         conversationStore: ConversationStore = store,
         accepted: suspend () -> Unit = {},
+        textProvider: (String) -> ConversationProvider = { provider },
     ) = ThreadController(
         registry = registry,
         nowMillis = now,
@@ -136,7 +137,7 @@ class ThreadControllerTest {
         repository = repository,
         store = conversationStore,
         scope = liveScope(),
-        providerFactory = { provider },
+        providerFactory = textProvider,
         mediaFactory = media,
         voiceProviderFactory = { _, _ -> voiceProvider },
         backgroundProviderFactory = { background },
@@ -2236,8 +2237,6 @@ class ThreadControllerTest {
             val deviceTurn = latestTurn(controller)
             provider.call("device", CapabilityRegistry.DEVICE_TASK, "goal" to "Open settings")
             runCurrent()
-            controller.newThread()
-            runCurrent()
             controller.interruptBackgroundWork("Coverage lost")
             runCurrent()
             assertEquals(TurnStatus.INTERRUPTED, store.turns(backgroundThread).single().status)
@@ -2672,6 +2671,225 @@ class ThreadControllerTest {
     // ---- threads ----
 
     @Test
+    fun `new conversation reattaches text and selecting history seeds the selected thread`() =
+        runTest {
+            val opened = mutableListOf<FakeProvider>()
+            val links = mutableListOf<String>()
+            val controller =
+                controller(FakeProvider(), textProvider = { link ->
+                    links += link
+                    FakeProvider().also { opened += it }
+                })
+            advanceUntilIdle()
+            controller.connect("paired-host")
+            advanceUntilIdle()
+            val first = controller.state.value.threadId!!
+            controller.submit("First request")
+            advanceUntilIdle()
+            opened[0].channel.send(ProviderEvent.ResponseEnded(opened[0].input.id, "completed"))
+            advanceUntilIdle()
+
+            controller.newThread()
+            advanceUntilIdle()
+            val second = controller.state.value.threadId!!
+            assertNotEquals(first, second)
+            assertEquals(second, controller.state.value.attachedThreadId)
+            assertEquals(1, opened[0].closes)
+            assertTrue(store.items(first).filterIsInstance<ThreadItem.Notice>().any { it.text == "Session ended: switched conversations" })
+            assertTrue(opened[1].request.history.none { it is HistoryItem.User })
+            controller.submit("Second request")
+            advanceUntilIdle()
+            assertEquals("Second request", store.turns(second).single().request)
+            assertEquals(listOf("First request"), store.turns(first).map { it.request })
+            assertEquals(
+                "Second request",
+                controller.state.value.entries
+                    .single { it.request.isNotBlank() }
+                    .request,
+            )
+            opened[1].channel.send(ProviderEvent.ResponseEnded(opened[1].input.id, "completed"))
+            advanceUntilIdle()
+
+            controller.showThread(first)
+            advanceUntilIdle()
+            assertEquals(first, controller.state.value.attachedThreadId)
+            assertTrue(opened[2].request.history.any { it is HistoryItem.User && it.text == "First request" })
+            assertEquals(listOf("paired-host", "paired-host", "paired-host"), links)
+            controller.submit("Back in the first thread")
+            advanceUntilIdle()
+            assertEquals(listOf("First request", "Back in the first thread"), store.turns(first).map { it.request })
+            opened[2].channel.send(ProviderEvent.ResponseEnded(opened[2].input.id, "completed"))
+            advanceUntilIdle()
+        }
+
+    @Test
+    fun `finishing an old thread clears submission state and keeps shown foreground work busy`() =
+        runTest {
+            val background = FakeProvider(epoch = "background")
+            val opened = mutableListOf<FakeProvider>()
+            val controller =
+                controller(FakeProvider(), background = background, textProvider = {
+                    FakeProvider().also { opened += it }
+                })
+            advanceUntilIdle()
+            controller.connect("test")
+            advanceUntilIdle()
+            val first = controller.state.value.threadId!!
+            controller.submit("Old request")
+            assertTrue(controller.state.value.isSubmitting)
+            advanceUntilIdle()
+            val oldTurn = store.turns(first).single().id
+            assertFalse(controller.state.value.isSubmitting)
+            assertTrue(controller.state.value.foregroundWorking)
+            assertFalse(controller.state.value.acceptsTextInput)
+
+            controller.newThread()
+            advanceUntilIdle()
+            val shown = controller.state.value.threadId!!
+            assertFalse(controller.state.value.working)
+            assertTrue(controller.state.value.acceptsTextInput)
+            assertEquals(setOf(first), controller.working.value)
+            controller.submit("Shown request")
+            advanceUntilIdle()
+            background.channel.send(ProviderEvent.AssistantText(oldTurn, "Old answer", false))
+            background.channel.send(ProviderEvent.ResponseEnded(oldTurn, "completed"))
+            advanceUntilIdle()
+
+            assertEquals(shown, controller.state.value.threadId)
+            assertEquals(TurnStatus.ANSWERED, store.turns(first).single().status)
+            assertFalse(controller.state.value.isSubmitting)
+            assertTrue(controller.state.value.working)
+            assertTrue(controller.state.value.foregroundWorking)
+            assertEquals(setOf(shown), controller.working.value)
+            opened[1].channel.send(ProviderEvent.ResponseEnded(opened[1].input.id, "completed"))
+            advanceUntilIdle()
+            assertFalse(controller.state.value.working)
+            assertFalse(controller.state.value.foregroundWorking)
+            assertTrue(controller.state.value.acceptsTextInput)
+        }
+
+    @Test
+    fun `reconnecting permits foreground text while the same thread continues background work`() =
+        runTest {
+            val background = FakeProvider(epoch = "background")
+            val opened = mutableListOf<FakeProvider>()
+            val controller =
+                controller(FakeProvider(), background = background, textProvider = {
+                    FakeProvider().also { opened += it }
+                })
+            advanceUntilIdle()
+            controller.connect("test")
+            advanceUntilIdle()
+            controller.submit("Background request")
+            advanceUntilIdle()
+            val thread = controller.state.value.threadId!!
+            val backgroundTurn = store.turns(thread).single().id
+            controller.disconnect()
+            advanceUntilIdle()
+            controller.connect("test")
+            advanceUntilIdle()
+            assertTrue(controller.state.value.working)
+            assertFalse(controller.state.value.foregroundWorking)
+            assertTrue(controller.state.value.acceptsTextInput)
+
+            controller.submit("Foreground request")
+            advanceUntilIdle()
+            assertEquals(1, opened[1].submissions)
+            background.channel.send(ProviderEvent.ResponseEnded(backgroundTurn, "completed"))
+            advanceUntilIdle()
+            assertTrue(controller.state.value.working)
+            assertTrue(controller.state.value.foregroundWorking)
+            assertFalse(controller.state.value.acceptsTextInput)
+            opened[1].channel.send(ProviderEvent.ResponseEnded(opened[1].input.id, "completed"))
+            advanceUntilIdle()
+            assertFalse(controller.state.value.isSubmitting)
+            assertFalse(controller.state.value.working)
+            assertTrue(controller.state.value.acceptsTextInput)
+        }
+
+    @Test
+    fun `disconnect and reconnect clear a queued submission without sending to the old session`() =
+        runTest {
+            val opened = mutableListOf<FakeProvider>()
+            val controller = controller(FakeProvider(), textProvider = { FakeProvider().also { opened += it } })
+            advanceUntilIdle()
+            controller.connect("test")
+            advanceUntilIdle()
+            controller.submit("Queued request")
+            assertTrue(controller.state.value.isSubmitting)
+            controller.disconnect()
+            assertFalse(controller.state.value.isSubmitting)
+            controller.connect("test")
+            assertFalse(controller.state.value.isSubmitting)
+            advanceUntilIdle()
+            assertEquals(0, opened[0].submissions)
+            assertTrue(controller.state.value.acceptsTextInput)
+            controller.submit("Reconnected request")
+            controller.submit("Duplicate while queued")
+            advanceUntilIdle()
+            assertEquals(1, opened[1].submissions)
+            assertEquals(listOf("Reconnected request"), store.turns(controller.state.value.threadId!!).map { it.request })
+            opened[1].channel.send(ProviderEvent.ResponseEnded(opened[1].input.id, "completed"))
+            advanceUntilIdle()
+            assertTrue(controller.state.value.acceptsTextInput)
+        }
+
+    @Test
+    fun `reconnect clears pending submission without requiring disconnect first`() =
+        runTest {
+            val opened = mutableListOf<FakeProvider>()
+            val controller = controller(FakeProvider(), textProvider = { FakeProvider().also { opened += it } })
+            advanceUntilIdle()
+            controller.connect("test")
+            advanceUntilIdle()
+            controller.submit("Queued request")
+            assertTrue(controller.state.value.isSubmitting)
+            controller.connect("test")
+            assertFalse(controller.state.value.isSubmitting)
+            advanceUntilIdle()
+            assertEquals(0, opened[0].submissions)
+            assertFalse(controller.state.value.working)
+            assertTrue(controller.state.value.acceptsTextInput)
+        }
+
+    @Test
+    fun `voice stays attached while browsing and text cannot reach either thread`() =
+        runTest {
+            val voice = FakeProvider()
+            val media = VoiceMedia()
+            val controller = controller(voice, media = { media })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            val callThread = controller.state.value.threadId!!
+            controller.newThread()
+            advanceUntilIdle()
+            val shown = controller.state.value.threadId!!
+            assertNotEquals(callThread, shown)
+            assertEquals(callThread, controller.state.value.attachedThreadId)
+            assertTrue(controller.state.value.voiceOnAnotherThread)
+            assertFalse(controller.state.value.acceptsTextInput)
+            controller.submit("Do not send to the hidden call")
+            voice.startVoice("first", "Voice request")
+            advanceUntilIdle()
+            assertEquals(0, voice.submissions)
+            assertTrue(store.turns(shown).isEmpty())
+            val transcript = store.items(callThread).filterIsInstance<ThreadItem.UserMessage>().single()
+            assertEquals("Voice request", transcript.text)
+            assertEquals(store.turns(callThread).single().id, transcript.turnId)
+            assertFalse(controller.state.value.working)
+            assertFalse(media.closed)
+            voice.channel.send(ProviderEvent.ResponseEnded(voice.input.id, "completed"))
+            advanceUntilIdle()
+            controller.showThread(callThread)
+            advanceUntilIdle()
+            assertFalse(controller.state.value.voiceOnAnotherThread)
+            assertEquals(callThread, controller.state.value.attachedThreadId)
+            controller.disconnect()
+            advanceUntilIdle()
+        }
+
+    @Test
     fun `a hands-free launch starts a new thread and old threads can be shown again`() =
         runTest {
             val provider = FakeProvider()
@@ -2963,7 +3181,11 @@ class ThreadControllerTest {
             assertTrue(media.closed)
             assertEquals(ProviderStatus.DISCONNECTED, controller.state.value.providerStatus)
             advanceUntilIdle()
-            assertEquals("Response completed.", entry(controller, latestTurn(controller)).response)
+            assertTrue(
+                controller.state.value.entries
+                    .all { it.status == EntryStatus.SESSION },
+            )
+            assertEquals(TurnStatus.ANSWERED, store.turns(controller.state.value.threadId!!).single().status)
 
             val stuck = FakeProvider()
             val stuckMedia = VoiceMedia()

@@ -43,6 +43,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -147,7 +151,7 @@ internal fun ConversationScreen(
                 Composer(
                     draft = draft,
                     onDraftChange = { draft = it },
-                    enabled = !storageFailed,
+                    enabled = !storageFailed && !state.voiceOnAnotherThread,
                     canSend = canSend,
                     supportingText = composerHint(state),
                     onSend = ::send,
@@ -216,7 +220,29 @@ private fun Composer(
                 modifier =
                     Modifier
                         .weight(1f)
-                        .semantics { contentDescription = "Request to EVA" },
+                        .onPreviewKeyEvent { event ->
+                            when (
+                                composerKeyAction(
+                                    event.nativeKeyEvent.keyCode,
+                                    event.type == KeyEventType.KeyDown,
+                                    event.isShiftPressed,
+                                    canSend,
+                                )
+                            ) {
+                                ComposerKeyAction.SEND -> {
+                                    onSend()
+                                    true
+                                }
+
+                                ComposerKeyAction.CONSUME -> {
+                                    true
+                                }
+
+                                ComposerKeyAction.IGNORE -> {
+                                    false
+                                }
+                            }
+                        }.semantics { contentDescription = "Request to EVA" },
             )
             FilledIconButton(
                 onClick = onSend,

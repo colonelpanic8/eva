@@ -304,6 +304,8 @@ class ThreadController(
     private var session: ConversationSession? = null
     private var attempt = 0
     private var attachedThreadId: String? = null
+    private var lastTextLink: String? = null
+    private var submittingInputId: String? = null
     private var ending = false
     private var endingToken = 0
     private var endReason = ""
@@ -515,13 +517,22 @@ class ThreadController(
         scope.launch {
             val thread = store.createThread(UNTITLED)
             shownThreadId = thread.id
+            reattachTextToShownThread()
             refresh()
         }
     }
 
     fun showThread(id: String) {
         shownThreadId = id
+        reattachTextToShownThread()
         scope.launch { refresh() }
+    }
+
+    private fun reattachTextToShownThread() {
+        val current = state.value
+        if (!current.voiceMode && current.providerStatus != ProviderStatus.DISCONNECTED && shownThreadId != attachedThreadId) {
+            lastTextLink?.let { connectSession(it, voice = false, endReason = "ended: switched conversations") }
+        }
     }
 
     private suspend fun shownOrNewThread(): String = shownThreadId ?: store.createThread(UNTITLED).id.also { shownThreadId = it }
@@ -539,7 +550,9 @@ class ThreadController(
                 .map { it.threadId }
                 .toSet()
         if (id == null) {
-            mutableState.update { it.copy(threadId = null, entries = emptyList(), working = false, deviceTaskActive = false) }
+            mutableState.update {
+                it.copy(threadId = null, entries = emptyList(), working = false, foregroundWorking = false, deviceTaskActive = false)
+            }
             return
         }
         // Every turn is listed, so every item is too; a window would strip older turns of their actions.
@@ -550,6 +563,7 @@ class ThreadController(
                 threadId = id,
                 entries = entries,
                 working = hasActiveTasks(id),
+                foregroundWorking = foregroundTask(id) != null,
                 deviceTaskActive =
                     deviceTasks?.running?.value?.threadId == id,
             )
@@ -588,7 +602,10 @@ class ThreadController(
 
     // ---- attachment ----
 
-    fun connect(link: String) = connectSession(link, voice = false)
+    fun connect(link: String) {
+        lastTextLink = link
+        connectSession(link, voice = false)
+    }
 
     fun connectVoice(
         link: String,
@@ -609,9 +626,10 @@ class ThreadController(
         voice: Boolean,
         newThread: Boolean = false,
         callMode: VoiceCallMode? = null,
+        endReason: String = ENDED_FOR_NEW_SESSION,
     ) {
         if (state.value.isLoading || state.value.errorMessage != null) return
-        end(ENDED_FOR_NEW_SESSION)
+        end(endReason)
         val thisAttempt = attempt
         mutableState.update { it.copy(providerStatus = ProviderStatus.CONNECTING, providerMessage = null, voiceMode = voice) }
         connectionJob =
@@ -621,6 +639,7 @@ class ThreadController(
                 try {
                     threadId = if (newThread) store.createThread(UNTITLED).id.also { shownThreadId = it } else shownOrNewThread()
                     attachedThreadId = threadId
+                    mutableState.update { it.copy(attachedThreadId = threadId) }
                     refresh()
                     // Assembled before any provider work so a broken file fails here, with its message.
                     awaitCapabilities()
@@ -726,9 +745,13 @@ class ThreadController(
                         media?.close()
                         media = null
                         attachedThreadId = null
+                        submittingInputId = null
                         mutableState.update {
                             it.copy(
                                 providerStatus = ProviderStatus.DISCONNECTED,
+                                isSubmitting = false,
+                                foregroundWorking = false,
+                                attachedThreadId = null,
                                 providerModel = null,
                                 voiceMode = false,
                                 mediaState = if (it.voiceMode) RealtimeMediaState.Closed else it.mediaState,
@@ -1287,9 +1310,13 @@ class ThreadController(
         media = null
         session = null
         attachedThreadId = null
+        submittingInputId = null
         mutableState.update {
             it.copy(
                 providerStatus = ProviderStatus.DISCONNECTED,
+                isSubmitting = false,
+                foregroundWorking = false,
+                attachedThreadId = null,
                 providerModel = null,
                 voiceMode = false,
                 mediaState = if (it.voiceMode) RealtimeMediaState.Closed else it.mediaState,
@@ -1392,11 +1419,12 @@ class ThreadController(
     }
 
     fun submit(text: String) {
+        if (state.value.voiceOnAnotherThread) return
         if (text.isNotBlank() && reviseDeviceTask(text)) return
         val current = state.value
         val opened = session ?: return
         val threadId = attachedThreadId ?: return
-        if (current.isLoading || current.errorMessage != null ||
+        if (current.isLoading || current.errorMessage != null || current.isSubmitting || threadId != shownThreadId ||
             current.providerStatus != ProviderStatus.CONNECTED || current.voiceMode ||
             text.isBlank()
         ) {
@@ -1411,23 +1439,36 @@ class ThreadController(
             return
         }
         val input = ConversationInput(UUID.randomUUID().toString(), text)
+        submittingInputId = input.id
+        val thisAttempt = attempt
         mutableState.update { it.copy(isSubmitting = true, providerMessage = null) }
         scope.launch {
-            val task = startTask(threadId, input.id, text, opened, spoken = false)
-            if (!task.active) return@launch
             try {
-                opened.submit(input)
-                opened.requestResponse(ResponseRequest(input.id))
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Exception) {
-                if (session === opened) {
-                    task.interrupt("The request could not be sent.")
-                    end("ended: the request could not be sent")
-                    mutableState.update { it.copy(providerMessage = "Could not submit this request. Reconnect to try again.") }
+                if (thisAttempt != attempt || session !== opened || attachedThreadId != threadId) return@launch
+                val task = startTask(threadId, input.id, text, opened, spoken = false)
+                if (!task.active) return@launch
+                try {
+                    opened.submit(input)
+                    opened.requestResponse(ResponseRequest(input.id))
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    if (session === opened) {
+                        task.interrupt("The request could not be sent.")
+                        end("ended: the request could not be sent")
+                        mutableState.update { it.copy(providerMessage = "Could not submit this request. Reconnect to try again.") }
+                    }
                 }
+            } finally {
+                finishSubmitting(input.id)
             }
         }
+    }
+
+    private fun finishSubmitting(inputId: String) {
+        if (submittingInputId != inputId) return
+        submittingInputId = null
+        mutableState.update { it.copy(isSubmitting = false) }
     }
 
     private suspend fun startTask(
@@ -1448,7 +1489,13 @@ class ThreadController(
         tasks[turnId] = task
         progress[turnId] = TaskProgressRecord(nowMillis())
         if (spoken) voiceTurns[leg to inputId] = VoiceTurn(turnId, announceOnly)
-        mutableState.update { it.copy(working = threadId == shownThreadId) }
+        finishSubmitting(inputId)
+        mutableState.update {
+            it.copy(
+                working = shownThreadId?.let(::hasActiveTasks) == true,
+                foregroundWorking = shownThreadId?.let(::foregroundTask) != null,
+            )
+        }
         mutableWorking.update { it + threadId }
         updateWorkCoverage()
         if (!spoken) onWorkAccepted()
@@ -1956,7 +2003,13 @@ class ThreadController(
             if (tasks.values.none { it.threadId == threadId }) mutationLocks.remove(threadId)
             updateWorkCoverage()
             if (!hasActiveTasks(threadId)) mutableWorking.update { it - threadId }
-            mutableState.update { if (it.threadId == threadId) it.copy(isSubmitting = false, working = hasActiveTasks(threadId)) else it }
+            finishSubmitting(inputId)
+            mutableState.update {
+                it.copy(
+                    working = shownThreadId?.let(::hasActiveTasks) == true,
+                    foregroundWorking = shownThreadId?.let(::foregroundTask) != null,
+                )
+            }
             refresh()
             taskScope.cancel()
         }

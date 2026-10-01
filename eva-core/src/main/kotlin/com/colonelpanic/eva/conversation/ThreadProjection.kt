@@ -85,13 +85,14 @@ fun projectEntries(
     }
     for (turn in turns) place(turn.id)
 
-    return order.map { id ->
+    return order.mapNotNull { id ->
         built[id] ?: run {
             val turn = byTurn.getValue(id)
             val answer = answers[id].orEmpty().joinToString("\n")
             when {
                 turn.status == TurnStatus.ANSWERED -> {
-                    ConversationEntry(id, requests[id] ?: turn.request, answer.ifBlank { "Response completed." }, EntryStatus.ANSWER)
+                    val request = requests[id] ?: turn.request
+                    if (request.isBlank() && answer.isBlank()) null else ConversationEntry(id, request, answer, EntryStatus.ANSWER)
                 }
 
                 turn.status == TurnStatus.OPEN -> {
