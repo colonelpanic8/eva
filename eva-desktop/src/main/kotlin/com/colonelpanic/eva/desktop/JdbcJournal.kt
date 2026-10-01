@@ -34,10 +34,13 @@ class JdbcJournal(
                     if (version == 0) {
                         SCHEMA
                     } else {
-                        listOf(
-                            "ALTER TABLE invocations ADD COLUMN initiator_json TEXT",
-                            "ALTER TABLE items ADD COLUMN initiator_json TEXT",
-                        )
+                        buildList {
+                            if (version < 8) {
+                                add("ALTER TABLE invocations ADD COLUMN initiator_json TEXT")
+                                add("ALTER TABLE items ADD COLUMN initiator_json TEXT")
+                            }
+                            addAll(SESSION_CATALOGS)
+                        }
                     }
                 statements.forEach { sql -> connection.createStatement().use { it.execute(sql) } }
                 connection.createStatement().use { it.execute("PRAGMA user_version = $VERSION") }
@@ -73,7 +76,15 @@ class JdbcJournal(
     override fun close() = runBlocking { mutex.withLock { connection.close() } }
 
     companion object {
-        const val VERSION = 8
+        const val VERSION = 9
+
+        private val SESSION_CATALOGS =
+            listOf(
+                "CREATE TABLE session_catalogs (id TEXT PRIMARY KEY NOT NULL, thread_id TEXT NOT NULL, turn_id TEXT, " +
+                    "created_at INTEGER NOT NULL, kind TEXT NOT NULL, leg_id TEXT, model TEXT, catalog_revision TEXT NOT NULL, " +
+                    "tools_json TEXT NOT NULL, excluded_json TEXT NOT NULL)",
+                "CREATE INDEX session_catalogs_thread_id ON session_catalogs(thread_id)",
+            )
 
         private val SCHEMA =
             listOf(
@@ -91,7 +102,7 @@ class JdbcJournal(
                     "leg_id TEXT, instructions TEXT, history_items INTEGER, initiator_json TEXT)",
                 "CREATE INDEX turns_thread_id ON turns(thread_id)",
                 "CREATE INDEX items_thread_id ON items(thread_id)",
-            )
+            ) + SESSION_CATALOGS
     }
 }
 

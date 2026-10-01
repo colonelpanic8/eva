@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.capability
 
+import com.colonelpanic.eva.diagnostics.EvaTrace
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
@@ -94,7 +95,24 @@ class CapabilityDispatcher(
                     initiator = proposal.initiator,
                 )
             val claim = journal { repository.claim(initial) }
-            if (claim.record.fingerprint != initial.fingerprint) throw ConflictingCallException()
+
+            fun trace(
+                name: String,
+                vararg fields: Pair<String, Any?>,
+            ) = EvaTrace.info(
+                name,
+                "call" to proposal.callId,
+                "capability" to proposal.capabilityId,
+                "initiator" to proposal.initiator?.kind?.wireName,
+                "turn" to proposal.turnId,
+                *fields,
+            )
+            if (claim.record.fingerprint != initial.fingerprint) {
+                trace("tool.conflict")
+                throw ConflictingCallException()
+            }
+            if (!claim.isNew) trace("tool.duplicate", "status" to claim.record.status)
+            if (validationError != null && claim.isNew) trace("tool.rejected", "status" to claim.record.status, "reason" to validationError)
             if (!claim.isNew || validationError != null) return@withLock claim.record
 
             var phase = InvocationStatus.CLAIMED
@@ -110,6 +128,7 @@ class CapabilityDispatcher(
                         "This action is temporarily unavailable. No app was opened."
                     }
                 if (unavailable != null) {
+                    trace("tool.rejected", "status" to InvocationStatus.NOT_EXECUTED, "reason" to unavailable)
                     return@withLock journal {
                         transition(proposal.callId, phase, InvocationStatus.NOT_EXECUTED, unavailable)
                     }
@@ -123,10 +142,12 @@ class CapabilityDispatcher(
                         }
                     }
                 if (admitted == null) {
+                    trace("tool.rejected", "status" to InvocationStatus.NOT_EXECUTED, "reason" to admissionRejection)
                     return@withLock journal {
                         transition(proposal.callId, phase, InvocationStatus.NOT_EXECUTED, admissionRejection)
                     }
                 }
+                trace("tool.admitted")
                 currentCoroutineContext().ensureActive()
                 val outcome =
                     try {
@@ -139,8 +160,9 @@ class CapabilityDispatcher(
                     }
                 journal(mayHaveExecuted = true) {
                     transition(proposal.callId, phase, outcome.status, outcome.message, outcome.data)
-                }
+                }.also { trace("tool.completed", "status" to it.status) }
             } catch (error: CancellationException) {
+                trace("tool.cancelled", "phase" to phase)
                 journal(mayHaveExecuted = phase == InvocationStatus.DISPATCHING) {
                     val status = if (phase == InvocationStatus.CLAIMED) InvocationStatus.NOT_EXECUTED else InvocationStatus.UNKNOWN
                     val message =

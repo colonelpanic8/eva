@@ -15,6 +15,7 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.colonelpanic.eva.ForegroundServiceGate
 import com.colonelpanic.eva.MainActivity
+import com.colonelpanic.eva.diagnostics.EvaTrace
 import kotlinx.coroutines.flow.first
 
 interface TurnWorkHost {
@@ -90,11 +91,14 @@ class TurnWorkService : Service() {
             } else {
                 startForeground(NOTIFICATION_ID, notice)
             }
-        } catch (_: SecurityException) {
+        } catch (error: SecurityException) {
+            EvaTrace.info("coverage.refused", "mode" to mode, "error" to error.javaClass.simpleName)
             return false
-        } catch (_: IllegalStateException) {
+        } catch (error: IllegalStateException) {
+            EvaTrace.info("coverage.refused", "mode" to mode, "error" to error.javaClass.simpleName)
             return false
         }
+        EvaTrace.info("coverage.started", "mode" to mode)
         coverage = mode
         host?.workCoverageChanged(mode)
         promotion.value = mode
@@ -102,6 +106,7 @@ class TurnWorkService : Service() {
     }
 
     private fun foregroundRejected() {
+        EvaTrace.info("coverage.rejected")
         gate.startRejected()
         promotion.value = WorkCoverage.NONE
         host?.workCoverageChanged(WorkCoverage.NONE)
@@ -113,6 +118,7 @@ class TurnWorkService : Service() {
     override fun onDestroy() {
         handler.removeCallbacks(updateNotification)
         val unexpectedlyLost = coverage != WorkCoverage.NONE && promotion.value != null && host?.needsWorkCoverage() == true
+        EvaTrace.info("coverage.destroyed", "coverage" to coverage, "unexpected" to unexpectedlyLost)
         coverage = WorkCoverage.NONE
         if (promotion.value != null) promotion.value = WorkCoverage.NONE
         host?.workCoverageChanged(WorkCoverage.NONE)
@@ -133,6 +139,7 @@ class TurnWorkService : Service() {
     ) = timedOut()
 
     private fun timedOut() {
+        EvaTrace.info("coverage.timeout", "coverage" to coverage, "needed" to host?.needsWorkCoverage())
         if (host?.needsWorkCoverage() == true) {
             if (tryPromote(WorkCoverage.LONG_RUNNING)) return
             host?.workCoverageLimited(START_DENIED)
@@ -142,6 +149,7 @@ class TurnWorkService : Service() {
     }
 
     private fun stopCoverage() {
+        EvaTrace.info("coverage.stopped", "coverage" to coverage)
         coverage = WorkCoverage.NONE
         promotion.value = WorkCoverage.NONE
         host?.workCoverageChanged(WorkCoverage.NONE)
@@ -183,6 +191,7 @@ class TurnWorkService : Service() {
                     )
                 }
             ) {
+                EvaTrace.info("coverage.start_denied", "upgrade" to upgrade, "previous" to previous)
                 if (upgrade && previous == WorkCoverage.SHORT_SERVICE) {
                     promotion.value = previous
                     return

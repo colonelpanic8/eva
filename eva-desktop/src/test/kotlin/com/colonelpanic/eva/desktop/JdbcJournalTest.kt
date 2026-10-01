@@ -29,6 +29,62 @@ class JdbcJournalTest {
     private val file get() = folder.root.resolve("eva-actions.db")
 
     @Test
+    fun `version eight keeps its history and gains session catalog records like the phone`() =
+        runTest {
+            DriverManager.getConnection("jdbc:sqlite:${file.absolutePath}").use { db ->
+                db.createStatement().use { statement ->
+                    statement.execute(
+                        "CREATE TABLE invocations (call_id TEXT PRIMARY KEY NOT NULL, fingerprint TEXT NOT NULL, request TEXT NOT NULL, destination TEXT, status TEXT NOT NULL, message TEXT NOT NULL, created_at INTEGER NOT NULL, capability_id TEXT NOT NULL, catalog_revision TEXT NOT NULL, title TEXT, thread_id TEXT, turn_id TEXT, arguments_json TEXT, provenance_json TEXT, data_json TEXT, initiator_json TEXT)",
+                    )
+                    statement.execute(
+                        "CREATE TABLE threads (id TEXT PRIMARY KEY NOT NULL, title TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
+                    )
+                    statement.execute(
+                        "CREATE TABLE turns (id TEXT PRIMARY KEY NOT NULL, thread_id TEXT NOT NULL, request TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, side_effect_call_id TEXT)",
+                    )
+                    statement.execute(
+                        "CREATE TABLE items (id TEXT PRIMARY KEY NOT NULL, thread_id TEXT NOT NULL, turn_id TEXT, created_at INTEGER NOT NULL, type TEXT NOT NULL, text TEXT, spoken INTEGER, truncated INTEGER, call_id TEXT, capability_id TEXT, title TEXT, arguments TEXT, notice_kind TEXT, leg_id TEXT, instructions TEXT, history_items INTEGER, initiator_json TEXT)",
+                    )
+                    statement.execute("INSERT INTO threads VALUES ('thread','Old',1,1)")
+                    statement.execute(
+                        "INSERT INTO items (id,thread_id,created_at,type,text,spoken) VALUES ('old','thread',1,'USER_MESSAGE','Hello',1)",
+                    )
+                    statement.execute("PRAGMA user_version = 8")
+                }
+            }
+            val record =
+                com.colonelpanic.eva.conversation.SessionCatalogRecord(
+                    "session",
+                    "thread",
+                    null,
+                    2,
+                    com.colonelpanic.eva.conversation.SessionKind.VOICE,
+                    null,
+                    "gpt-realtime",
+                    "rev",
+                    listOf(
+                        com.colonelpanic.eva.conversation
+                            .OfferedTool("eva.test", "Test"),
+                    ),
+                    listOf("extension.excluded"),
+                )
+            JdbcJournal(file).use { journal ->
+                val store = JdbcConversationStore(journal)
+                assertEquals("Hello", (store.items("thread").single() as ThreadItem.UserMessage).text)
+                assertEquals(1, store.itemCount("thread"))
+                store.recordSessionCatalog(record)
+            }
+            JdbcJournal(file).use { journal ->
+                assertEquals(listOf(record), JdbcConversationStore(journal).sessionCatalogs("thread"))
+                val version =
+                    journal.read { db ->
+                        db.createStatement().use { it.executeQuery("PRAGMA user_version").use { rows -> rows.getInt(1) } }
+                    }
+                assertEquals(JdbcJournal.VERSION, version)
+            }
+        }
+
+    @Test
     fun `version seven preserves legacy origins and round trips new initiation identities`() =
         runTest {
             DriverManager.getConnection("jdbc:sqlite:${file.absolutePath}").use { db ->

@@ -12,6 +12,8 @@ import kotlinx.coroutines.CancellationException
  */
 class PreferredDeviceBackend(
     private val candidates: List<Candidate>,
+    /** Told the candidate name and why it was passed over, before the next one is tried. */
+    private val onFallback: (String, String) -> Unit = { _, _ -> },
 ) : DeviceBackend {
     class Candidate(
         val name: String,
@@ -40,6 +42,7 @@ class PreferredDeviceBackend(
                 current ?: run {
                     val problem = candidate.problem()
                     if (problem != null) {
+                        onFallback(candidate.name, problem)
                         failures += "${candidate.name}: $problem"
                         index++
                         return@run null
@@ -51,6 +54,7 @@ class PreferredDeviceBackend(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
+                onFallback(candidate.name, error.message ?: error.javaClass.simpleName)
                 failures += "${candidate.name}: ${error.message ?: error.javaClass.simpleName}"
                 current = null
                 active = null

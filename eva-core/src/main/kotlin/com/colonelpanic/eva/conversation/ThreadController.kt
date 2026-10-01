@@ -24,6 +24,7 @@ import com.colonelpanic.eva.conversation.prompt.PromptDefaults
 import com.colonelpanic.eva.conversation.prompt.VoiceCallMode
 import com.colonelpanic.eva.conversation.prompt.Wording
 import com.colonelpanic.eva.devicecontrol.TaskPhase
+import com.colonelpanic.eva.diagnostics.EvaTrace
 import com.colonelpanic.eva.providers.CallIdentity
 import com.colonelpanic.eva.providers.CallRejection
 import com.colonelpanic.eva.providers.Continuation
@@ -154,6 +155,7 @@ class ThreadController(
     private val tasks = mutableMapOf<String, TurnTask>()
     private val progress = mutableMapOf<String, TaskProgressRecord>()
     private val mutableTaskSnapshots = MutableStateFlow<List<TaskSnapshot>>(emptyList())
+    private val taskTrace = TaskStateTrace()
     val taskSnapshots = mutableTaskSnapshots.asStateFlow()
     private var workCoverage = WorkCoverage.NONE
     private val coverageNotices = mutableSetOf<Pair<String, String>>()
@@ -216,6 +218,7 @@ class ThreadController(
                     baseState.canStall() && now - record.lastProgressAt >= stallPeriodMillis(),
                 )
             }
+        taskTrace.observe(mutableTaskSnapshots.value)
     }
 
     private fun taskProgress(turnId: String) {
@@ -226,6 +229,7 @@ class ThreadController(
         event: ProviderEvent,
         leg: ConversationSession,
     ) {
+        traceProviderEvent(event, leg.connectionEpoch)
         val input =
             when (event) {
                 is ProviderEvent.ResponseStarted -> event.inputId
@@ -241,6 +245,7 @@ class ThreadController(
     }
 
     fun stopTask(taskId: String) {
+        EvaTrace.info("task.stop", "task" to taskId, "known" to (taskId in tasks))
         tasks[taskId]?.interrupt(wording().message(Wording.TURN_STOP_REQUESTED))
     }
 
@@ -630,6 +635,7 @@ class ThreadController(
     ) {
         if (state.value.isLoading || state.value.errorMessage != null) return
         end(endReason)
+        EvaTrace.info("session.connecting", "voice" to voice, "newThread" to newThread, "broker" to link.isNotBlank())
         val thisAttempt = attempt
         mutableState.update { it.copy(providerStatus = ProviderStatus.CONNECTING, providerMessage = null, voiceMode = voice) }
         connectionJob =
@@ -736,6 +742,13 @@ class ThreadController(
                 } finally {
                     currentCoroutineContext().cancelChildren()
                     val reason = endReasons.remove(thisAttempt) ?: "ended: the provider closed the connection"
+                    EvaTrace.info(
+                        "session.closed",
+                        "thread" to threadId,
+                        "voice" to voice,
+                        "opened" to (openedSession != null),
+                        "reason" to reason,
+                    )
                     if (openedSession != null && threadId != null) {
                         val label = "${if (voice) "Call" else "Session"} $reason"
                         withContext(NonCancellable) { store.append(notice(threadId, null, NoticeKind.SESSION_ENDED, label)) }
@@ -799,6 +812,15 @@ class ThreadController(
                 val label = listOfNotNull(if (voice) "Voice session" else "Text session", model).joinToString(" · ")
                 store.append(
                     notice(threadId, null, NoticeKind.SESSION_STARTED, connectionTools.getValue(opened).catalog.sessionNotice(label)),
+                )
+                store.recordOffered(
+                    threadId,
+                    null,
+                    if (voice) SessionKind.VOICE else SessionKind.TEXT,
+                    null,
+                    model,
+                    connectionTools.getValue(opened).catalog,
+                    nowMillis(),
                 )
             }
 
@@ -1932,6 +1954,13 @@ class ThreadController(
 
         private suspend fun closeTurn(status: TurnStatus) =
             terminalWrites.withLock {
+                EvaTrace.info(
+                    "turn.closed",
+                    "task" to turnId,
+                    "status" to status,
+                    "answered" to answered,
+                    "forceStopped" to (forceStopReason != null),
+                )
                 store.closeTurn(
                     turnId,
                     if (answered) {
@@ -1947,6 +1976,7 @@ class ThreadController(
             }
 
         fun forceStop() {
+            EvaTrace.info("task.force_stop", "task" to turnId, "escalated" to (forceStopReason != null))
             if (forceStopReason != null) {
                 forceEscalated.complete(Unit)
                 return
@@ -1969,6 +1999,7 @@ class ThreadController(
         fun interrupt(reason: String) {
             val drainingDevice = deviceTasks?.stop(turnId) == true
             if (!active) return
+            EvaTrace.info("task.interrupted", "task" to turnId, "reason" to reason)
             active = false
             refreshTaskSnapshots()
             launchFinalization(this) {
@@ -1985,6 +2016,7 @@ class ThreadController(
 
         private fun fail(reason: String) {
             if (!active) return
+            EvaTrace.info("task.failed", "task" to turnId, "rehomed" to rehomed, "delegated" to delegated, "reason" to reason)
             if (!rehomed && deviceTasks?.owns(turnId) == true) {
                 legLost()
                 return
@@ -2046,6 +2078,7 @@ class ThreadController(
             if (!active || rehomed || delegated) return
             val voiceLeg = leg ?: return
             delegated = true
+            EvaTrace.info("handoff.started", "task" to turnId, "call" to call.callId)
             updateWorkCoverage()
             proposedCalls += call
             request = instruction
@@ -2174,6 +2207,18 @@ class ThreadController(
                                             check(event.catalogRevision == catalog.revision)
                                             if (!connected) {
                                                 connected = true
+                                                store.recordOffered(
+                                                    threadId,
+                                                    turnId,
+                                                    SessionKind.TEXT_LEG,
+                                                    textLeg.id,
+                                                    listOfNotNull(
+                                                        event.model,
+                                                        event.backendModel,
+                                                    ).distinct().joinToString(" · ").ifBlank { null },
+                                                    catalog,
+                                                    nowMillis(),
+                                                )
                                                 if (catalog.excludedTools.isNotEmpty()) {
                                                     store.append(
                                                         notice(
@@ -2186,6 +2231,12 @@ class ThreadController(
                                                 }
                                                 opened.requestResponse(ResponseRequest(turnId))
                                                 backgroundState = "WORKING"
+                                                EvaTrace.info(
+                                                    "handoff.connected",
+                                                    "task" to turnId,
+                                                    "leg" to textLeg.id,
+                                                    "delegated" to delegated,
+                                                )
                                                 taskProgress(turnId)
                                                 backgroundReady.complete(true)
                                             }

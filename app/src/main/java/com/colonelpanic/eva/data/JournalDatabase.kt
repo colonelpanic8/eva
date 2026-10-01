@@ -97,12 +97,18 @@ class JournalDatabase(
                 "call_id TEXT, capability_id TEXT, title TEXT, arguments TEXT, notice_kind TEXT, " +
                 ADDED_ITEM_COLUMNS.entries.joinToString { (name, type) -> "$name $type" } + ")",
         )
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS session_catalogs (id TEXT PRIMARY KEY NOT NULL, thread_id TEXT NOT NULL, turn_id TEXT, " +
+                "created_at INTEGER NOT NULL, kind TEXT NOT NULL, leg_id TEXT, model TEXT, catalog_revision TEXT NOT NULL, " +
+                "tools_json TEXT NOT NULL, excluded_json TEXT NOT NULL)",
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS session_catalogs_thread_id ON session_catalogs(thread_id)")
         db.execSQL("CREATE INDEX IF NOT EXISTS turns_thread_id ON turns(thread_id)")
         db.execSQL("CREATE INDEX IF NOT EXISTS items_thread_id ON items(thread_id)")
     }
 
     companion object {
-        const val VERSION = 8
+        const val VERSION = 9
         private val ADDED_ITEM_COLUMNS =
             linkedMapOf(
                 "leg_id" to "TEXT",
