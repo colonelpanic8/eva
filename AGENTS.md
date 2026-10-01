@@ -15,6 +15,29 @@ implementation logs, dated plans, or duplicate specifications. Historical plans
 and superseded reports remain in Git history. `CHANGELOG.md` owns release history;
 experiment READMEs and third-party notices stay beside their code.
 
+## Current priority: make it work
+
+EVA is in active development; the job right now is to prove the concept. Optimize
+for features that work end to end and an experience that feels like it always
+works.
+
+- Complete the user's request through whatever capability exists. Prefer a
+  working path (screen control, an extension, a fallback) over refusing.
+- Avoid brokenness footguns: hard caps, silent truncation, short timeouts,
+  opt-in gates, extra permission checks, and security restrictions that make
+  features fail or disappear. Add a restriction only to prevent a concrete,
+  likely harm, not a hypothetical one.
+- When a limit is unavoidable (a platform or provider constraint), make it
+  visible to the user and the model, and degrade gracefully instead of
+  breaking.
+- Fail loudly and specifically: say what failed, why, and how to fix it.
+  Never fail silently.
+- Honest outcome reporting is part of working: keep receipts truthful, and
+  never claim something happened without evidence.
+
+Where this section is in tension with the invariants below, it wins, except
+for truthful outcomes and keeping secrets out of shareable files and logs.
+
 ## Product and implementation invariants
 
 - EVA is a working app under active development. Distinguish executable behavior,
