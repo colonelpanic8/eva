@@ -59,9 +59,6 @@ private class BrokerSession(
 ) : ConversationSession {
     override val connectionEpoch: String = UUID.randomUUID().toString()
 
-    /** The voice broker bounds typed input to 1,000 characters. */
-    override val maxInputChars = 1000
-
     private val incoming = Channel<String>(64)
     private val closed = AtomicBoolean(false)
     private var collected = false
@@ -291,9 +288,7 @@ private class BrokerSession(
 
     override suspend fun submit(input: ConversationInput) {
         check(sessionId != null && !closed.get() && buffered == null && active == null)
-        require(input.text.isNotBlank() && input.text.length <= maxInputChars && input.id.length in 1..128) {
-            "A request must be 1 to $maxInputChars characters."
-        }
+        require(input.text.isNotBlank() && input.id.length in 1..128) { "A request must not be empty." }
         buffered = input
     }
 

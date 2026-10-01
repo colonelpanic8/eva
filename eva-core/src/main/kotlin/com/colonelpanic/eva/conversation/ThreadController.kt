@@ -32,7 +32,6 @@ import com.colonelpanic.eva.providers.ConversationInput
 import com.colonelpanic.eva.providers.ConversationProvider
 import com.colonelpanic.eva.providers.ConversationSession
 import com.colonelpanic.eva.providers.CorrelatedToolResult
-import com.colonelpanic.eva.providers.MAX_INPUT_CHARS
 import com.colonelpanic.eva.providers.MODEL_RESULT_CHARS
 import com.colonelpanic.eva.providers.ProviderEvent
 import com.colonelpanic.eva.providers.ProviderToolCatalog
@@ -937,7 +936,7 @@ class ThreadController(
                     val instruction = (event.arguments["task"] as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim()
                     if (task == null ||
                         connectionTools[opened]?.catalog?.tools?.any { it.capabilityId == DEFER_TO_TEXT.capabilityId } != true ||
-                        event.arguments.size != 1 || instruction.isNullOrEmpty() || instruction.length > 1000
+                        event.arguments.size != 1 || instruction.isNullOrEmpty()
                     ) {
                         opened.submitToolResult(
                             CorrelatedToolResult(
@@ -1079,7 +1078,7 @@ class ThreadController(
                     "NOT_EXECUTED" to Wording.DEVICE_TASK_NONE
                 }
 
-                correction.isNullOrEmpty() || correction.length > 4000 -> {
+                correction.isNullOrEmpty() -> {
                     "NOT_EXECUTED" to Wording.DEVICE_TASK_INVALID
                 }
 
@@ -1412,7 +1411,7 @@ class ThreadController(
     }
 
     fun reviseDeviceTask(text: String): Boolean {
-        if (text.isBlank() || text.length > 4000) return false
+        if (text.isBlank()) return false
         val thread = shownThreadId ?: return false
         val owner = deviceTasks?.running?.value?.takeIf { it.threadId == thread } ?: return false
         if (text.trim().lowercase() in setOf("stop", "cancel", "stop device task", "cancel device task")) {
@@ -1482,10 +1481,6 @@ class ThreadController(
         }
         if (foregroundTask(threadId) != null) {
             mutableState.update { it.copy(providerMessage = "EVA is still working on the last request.") }
-            return
-        }
-        if (text.length > opened.maxInputChars) {
-            mutableState.update { it.copy(providerMessage = requestTooLong(text.length, opened.maxInputChars)) }
             return
         }
         val input = ConversationInput(UUID.randomUUID().toString(), text)
@@ -1692,7 +1687,7 @@ class ThreadController(
                     id,
                     event.capabilityId,
                     arguments.mapValues { it.value.orEmpty() },
-                    request.ifBlank { VOICE_REQUEST }.take(MAX_PROPOSAL_REQUEST),
+                    request.ifBlank { VOICE_REQUEST },
                     catalogRevision = context.snapshot.revision,
                     threadId = threadId,
                     turnId = turnId,
@@ -2367,16 +2362,7 @@ class ThreadController(
             setOf(CapabilityRegistry.CONVERSATIONS_SEARCH, CapabilityRegistry.CONVERSATION_READ, CapabilityRegistry.SMS_SEND)
         const val UNTITLED = "New conversation"
         private const val VOICE_REQUEST = "Voice request"
-        private const val MAX_PROPOSAL_REQUEST = 1000
         private const val STILL_WORKING_NOTE_MILLIS = 8_000L
-
-        /** The longest typed request a turn accepts. */
-        const val MAX_REQUEST_CHARS = MAX_INPUT_CHARS
-
-        fun requestTooLong(
-            length: Int,
-            limit: Int,
-        ) = "This request is $length characters; the connected provider accepts up to $limit. Shorten it or split it into parts."
 
         /** Bounds the wait for a goodbye whose end is never reported. */
         private const val END_SPEECH_LIMIT_MILLIS = 10_000L
@@ -2412,7 +2398,7 @@ class ThreadController(
                     "",
                     Json
                         .parseToJsonElement(
-                            """{"type":"object","properties":{"correction":{"type":"string","minLength":1,"maxLength":4000}},"required":["correction"],"additionalProperties":false}""",
+                            """{"type":"object","properties":{"correction":{"type":"string","minLength":1}},"required":["correction"],"additionalProperties":false}""",
                         ).jsonObject,
                 ),
             )
@@ -2439,7 +2425,7 @@ class ThreadController(
                     "",
                     Json
                         .parseToJsonElement(
-                            """{"type":"object","properties":{"task":{"type":"string","minLength":1,"maxLength":1000}},"required":["task"],"additionalProperties":false}""",
+                            """{"type":"object","properties":{"task":{"type":"string","minLength":1}},"required":["task"],"additionalProperties":false}""",
                         ).jsonObject,
                 ),
             )

@@ -62,7 +62,7 @@ class CapabilityDispatcher(
     ): InvocationRecord =
         submissions.withLock(proposal.callId) {
             var snapshot = proposal.copy(arguments = Collections.unmodifiableMap(proposal.arguments.toMap()))
-            if (proposal.callId.isBlank() || proposal.callId.length > 256 || proposal.request.length > 1000) {
+            if (proposal.callId.isBlank() || proposal.callId.length > 256) {
                 throw ProposalRejectedException("The request has invalid metadata. No app was opened.")
             }
             val catalog = registry.snapshot

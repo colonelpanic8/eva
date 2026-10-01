@@ -42,7 +42,7 @@ object BundledCapabilities {
                 CapabilityRegistry.DEVICE_TASK,
                 "Run a device task",
                 schema(
-                    """{"type":"object","properties":{"goal":{"type":"string","minLength":1,"maxLength":4000}},"required":["goal"],"additionalProperties":false}""",
+                    """{"type":"object","properties":{"goal":{"type":"string","minLength":1}},"required":["goal"],"additionalProperties":false}""",
                 ),
             ),
             tool(

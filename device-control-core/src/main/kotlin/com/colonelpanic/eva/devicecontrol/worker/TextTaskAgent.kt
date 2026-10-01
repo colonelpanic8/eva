@@ -62,7 +62,7 @@ class TextTaskAgent(
     private var uncertain = false
 
     override fun revise(correction: String) {
-        require(correction.isNotBlank() && correction.length <= 4000)
+        require(correction.isNotBlank())
         synchronized(control) {
             revisionNumber++
             revisions += correction

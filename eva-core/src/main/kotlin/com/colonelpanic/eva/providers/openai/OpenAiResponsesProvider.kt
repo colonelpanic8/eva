@@ -247,7 +247,7 @@ private class OpenAiResponsesSession(
 
     override suspend fun submit(input: ConversationInput) {
         check(buffered == null)
-        require(input.text.isNotBlank() && input.text.length <= maxInputChars) { "A request must be 1 to $maxInputChars characters." }
+        require(input.text.isNotBlank()) { "A request must not be empty." }
         buffered = input
     }
 

@@ -32,7 +32,8 @@ const server = createServer(async (req, res) => {
   }
 });
 const wss = new WebSocketServer({ noServer: true, maxPayload: 128 * 1024 });
-const deviceWss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
+// Loopback-only; sized for EVA's composed instructions, full tool catalog and long typed requests.
+const deviceWss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 * 1024 });
 attachDeviceConnections(deviceWss, token);
 server.on("upgrade", (req, socket, head) => {
   if (req.url === "/device") {
