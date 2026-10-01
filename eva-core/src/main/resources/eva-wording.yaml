@@ -6,37 +6,10 @@ tools:
       Look up information on the web and return a concise answer with sources, without opening
       anything on the phone. Use this for research and reading a public page. The web package's
       search and open actions only open the browser; they do not retrieve content. For interactive
-      or authenticated sites, use an explicitly requested device task instead.
+      or logged-in sites, use a device task to operate the browser instead.
     parameters:
       question: The complete research question, including relevant constraints; do not include secrets.
       sourceUrl: An optional public HTTPS page to read specifically; do not include credentials or private links.
-  device-worker.observe: {"description": "Re-read the screen without acting, e.g. after content finished loading.", "parameters": {}}
-  device-worker.launch_app: {"description": "Bring an app to the foreground by Android package name.", "parameters": {"package": "Package name, e.g. com.android.settings.", "activity": "Specific activity, or null for the app's default.", "intent": "A few words: what this action should achieve."}}
-  device-worker.activate_element: {"description": "Click a clickable or checkable element (flag c or k).", "parameters": {"element": "Index from the current observation table.", "intent": "A few words: what this action should achieve."}}
-  device-worker.set_text: {"description": "Enter text into an editable element (flag e). The result reports the exact read-back; check it before continuing.", "parameters": {"element": "Index from the current observation table.", "text": "Text to enter.", "replace": "true replaces, false appends.", "intent": "A few words: what this action should achieve."}}
-  device-worker.scroll: {"description": "Scroll a scrollable element (flag s). `down` reveals content further down.", "parameters": {"direction": "Direction the viewport moves.", "element": "Scrollable element index, or null for the main one.", "intent": "A few words: what this action should achieve."}}
-  device-worker.back: {"description": "Press the system Back button.", "parameters": {"intent": "A few words: what this action should achieve."}}
-  device-worker.home: {"description": "Go to the home screen.", "parameters": {"intent": "A few words: what this action should achieve."}}
-  device-worker.tap_point: {"description": "Tap a pixel inside element `within`. Only when no element can be activated directly.", "parameters": {"x": "Pixel x.", "y": "Pixel y.", "within": "Element whose bounds contain the point.", "intent": "A few words: what this action should achieve."}}
-  device-worker.swipe: {"description": "Swipe between two pixels that both lie inside element `within`.", "parameters": {"start_x": "Start x.", "start_y": "Start y.", "end_x": "End x.", "end_y": "End y.", "within": "Element whose bounds contain both points.", "duration_ms": "50-5000, or null for the default.", "intent": "A few words: what this action should achieve."}}
-  device-worker.long_press: {"description": "Press and hold the centre of an element.", "parameters": {"element": "Index from the current observation table.", "intent": "A few words: what this action should achieve."}}
-  device-worker.screenshot: {"description": "Attach an image of the current screen to the next turn. Limited per task; use only when the table cannot answer (images, unlabeled controls).", "parameters": {"intent": "A few words: what this action should achieve."}}
-  device-worker.ime_action: {"description": "Press the keyboard's action key in the focused editable element (flags e and f). It may submit or send the field whatever `action` says, so prefer an explicit button.", "parameters": {"element": "Index from the current observation table.", "action": "Keyboard action to trigger.", "intent": "A few words: what this action should achieve."}}
-  device-worker.open_url: {"description": "Open an http(s) web address in the default app, or in `package`.", "parameters": {"url": "Absolute http:// or https:// URL.", "package": "App to open it in, or null for the default.", "intent": "A few words: what this action should achieve."}}
-  device-worker.open_notifications: {"description": "Open the notification shade.", "parameters": {"intent": "A few words: what this action should achieve."}}
-  device-worker.ask_user: {"description": "Ask the user one short question and wait for the answer. Use when the request is ambiguous or a needed detail is missing.", "parameters": {"question": "One short question the user can answer by voice."}}
-  device-worker.finish: {"description": "End the task. `completed` only when the current screen shows the goal is done. `blocked` when the screen or app prevents progress. `failed` otherwise.", "parameters": {"status": "Outcome.", "summary": "What was done or found, or why not; spoken to the user."}}
-  eva.device.task: {"description": "Run a multi-step device-control task: working through several screens, searching an app or a long list, or anything likely to take more than a few screen actions. A few actions you can see how to do, such as a tap, text entry, scroll, Back, or Home, are faster with the direct screen tools. Waits until the task ends. While it runs, change or cancel it with the task's revise and stop tools; other actions, including another task, wait their turn and run after it.", "parameters": {"goal": "The complete device task, including user constraints."}}
-  eva.device.task.revise: {"description": "Change the running device task's goal when the user corrects, narrows, or adds to what it is doing. Not for an unrelated request, which should be its own action and runs after the task. An answer to a question the task showed on screen reaches it without this tool.", "parameters": {"correction": "The user's correction, in their words, with any detail needed to apply it."}}
-  eva.device.task.stop: {"description": "Stop the running device task when the user wants it to stop or has changed their mind. Actions queued after it still run. The task's own result reports what it did before stopping."}
-
-  eva.desktop.open_url:
-    description: >-
-      Open an http or https web address in this computer's default browser, or the app registered
-      for it. The result says the address was handed over, not that the page loaded.
-    parameters:
-      url: An absolute http:// or https:// address.
-
   eva.session.defer_to_text:
     description: >-
       Hand the current request to EVA's background text agent when it needs several lookups or
@@ -59,6 +32,33 @@ tools:
       effects; stopping does not undo them. Consult the action receipts for their outcomes.
     parameters:
       taskId: The exact taskId to stop, as returned by handoff or background_status.
+  device-worker.observe: {"description": "Re-read the screen without acting, e.g. after content finished loading.", "parameters": {}}
+  device-worker.launch_app: {"description": "Bring an app to the foreground by Android package name.", "parameters": {"package": "Package name, e.g. com.android.settings.", "activity": "Specific activity, or null for the app's default.", "intent": "A few words: what this action should achieve."}}
+  device-worker.activate_element: {"description": "Click a clickable or checkable element (flag c or k).", "parameters": {"element": "Index from the current observation table.", "intent": "A few words: what this action should achieve."}}
+  device-worker.set_text: {"description": "Enter text into an editable element (flag e). The result reports the exact read-back; check it before continuing.", "parameters": {"element": "Index from the current observation table.", "text": "Text to enter.", "replace": "true replaces, false appends.", "intent": "A few words: what this action should achieve."}}
+  device-worker.scroll: {"description": "Scroll a scrollable element (flag s). `down` reveals content further down.", "parameters": {"direction": "Direction the viewport moves.", "element": "Scrollable element index, or null for the main one.", "intent": "A few words: what this action should achieve."}}
+  device-worker.back: {"description": "Press the system Back button.", "parameters": {"intent": "A few words: what this action should achieve."}}
+  device-worker.home: {"description": "Go to the home screen.", "parameters": {"intent": "A few words: what this action should achieve."}}
+  device-worker.tap_point: {"description": "Tap a pixel inside element `within`. Only when no element can be activated directly.", "parameters": {"x": "Pixel x.", "y": "Pixel y.", "within": "Element whose bounds contain the point.", "intent": "A few words: what this action should achieve."}}
+  device-worker.swipe: {"description": "Swipe between two pixels that both lie inside element `within`.", "parameters": {"start_x": "Start x.", "start_y": "Start y.", "end_x": "End x.", "end_y": "End y.", "within": "Element whose bounds contain both points.", "duration_ms": "50-5000, or null for the default.", "intent": "A few words: what this action should achieve."}}
+  device-worker.long_press: {"description": "Press and hold the centre of an element.", "parameters": {"element": "Index from the current observation table.", "intent": "A few words: what this action should achieve."}}
+  device-worker.screenshot: {"description": "Attach an image of the current screen to the next turn. Limited per task; use only when the table cannot answer (images, unlabeled controls).", "parameters": {"intent": "A few words: what this action should achieve."}}
+  device-worker.ime_action: {"description": "Press the keyboard's action key in the focused editable element (flags e and f). It may submit or send the field whatever `action` says, so prefer an explicit button.", "parameters": {"element": "Index from the current observation table.", "action": "Keyboard action to trigger.", "intent": "A few words: what this action should achieve."}}
+  device-worker.open_url: {"description": "Open an http(s) web address in the default app, or in `package`.", "parameters": {"url": "Absolute http:// or https:// URL.", "package": "App to open it in, or null for the default.", "intent": "A few words: what this action should achieve."}}
+  device-worker.open_notifications: {"description": "Open the notification shade.", "parameters": {"intent": "A few words: what this action should achieve."}}
+  device-worker.ask_user: {"description": "Ask the user one short question and wait for the answer. Use when the request is ambiguous or a needed detail is missing.", "parameters": {"question": "One short question the user can answer by voice."}}
+  device-worker.finish: {"description": "End the task. `completed` only when the current screen shows the goal is done. `blocked` when the screen or app prevents progress. `failed` otherwise.", "parameters": {"status": "Outcome.", "summary": "What was done or found, or why not; spoken to the user."}}
+  eva.device.task: {"description": "Run a multi-step task through any app's UI, including apps without a dedicated EVA integration and browser research on interactive or logged-in sites. Uses the phone screen and is slower than a dedicated tool. A few actions you can see how to do, such as a tap, text entry, scroll, Back, or Home, are faster with the direct screen tools. Waits until the task ends. While it runs, change or cancel it with the task's revise and stop tools; other actions, including another task, wait their turn and run after it.", "parameters": {"goal": "The complete device task, including user constraints."}}
+  eva.device.task.revise: {"description": "Change the running device task's goal when the user corrects, narrows, or adds to what it is doing. Not for an unrelated request, which should be its own action and runs after the task. An answer to a question the task showed on screen reaches it without this tool.", "parameters": {"correction": "The user's correction, in their words, with any detail needed to apply it."}}
+  eva.device.task.stop: {"description": "Stop the running device task when the user wants it to stop or has changed their mind. Actions queued after it still run. The task's own result reports what it did before stopping."}
+
+  eva.desktop.open_url:
+    description: >-
+      Open an http or https web address in this computer's default browser, or the app registered
+      for it. The result says the address was handed over, not that the page loaded.
+    parameters:
+      url: An absolute http:// or https:// address.
+
   eva.session.end:
     description: >-
       Hang up this voice conversation after a brief spoken goodbye; the goodbye finishes playing
@@ -308,11 +308,22 @@ tools:
       returned by memory search. This removes the note, not prior conversations or action
       history containing it.
 messages:
-  catalog-unavailable: >-
-    {count} enabled actions were excluded from this session by catalog transport or safety bounds.
-    Their absence does not mean their apps cannot be operated. Explain that these actions are
-    unavailable in this session and direct the user to Extensions for details; a text session
-    may offer more actions. Do not invent results or claim an absent action was performed.
+  turn-force-stopped: "Force-stopped by you; actions already started may have had effects"
+  force-stop-abandoned: "Stopped waiting for the force-stopped action. Its outcome is unknown; it may still have effects. Check the destination before trying again. Late results will be retained."
+  device-release-uncertain: "The screen is uncertain: a force-stopped device action did not return within ten seconds and may still have effects. Observe the current screen before any further action."
+  unknown-origin: >-
+    This tool call has an unknown origin. Nothing was executed. Ask the user to
+    make a new request so the action can be tied to that request.
+  action-queued: >-
+    EVA has accepted this action and it is queued behind earlier work. The attributed data
+    identifies the pending call. Tell the user it is waiting; do not submit a duplicate or
+    claim it completed. EVA will deliver its final receipt when it finishes.
+  incomplete-action: >-
+    The tool call did not contain a completed item with valid arguments. Nothing was executed.
+    Ask the user to clarify the request if it still needs an action.
+  interrupted-response-action: >-
+    This response was interrupted or did not finish. Its tool call was not executed.
+    Follow the user's latest request; do not claim the interrupted action happened.
   web-research-instructions: >-
     Research the user's question using the hosted web search tool. If a URL is supplied, read
     that public page specifically and use other sources when needed. Cite the sources supporting
@@ -333,6 +344,11 @@ messages:
   web-research-truncated: '[Truncated by EVA: the research answer exceeded the result budget.]'
   web-research-no-sources: No web sources were retrieved; this answer is not verified by web evidence.
   web-research-no-citations: Web search ran but returned no source citations; this answer has no attributable web evidence.
+  catalog-unavailable: >-
+    {count} enabled actions were excluded from this session by catalog transport or safety bounds.
+    Their absence does not mean their apps cannot be operated. Explain that these actions are
+    unavailable in this session and direct the user to Extensions for details; a text session
+    may offer more actions. Do not invent results or claim an absent action was performed.
   handoff-invalid: Provide a task of 1 to 1,000 characters for an active request.
   handoff-started: >-
     EVA's text agent connected and accepted the response request. The taskId identifies the
@@ -373,23 +389,7 @@ messages:
     An action in this thread may have changed external state. Check background_status
     for recent receipts and verify the outcome before requesting more changes.
     Nothing was executed.
-  interrupted-response-action: >-
-    This response was interrupted or did not finish. Its tool call was not executed.
-    Follow the user's latest request; do not claim the interrupted action happened.
-  incomplete-action: >-
-    The tool call did not contain a completed item with valid arguments. Nothing was executed.
-    Ask the user to clarify the request if it still needs an action.
-  action-queued: >-
-    EVA has accepted this action and it is queued behind earlier work. The attributed data
-    identifies the pending call. Tell the user it is waiting; do not submit a duplicate or
-    claim it completed. EVA will deliver its final receipt when it finishes.
-  unknown-origin: >-
-    This tool call has an unknown origin. Nothing was executed. Ask the user to
-    make a new request so the action can be tied to that request.
   unowned-action: No request is active to run this action. Nothing was executed.
-  device-release-uncertain: "The screen is uncertain: a force-stopped device action did not return within ten seconds and may still have effects. Observe the current screen before any further action."
-  force-stop-abandoned: "Stopped waiting for the force-stopped action. Its outcome is unknown; it may still have effects. Check the destination before trying again. Late results will be retained."
-  turn-force-stopped: "Force-stopped by you; actions already started may have had effects"
   turn-stop-requested: Stopped.
   response-failed: The model could not complete this response.
   background-connection-ended: The connection ended before the response completed.

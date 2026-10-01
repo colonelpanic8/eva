@@ -1,16 +1,16 @@
 {
   "formatVersion": 1,
   "id": "android.web",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "title": "Web",
-  "description": "Search the web and open a web address through Android's standard search and view intents, handled by whichever browser or search app the phone has. Opening an address is the one action here that takes its destination from the request, limited to http and https.",
+  "description": "Open web search results or an http or https page on the phone for the user to look at. These actions return only a browser handoff, never search results or page content. To answer a question or look something up, use eva.web.research instead.",
   "androidPackages": [],
   "capabilities": [
     {
       "tool": {
         "name": "search",
         "title": "Search the web",
-        "description": "Open a web search for a query in the user's browser or search app. Prefer answering from your own knowledge; use this when the user asks to search. Reports handoff, not results.",
+        "description": "Open a web search in the phone's browser or search app when the user wants to see the results themselves. Returns only a handoff, never search results or page content. To answer a question or look something up, use eva.web.research instead.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -51,7 +51,7 @@
       "tool": {
         "name": "open",
         "title": "Open a web page",
-        "description": "Open an http or https web address in the user's browser. Reports handoff, not page content.",
+        "description": "Open an http or https page in the phone's browser when the user wants to see it themselves. Returns only a handoff, never page content; opening is not reading. To answer a question or read a public page, use eva.web.research instead.",
         "inputSchema": {
           "type": "object",
           "properties": {
