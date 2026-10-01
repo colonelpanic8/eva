@@ -4,6 +4,12 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Typed requests, voice handoff tasks, and device-task goals and corrections no longer have EVA length limits; receipts keep the full request.
+- A request too long for the model's context now says so plainly instead of showing a generic provider error.
+- The experimental voice broker accepts long requests and full prompts.
+
 ## [0.50.0] - 2026-10-01
 
 ### Upgrade
