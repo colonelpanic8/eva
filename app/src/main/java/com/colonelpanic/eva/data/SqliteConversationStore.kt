@@ -160,23 +160,34 @@ class SqliteConversationStore(
 
     override suspend fun recordSessionCatalog(record: SessionCatalogRecord) {
         withContext(Dispatchers.IO) {
-            helper.writableDatabase.insertOrThrow(
-                "session_catalogs",
-                null,
-                ContentValues().apply {
-                    put("id", record.id)
-                    put("thread_id", record.threadId)
-                    put("turn_id", record.turnId)
-                    put("created_at", record.createdAtMillis)
-                    put("kind", record.kind.name)
-                    put("leg_id", record.legId)
-                    put("model", record.model)
-                    put("catalog_revision", record.catalogRevision)
-                    put("tools_json", SessionCatalogColumns.tools(record.tools))
-                    put("excluded_json", SessionCatalogColumns.ids(record.excludedTools))
-                },
-            )
+            transaction { db ->
+                db.insertCatalog(record)
+                db.execSQL(
+                    "DELETE FROM session_catalogs WHERE thread_id = ? AND rowid NOT IN " +
+                        "(SELECT rowid FROM session_catalogs WHERE thread_id = ? ORDER BY rowid DESC LIMIT ?)",
+                    arrayOf<Any>(record.threadId, record.threadId, ConversationStore.SESSION_CATALOG_LIMIT),
+                )
+            }
         }
+    }
+
+    private fun SQLiteDatabase.insertCatalog(record: SessionCatalogRecord) {
+        insertOrThrow(
+            "session_catalogs",
+            null,
+            ContentValues().apply {
+                put("id", record.id)
+                put("thread_id", record.threadId)
+                put("turn_id", record.turnId)
+                put("created_at", record.createdAtMillis)
+                put("kind", record.kind.name)
+                put("leg_id", record.legId)
+                put("model", record.model)
+                put("catalog_revision", record.catalogRevision)
+                put("tools_json", SessionCatalogColumns.tools(record.tools))
+                put("excluded_json", SessionCatalogColumns.ids(record.excludedTools))
+            },
+        )
     }
 
     override suspend fun sessionCatalogs(

@@ -53,7 +53,10 @@ interface ConversationStore {
     /** OPEN turns left by a dead process become INTERRUPTED; called once at application start. */
     suspend fun recoverInterrupted(): List<Turn>
 
-    /** Records the tool catalog a connection or text leg was offered, for diagnostics. */
+    /**
+     * Records the tool catalog a connection or text leg was offered, for diagnostics. Only the
+     * newest [SESSION_CATALOG_LIMIT] records per thread are kept; older ones are dropped on insert.
+     */
     suspend fun recordSessionCatalog(record: SessionCatalogRecord)
 
     /** Oldest first, the last [limit] catalog records. */
@@ -67,6 +70,7 @@ interface ConversationStore {
 
     companion object {
         const val DEFAULT_ITEM_LIMIT = 200
+        const val SESSION_CATALOG_LIMIT = 50
     }
 }
 

@@ -162,6 +162,13 @@ class JdbcConversationStore(
                 SessionCatalogColumns.tools(record.tools),
                 SessionCatalogColumns.ids(record.excludedTools),
             )
+            db.update(
+                "DELETE FROM session_catalogs WHERE thread_id = ? AND rowid NOT IN " +
+                    "(SELECT rowid FROM session_catalogs WHERE thread_id = ? ORDER BY rowid DESC LIMIT ?)",
+                record.threadId,
+                record.threadId,
+                ConversationStore.SESSION_CATALOG_LIMIT,
+            )
         }
     }
 

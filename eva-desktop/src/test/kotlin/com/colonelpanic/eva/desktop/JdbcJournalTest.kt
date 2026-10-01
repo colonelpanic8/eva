@@ -85,6 +85,32 @@ class JdbcJournalTest {
         }
 
     @Test
+    fun `session catalogs keep only the newest records per thread`() =
+        runTest {
+            JdbcJournal(file).use { journal ->
+                val store = JdbcConversationStore(journal)
+                val limit = com.colonelpanic.eva.conversation.ConversationStore.SESSION_CATALOG_LIMIT
+                (1..limit + 3).forEach {
+                    store.recordSessionCatalog(
+                        com.colonelpanic.eva.conversation.SessionCatalogRecord(
+                            "s$it",
+                            "thread",
+                            null,
+                            it.toLong(),
+                            com.colonelpanic.eva.conversation.SessionKind.TEXT,
+                            null,
+                            null,
+                            "r",
+                            emptyList(),
+                            emptyList(),
+                        ),
+                    )
+                }
+                assertEquals((4..limit + 3).map { "s$it" }, store.sessionCatalogs("thread", limit * 2).map { it.id })
+            }
+        }
+
+    @Test
     fun `version seven preserves legacy origins and round trips new initiation identities`() =
         runTest {
             DriverManager.getConnection("jdbc:sqlite:${file.absolutePath}").use { db ->

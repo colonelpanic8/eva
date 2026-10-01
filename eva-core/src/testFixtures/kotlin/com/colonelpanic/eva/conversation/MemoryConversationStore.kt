@@ -110,7 +110,11 @@ class MemoryConversationStore : ConversationStore {
     }
 
     override suspend fun recordSessionCatalog(record: SessionCatalogRecord) {
-        mutex.withLock { catalogRecords += record }
+        mutex.withLock {
+            catalogRecords += record
+            val thread = catalogRecords.filter { it.threadId == record.threadId }
+            catalogRecords.removeAll(thread.dropLast(ConversationStore.SESSION_CATALOG_LIMIT).toSet())
+        }
     }
 
     override suspend fun sessionCatalogs(

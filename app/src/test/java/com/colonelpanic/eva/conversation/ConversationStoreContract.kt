@@ -94,6 +94,37 @@ abstract class ConversationStoreContract {
         }
 
     @Test
+    fun `only the newest session catalogs per thread are retained`() =
+        fixture().use { fixture ->
+            runBlocking {
+                val thread = fixture.store.createThread("Many sessions")
+                val other = fixture.store.createThread("Other")
+
+                fun record(
+                    index: Int,
+                    threadId: String,
+                ) = SessionCatalogRecord(
+                    "$threadId-$index",
+                    threadId,
+                    null,
+                    index.toLong(),
+                    SessionKind.VOICE,
+                    null,
+                    null,
+                    "r",
+                    emptyList(),
+                    emptyList(),
+                )
+                fixture.store.recordSessionCatalog(record(0, other.id))
+                val limit = ConversationStore.SESSION_CATALOG_LIMIT
+                (1..limit + 5).forEach { fixture.store.recordSessionCatalog(record(it, thread.id)) }
+
+                assertEquals((6..limit + 5).map { "${thread.id}-$it" }, fixture.store.sessionCatalogs(thread.id, limit * 2).map { it.id })
+                assertEquals(listOf("${other.id}-0"), fixture.store.sessionCatalogs(other.id).map { it.id })
+            }
+        }
+
+    @Test
     fun `recovery interrupts only open turns and only once`() =
         fixture().use { fixture ->
             runBlocking {
