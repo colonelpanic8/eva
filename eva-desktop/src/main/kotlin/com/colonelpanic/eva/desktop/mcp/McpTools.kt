@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.desktop.mcp
 
+import com.colonelpanic.eva.capability.BoundedJson
 import com.colonelpanic.eva.capability.ExecutionOutcome
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.extensions.Descriptor
@@ -12,6 +13,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
+import java.math.BigInteger
+import java.math.RoundingMode
 
 /** One tool as an MCP server lists it. */
 data class McpToolListing(
@@ -81,6 +84,8 @@ object McpTools {
                             },
                         )
                         put("result", buildJsonObject { put("maxBytes", ExtensionProtocol.RESULT_BYTES) })
+                        // The server's own definition, so a change EVA's translation hides still changes the contract.
+                        put("_meta", buildJsonObject { put("mcpToolDigest", BoundedJson.digest(source(tool))) })
                     }
                 runCatching { describe(serverTitle, serverVersion, listOf(capability)) }
                     .onFailure { unsupported[tool.name] = "EVA's extension rules reject it" }
@@ -122,7 +127,11 @@ object McpTools {
         return normalized to dropped
     }
 
-    /** A scalar or scalar-array property with only the keywords EVA accepts, or null. */
+    /**
+     * A scalar or scalar-array property EVA can offer without accepting anything the server would
+     * not, or null. Annotations are dropped; integer formats and bounds only ever narrow; any other
+     * constraint, such as a pattern or a string format, makes the property unusable.
+     */
     private fun scalar(
         property: JsonObject,
         item: Boolean = false,
@@ -136,40 +145,62 @@ object McpTools {
         val keywords =
             when (type) {
                 "string" -> setOf("minLength", "maxLength")
-                "integer", "number" -> setOf("minimum", "maximum")
+                "integer" -> setOf("minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "format")
+                "number" -> setOf("minimum", "maximum", "format")
                 "boolean" -> emptySet()
-                "array" -> if (item) return null else setOf("minItems", "maxItems")
+                "array" -> if (item) return null else setOf("minItems", "maxItems", "items")
                 else -> return null
-            } + setOf("description", "enum")
+            } + setOf("type", "description", "enum")
+        if (property.keys.any { it !in keywords && it !in ANNOTATIONS }) return null
         val fields = linkedMapOf<String, JsonElement>("type" to JsonPrimitive(type))
-        for ((key, value) in property) {
-            when {
-                key == "enum" -> {
-                    (value as? JsonArray)?.filter { it != JsonNull }?.takeIf { it.isNotEmpty() }?.let {
-                        fields[key] =
-                            JsonArray(it)
-                    }
-                }
+        property["description"]?.let { fields["description"] = it }
+        property["enum"]?.let { values ->
+            fields["enum"] = JsonArray((values as? JsonArray ?: return null).filter { it != JsonNull }.ifEmpty { return null })
+        }
+        when (type) {
+            "string" -> {
+                listOf("minLength", "maxLength").forEach { key -> property[key]?.let { fields[key] = it } }
+            }
 
-                key in keywords -> {
-                    fields[key] = value
-                }
+            "number" -> {
+                listOf("minimum", "maximum").forEach { key -> property[key]?.let { fields[key] = it } }
+            }
+
+            "integer" -> {
+                integerBounds(property, fields) ?: return null
+            }
+
+            "array" -> {
+                listOf("minItems", "maxItems").forEach { key -> property[key]?.let { fields[key] = it } }
+                fields["items"] = (property["items"] as? JsonObject)?.let { scalar(it, item = true) } ?: return null
             }
         }
-        if (type == "integer") {
-            clampInteger(fields, "minimum")
-            clampInteger(fields, "maximum")
-        }
-        if (type == "array") fields["items"] = (property["items"] as? JsonObject)?.let { scalar(it, item = true) } ?: return null
         return JsonObject(fields)
     }
 
-    private fun clampInteger(
+    /** Intersects every bound and format the server declares, rounding inward; null for an unknown format. */
+    private fun integerBounds(
+        property: JsonObject,
         fields: MutableMap<String, JsonElement>,
-        key: String,
-    ) {
-        val value = (fields[key] as? JsonPrimitive)?.contentOrNull?.toBigDecimalOrNull() ?: return
-        fields[key] = JsonPrimitive(value.toBigInteger().coerceIn(-MAX_SAFE_INTEGER, MAX_SAFE_INTEGER))
+    ): Unit? {
+        fun number(key: String) = (property[key] as? JsonPrimitive)?.contentOrNull?.toBigDecimalOrNull()
+        val lows = mutableListOf(-MAX_SAFE_INTEGER)
+        val highs = mutableListOf(MAX_SAFE_INTEGER)
+        number("minimum")?.let { lows += it.setScale(0, RoundingMode.CEILING).toBigInteger() }
+        number("maximum")?.let { highs += it.setScale(0, RoundingMode.FLOOR).toBigInteger() }
+        number("exclusiveMinimum")?.let { lows += it.setScale(0, RoundingMode.FLOOR).toBigInteger() + BigInteger.ONE }
+        number("exclusiveMaximum")?.let { highs += it.setScale(0, RoundingMode.CEILING).toBigInteger() - BigInteger.ONE }
+        (property["format"] as? JsonPrimitive)?.contentOrNull?.let { format ->
+            val (low, high) = INTEGER_FORMATS[format] ?: return null
+            lows += low
+            highs += high
+        }
+        val low = lows.max()
+        val high = highs.min()
+        if (low > high) return null
+        if (low > -MAX_SAFE_INTEGER) fields["minimum"] = JsonPrimitive(low)
+        if (high < MAX_SAFE_INTEGER) fields["maximum"] = JsonPrimitive(high)
+        return Unit
     }
 
     private fun fits(property: JsonObject): Boolean =
@@ -235,12 +266,33 @@ object McpTools {
         )
     }
 
+    private fun source(tool: McpToolListing) =
+        buildJsonObject {
+            put("name", tool.name)
+            tool.title?.let { put("title", it) }
+            tool.description?.let { put("description", it) }
+            put("inputSchema", tool.inputSchema)
+        }
+
     private fun clip(
         text: String,
         limit: Int,
     ) = if (text.codePointCount(0, text.length) <= limit) text else text.substring(0, text.offsetByCodePoints(0, limit - 1)) + "…"
 
     private fun JsonObject.tool() = ((this["tool"] as JsonObject)["name"] as JsonPrimitive).content
+
+    private val ANNOTATIONS = setOf("title", "default", "examples", "\$comment", "deprecated", "readOnly", "writeOnly")
+    private val INTEGER_FORMATS: Map<String, Pair<BigInteger, BigInteger>> =
+        mapOf(
+            "int8" to (BigInteger.valueOf(-128) to BigInteger.valueOf(127)),
+            "int16" to (BigInteger.valueOf(-32_768) to BigInteger.valueOf(32_767)),
+            "int32" to (BigInteger.valueOf(Int.MIN_VALUE.toLong()) to BigInteger.valueOf(Int.MAX_VALUE.toLong())),
+            "int64" to (BigInteger.valueOf(-9_007_199_254_740_991) to BigInteger.valueOf(9_007_199_254_740_991)),
+            "uint8" to (BigInteger.ZERO to BigInteger.valueOf(255)),
+            "uint16" to (BigInteger.ZERO to BigInteger.valueOf(65_535)),
+            "uint32" to (BigInteger.ZERO to BigInteger.valueOf(4_294_967_295)),
+            "uint64" to (BigInteger.ZERO to BigInteger.valueOf(9_007_199_254_740_991)),
+        )
 
     private const val MAX_TITLE = 120
     private const val MAX_DESCRIPTION = 2_000

@@ -23,7 +23,7 @@ class McpToolsTest {
                     """
                     {"type":"object","${'$'}schema":"x","properties":{
                       "title":{"type":["string","null"],"description":"Window title","default":null},
-                      "pid":{"type":["integer","null"],"format":"uint32","minimum":0,"maximum":18446744073709551615},
+                      "pid":{"type":["integer","null"],"format":"uint32","maximum":18446744073709551615},
                       "keys":{"type":"array","items":{"type":"string"}},
                       "format":{"description":"no type at all"},
                       "region":{"type":"object","properties":{"x":{"type":"integer"}}},
@@ -35,7 +35,7 @@ class McpToolsTest {
         val properties = normalized["properties"] as JsonObject
         assertEquals(listOf("title", "pid", "keys", "text"), properties.keys.toList())
         assertEquals(schema("""{"type":"string","description":"Window title"}"""), properties["title"])
-        assertEquals(JsonPrimitive(9_007_199_254_740_991), (properties["pid"] as JsonObject)["maximum"])
+        assertEquals(schema("""{"type":"integer","minimum":0,"maximum":4294967295}"""), properties["pid"])
         assertEquals(listOf("format", "region"), dropped)
         assertEquals(Json.parseToJsonElement("""["text"]"""), normalized["required"])
     }
@@ -74,5 +74,50 @@ class McpToolsTest {
 
         val huge = buildJsonObject { put("blob", JsonPrimitive("x".repeat(20_000))) }
         assertNull(McpTools.outcome(McpCallReply(emptyList(), 0, huge, isError = false)).data)
+    }
+
+    @Test
+    fun `constraints EVA cannot express never widen what the model may send`() {
+        val (normalized, dropped) =
+            McpTools.inputSchema(
+                schema(
+                    """
+                    {"type":"object","properties":{
+                      "count":{"type":"integer","minimum":1.5,"exclusiveMaximum":10},
+                      "id":{"type":"string","pattern":"^[a-z]+${'$'}"},
+                      "mode":{"type":["string","null"],"enum":[null]},
+                      "when":{"type":"string","format":"date-time"}
+                    },"required":[]}
+                    """,
+                ),
+            )
+        assertEquals(schema("""{"count":{"type":"integer","minimum":2,"maximum":9}}"""), normalized["properties"])
+        assertEquals(listOf("id", "mode", "when"), dropped)
+
+        val translation =
+            McpTools.translate(
+                "s",
+                "1",
+                listOf(
+                    McpToolListing(
+                        "rename",
+                        null,
+                        null,
+                        schema("""{"type":"object","properties":{"id":{"type":"string","pattern":"x"}},"required":["id"]}"""),
+                    ),
+                ),
+            )
+        assertNull(translation.descriptor)
+        assertTrue(translation.unsupported.containsKey("rename"))
+    }
+
+    @Test
+    fun `any change to the server's own tool definition changes the granted contract`() {
+        fun digest(description: String) =
+            McpTools
+                .translate("s", "1", listOf(McpToolListing("look", null, description, schema("""{"type":"object","properties":{}}"""))))
+                .descriptor!!
+                .digest
+        assertTrue(digest("Look at the screen") != digest("Look at the screen and send it somewhere"))
     }
 }

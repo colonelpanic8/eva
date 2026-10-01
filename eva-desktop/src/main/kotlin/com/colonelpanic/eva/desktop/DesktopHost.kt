@@ -20,7 +20,6 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.job
 import kotlinx.coroutines.runBlocking
@@ -78,7 +77,11 @@ class DesktopHost(
             scope = scope,
             providerFactory = { provider?.invoke(access) ?: OpenAiResponsesProvider(access) },
             prompt = { prompt },
-            awaitCapabilities = { withTimeoutOrNull(CAPABILITY_WAIT_MILLIS) { extensions.awaitReady() } },
+            // A connection never opens with tools silently missing; it reports why instead.
+            awaitCapabilities = {
+                withTimeoutOrNull(CAPABILITY_WAIT_MILLIS) { extensions.awaitReady() }
+                    ?: error("Local MCP servers did not report their tools in time.")
+            },
         )
 
     private var closed = false
@@ -100,9 +103,12 @@ class DesktopHost(
         val job = scope.coroutineContext.job
         job.cancel()
         val stopped = withTimeoutOrNull(timeoutMillis) { job.join() } != null
-        if (!drained || !stopped) return false
+        // Discovery and grant writes finish or stop before their sessions close and storage is released.
+        val extensionWork = extensionScope.coroutineContext.job
+        extensionWork.cancel()
+        val extensionsStopped = withTimeoutOrNull(timeoutMillis) { extensionWork.join() } != null
+        if (!drained || !stopped || !extensionsStopped) return false
         closed = true
-        extensionScope.cancel()
         mcp.close()
         journal.close()
         ownership.release()

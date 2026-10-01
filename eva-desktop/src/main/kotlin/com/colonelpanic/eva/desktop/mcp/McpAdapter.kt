@@ -15,6 +15,9 @@ import com.colonelpanic.eva.capability.extensions.Descriptor
 import com.colonelpanic.eva.capability.extensions.ExtensionProtocol
 import com.colonelpanic.eva.capability.extensions.InstalledExtension
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,6 +32,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 
 /** A local MCP server EVA starts over stdio, as `mcpServers` entries name them in other MCP clients. */
 data class McpServerConfig(
@@ -95,16 +99,25 @@ class McpNotSent(
 /**
  * Local MCP servers as EVA extensions. Each server's tools pass EVA's extension rules and grants,
  * and every call goes through the dispatcher and its journal like any other action.
+ *
+ * A server's session and the descriptor listed from it are published together, so a call only
+ * ever reaches a session whose current tools match the contract the user granted. A server that
+ * announces changed tools stops being available at once, until a fresh listing is published.
  */
 class McpAdapter(
     private val servers: List<McpServerConfig>,
     private val scope: CoroutineScope,
-    private val start: suspend (McpServerConfig) -> McpSession = McpConnection::start,
+    private val start: suspend (McpServerConfig, onToolsChanged: () -> Unit) -> McpSession = McpConnection::start,
 ) : CapabilityAdapter,
     AutoCloseable {
     data class Notes(
         val unsupported: Map<String, String> = emptyMap(),
         val hidden: Map<String, List<String>> = emptyMap(),
+    )
+
+    private class Published(
+        val session: McpSession,
+        val descriptor: Descriptor?,
     )
 
     private val mutableInstalled = MutableStateFlow<List<InstalledExtension>>(emptyList())
@@ -113,7 +126,10 @@ class McpAdapter(
     override val ready: StateFlow<Boolean> = mutableReady.asStateFlow()
 
     private val scans = Mutex()
-    private val sessions = mutableMapOf<String, McpSession>()
+    private val published = ConcurrentHashMap<String, Published>()
+
+    /** Servers that announced changed tools since their last listing. */
+    private val changed: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     @Volatile var notes: Map<String, Notes> = emptyMap()
         private set
@@ -122,47 +138,81 @@ class McpAdapter(
         scope.launch { scan() }
     }
 
-    /** Starts any server that is not running, lists its tools, and publishes what EVA can offer. */
+    /** Lists every server in parallel, starting any that is not running, and publishes what EVA can offer. */
     suspend fun scan() =
         scans.withLock {
-            val found = mutableListOf<InstalledExtension>()
+            val results = coroutineScope { servers.map { config -> async { config to discover(config) } }.awaitAll() }
             val collected = mutableMapOf<String, Notes>()
-            for (config in servers) {
-                val identity = McpIdentity(config)
-                val entry =
-                    try {
-                        val session =
-                            sessions[config.name]?.takeIf { it.alive() } ?: start(config).also { started ->
-                                sessions.remove(config.name)?.close()
-                                sessions[config.name] = started
-                            }
-                        val translation = McpTools.translate(config.name, session.serverVersion, session.tools())
-                        collected[config.name] = Notes(translation.unsupported, translation.hidden)
-                        InstalledExtension(
-                            config.name,
-                            identity,
-                            translation.descriptor,
-                            problem = if (translation.descriptor == null) "It offers no tools EVA can use." else null,
-                            capabilityPrefix = "mcp.${config.name}",
-                            androidPackages = emptyList(),
-                        )
-                    } catch (failure: Exception) {
-                        sessions.remove(config.name)?.close()
-                        InstalledExtension(
-                            config.name,
-                            identity,
-                            null,
-                            problem = "It could not be started: ${failure.message ?: failure.javaClass.simpleName}",
-                            capabilityPrefix = "mcp.${config.name}",
-                            androidPackages = emptyList(),
-                        )
-                    }
-                found += entry
-            }
+            mutableInstalled.value =
+                results.map { (config, result) ->
+                    val identity = McpIdentity(config)
+                    result.fold(
+                        onSuccess = { (entry, notes) ->
+                            published
+                                .put(config.name, entry)
+                                ?.session
+                                ?.takeIf { it !== entry.session }
+                                ?.close()
+                            changed -= config.name
+                            collected[config.name] = notes
+                            installed(
+                                config,
+                                identity,
+                                entry.descriptor,
+                                if (entry.descriptor ==
+                                    null
+                                ) {
+                                    "It offers no tools EVA can use."
+                                } else {
+                                    null
+                                },
+                            )
+                        },
+                        onFailure = { failure ->
+                            published.remove(config.name)?.session?.close()
+                            installed(config, identity, null, "It could not be started: ${failure.message ?: failure.javaClass.simpleName}")
+                        },
+                    )
+                }
             notes = collected
-            mutableInstalled.value = found
             mutableReady.value = true
         }
+
+    private suspend fun discover(config: McpServerConfig): Result<Pair<Published, Notes>> {
+        val current = published[config.name]
+        if (current != null && current.session.alive() && config.name !in changed) {
+            return Result.success(current to (notes[config.name] ?: Notes()))
+        }
+        val reused = current?.session?.takeIf { it.alive() }
+        return runCatching {
+            val session =
+                reused ?: start(config) {
+                    changed += config.name
+                    refresh()
+                }
+            try {
+                val translation = McpTools.translate(config.name, session.serverVersion, session.tools())
+                Published(session, translation.descriptor) to Notes(translation.unsupported, translation.hidden)
+            } catch (failure: Exception) {
+                if (session !== reused) session.close()
+                throw failure
+            }
+        }
+    }
+
+    private fun installed(
+        config: McpServerConfig,
+        identity: McpIdentity,
+        descriptor: Descriptor?,
+        problem: String?,
+    ) = InstalledExtension(
+        config.name,
+        identity,
+        descriptor,
+        problem = problem,
+        capabilityPrefix = "mcp.${config.name}",
+        androidPackages = emptyList(),
+    )
 
     override fun invalidate(
         packageName: String,
@@ -172,28 +222,30 @@ class McpAdapter(
     override fun available(
         identity: AdapterIdentity,
         digest: String,
-    ): Boolean {
-        val config = (identity as? McpIdentity)?.config ?: return false
-        val live =
-            installed.value
-                .find { it.identity == identity }
-                ?.descriptor
-                ?.digest == digest
-        return live && sessions[config.name]?.alive() == true
+    ): Boolean = session(identity as? McpIdentity ?: return false, digest) != null
+
+    /** The running session whose published tools are exactly [digest], or null. */
+    internal fun session(
+        identity: McpIdentity,
+        digest: String,
+    ): McpSession? {
+        val name = identity.config.name
+        val entry = published[name] ?: return null
+        return entry.session.takeIf { name !in changed && entry.descriptor?.digest == digest && it.alive() }
     }
 
     override fun bindings(extension: InstalledExtension): List<CapabilityBinding> {
         val identity = extension.identity as? McpIdentity ?: return emptyList()
         val descriptor = extension.descriptor ?: return emptyList()
         return descriptor.capabilities.map { capability ->
-            val backend = McpBackend(identity, descriptor, capability) { sessions[identity.config.name] }
+            val backend = McpBackend(identity, descriptor, capability) { session(identity, descriptor.digest) }
             CapabilityBinding(capability, backend.definition, backend, "${identity.key}:${descriptor.digest}")
         }
     }
 
     override fun close() {
-        sessions.values.forEach { runCatching { it.close() } }
-        sessions.clear()
+        published.values.forEach { runCatching { it.session.close() } }
+        published.clear()
     }
 }
 
@@ -215,7 +267,7 @@ class McpBackend(
         )
 
     override suspend fun unavailableReason(): String? =
-        if (session()?.alive() == true) null else "The ${identity.config.name} MCP server is not running."
+        if (session() != null) null else "The ${identity.config.name} MCP server is not running or changed its tools."
 
     override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome =
         ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "MCP tools run only as journaled invocations.")

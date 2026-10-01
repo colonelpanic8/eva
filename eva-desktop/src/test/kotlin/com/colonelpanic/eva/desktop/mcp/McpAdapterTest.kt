@@ -25,9 +25,11 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class McpAdapterTest {
     private class FakeSession : McpSession {
+        var description = "Move a window"
         override val serverName = "fake"
         override val serverVersion = "1.0"
         var running = true
+        var onChanged: () -> Unit = {}
         var failure: Exception? = null
         val calls = mutableListOf<Pair<String, JsonObject>>()
 
@@ -38,7 +40,7 @@ class McpAdapterTest {
                 McpToolListing(
                     "move_window",
                     "Move window",
-                    "Move a window",
+                    description,
                     Json
                         .parseToJsonElement(
                             """{"type":"object","properties":{"x":{"type":"integer"},"title":{"type":["string","null"]}},"required":["x"]}""",
@@ -63,12 +65,18 @@ class McpAdapterTest {
 
     private val config = McpServerConfig("computer-use", "/bin/computer-use", listOf("mcp"))
 
-    private fun TestScope.adapter(session: FakeSession) = McpAdapter(listOf(config), backgroundScope) { session }
+    private fun TestScope.adapter(session: FakeSession) =
+        McpAdapter(listOf(config), backgroundScope) { _, onChanged ->
+            session.also {
+                it.onChanged =
+                    onChanged
+            }
+        }
 
     @Test
     fun `a server that cannot start is listed with why, and offers nothing`() =
         runTest {
-            val adapter = McpAdapter(listOf(config), backgroundScope) { error("no such file") }
+            val adapter = McpAdapter(listOf(config), backgroundScope) { _, _ -> error("no such file") }
             adapter.scan()
             val entry = adapter.installed.value.single()
             assertNull(entry.descriptor)
@@ -132,5 +140,51 @@ class McpAdapterTest {
                     ToolProposal("call", "mcp.computer-use.move_window", mapOf("x" to "5"), "move it", registry.snapshot.revision),
                 )
             assertEquals(InvocationStatus.COMPLETED, receipt.status)
+        }
+
+    @Test
+    fun `a server announcing changed tools is withdrawn at once and its new contract needs approval again`() =
+        runTest {
+            val session = FakeSession()
+            val adapter = adapter(session)
+            val registry = CapabilityRegistry(emptyMap(), emptyList())
+            val runtime = ExtensionRuntime(registry, adapter, ExtensionGrants(MemoryGrantPersistence()), backgroundScope)
+            runCurrent()
+            runtime.awaitReady()
+            val granted =
+                runtime.settings.value.entries
+                    .single()
+            runtime.enable(granted.key, true)
+            runCurrent()
+            runtime.mutation(granted.key, "move_window", true)
+            runtime.settings.first {
+                it.entries
+                    .single()
+                    .mutations
+                    .isNotEmpty()
+            }
+            val identity = granted.installed.identity as McpIdentity
+            assertTrue(adapter.available(identity, granted.installed.descriptor!!.digest))
+
+            session.description = "Move a window, or close it"
+            session.onChanged()
+            assertTrue("Withdrawn before any new listing", !adapter.available(identity, granted.installed.descriptor!!.digest))
+
+            runCurrent()
+            val relisted =
+                runtime.settings.first {
+                    it.entries
+                        .single()
+                        .installed.descriptor
+                        ?.digest !=
+                        granted.installed.descriptor!!.digest
+                }
+            assertTrue(
+                relisted.entries
+                    .single()
+                    .mutations
+                    .isEmpty(),
+            )
+            assertTrue(registry.catalog.isEmpty())
         }
 }

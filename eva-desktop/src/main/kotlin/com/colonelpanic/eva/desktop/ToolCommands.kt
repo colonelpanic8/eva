@@ -51,7 +51,14 @@ internal suspend fun setTools(
         }
 
         allow -> {
-            if (!entry.enabled) host.extensions.enable(entry.key, true)
+            // A tool grant needs its server enabled first; both are applied in turn, not raced.
+            if (!entry.enabled) {
+                host.extensions.enable(entry.key, true)
+                withTimeoutOrNull(SETTLE_MILLIS) {
+                    host.extensions.settings.first { it.entries.any { e -> e.key == entry.key && e.enabled } }
+                }
+                    ?: return System.err.println(settledError(host)).let { 1 }
+            }
             tools.forEach { host.extensions.mutation(entry.key, it, true) }
         }
 

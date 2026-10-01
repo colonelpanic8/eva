@@ -6,8 +6,11 @@ import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequestParams
 import io.modelcontextprotocol.kotlin.sdk.types.Implementation
 import io.modelcontextprotocol.kotlin.sdk.types.ListToolsRequest
+import io.modelcontextprotocol.kotlin.sdk.types.Method
 import io.modelcontextprotocol.kotlin.sdk.types.PaginatedRequestParams
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
+import io.modelcontextprotocol.kotlin.sdk.types.ToolListChangedNotification
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.io.asSink
@@ -73,13 +76,20 @@ class McpConnection private constructor(
         private const val MAX_LISTED_TOOLS = 256
 
         /** Starts the server and completes MCP initialization, or stops the process and throws. */
-        suspend fun start(config: McpServerConfig): McpSession {
+        suspend fun start(
+            config: McpServerConfig,
+            onToolsChanged: () -> Unit,
+        ): McpSession {
             val process =
                 ProcessBuilder(listOf(config.command) + config.args)
                     .apply { environment().putAll(config.env) }
                     .redirectError(ProcessBuilder.Redirect.DISCARD)
                     .start()
             val client = Client(Implementation("eva-desktop", VERSION))
+            client.setNotificationHandler<ToolListChangedNotification>(Method.Defined.NotificationsToolsListChanged) {
+                onToolsChanged()
+                CompletableDeferred(Unit)
+            }
             try {
                 withTimeout(LIST_TIMEOUT_MILLIS) {
                     client.connect(
