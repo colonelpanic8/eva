@@ -61,23 +61,23 @@ class DesktopHost(
     private var closed = false
 
     /**
-     * Ends the attachment and closes storage once no turn is running. A turn still running at the
-     * deadline is interrupted; if one will not stop, storage stays open and owned, so no other
-     * process recovers work this one may still be doing. Process exit then leaves it to the next
-     * start's recovery. Turns run outside [scope], so they are awaited through the controller.
+     * Ends the attachment and closes storage once no turn has work left. Turns get [timeoutMillis]
+     * to finish, then are interrupted and drained, including their actions and final journal
+     * writes. If one will not stop, storage stays open and owned, so no other process recovers
+     * work this one may still be doing; process exit then leaves it to the next start's recovery.
      */
     suspend fun shutdown(timeoutMillis: Long = SHUTDOWN_TIMEOUT_MILLIS): Boolean {
         if (closed) return true
         withContext(ui) { controller.disconnect() }
-        var idle = withTimeoutOrNull(timeoutMillis) { controller.working.first { it.isEmpty() } } != null
-        if (!idle) {
-            withContext(ui) { controller.interruptAll("EVA closed before this request finished.") }
-            idle = withTimeoutOrNull(timeoutMillis) { controller.working.first { it.isEmpty() } } != null
-        }
+        withTimeoutOrNull(timeoutMillis) { controller.working.first { it.isEmpty() } }
+        val drained =
+            withTimeoutOrNull(timeoutMillis) {
+                withContext(ui) { controller.drain("EVA closed before this request finished.") }
+            } != null
         val job = scope.coroutineContext.job
         job.cancel()
-        val drained = withTimeoutOrNull(timeoutMillis) { job.join() } != null
-        if (!idle || !drained) return false
+        val stopped = withTimeoutOrNull(timeoutMillis) { job.join() } != null
+        if (!drained || !stopped) return false
         closed = true
         journal.close()
         ownership.release()

@@ -5,6 +5,7 @@ import com.colonelpanic.eva.capability.MemoryCapabilities
 import com.colonelpanic.eva.conversation.ProviderStatus
 import com.colonelpanic.eva.conversation.TurnStatus
 import com.colonelpanic.eva.conversation.prompt.Wording
+import com.colonelpanic.eva.providers.CallIdentity
 import com.colonelpanic.eva.providers.ConversationInput
 import com.colonelpanic.eva.providers.ConversationProvider
 import com.colonelpanic.eva.providers.ConversationSession
@@ -16,11 +17,15 @@ import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.newSingleThreadContext
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -31,6 +36,8 @@ import org.junit.rules.TemporaryFolder
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.attribute.PosixFilePermissions
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 class DesktopHostTest {
     @get:Rule val folder = TemporaryFolder()
@@ -149,6 +156,80 @@ class DesktopHostTest {
             val reopened = checkNotNull(paths.lock()) { "A clean shutdown releases ownership" }
             JdbcJournal(paths.journal).use { journal ->
                 assertEquals(listOf(TurnStatus.INTERRUPTED), JdbcConversationStore(journal).turns(threadId).map { it.status })
+            }
+            reopened.release()
+            ui.close()
+        }
+
+    /** Answers every request by proposing to open one address, and nothing else. */
+    private class OpeningProvider : ConversationProvider {
+        override suspend fun open(request: SessionOpenRequest): ConversationSession {
+            val events = Channel<ProviderEvent>(Channel.UNLIMITED)
+            events.send(ProviderEvent.Connected("opening", request.catalog.revision))
+            return object : ConversationSession {
+                override val connectionEpoch = "opening"
+                override val events = events.receiveAsFlow()
+                private var input = ""
+
+                override suspend fun submit(input: ConversationInput) {
+                    this.input = input.id
+                }
+
+                override suspend fun requestResponse(request: ResponseRequest) {
+                    val call = CallIdentity(connectionEpoch, "opening", input, input, "turn", requestCatalog(), "open-1")
+                    events.send(
+                        ProviderEvent.ToolCallReady(
+                            call,
+                            DesktopCapabilities.OPEN_URL,
+                            buildJsonObject { put("url", "https://example.org") },
+                        ),
+                    )
+                }
+
+                private fun requestCatalog() = request.catalog.revision
+
+                override suspend fun submitToolResult(result: CorrelatedToolResult) = Unit
+
+                override suspend fun close() = Unit
+            }
+        }
+    }
+
+    @OptIn(DelicateCoroutinesApi::class, ExperimentalCoroutinesApi::class)
+    @Test
+    fun `shutdown keeps storage while an action is still running and closes it once the action ends`() =
+        runBlocking {
+            val paths = DesktopPaths(folder.root.resolve("config"), folder.root.resolve("data"))
+            val ui = newSingleThreadContext("test-ui")
+            val started = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            val opener =
+                UrlOpener {
+                    started.countDown()
+                    release.await()
+                    Opening.Opened
+                }
+            val host = DesktopHost(paths, ui, checkNotNull(paths.lock()), opener) { OpeningProvider() }
+            val controller = host.controller
+            controller.state.first { !it.isLoading }
+            withContext(ui) { controller.newThread() }
+            val threadId = checkNotNull(controller.state.first { it.threadId != null }.threadId)
+            withContext(ui) { controller.connect("") }
+            controller.state.first { it.providerStatus == ProviderStatus.CONNECTED }
+            withContext(ui) { controller.submit("open the example page") }
+            assertTrue(started.await(10, TimeUnit.SECONDS))
+
+            assertFalse(host.shutdown(timeoutMillis = 300))
+            assertNull("Storage stays owned while the action runs", paths.lock())
+
+            release.countDown()
+            assertTrue(host.shutdown(timeoutMillis = 10_000))
+            val reopened = checkNotNull(paths.lock())
+            JdbcJournal(paths.journal).use { journal ->
+                assertEquals(listOf(TurnStatus.INTERRUPTED), JdbcConversationStore(journal).turns(threadId).map { it.status })
+                // Interrupted mid-handoff, the journal must say it cannot tell, not lose the receipt.
+                val receipt = JdbcInvocationRepository(journal).history().single()
+                assertEquals(InvocationStatus.UNKNOWN, receipt.status)
             }
             reopened.release()
             ui.close()
