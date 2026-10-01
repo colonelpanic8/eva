@@ -28,6 +28,7 @@ import com.colonelpanic.eva.providers.ConversationProvider
 import com.colonelpanic.eva.providers.ConversationSession
 import com.colonelpanic.eva.providers.CorrelatedToolResult
 import com.colonelpanic.eva.providers.HistoryItem
+import com.colonelpanic.eva.providers.MAX_INPUT_CHARS
 import com.colonelpanic.eva.providers.ProviderEvent
 import com.colonelpanic.eva.providers.ResponseRequest
 import com.colonelpanic.eva.providers.SessionOpenRequest
@@ -1254,30 +1255,6 @@ class ThreadControllerTest {
         }
 
     @Test
-    fun `the total action budget survives rehoming`() =
-        runTest {
-            val provider = FakeProvider()
-            val background = FakeProvider(epoch = "background")
-            val controller = controller(provider, background = background)
-            advanceUntilIdle()
-            controller.connect("test")
-            advanceUntilIdle()
-            controller.submit("Do several things")
-            advanceUntilIdle()
-            val turn = latestTurn(controller)
-            repeat(ThreadController.CALLS_PER_TURN) { provider.call("action-$it", action.id, "place" to "Place $it") }
-            advanceUntilIdle()
-            assertEquals(ThreadController.CALLS_PER_TURN, executions)
-            controller.disconnect()
-            advanceUntilIdle()
-            background.input = ConversationInput(turn, "")
-            background.call("extra", action.id, "place" to "Another")
-            advanceUntilIdle()
-            assertEquals(ThreadController.CALLS_PER_TURN, executions)
-            assertEquals("NOT_EXECUTED", background.results.single().status)
-        }
-
-    @Test
     fun `connection waits for capabilities before capturing its catalog`() =
         runTest {
             val ready = CompletableDeferred<Unit>()
@@ -1331,19 +1308,40 @@ class ThreadControllerTest {
         }
 
     @Test
-    fun `the lookup budget is bounded`() =
+    fun `a turn runs every lookup and action it proposes`() =
         runTest {
             val provider = FakeProvider()
             val controller = controller(provider)
             advanceUntilIdle()
             controller.connect("unused")
             advanceUntilIdle()
-            controller.submit("Look everywhere")
+            controller.submit("Look everywhere and act on it")
             advanceUntilIdle()
-            repeat(ThreadController.READ_ONLY_CALLS_PER_TURN + 1) { provider.call("look-$it", lookup.id, "query" to "q$it") }
+            repeat(60) { provider.call("look-$it", lookup.id, "query" to "q$it") }
+            repeat(40) { provider.call("action-$it", action.id, "place" to "Place $it") }
             advanceUntilIdle()
-            assertEquals(ThreadController.READ_ONLY_CALLS_PER_TURN, executions)
-            assertEquals("Too many lookups for one request.", provider.results.last().message)
+            assertEquals(100, executions)
+            assertEquals(100, provider.results.size)
+            assertTrue(provider.results.none { it.status == "NOT_EXECUTED" })
+        }
+
+    @Test
+    fun `a typed request up to the provider bound is accepted and a longer one says the limit`() =
+        runTest {
+            val provider = FakeProvider()
+            val controller = controller(provider)
+            advanceUntilIdle()
+            controller.connect("unused")
+            advanceUntilIdle()
+            controller.submit("x".repeat(MAX_INPUT_CHARS + 1))
+            advanceUntilIdle()
+            assertEquals(
+                "This request is 4001 characters; the connected provider accepts up to 4000. Shorten it or split it into parts.",
+                controller.state.value.providerMessage,
+            )
+            controller.submit("x".repeat(3000))
+            advanceUntilIdle()
+            assertEquals(3000, provider.input.text.length)
         }
 
     @Test

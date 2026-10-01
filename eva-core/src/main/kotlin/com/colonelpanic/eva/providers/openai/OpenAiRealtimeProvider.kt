@@ -697,7 +697,7 @@ private class OpenAiRealtimeSession(
 
     override suspend fun submit(input: ConversationInput) {
         check(sessionId != null && buffered == null)
-        require(input.text.isNotBlank() && input.text.length <= 4000) { "A request must be 1 to 4,000 characters." }
+        require(input.text.isNotBlank() && input.text.length <= maxInputChars) { "A request must be 1 to $maxInputChars characters." }
         buffered = input
     }
 

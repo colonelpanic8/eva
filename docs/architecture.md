@@ -196,13 +196,15 @@ and stopping are never flagged. Device owners are working, while queued tasks
 wait for device control. Only attributed provider events count as progress.
 Streaming progress updates the clock silently; a one-second tick publishes it,
 while state changes publish immediately. Only task-list/settings screens collect
-the snapshot flow. This is advisory and never kills work. Existing per-turn action budgets and
-device-task step/time budgets continue to apply.
+the snapshot flow. This is advisory and never kills work. Device-task step/time
+budgets continue to apply.
 
 A turn can run successive native or extension reads and mutations without another
-user message. Calls execute sequentially with a ceiling of 32 admitted calls,
-including at most 24 reads, per turn; the same budget follows a turn onto its
-background leg. Every call retains dispatcher validation, grants, and journaling.
+user message. EVA does not cap the number of calls a turn or its background leg
+makes; the user stops runaway work from Running work. Every call retains
+dispatcher validation, grants, and journaling. A typed request may be as long as
+the connected session accepts (4,000 characters for OpenAI, 1,000 for the voice
+broker); a longer one is refused with its length and that bound.
 An unknown or failed mutation blocks further mutations in that turn because partial
 external effects may exist; read-only verification remains available. Process
 recovery marks interrupted work and never automatically repeats it. The legacy

@@ -31,6 +31,7 @@ import com.colonelpanic.eva.providers.ConversationInput
 import com.colonelpanic.eva.providers.ConversationProvider
 import com.colonelpanic.eva.providers.ConversationSession
 import com.colonelpanic.eva.providers.CorrelatedToolResult
+import com.colonelpanic.eva.providers.MAX_INPUT_CHARS
 import com.colonelpanic.eva.providers.MODEL_RESULT_CHARS
 import com.colonelpanic.eva.providers.ProviderEvent
 import com.colonelpanic.eva.providers.ProviderToolCatalog
@@ -1434,8 +1435,8 @@ class ThreadController(
             mutableState.update { it.copy(providerMessage = "EVA is still working on the last request.") }
             return
         }
-        if (text.length > MAX_REQUEST_CHARS) {
-            mutableState.update { it.copy(providerMessage = "Keep requests under 1,000 characters.") }
+        if (text.length > opened.maxInputChars) {
+            mutableState.update { it.copy(providerMessage = requestTooLong(text.length, opened.maxInputChars)) }
             return
         }
         val input = ConversationInput(UUID.randomUUID().toString(), text)
@@ -1554,12 +1555,10 @@ class ThreadController(
         /** This request's phone action completed or was handed off, so the request has been served. */
         var actionServiced = false
             private set
-        private var readOnlyCalls = 0
         private val dispatchLock = Mutex()
         var coverageLost = false
         private val mutationLock = mutationLocks.getOrPut(threadId) { Mutex() }
         val actionCallIds = linkedSetOf<String>()
-        private val admittedCalls = mutableSetOf<String>()
 
         /** Every call proposed for this turn, so an ending action can tell whether it was proposed alone. */
         private val proposedCalls = mutableListOf<CallIdentity>()
@@ -1684,23 +1683,10 @@ class ThreadController(
                                     wording().message(Wording.MUTATION_UNCERTAIN)
                                 }
 
-                                id !in admittedCalls && admittedCalls.size >= CALLS_PER_TURN -> {
-                                    "The action limit for this request was reached. Nothing was executed."
-                                }
-
-                                definition.readOnly && readOnlyCalls >= READ_ONLY_CALLS_PER_TURN -> {
-                                    "Too many lookups for one request."
-                                }
-
                                 else -> {
                                     ToolSchema.error(definition.inputSchema, event.arguments)
                                 }
                             }
-                        if (rejection == null && argumentError == null && admittedCalls.add(id) &&
-                            definition?.readOnly == true
-                        ) {
-                            readOnlyCalls++
-                        }
                         store.append(
                             ThreadItem.ActionCall(
                                 UUID.randomUUID().toString(),
@@ -2245,13 +2231,16 @@ class ThreadController(
         val MESSAGING_TOOLS =
             setOf(CapabilityRegistry.CONVERSATIONS_SEARCH, CapabilityRegistry.CONVERSATION_READ, CapabilityRegistry.SMS_SEND)
         const val UNTITLED = "New conversation"
-        const val READ_ONLY_CALLS_PER_TURN = 24
-        const val CALLS_PER_TURN = 32
         private const val VOICE_REQUEST = "Voice request"
         private const val MAX_PROPOSAL_REQUEST = 1000
 
         /** The longest typed request a turn accepts. */
-        const val MAX_REQUEST_CHARS = 1000
+        const val MAX_REQUEST_CHARS = MAX_INPUT_CHARS
+
+        fun requestTooLong(
+            length: Int,
+            limit: Int,
+        ) = "This request is $length characters; the connected provider accepts up to $limit. Shorten it or split it into parts."
 
         /** Bounds the wait for a goodbye whose end is never reported. */
         private const val END_SPEECH_LIMIT_MILLIS = 10_000L
