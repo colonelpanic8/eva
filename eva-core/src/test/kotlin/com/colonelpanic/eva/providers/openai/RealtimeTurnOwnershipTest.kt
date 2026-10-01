@@ -382,6 +382,43 @@ class RealtimeTurnOwnershipTest {
         }
 
     @Test
+    fun `a deferred hang-up waits for another turn's slow result to be spoken`() =
+        runTest {
+            val f = fixture()
+            f.speech("first", "r1", "Do the slow thing")
+            f.call("r1", "slow", "test.wait")
+            f.done("r1")
+            runCurrent()
+            f.speech("second", "r2", "That's all, bye")
+            f.call("r2", "bye", ThreadController.END_CONVERSATION.capabilityId)
+            f.done("r2")
+            runCurrent()
+            assertEquals(
+                "NOT_EXECUTED",
+                f
+                    .outputs("bye")
+                    .single()
+                    .getValue("status")
+                    .jsonPrimitive.content,
+            )
+            f.acceptRequest("bye-reply")
+            f.text("bye-reply", "One moment, the first request is still running.")
+            f.done("bye-reply")
+            runCurrent()
+            assertEquals(ProviderStatus.CONNECTED, f.controller.state.value.providerStatus)
+
+            f.gate.complete(Unit)
+            runCurrent()
+            assertEquals(1, f.outputs("slow").size)
+            f.acceptRequest("slow-reply")
+            f.text("slow-reply", "The slow thing is done. Bye.")
+            f.done("slow-reply")
+            runCurrent()
+            assertEquals(ProviderStatus.DISCONNECTED, f.controller.state.value.providerStatus)
+            f.close()
+        }
+
+    @Test
     fun `barge-in cancels running and unacknowledged responses without executing their tools`() =
         runTest {
             for (acknowledgedBeforeSpeech in listOf(false, true)) {

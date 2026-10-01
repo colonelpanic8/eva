@@ -978,10 +978,13 @@ class ThreadController(
                 val task = taskFor(opened, event.inputId)
                 task?.generationEnded(event.status)
                 if (voice && hangUpDeferred) {
-                    endCall(ENDED_BY_MODEL)
+                    // Another turn's result may still be due; the hang-up waits for its reply too.
+                    if (!hasUnreportedWork(opened)) endCall(ENDED_BY_MODEL)
                 } else if (voice && replyHangUp) {
                     endCall(ENDED_AFTER_ACTION)
-                } else if (voice && task?.actionServiced == true && connectionTools[opened]?.callMode == VoiceCallMode.ONE_REQUEST) {
+                } else if (voice && task?.actionServiced == true && connectionTools[opened]?.callMode == VoiceCallMode.ONE_REQUEST &&
+                    !hasUnreportedWork(opened)
+                ) {
                     // The model decides when a request is fully served, but one whose action is done and
                     // reported does not stay open just because it forgot to hang up: silence ends it.
                     quietArmed = quietHangUpMillis() > 0
@@ -1236,7 +1239,7 @@ class ThreadController(
         quietHangUp =
             scope.launch {
                 delay(quietHangUpMillis())
-                if (thisAttempt == attempt && quietArmed) {
+                if (thisAttempt == attempt && quietArmed && !hasUnreportedWork(session)) {
                     quietArmed = false
                     endCall(ENDED_AFTER_REQUEST)
                 }
@@ -1274,11 +1277,7 @@ class ThreadController(
         if (!ending || token != endingToken) return
         val request = endRequest
         val opened = session
-        val unreported =
-            tasks.values.any {
-                it.active && it.leg === opened && !it.delegated && (it.dispatches.any { job -> job.isActive } || it.awaitingFollowUp)
-            }
-        if (request != null && opened != null && (unreported || request.generationId in actionResponses)) {
+        if (request != null && opened != null && (hasUnreportedWork(opened) || request.generationId in actionResponses)) {
             ending = false
             endRequest = null
             hangUpDeferred = true
@@ -1293,6 +1292,13 @@ class ThreadController(
         }
         hangUp(endReason)
     }
+
+    /** A turn on [opened] still has an action running or a result the model has not replied to. */
+    private fun hasUnreportedWork(opened: ConversationSession?): Boolean =
+        opened != null &&
+            tasks.values.any {
+                it.active && it.leg === opened && !it.delegated && (it.dispatches.any { job -> job.isActive } || it.awaitingFollowUp)
+            }
 
     /** Ends the attachment only. Whatever the thread was doing keeps going, on another leg if it has to. */
     fun disconnect() = end(ENDED_BY_USER)
