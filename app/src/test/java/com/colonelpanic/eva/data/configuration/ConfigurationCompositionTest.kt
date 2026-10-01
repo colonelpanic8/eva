@@ -64,11 +64,49 @@ class ConfigurationCompositionTest {
         assertEquals(WebResearchPatch(timeoutSeconds = 55), timeoutOverride.capabilities!!.webResearch)
         val inherited = EvaConfigurationCodec.overrides(current, document, listOf("base.yaml"))
         assertNull(inherited.capabilities)
-        for (invalid in listOf("timeoutSeconds: 4", "timeoutSeconds: 61", "effort: impossible", "model: ''")) {
+        for (invalid in listOf("timeoutSeconds: 4", "timeoutSeconds: 61", "model: ''")) {
             assertThrows(IllegalArgumentException::class.java) {
                 EvaConfigurationCodec.decode("format: eva\nversion: 3\ncapabilities:\n  webResearch:\n    $invalid\n")
             }
         }
+    }
+
+    @Test fun `unsupported research effort loads at low with a notice while none remains supported`() {
+        val document = EvaConfigurationCodec.complete(fullConfiguration())
+        for (effort in listOf("minimal", "unknown")) {
+            val patched =
+                document.copy(
+                    capabilities =
+                        document.capabilities!!.copy(
+                            webResearch = WebResearchPatch(model = "research-custom", effort = effort, timeoutSeconds = 30),
+                        ),
+                )
+            val resolved = EvaConfigurationCodec.resolve(reader(mapOf("eva.yaml" to EvaConfigurationCodec.encode(patched))))
+            assertEquals("low", resolved.configuration.capabilities.webResearch.effort)
+            assertEquals("research-custom", resolved.configuration.capabilities.webResearch.model)
+            assertEquals(30, resolved.configuration.capabilities.webResearch.timeoutSeconds)
+            assertTrue(resolved.notices.single().contains("replaced with low"))
+            val overridden =
+                EvaConfigurationDocument(
+                    include = listOf("base.yaml"),
+                    capabilities = CapabilitiesPatch(webResearch = WebResearchPatch(effort = "medium")),
+                )
+            val valid =
+                EvaConfigurationCodec.resolve(
+                    reader(
+                        mapOf(
+                            "eva.yaml" to EvaConfigurationCodec.encode(overridden),
+                            "base.yaml" to EvaConfigurationCodec.encode(patched),
+                        ),
+                    ),
+                )
+            assertEquals("medium", valid.configuration.capabilities.webResearch.effort)
+            assertTrue(valid.notices.isEmpty())
+        }
+        val none = document.copy(capabilities = document.capabilities!!.copy(webResearch = WebResearchPatch(effort = "none")))
+        val resolved = EvaConfigurationCodec.resolve(reader(mapOf("eva.yaml" to EvaConfigurationCodec.encode(none))))
+        assertEquals("none", resolved.configuration.capabilities.webResearch.effort)
+        assertTrue(resolved.notices.isEmpty())
     }
 
     @Test

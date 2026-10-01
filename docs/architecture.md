@@ -273,20 +273,28 @@ Each invocation makes one isolated OpenAI Responses request with only the hosted
 search; Realtime supports function tools, so voice calls this EVA capability. Existing
 ChatGPT subscription access is preferred; a configured API key is used only when no
 subscription is signed in, never as a silent fallback after subscription failure.
-API-key requests are billed separately. The subscription protocol is service-dependent.
+Research starts enabled for both access modes. API-key research calls are billed for
+a search fee plus tokens, stated in settings; receipt data identifies `accessMode`
+as `api_key` or `subscription`. The subscription protocol is service-dependent.
 
 `capabilities.webResearch` in portable configuration holds `enabled` (default true),
 `model` (`gpt-6-sol`), `effort` (`low`), and `timeoutSeconds` (45, bounded to 5–60).
-Each field composes independently across included files. The Web research settings
-section edits those same settings. Disabling hides the tool and rejects new execution. The total deadline includes authorization and transport;
+Research efforts are `none`, `low`, `medium`, `high`, and `xhigh`; unsupported saved
+efforts (including `minimal`) load as `low` with a visible configuration notice,
+while preserving the other settings. Each field composes independently across
+included files. The Web research settings section edits those same settings; the
+timeout slider saves on release. Disabling hides the tool and rejects new execution.
+The total deadline includes authorization and transport;
 coroutine cancellation cancels the HTTP call. Missing access is `NOT_EXECUTED`; HTTP
 errors, read-only timeouts, and incomplete streams are `FAILED`, without retries.
 Caller cancellation retains the dispatcher's `UNKNOWN` receipt after submission.
 A finished response without web evidence is still `COMPLETED` but explicitly says no
 sources were retrieved (or no citations were returned after search). Source lists are
 optional upstream; citations and available source lists are deduplicated by URL.
-Answers and structured evidence are bounded to the existing tool-result budget, with
-truncation identified in the data.
+The answer appears once in the receipt message, followed by a readable source list.
+Structured data references it with `answerLocation: message` and retains source and
+search metadata. Their combined content is bounded to the existing tool-result budget,
+with truncation identified in the data.
 
 The declarative web package's search/open actions remain browser handoffs without
 retrieved content. Device-task browsing remains an explicit fallback for interactive

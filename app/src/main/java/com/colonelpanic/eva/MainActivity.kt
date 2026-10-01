@@ -267,6 +267,7 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(Unit) { runCatching { eva.memories.load() } }
         val deviceTask by eva.capabilities.deviceTaskFlow.collectAsStateWithLifecycle()
         val webResearch by eva.capabilities.webResearchFlow.collectAsStateWithLifecycle()
+        val webResearchNotice by eva.capabilities.webResearchNoticeFlow.collectAsStateWithLifecycle()
         val screenControl by eva.capabilities.screenControlFlow.collectAsStateWithLifecycle()
         val shizuku by shizukuAccess.collectAsStateWithLifecycle()
         LaunchedEffect(Unit) { eva.deviceControlHost?.let { shizukuAccess.value = it.accessStatus() } }
@@ -340,6 +341,7 @@ class MainActivity : ComponentActivity() {
             shizukuAccess = shizuku,
             screenControlEnabled = screenControl,
             webResearch = webResearch,
+            webResearchNotice = webResearchNotice,
             screenControlStatus = screenControlStatus,
             deviceTask = deviceTask,
             spotifyClientId = spotifyClientId,

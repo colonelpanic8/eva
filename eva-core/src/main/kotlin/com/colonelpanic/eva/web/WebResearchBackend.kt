@@ -8,6 +8,7 @@ import com.colonelpanic.eva.capability.tool
 import com.colonelpanic.eva.conversation.prompt.Wording
 import com.colonelpanic.eva.providers.MODEL_RESULT_CHARS
 import com.colonelpanic.eva.providers.boundedResultText
+import com.colonelpanic.eva.providers.openai.ApiKeyAccess
 import com.colonelpanic.eva.providers.openai.OpenAiAccess
 import com.colonelpanic.eva.providers.openai.ResponsesHttpException
 import com.colonelpanic.eva.providers.openai.responsesPost
@@ -58,7 +59,7 @@ class WebResearchBackend(
                     responsesPost(boundedClient, selected, request(arguments, options, text, !selected.serverKeepsHistory))
                 } ?: return ExecutionOutcome(InvocationStatus.FAILED, text.message("web-research-timeout"))
             check((result["status"] as? JsonPrimitive)?.content == "completed")
-            parse(result, text, now())
+            parse(result, text, now(), if (selected is ApiKeyAccess) "api_key" else "subscription")
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: java.io.InterruptedIOException) {
@@ -141,6 +142,7 @@ class WebResearchBackend(
             response: JsonObject,
             text: Wording,
             retrievedAt: Instant,
+            accessMode: String,
         ): ExecutionOutcome {
             val sources = linkedMapOf<String, JsonObject>()
             val citedUrls = linkedSetOf<String>()
@@ -199,9 +201,31 @@ class WebResearchBackend(
             val keptSources = mutableListOf<JsonObject>()
             val keptSearches = mutableListOf<JsonObject>()
 
+            val note =
+                when {
+                    sources.isEmpty() && !searched -> text.message("web-research-no-sources")
+                    sources.isEmpty() -> text.message("web-research-no-citations")
+                    else -> ""
+                }
+
+            fun message() =
+                boundedResultText(
+                    listOf(
+                        answer,
+                        note,
+                        keptSources
+                            .takeIf { it.isNotEmpty() }
+                            ?.let {
+                                text.message("web-research-sources") + "\n" +
+                                    it.joinToString("\n") { source -> "${source.string("title")}: ${source.string("url")}" }
+                            }.orEmpty(),
+                    ).filter { it.isNotBlank() }.joinToString("\n"),
+                )
+
             fun data() =
                 buildJsonObject {
-                    put("answer", answer)
+                    put("answerLocation", "message")
+                    put("accessMode", accessMode)
                     put("sources", JsonArray(keptSources))
                     put("searches", JsonArray(keptSearches))
                     put("retrievedAt", retrievedAt.toString())
@@ -209,32 +233,21 @@ class WebResearchBackend(
                 }
             (citedUrls.mapNotNull(sources::get) + sources.filterKeys { it !in citedUrls }.values).forEach { source ->
                 keptSources += source
-                if (data().toString().length > MODEL_RESULT_CHARS) {
+                if (data().toString().length + JsonPrimitive(message()).toString().length > MODEL_RESULT_CHARS - 1024) {
                     keptSources.removeAt(keptSources.lastIndex)
                     truncated = true
                 }
             }
             searches.forEach { search ->
                 keptSearches += search
-                if (data().toString().length > MODEL_RESULT_CHARS) {
+                if (data().toString().length + JsonPrimitive(message()).toString().length > MODEL_RESULT_CHARS - 1024) {
                     keptSearches.removeAt(keptSearches.lastIndex)
                     truncated = true
                 }
             }
-            val note =
-                when {
-                    sources.isEmpty() && !searched -> text.message("web-research-no-sources")
-                    sources.isEmpty() -> text.message("web-research-no-citations")
-                    else -> ""
-                }
             return ExecutionOutcome(
                 InvocationStatus.COMPLETED,
-                boundedResultText(
-                    listOf(answer, note)
-                        .filter {
-                            it.isNotBlank()
-                        }.joinToString("\n"),
-                ),
+                message(),
                 data(),
             )
         }

@@ -92,6 +92,86 @@ class SubscriptionResponsesTest {
                     ).build()
             }.build()
 
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test
+    fun `truncated subscription stream never publishes partial text or tool calls`() =
+        runTest {
+            for (item in listOf(
+                """{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Partial answer"}]}""",
+                """{"type":"function_call","call_id":"partial","name":"eva_tool_0","arguments":"{\"destination\":\"Downtown\"}"}""",
+            )) {
+                streams.clear()
+                streams.add(
+                    """data: {"type":"response.created","response":{"id":"partial","status":"in_progress"}}
+
+data: {"type":"response.output_item.done","item":$item}
+
+""",
+                )
+                val session =
+                    OpenAiResponsesProvider(access, "gpt-test", client, StandardTestDispatcher(testScheduler))
+                        .open(SessionOpenRequest("You are EVA.", catalog))
+                val events = mutableListOf<ProviderEvent>()
+                val collector = launch { session.events.collect { events += it } }
+                advanceUntilIdle()
+                session.submit(ConversationInput("truncated", "Continue"))
+                session.requestResponse(ResponseRequest("truncated"))
+                advanceUntilIdle()
+                assertEquals("Incomplete Responses stream.", events.filterIsInstance<ProviderEvent.Failure>().single().message)
+                assertTrue(events.filterIsInstance<ProviderEvent.AssistantText>().isEmpty())
+                assertTrue(events.filterIsInstance<ProviderEvent.ToolCallReady>().isEmpty())
+                assertTrue(events.filterIsInstance<ProviderEvent.ResponseEnded>().isEmpty())
+                collector.cancel()
+                session.close()
+            }
+        }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test
+    fun `HTTP rejection remains a provider failure event`() =
+        runTest {
+            val rejectingClient =
+                OkHttpClient
+                    .Builder()
+                    .addInterceptor { chain ->
+                        val listing =
+                            chain
+                                .request()
+                                .url.encodedPath
+                                .endsWith("/models")
+                        Response
+                            .Builder()
+                            .request(chain.request())
+                            .protocol(Protocol.HTTP_1_1)
+                            .code(if (listing) 200 else 429)
+                            .message(if (listing) "OK" else "Too Many Requests")
+                            .body(
+                                (if (listing) """{"models":[{"slug":"gpt-test"}]}""" else """{"error":{"message":"Rate limit reached"}}""")
+                                    .toResponseBody("application/json".toMediaType()),
+                            ).build()
+                    }.build()
+            val session =
+                OpenAiResponsesProvider(access, "gpt-test", rejectingClient, StandardTestDispatcher(testScheduler))
+                    .open(SessionOpenRequest("You are EVA.", catalog))
+            val events = mutableListOf<ProviderEvent>()
+            val collector = launch { session.events.collect { events += it } }
+            advanceUntilIdle()
+            session.submit(ConversationInput("rejected", "Continue"))
+            session.requestResponse(ResponseRequest("rejected"))
+            advanceUntilIdle()
+            assertTrue(
+                events
+                    .filterIsInstance<ProviderEvent.Failure>()
+                    .single()
+                    .message
+                    .contains("Rate limit reached"),
+            )
+            assertTrue(events.filterIsInstance<ProviderEvent.ToolCallReady>().isEmpty())
+            assertTrue(events.last() is ProviderEvent.Closed)
+            collector.cancel()
+            session.close()
+        }
+
     @Test
     fun `a subscription turn streams its items and carries the conversation forward itself`() =
         runTest {

@@ -9,7 +9,6 @@ import com.colonelpanic.eva.conversation.prompt.Wording
 import com.colonelpanic.eva.providers.openai.ApiKeyAccess
 import com.colonelpanic.eva.providers.openai.ChatGptTokenSource
 import com.colonelpanic.eva.providers.openai.ChatGptTokens
-import com.colonelpanic.eva.providers.openai.OpenAiAccess
 import com.colonelpanic.eva.providers.openai.SubscriptionAccess
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancelAndJoin
@@ -66,16 +65,16 @@ class WebResearchBackendTest {
                         response(request, if (access === subscription) fixture() else completedJson())
                     }
                 val backend = WebResearchBackend({ access }, client = client, now = { instant })
-                assertEquals(
-                    InvocationStatus.COMPLETED,
+                val record =
                     dispatch(
                         backend,
                         mapOf(
                             "question" to "When does it arrive?",
                             "sourceUrl" to "https://science.nasa.gov/mission/europa-clipper/",
                         ),
-                    ).status,
-                )
+                    )
+                assertEquals(InvocationStatus.COMPLETED, record.status)
+                assertEquals(if (access === apiKey) "api_key" else "subscription", record.data!!["accessMode"]!!.jsonPrimitive.content)
                 val body = sent!!
                 assertEquals("gpt-6-sol", body["model"]!!.jsonPrimitive.content)
                 assertEquals("low", body["reasoning"]!!.jsonObject["effort"]!!.jsonPrimitive.content)
@@ -108,9 +107,11 @@ class WebResearchBackendTest {
             val backend = WebResearchBackend({ subscription }, client = client { response(it, fixture()) }, now = { instant })
             val record = dispatch(backend)
             assertEquals(InvocationStatus.COMPLETED, record.status)
-            assertEquals("NASA plans arrival at Jupiter in April 2030; the schedule could change.", record.message)
+            assertTrue(record.message.startsWith("NASA plans arrival at Jupiter in April 2030; the schedule could change."))
+            assertTrue(record.message.contains("Europa Clipper: https://science.nasa.gov/mission/europa-clipper/"))
             val data = record.data!!
-            assertEquals(record.message, data["answer"]!!.jsonPrimitive.content)
+            assertFalse(data.containsKey("answer"))
+            assertEquals("message", data["answerLocation"]!!.jsonPrimitive.content)
             assertEquals(
                 listOf("Europa Clipper", "Europa Clipper at JPL"),
                 data["sources"]!!.jsonArray.map {
@@ -276,9 +277,19 @@ class WebResearchBackendTest {
                         ),
                     )
                 }
-            val outcome = WebResearchBackend.parse(buildJsonObject { put("output", JsonArray(listOf(message))) }, Wording.bundled, instant)
+            val outcome =
+                WebResearchBackend.parse(
+                    buildJsonObject {
+                        put("output", JsonArray(listOf(message)))
+                    },
+                    Wording.bundled,
+                    instant,
+                    "subscription",
+                )
             assertTrue(outcome.data!!.toString().length <= 16384)
             assertTrue(outcome.message.length <= 16384)
+            assertTrue(outcome.data.toString().length + JsonPrimitive(outcome.message).toString().length <= 16384)
+            assertFalse(outcome.data.containsKey("answer"))
             assertEquals(JsonPrimitive(true), outcome.data["truncated"])
         }
 
@@ -293,8 +304,55 @@ class WebResearchBackendTest {
                     } + "\n\n"
             val record = dispatch(WebResearchBackend({ subscription }, client = client { response(it, stream) }))
             assertEquals(InvocationStatus.COMPLETED, record.status)
-            assertEquals("Unverified answer.", record.data!!["answer"]!!.jsonPrimitive.content)
+            assertTrue(record.message.startsWith("Unverified answer."))
+            assertFalse(record.data!!.containsKey("answer"))
         }
+
+    @Test fun longAnswerAppearsOnceAndSourcesStayWithinCombinedBudget() {
+        val answer = "Distinct research answer. ".repeat(250)
+        val annotations =
+            JsonArray(
+                (1..100).map {
+                    buildJsonObject {
+                        put("type", "url_citation")
+                        put("url", "https://example.com/" + "path".repeat(50) + "/$it")
+                        put("title", "Source $it")
+                    }
+                },
+            )
+        val response =
+            buildJsonObject {
+                put(
+                    "output",
+                    JsonArray(
+                        listOf(
+                            buildJsonObject {
+                                put("type", "message")
+                                put(
+                                    "content",
+                                    JsonArray(
+                                        listOf(
+                                            buildJsonObject {
+                                                put("type", "output_text")
+                                                put("text", answer)
+                                                put("annotations", annotations)
+                                            },
+                                        ),
+                                    ),
+                                )
+                            },
+                        ),
+                    ),
+                )
+            }
+        val outcome = WebResearchBackend.parse(response, Wording.bundled, instant, "api_key")
+        assertTrue(outcome.message.startsWith(answer.trim()))
+        assertFalse(outcome.data!!.toString().contains("Distinct research answer"))
+        assertTrue(outcome.data["sources"]!!.jsonArray.isNotEmpty())
+        assertTrue(outcome.data["sources"]!!.jsonArray.size < 100)
+        assertEquals(JsonPrimitive(true), outcome.data["truncated"])
+        assertTrue(JsonPrimitive(outcome.message).toString().length + outcome.data.toString().length <= 16384)
+    }
 
     private suspend fun dispatch(
         backend: WebResearchBackend,

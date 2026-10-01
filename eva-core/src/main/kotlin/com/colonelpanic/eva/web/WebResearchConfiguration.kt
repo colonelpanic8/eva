@@ -6,7 +6,7 @@ import kotlinx.serialization.Serializable
 data class WebResearchConfiguration(
     val enabled: Boolean = true,
     val model: String = "gpt-6-sol",
-    val effort: String = "low",
+    val effort: String = DEFAULT_EFFORT,
     val timeoutSeconds: Int = 45,
 ) {
     init {
@@ -16,6 +16,9 @@ data class WebResearchConfiguration(
     }
 
     companion object {
-        val EFFORTS = listOf("none", "minimal", "low", "medium", "high", "xhigh")
+        const val DEFAULT_EFFORT = "low"
+        val EFFORTS = listOf("none", "low", "medium", "high", "xhigh")
+
+        fun normalizedEffort(value: String) = value.takeIf { it in EFFORTS } ?: DEFAULT_EFFORT
     }
 }

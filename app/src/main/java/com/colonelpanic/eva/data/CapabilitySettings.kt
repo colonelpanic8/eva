@@ -2,6 +2,7 @@ package com.colonelpanic.eva.data
 
 import android.annotation.SuppressLint
 import android.content.Context
+import com.colonelpanic.eva.data.configuration.WebResearchPatch
 import com.colonelpanic.eva.web.WebResearchConfiguration
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -56,13 +57,14 @@ class CapabilitySettings(
         onCredentialChanged("device/portal")
     }
 
-    private val mutableWebResearch =
-        MutableStateFlow(
-            runCatching {
-                kotlinx.serialization.json.Json
-                    .decodeFromString<WebResearchConfiguration>(prefs.getString("capabilities.webResearch", "{}")!!)
-            }.getOrDefault(WebResearchConfiguration()),
-        )
+    private val restoredWebResearch =
+        runCatching {
+            kotlinx.serialization.json.Json
+                .decodeFromString<WebResearchPatch>(prefs.getString("capabilities.webResearch", "{}")!!)
+        }.getOrDefault(WebResearchPatch())
+    private val mutableWebResearch = MutableStateFlow(restoredWebResearch.materialize())
+    private val mutableWebResearchNotice = MutableStateFlow(restoredWebResearch.normalizationNotice())
+    val webResearchNoticeFlow = mutableWebResearchNotice.asStateFlow()
     val webResearchFlow = mutableWebResearch.asStateFlow()
     val webResearch get() = mutableWebResearch.value
 
@@ -75,6 +77,7 @@ class CapabilitySettings(
             )
         }
         mutableWebResearch.value = value
+        mutableWebResearchNotice.value = null
         onChanged()
     }
 

@@ -47,7 +47,7 @@ class LinkedConfiguration(
                 LinkedConfigurationResult.Saved(setupRequired)
             } else {
                 val disk = EvaConfigurationCodec.resolve(reader = selected)
-                val outcome = applyTransactionally(disk.configuration)
+                val outcome = applyTransactionally(disk)
                 directory = selected
                 resolved = disk
                 setupRequired = outcome.setupRequired
@@ -67,7 +67,7 @@ class LinkedConfiguration(
             val disk = EvaConfigurationCodec.resolve(reader = selected)
             val previous = resolved
             if (previous == null || disk.fingerprint != previous.fingerprint) {
-                val outcome = applyTransactionally(disk.configuration)
+                val outcome = applyTransactionally(disk)
                 resolved = disk
                 setupRequired = outcome.setupRequired
                 return@withLock LinkedConfigurationResult.Conflict(outcome.setupRequired)
@@ -75,7 +75,7 @@ class LinkedConfiguration(
             val current = snapshot()
             val ready = EvaConfigurationCodec.resolve(reader = selected)
             if (ready.fingerprint != disk.fingerprint) {
-                val outcome = applyTransactionally(ready.configuration)
+                val outcome = applyTransactionally(ready)
                 resolved = ready
                 setupRequired = outcome.setupRequired
                 return@withLock LinkedConfigurationResult.Conflict(outcome.setupRequired)
@@ -104,16 +104,17 @@ class LinkedConfiguration(
                     }
                 }
                 val external = EvaConfigurationCodec.resolve(reader = selected)
-                val outcome = applyTransactionally(external.configuration)
+                val outcome = applyTransactionally(external)
                 resolved = external
                 setupRequired = outcome.setupRequired
                 return@withLock LinkedConfigurationResult.Conflict(outcome.setupRequired)
             }
             resolved = saved
             if (saved.configuration == current) {
+                setupRequired = (setupRequired - ready.notices.toSet() + saved.notices).distinct()
                 LinkedConfigurationResult.Saved(setupRequired)
             } else {
-                val outcome = applyTransactionally(saved.configuration)
+                val outcome = applyTransactionally(saved)
                 setupRequired = outcome.setupRequired
                 LinkedConfigurationResult.Conflict(outcome.setupRequired)
             }
@@ -134,17 +135,27 @@ class LinkedConfiguration(
     ): LinkedConfigurationResult {
         val disk = EvaConfigurationCodec.resolve(reader = selected)
         if (!force && disk.fingerprint == resolved?.fingerprint) {
-            val outcome = reassess(disk.configuration, setupRequired)
+            val outcome = reassess(disk.configuration, setupRequired).withNotices(disk)
             setupRequired = outcome.setupRequired
             return LinkedConfigurationResult.Loaded(outcome.setupRequired)
         }
-        val outcome = applyTransactionally(disk.configuration)
+        val outcome = applyTransactionally(disk)
         resolved = disk
         setupRequired = outcome.setupRequired
         return LinkedConfigurationResult.Loaded(outcome.setupRequired)
     }
 
-    private suspend fun applyTransactionally(configuration: EvaConfiguration): ConfigurationApplyResult = apply(configuration)
+    private suspend fun applyTransactionally(resolved: ResolvedConfiguration): ConfigurationApplyResult =
+        apply(resolved.configuration).withNotices(resolved)
+
+    private fun ConfigurationApplyResult.withNotices(resolved: ResolvedConfiguration) =
+        copy(
+            setupRequired =
+                (
+                    setupRequired +
+                        resolved.notices
+                ).distinct(),
+        )
 
     private fun restoreWrittenRoot(
         selected: ConfigurationDirectory,

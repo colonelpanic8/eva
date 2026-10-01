@@ -78,6 +78,7 @@ data class SettingsUiState(
     val webResearch: com.colonelpanic.eva.web.WebResearchConfiguration =
         com.colonelpanic.eva.web
             .WebResearchConfiguration(),
+    val webResearchNotice: String? = null,
     val spotifyClientId: String? = null,
     val spotifyAccount: String? = null,
     val spotifyPremium: Boolean? = null,

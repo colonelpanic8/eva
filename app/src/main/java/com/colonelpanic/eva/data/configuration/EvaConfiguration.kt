@@ -84,12 +84,17 @@ data class EvaConfigurationDocument(
         materialize()
     }
 
+    fun normalizationNotice(): String? =
+        effort?.takeUnless { it in WebResearchConfiguration.EFFORTS }?.let {
+            "Unsupported web research reasoning effort was replaced with low. Choose a supported effort in Web research settings or capabilities.webResearch.effort."
+        }
+
     fun materialize(): WebResearchConfiguration {
         val defaults = WebResearchConfiguration()
         return WebResearchConfiguration(
             enabled ?: defaults.enabled,
             model ?: defaults.model,
-            effort ?: defaults.effort,
+            WebResearchConfiguration.normalizedEffort(effort ?: defaults.effort),
             timeoutSeconds ?: defaults.timeoutSeconds,
         )
     }
@@ -299,6 +304,7 @@ data class ResolvedConfiguration(
     val includedFingerprint: String,
     val rootText: String,
     val paths: Set<String>,
+    val notices: List<String> = emptyList(),
 )
 
 fun interface ConfigurationReader {
@@ -410,7 +416,8 @@ object EvaConfigurationCodec {
         digest.update(rootPath.toByteArray(Charsets.UTF_8))
         digest.update(byteArrayOf(0))
         digest.update(rootText.toByteArray(Charsets.UTF_8))
-        val resolved = merge(included, root.copy(include = emptyList())).materialize().validated()
+        val merged = merge(included, root.copy(include = emptyList()))
+        val resolved = merged.materialize().validated()
         return ResolvedConfiguration(
             resolved,
             root,
@@ -420,6 +427,7 @@ object EvaConfigurationCodec {
             includedDigest.digest().hex(),
             rootText,
             paths.toSet(),
+            listOfNotNull(merged.capabilities?.webResearch?.normalizationNotice()),
         )
     }
 

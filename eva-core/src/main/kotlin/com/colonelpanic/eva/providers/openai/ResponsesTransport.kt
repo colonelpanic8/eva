@@ -114,4 +114,4 @@ private fun streamError(error: JsonObject?) =
 internal class ResponsesHttpException(
     val statusCode: Int,
     message: String,
-) : IOException(message)
+) : IllegalStateException(message)

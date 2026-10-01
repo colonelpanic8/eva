@@ -301,6 +301,7 @@ messages:
   web-research-timeout: Web research timed out. No research answer was retrieved.
   web-research-http-error: "Web research failed: OpenAI returned HTTP {status}."
   web-research-failed: Web research failed; no complete research response was received. Check your OpenAI access and connection.
+  web-research-sources: "Sources:"
   web-research-no-answer: No answer was returned. The available sources may not resolve this question.
   web-research-truncated: '[Truncated by EVA: the research answer exceeded the result budget.]'
   web-research-no-sources: No web sources were retrieved; this answer is not verified by web evidence.
