@@ -50,34 +50,57 @@ import com.colonelpanic.eva.conversation.ProviderStatus
 import com.colonelpanic.eva.conversation.ThreadController
 import com.colonelpanic.eva.conversation.groups
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.nio.channels.FileLock
+
+/** What the panel icon and `summon` ask of the window. */
+private enum class WindowRequest { TOGGLE, SHOW }
 
 /**
  * EVA as a tray app: an icon in the panel, and a compact conversation window it toggles. The
- * window's close button hides it; Quit in the window ends the app. Returns the exit status.
+ * window's close button hides it while a panel shows the icon; Quit in the window ends the app.
+ * Returns the exit status.
  */
 fun runTray(
     paths: DesktopPaths,
     lock: FileLock,
 ): Int {
     val host = DesktopHost(paths, Dispatchers.Main, lock)
-    val shown = MutableStateFlow(true)
-    val summons = SummonListener(paths.summonSocket) { shown.value = true }
-    val (tray, problems) = PanelIcon.show { shown.value = !shown.value }
+    val requests = Channel<WindowRequest>(Channel.UNLIMITED)
+    val summons = SummonListener(paths.summonSocket) { requests.trySend(WindowRequest.SHOW) }
+    val (tray, problems) = PanelIcon.show { requests.trySend(WindowRequest.TOGGLE) }
     if (tray == null) System.err.println("No panel tray is available (${problems.joinToString("; ")}); closing the window quits EVA.")
     application(exitProcessOnExit = false) {
-        val visible by shown.collectAsState()
+        var shown by remember { mutableStateOf(true) }
+        var raises by remember { mutableStateOf(0) }
+        val windowState = rememberWindowState(width = 440.dp, height = 640.dp)
+        LaunchedEffect(Unit) {
+            for (request in requests) {
+                if (request == WindowRequest.TOGGLE && shown && !windowState.isMinimized) {
+                    shown = false
+                } else {
+                    shown = true
+                    windowState.isMinimized = false
+                    raises++
+                }
+            }
+        }
         Window(
-            onCloseRequest = { if (tray != null) shown.value = false else exitApplication() },
-            visible = visible,
+            onCloseRequest = { if (tray?.visible() == true) shown = false else exitApplication() },
+            visible = shown,
             title = "EVA",
             icon = painterResource("eva-icon.png"),
             alwaysOnTop = true,
-            state = rememberWindowState(width = 440.dp, height = 640.dp),
+            state = windowState,
         ) {
+            LaunchedEffect(raises) {
+                window.toFront()
+                window.requestFocus()
+            }
             MaterialTheme(if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
                 Surface(Modifier.fillMaxSize()) { Conversation(host.controller, onQuit = ::exitApplication) }
             }
@@ -98,47 +121,69 @@ private fun Conversation(
     val scope = rememberCoroutineScope()
     var problem by remember { mutableStateOf<String?>(null) }
     var draft by remember { mutableStateOf("") }
+    // Starting, connecting, and switching threads run one at a time, never beside a request.
+    val sessions = remember { Mutex() }
+    var changing by remember { mutableStateOf(false) }
     val list = rememberLazyListState()
     val shownGroups = groups(state.entries)
 
+    suspend fun changeSession(change: suspend () -> String?) =
+        sessions.withLock {
+            changing = true
+            problem = null
+            try {
+                if (change() == null) problem = connectionProblem(controller.state.value)
+            } finally {
+                changing = false
+            }
+        }
+
     LaunchedEffect(Unit) {
-        controller.state.first { !it.isLoading }
-        if (controller.state.value.threadId == null) startThread(controller, Dispatchers.Main)
-        if (connect(controller, Dispatchers.Main) == null) problem = connectionProblem(controller.state.value)
+        changeSession {
+            controller.state.first { !it.isLoading }
+            if (controller.state.value.threadId == null) startThread(controller, Dispatchers.Main)
+            connect(controller, Dispatchers.Main)
+        }
     }
     LaunchedEffect(state.entries.size, state.entries.lastOrNull()?.response) {
         if (shownGroups.isNotEmpty()) list.animateScrollToItem(shownGroups.lastIndex)
     }
 
+    val canSend = !changing && state.acceptsTextInput
+    val idle = !changing && !state.isLoading && !state.isSubmitting && !state.working && state.providerStatus != ProviderStatus.CONNECTING
+
     fun send() {
         val text = draft.trim()
-        if (text.isEmpty() || !state.acceptsTextInput) return
+        if (text.isEmpty() || !canSend) return
+        if (text.length > ThreadController.MAX_REQUEST_CHARS) {
+            problem = "Keep requests under 1,000 characters."
+            return
+        }
         controller.submit(text)
-        draft = ""
+        // The controller marks an accepted request at once; a refused one keeps its draft.
+        if (controller.state.value.isSubmitting) {
+            draft = ""
+            problem = null
+        }
     }
 
     Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                problem ?: status(state.providerStatus, state.providerLabel, state.working),
+                problem ?: status(state.providerStatus, state.providerLabel, state.working || changing),
                 Modifier.weight(1f),
                 style = MaterialTheme.typography.labelMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             TextButton(
-                onClick = {
-                    scope.launch {
-                        problem = null
-                        if (reconnectToNewThread(controller, Dispatchers.Main) == null) problem = connectionProblem(controller.state.value)
-                    }
-                },
-                enabled = !state.working,
+                onClick = { scope.launch { changeSession { reconnectToNewThread(controller, Dispatchers.Main) } } },
+                enabled = idle,
             ) { Text("New") }
             TextButton(onClick = onQuit) { Text("Quit") }
         }
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = list, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(shownGroups, key = { it.entry.id }) { Turn(it) }
+            items(shownGroups, key = { it.entry.id }) { Group(it) }
         }
         state.providerMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -156,21 +201,41 @@ private fun Conversation(
                 placeholder = { Text("Ask EVA") },
                 maxLines = 4,
             )
-            Button(::send, enabled = state.acceptsTextInput && draft.isNotBlank()) { Text("Send") }
+            Button(::send, enabled = canSend && draft.isNotBlank()) { Text("Send") }
         }
     }
 }
 
+/** A turn with what ran inside it, nested as the controller groups it, including text legs' own actions. */
 @Composable
-private fun Turn(group: EntryGroup) {
+private fun Group(group: EntryGroup) {
     val entry = group.entry
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        if (entry.request.isNotBlank()) Bubble(entry.request, mine = true)
-        group.actions.forEach { Action(it) }
-        when {
-            entry.capabilityId != null -> Action(entry)
-            entry.status == EntryStatus.SESSION -> Text(entry.response, style = MaterialTheme.typography.labelSmall)
-            entry.response.isNotBlank() -> Bubble(entry.response, mine = false)
+    val leg = entry.textLeg
+    when {
+        leg != null -> {
+            Column(Modifier.padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    leg.task?.let { "Continued in text: $it" } ?: "Continued after the connection ended",
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                group.children.forEach { Group(it) }
+            }
+        }
+
+        entry.capabilityId != null -> {
+            Action(entry)
+            group.children.forEach { Group(it) }
+        }
+
+        else -> {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (entry.request.isNotBlank()) Bubble(entry.request, mine = true)
+                group.children.forEach { Group(it) }
+                when {
+                    entry.status == EntryStatus.SESSION -> Text(entry.response, style = MaterialTheme.typography.labelSmall)
+                    entry.response.isNotBlank() -> Bubble(entry.response, mine = false)
+                }
+            }
         }
     }
 }

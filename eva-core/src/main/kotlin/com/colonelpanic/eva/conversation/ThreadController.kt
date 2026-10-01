@@ -996,7 +996,7 @@ class ThreadController(
             mutableState.update { it.copy(providerMessage = "EVA is still working on the last request.") }
             return
         }
-        if (text.length > 1000) {
+        if (text.length > MAX_REQUEST_CHARS) {
             mutableState.update { it.copy(providerMessage = "Keep requests under 1,000 characters.") }
             return
         }
@@ -1496,6 +1496,9 @@ class ThreadController(
         const val CALLS_PER_TURN = 32
         private const val VOICE_REQUEST = "Voice request"
         private const val MAX_PROPOSAL_REQUEST = 1000
+
+        /** The longest typed request a turn accepts. */
+        const val MAX_REQUEST_CHARS = 1000
 
         /** Bounds the wait for a goodbye whose end is never reported. */
         private const val END_SPEECH_LIMIT_MILLIS = 10_000L

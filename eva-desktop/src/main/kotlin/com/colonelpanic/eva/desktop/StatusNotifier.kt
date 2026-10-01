@@ -6,6 +6,7 @@ import org.freedesktop.dbus.annotations.DBusMemberName
 import org.freedesktop.dbus.annotations.Position
 import org.freedesktop.dbus.connections.impl.DBusConnection
 import org.freedesktop.dbus.connections.impl.DBusConnectionBuilder
+import org.freedesktop.dbus.interfaces.DBus
 import org.freedesktop.dbus.interfaces.DBusInterface
 import org.freedesktop.dbus.interfaces.Properties
 import org.freedesktop.dbus.types.Variant
@@ -58,10 +59,46 @@ class IconPixmap(
  */
 class StatusNotifier private constructor(
     private val connection: DBusConnection,
+    private val service: String,
     private val onActivate: () -> Unit,
 ) : StatusNotifierItemInterface,
     Properties,
     PanelIcon {
+    /** The unique bus name of the watcher that accepted the icon; a restarted panel has a new one. */
+    @Volatile private var acceptedBy: String? = null
+
+    private val bus get() = connection.getRemoteObject("org.freedesktop.DBus", "/org/freedesktop/DBus", DBus::class.java)
+
+    override fun visible(): Boolean = acceptedBy != null && runCatching { bus.GetNameOwner(WATCHER) }.getOrNull() == acceptedBy
+
+    /** Registers with the panel's watcher, which forgets items whenever the panel restarts. */
+    private fun register() {
+        acceptedBy =
+            runCatching {
+                val owner = bus.GetNameOwner(WATCHER)
+                connection
+                    .getRemoteObject(
+                        WATCHER,
+                        WATCHER_PATH,
+                        StatusNotifierWatcher::class.java,
+                        true,
+                    ).registerStatusNotifierItem(service)
+                owner
+            }.getOrNull()
+    }
+
+    private fun follow() {
+        connection.addSigHandler(DBus.NameOwnerChanged::class.java) { signal ->
+            if (signal.name == WATCHER) {
+                if (signal.newOwner.isEmpty()) {
+                    acceptedBy = null
+                } else {
+                    register()
+                }
+            }
+        }
+    }
+
     private val properties: Map<String, Variant<*>> =
         mapOf(
             "Category" to Variant("ApplicationStatus"),
@@ -95,11 +132,12 @@ class StatusNotifier private constructor(
         orientation: String,
     ) = Unit
 
+    /** The stored Variant, which carries signatures such as `a(iiay)` that erased values cannot. */
     @Suppress("UNCHECKED_CAST")
     override fun <A : Any?> Get(
         iface: String,
         name: String,
-    ): A = properties.getValue(name).value as A
+    ): A = properties.getValue(name) as A
 
     override fun <A : Any?> Set(
         iface: String,
@@ -113,6 +151,8 @@ class StatusNotifier private constructor(
 
     companion object {
         private const val PATH = "/StatusNotifierItem"
+        private const val WATCHER = "org.kde.StatusNotifierWatcher"
+        private const val WATCHER_PATH = "/StatusNotifierWatcher"
 
         /** Shows the icon, or fails when no panel hosts one, as on a desktop without a StatusNotifierWatcher. */
         fun show(
@@ -122,13 +162,13 @@ class StatusNotifier private constructor(
             runCatching {
                 val connection = DBusConnectionBuilder.forAddress(busAddress()).withShared(false).build()
                 try {
-                    val item = StatusNotifier(connection, onActivate)
-                    val name = "org.kde.StatusNotifierItem-${ProcessHandle.current().pid()}-1"
-                    connection.requestBusName(name)
+                    val service = "org.kde.StatusNotifierItem-${ProcessHandle.current().pid()}-1"
+                    val item = StatusNotifier(connection, service, onActivate)
+                    connection.requestBusName(service)
                     connection.exportObject(PATH, item)
-                    connection
-                        .getRemoteObject("org.kde.StatusNotifierWatcher", "/StatusNotifierWatcher", StatusNotifierWatcher::class.java, true)
-                        .registerStatusNotifierItem(name)
+                    item.follow()
+                    item.register()
+                    check(item.acceptedBy != null) { "No StatusNotifierWatcher accepted the icon." }
                     item
                 } catch (failure: Exception) {
                     connection.close()

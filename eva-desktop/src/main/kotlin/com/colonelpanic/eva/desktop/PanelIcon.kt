@@ -9,6 +9,9 @@ import javax.imageio.ImageIO
 
 /** EVA's icon in the desktop panel; clicking it toggles the window. */
 interface PanelIcon : AutoCloseable {
+    /** Whether a panel shows the icon now; while none does, closing the window must not hide EVA. */
+    fun visible(): Boolean
+
     companion object {
         /**
          * A StatusNotifierItem where a panel hosts them (Wayland, KDE, most current bars), else the
@@ -30,6 +33,8 @@ interface PanelIcon : AutoCloseable {
 private class AwtTrayIcon(
     private val icon: TrayIcon,
 ) : PanelIcon {
+    override fun visible() = true
+
     override fun close() = SystemTray.getSystemTray().remove(icon)
 
     companion object {

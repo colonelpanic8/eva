@@ -43,11 +43,48 @@ class StatusNotifierTest {
                     val all = properties.GetAll("org.kde.StatusNotifierItem")
                     assertEquals("EVA", all.getValue("Title").value)
                     assertTrue((all.getValue("IconPixmap").value as List<*>).isNotEmpty())
+                    assertEquals("EVA", properties.Get<Any>("org.kde.StatusNotifierItem", "Title"))
+                    assertTrue((properties.Get<Any>("org.kde.StatusNotifierItem", "IconPixmap") as List<*>).isNotEmpty())
 
                     panel.getRemoteObject(service, "/StatusNotifierItem", StatusNotifierItemInterface::class.java).activate(0, 0)
                     assertTrue(clicked.await(5, TimeUnit.SECONDS))
                 }
             }
+        }
+    }
+
+    @Test
+    fun `the icon registers again when the panel restarts and reports when it is gone`() {
+        val address = "unix:path=${folder.root.resolve("bus")}"
+        EmbeddedDBusDaemon("$address,listen=true").use { daemon ->
+            daemon.startInBackgroundAndWait(10_000)
+            val first = DBusConnectionBuilder.forAddress(address).withShared(false).build()
+            first.requestBusName("org.kde.StatusNotifierWatcher")
+            first.exportObject("/StatusNotifierWatcher", Watcher())
+            StatusNotifier.show(onActivate = {}, busAddress = { address }).getOrThrow().use { item ->
+                assertTrue(item.visible())
+                first.close()
+                awaitVisible(item, false)
+
+                DBusConnectionBuilder.forAddress(address).withShared(false).build().use { restarted ->
+                    val watcher = Watcher()
+                    restarted.requestBusName("org.kde.StatusNotifierWatcher")
+                    restarted.exportObject(watcher.objectPath, watcher)
+                    awaitVisible(item, true)
+                    assertEquals(1, watcher.registered.size)
+                }
+            }
+        }
+    }
+
+    private fun awaitVisible(
+        item: StatusNotifier,
+        expected: Boolean,
+    ) {
+        val deadline = System.nanoTime() + 5_000_000_000
+        while (item.visible() != expected) {
+            check(System.nanoTime() < deadline) { "The icon never became visible=$expected" }
+            Thread.sleep(50)
         }
     }
 
