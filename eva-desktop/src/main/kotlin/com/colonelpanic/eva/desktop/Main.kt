@@ -44,20 +44,16 @@ fun main(args: Array<String>) {
     exitProcess(status)
 }
 
-/** Runs [block] holding the storage lock, so it cannot overlap a chat's recovery or token refresh. */
+/**
+ * Runs [block] holding the storage lock, so it cannot overlap a chat's recovery or token refresh.
+ * The lock is held until the process exits unless the host releases it after a clean shutdown.
+ */
 private fun owned(
     paths: DesktopPaths,
     block: (FileLock) -> Int,
 ): Int {
     val lock = paths.lock() ?: return System.err.println(LOCKED).let { 1 }
-    return try {
-        block(lock)
-    } finally {
-        if (lock.isValid) {
-            lock.release()
-            lock.channel().close()
-        }
-    }
+    return block(lock)
 }
 
 private suspend fun login(paths: DesktopPaths): Int {

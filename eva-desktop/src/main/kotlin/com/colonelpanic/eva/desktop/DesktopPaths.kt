@@ -8,6 +8,23 @@ import java.nio.file.Files
 import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.PosixFilePermissions
 
+/**
+ * Sets and confirms [permissions] on [file]. Conversations and tokens must not be readable by
+ * other users, so a filesystem that cannot guarantee this stops EVA rather than exposing them.
+ */
+internal fun restrictTo(
+    file: File,
+    permissions: String,
+) {
+    val wanted = PosixFilePermissions.fromString(permissions)
+    try {
+        Files.setPosixFilePermissions(file.toPath(), wanted)
+    } catch (error: UnsupportedOperationException) {
+        throw IllegalStateException("EVA keeps its files private with POSIX permissions, which ${file.parent} does not support.", error)
+    }
+    check(Files.getPosixFilePermissions(file.toPath()) == wanted) { "EVA could not make $file private." }
+}
+
 /** Where EVA keeps its files on this computer, following the XDG base directories. */
 class DesktopPaths(
     val config: File,
@@ -22,9 +39,9 @@ class DesktopPaths(
     fun secure() {
         for (directory in listOf(config, data, memory)) {
             directory.mkdirs()
-            restrict(directory, "rwx------")
+            restrictTo(directory, "rwx------")
         }
-        listOf(config, data, memory).flatMap { it.listFiles()?.filter(File::isFile).orEmpty() }.forEach { restrict(it, "rw-------") }
+        listOf(config, data, memory).flatMap { it.listFiles()?.filter(File::isFile).orEmpty() }.forEach { restrictTo(it, "rw-------") }
     }
 
     /**
@@ -42,13 +59,6 @@ class DesktopPaths(
             }
         if (lock == null) channel.close()
         return lock
-    }
-
-    private fun restrict(
-        file: File,
-        permissions: String,
-    ) {
-        runCatching { Files.setPosixFilePermissions(file.toPath(), PosixFilePermissions.fromString(permissions)) }
     }
 
     companion object {

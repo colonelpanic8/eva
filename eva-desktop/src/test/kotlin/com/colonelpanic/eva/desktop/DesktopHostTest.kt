@@ -2,10 +2,25 @@ package com.colonelpanic.eva.desktop
 
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.MemoryCapabilities
+import com.colonelpanic.eva.conversation.ProviderStatus
+import com.colonelpanic.eva.conversation.TurnStatus
 import com.colonelpanic.eva.conversation.prompt.Wording
+import com.colonelpanic.eva.providers.ConversationInput
+import com.colonelpanic.eva.providers.ConversationProvider
+import com.colonelpanic.eva.providers.ConversationSession
+import com.colonelpanic.eva.providers.CorrelatedToolResult
+import com.colonelpanic.eva.providers.ProviderEvent
+import com.colonelpanic.eva.providers.ResponseRequest
+import com.colonelpanic.eva.providers.SessionOpenRequest
+import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.newSingleThreadContext
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -25,7 +40,7 @@ class DesktopHostTest {
         runBlocking {
             val paths = DesktopPaths(folder.root.resolve("config"), folder.root.resolve("data"))
             val lock = checkNotNull(paths.lock())
-            DesktopHost(paths, Dispatchers.Default, lock) { Opening.Opened }.use { host ->
+            DesktopHost(paths, Dispatchers.Default, lock, opener = { Opening.Opened }).use { host ->
                 val state = host.controller.state.first { !it.isLoading }
                 assertNull(state.errorMessage)
                 assertFalse(host.tokens.signedIn)
@@ -91,4 +106,51 @@ class DesktopHostTest {
         assertEquals("rwx------", PosixFilePermissions.toString(Files.getPosixFilePermissions(paths.config.toPath())))
         assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(paths.journal.toPath())))
     }
+
+    /** Connects, accepts every request, and never answers. */
+    private class SilentProvider : ConversationProvider {
+        override suspend fun open(request: SessionOpenRequest): ConversationSession =
+            object : ConversationSession {
+                override val connectionEpoch = "silent"
+                override val events =
+                    flow {
+                        emit(ProviderEvent.Connected("silent", request.catalog.revision))
+                        awaitCancellation()
+                    }
+
+                override suspend fun submit(input: ConversationInput) = Unit
+
+                override suspend fun requestResponse(request: ResponseRequest) = Unit
+
+                override suspend fun submitToolResult(result: CorrelatedToolResult) = Unit
+
+                override suspend fun close() = Unit
+            }
+    }
+
+    @OptIn(DelicateCoroutinesApi::class, ExperimentalCoroutinesApi::class)
+    @Test
+    fun `shutdown interrupts a turn that outlives its deadline before giving up storage`() =
+        runBlocking {
+            val paths = DesktopPaths(folder.root.resolve("config"), folder.root.resolve("data"))
+            val ui = newSingleThreadContext("test-ui")
+            val host = DesktopHost(paths, ui, checkNotNull(paths.lock()), { Opening.Opened }) { SilentProvider() }
+            val controller = host.controller
+            controller.state.first { !it.isLoading }
+            withContext(ui) { controller.newThread() }
+            val threadId = checkNotNull(controller.state.first { it.threadId != null }.threadId)
+            withContext(ui) { controller.connect("") }
+            controller.state.first { it.providerStatus == ProviderStatus.CONNECTED }
+            withContext(ui) { controller.submit("wait for an answer that never comes") }
+            controller.working.first { it.isNotEmpty() }
+
+            assertTrue(host.shutdown(timeoutMillis = 300))
+
+            val reopened = checkNotNull(paths.lock()) { "A clean shutdown releases ownership" }
+            JdbcJournal(paths.journal).use { journal ->
+                assertEquals(listOf(TurnStatus.INTERRUPTED), JdbcConversationStore(journal).turns(threadId).map { it.status })
+            }
+            reopened.release()
+            ui.close()
+        }
 }
