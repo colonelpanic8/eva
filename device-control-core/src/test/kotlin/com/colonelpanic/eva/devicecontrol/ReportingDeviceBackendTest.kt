@@ -53,12 +53,16 @@ class ReportingDeviceBackendTest {
                 )
             }
             backend.perform(Back("a1", "t", 0, "o1"))
+            // A plain successful read clears the warning, with no input needed.
+            read = { screen }
+            backend.observe()
 
             assertEquals(
                 listOf(
                     null,
                     "Shizuku couldn't read the screen: helper didn't connect",
                     "Shizuku couldn't deliver the input: the shizuku backend is unavailable",
+                    null,
                 ),
                 reports,
             )

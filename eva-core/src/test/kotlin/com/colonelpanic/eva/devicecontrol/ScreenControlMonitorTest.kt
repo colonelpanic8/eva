@@ -44,11 +44,13 @@ class ScreenControlMonitorTest {
             assertEquals(listOf(Health.READY, Health.READY), health())
 
             monitor.record("portal", "Portal couldn't read the screen: no root node")
+            val failedAt = clock
             val failed =
                 monitor.status.value.routes
                     .first()
             assertEquals(Health.UNHEALTHY, failed.health)
             assertEquals("Portal couldn't read the screen: no root node", failed.problem)
+            assertEquals(failedAt, failed.sinceMillis)
             // A real failure still lets a task try the route, but a passing check does not clear it.
             assertEquals(0, monitor.status.value.preferred)
             monitor.refresh()
@@ -56,6 +58,12 @@ class ScreenControlMonitorTest {
 
             monitor.record("portal", null)
             assertEquals(listOf(Health.READY, Health.READY), health())
+            assertEquals(
+                null,
+                monitor.status.value.routes
+                    .first()
+                    .sinceMillis,
+            )
         }
 
     @Test

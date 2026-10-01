@@ -14,6 +14,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
@@ -23,6 +26,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.unit.dp
 import com.colonelpanic.eva.devicecontrol.ScreenControlStatus
 import com.colonelpanic.eva.devicecontrol.ScreenControlStatus.Health
+import kotlinx.coroutines.delay
 
 /** Always on the conversation bar: a broken screen route otherwise stays invisible until a task fails. */
 @Composable
@@ -32,6 +36,7 @@ internal fun ScreenControlChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val now by wallClock()
     AssistChip(
         onClick = onClick,
         label = {
@@ -71,7 +76,7 @@ internal fun ScreenControlChip(
                                 )
                             }
                         }
-                        Text(route.name)
+                        Text(route.sinceMillis?.let { "${route.name} · ${ago(it, now)}" } ?: route.name)
                     }
                 }
             }
@@ -79,7 +84,7 @@ internal fun ScreenControlChip(
         modifier =
             modifier.padding(end = 8.dp).clearAndSetSemantics {
                 role = Role.Button
-                contentDescription = screenControlDescription(status, taskRunning)
+                contentDescription = screenControlDescription(status, taskRunning, now)
             },
     )
 }
@@ -87,17 +92,47 @@ internal fun ScreenControlChip(
 internal fun screenControlDescription(
     status: ScreenControlStatus,
     taskRunning: Boolean,
+    nowMillis: Long,
 ): String {
     if (!status.enabled) return "Screen control is off. Open settings."
-    val routes = status.routes.joinToString(" ") { "${it.name}: ${routeSummary(it)}" }
+    val routes = status.routes.joinToString(" ") { "${it.name}: ${routeSummary(it, nowMillis)}" }
     return "Screen control. ${if (taskRunning) "A device task is running. " else ""}$routes Open settings."
 }
 
 /** What a route's health means in words, with the reason when it is not ready. */
-internal fun routeSummary(route: ScreenControlStatus.Route): String =
-    when (route.health) {
+internal fun routeSummary(
+    route: ScreenControlStatus.Route,
+    nowMillis: Long,
+): String {
+    val since = route.sinceMillis?.let { " · ${ago(it, nowMillis)}" }.orEmpty()
+    return when (route.health) {
         Health.READY -> "ready."
         Health.SETUP_NEEDED -> "needs setup. ${route.problem}"
-        Health.DEGRADED -> "its check is failing. ${route.problem}"
-        Health.UNHEALTHY -> "the last screen action through it failed. ${route.problem}"
+        Health.DEGRADED -> "its check is failing$since. ${route.problem}"
+        Health.UNHEALTHY -> "the last screen action through it failed$since. ${route.problem}"
+    }
+}
+
+/** How long ago [thenMillis] was, coarse enough to read at a glance. */
+internal fun ago(
+    thenMillis: Long,
+    nowMillis: Long,
+): String {
+    val minutes = (nowMillis - thenMillis).coerceAtLeast(0) / 60_000
+    return when {
+        minutes < 1 -> "just now"
+        minutes < 60 -> "$minutes min ago"
+        minutes < 24 * 60 -> "${minutes / 60} h ago"
+        else -> "${minutes / (24 * 60)} d ago"
+    }
+}
+
+/** The current time, ticking so relative times stay true while the screen is open. */
+@Composable
+internal fun wallClock(): State<Long> =
+    produceState(System.currentTimeMillis()) {
+        while (true) {
+            delay(30_000)
+            value = System.currentTimeMillis()
+        }
     }

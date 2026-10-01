@@ -25,6 +25,8 @@ data class ScreenControlStatus(
         val name: String,
         val problem: String?,
         val health: Health = if (problem == null) Health.READY else Health.UNHEALTHY,
+        /** Wall-clock time of the evidence behind [problem]: the failure, or when the check started failing. */
+        val sinceMillis: Long? = null,
     )
 
     val enabled get() = routes.isNotEmpty()
@@ -54,6 +56,7 @@ class ScreenControlMonitor(
         var probeFailure: String? = null
         var probeFailingSince: Long? = null
         var failure: String? = null
+        var failedAt: Long? = null
         var lastSuccess: Long? = null
     }
 
@@ -69,7 +72,7 @@ class ScreenControlMonitor(
         synchronized(evidence) {
             val entry = evidence.getOrPut(backend, ::Evidence)
             entry.failure = failure
-            if (failure == null) entry.lastSuccess = now()
+            if (failure == null) entry.lastSuccess = now() else entry.failedAt = now()
         }
         publish()
     }
@@ -120,11 +123,11 @@ class ScreenControlMonitor(
             }
 
             entry.failure != null -> {
-                ScreenControlStatus.Route(name, entry.failure, ScreenControlStatus.Health.UNHEALTHY)
+                ScreenControlStatus.Route(name, entry.failure, ScreenControlStatus.Health.UNHEALTHY, entry.failedAt)
             }
 
             entry.probeFailure != null && (lastSuccess == null || since == null || since > lastSuccess) -> {
-                ScreenControlStatus.Route(name, entry.probeFailure, ScreenControlStatus.Health.DEGRADED)
+                ScreenControlStatus.Route(name, entry.probeFailure, ScreenControlStatus.Health.DEGRADED, since)
             }
 
             else -> {
