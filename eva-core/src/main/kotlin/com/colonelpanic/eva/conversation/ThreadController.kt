@@ -719,7 +719,13 @@ class ThreadController(
                                 connectionCatalog,
                                 // Captions only; a typed session has no audio to transcribe.
                                 if (voice) voiceKeywords() else emptyList(),
-                                history = projectHistory(items, receipts(items), readBounded = items.size >= ConversationStore.DEFAULT_ITEM_LIMIT),
+                                history =
+                                    projectHistory(
+                                        items,
+                                        receipts(items),
+                                        readBounded =
+                                            items.size >= ConversationStore.DEFAULT_ITEM_LIMIT,
+                                    ),
                             ),
                         )
                     openedSession = opened
@@ -2133,7 +2139,13 @@ class ThreadController(
                                     instruction?.let { wording().message(Wording.HANDOFF_INSTRUCTIONS) + "\n" + JsonPrimitive(it) }
                                         ?: wording().message(Wording.CONTINUATION)
                                 )
-                        val history = projectHistory(items, receipts(items), readBounded = items.size >= ConversationStore.DEFAULT_ITEM_LIMIT)
+                        val history =
+                            projectHistory(
+                                items,
+                                receipts(items),
+                                readBounded =
+                                    items.size >= ConversationStore.DEFAULT_ITEM_LIMIT,
+                            )
                         val textLeg =
                             ThreadItem.TextLeg(
                                 UUID.randomUUID().toString(),

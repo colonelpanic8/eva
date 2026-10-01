@@ -390,8 +390,15 @@ class ScreenActions(
 
     /** Quotes on-screen text, saying so when only its start fits. */
     private fun quote(text: String): String {
-        if (text.length <= QUOTE_CHARS) return kotlinx.serialization.json.JsonPrimitive(text).toString()
-        val start = kotlinx.serialization.json.JsonPrimitive(text.take(QUOTE_CHARS) + "…").toString()
+        if (text.length <= QUOTE_CHARS) {
+            return kotlinx.serialization.json
+                .JsonPrimitive(text)
+                .toString()
+        }
+        val start =
+            kotlinx.serialization.json
+                .JsonPrimitive(text.take(QUOTE_CHARS) + "…")
+                .toString()
         return "$start (first $QUOTE_CHARS of ${text.length} characters)"
     }
 
