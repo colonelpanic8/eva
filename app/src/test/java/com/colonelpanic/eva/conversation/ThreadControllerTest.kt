@@ -365,6 +365,53 @@ class ThreadControllerTest {
         }
 
     @Test
+    fun `a mutation after an abandoned one waits for it instead of running beside it`() =
+        runTest {
+            val release = CompletableDeferred<Unit>()
+            var running = 0
+            var overlapped = false
+            val hanging =
+                object : ExecutionBackend {
+                    override suspend fun unavailableReason(): String? = null
+
+                    override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome =
+                        withContext(NonCancellable) {
+                            executions++
+                            if (++running > 1) overlapped = true
+                            if (arguments["place"] == "Park") release.await()
+                            running--
+                            ExecutionOutcome(InvocationStatus.COMPLETED, "Done ${arguments["place"]}")
+                        }
+                }
+            val provider = FakeProvider()
+            val controller = controller(provider, registry = CapabilityRegistry(mapOf(action.id to hanging), listOf(action)))
+            advanceUntilIdle()
+            controller.connect("test")
+            advanceUntilIdle()
+            controller.submit("Start")
+            advanceUntilIdle()
+            provider.call("hung", action.id, "place" to "Park")
+            runCurrent()
+            val task = controller.taskSnapshots.value.single()
+            controller.forceStopTask(task.taskId)
+            controller.forceStopTask(task.taskId)
+            runCurrent()
+            assertTrue(controller.taskSnapshots.value.isEmpty())
+
+            controller.submit("Next")
+            advanceUntilIdle()
+            provider.call("next", action.id, "place" to "Home")
+            advanceTimeBy(30_000)
+            runCurrent()
+            assertEquals(1, executions)
+            release.complete(Unit)
+            advanceUntilIdle()
+            assertEquals(2, executions)
+            assertFalse(overlapped)
+            assertEquals(InvocationStatus.COMPLETED, repository.byCallIds(listOf("provider:session:next")).values.single().status)
+        }
+
+    @Test
     fun `voice acceptance does not wait for promotion and covered turns receive no limit notice`() =
         runTest {
             val voice = FakeProvider()

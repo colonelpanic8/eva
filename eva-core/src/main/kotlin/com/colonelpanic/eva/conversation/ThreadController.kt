@@ -255,6 +255,20 @@ class ThreadController(
 
     private val mutationLocks = mutableMapOf<String, Mutex>()
 
+    /** Mutations a force stop stopped waiting for, by thread; their effects are uncertain until they return. */
+    private val abandonedMutations = mutableMapOf<String, MutableSet<Job>>()
+
+    private fun abandonedMutationOn(threadId: String) = synchronized(abandonedMutations) { threadId in abandonedMutations }
+
+    private fun releaseAbandoned(
+        threadId: String,
+        job: Job,
+    ) = synchronized(abandonedMutations) {
+        val jobs = abandonedMutations[threadId] ?: return@synchronized
+        jobs -= job
+        if (jobs.isEmpty()) abandonedMutations -= threadId
+    }
+
     private data class VoiceTurn(
         val turnId: String,
         val announceOnly: Boolean,
@@ -1562,6 +1576,7 @@ class ThreadController(
 
         /** Dispatches serialized on the device lease, which a handoff does not wait for. */
         private val deviceDispatches = mutableSetOf<Job>()
+        private val mutationDispatches = mutableSetOf<Job>()
 
         /** This request's phone action completed or was handed off, so the request has been served. */
         var actionServiced = false
@@ -1690,7 +1705,7 @@ class ThreadController(
                                 }
 
                                 !definition.readOnly && !definition.bookkeeping &&
-                                    tasks.values.any { it.threadId == threadId && it.mutationUncertain } -> {
+                                    (tasks.values.any { it.threadId == threadId && it.mutationUncertain } || abandonedMutationOn(threadId)) -> {
                                     wording().message(Wording.MUTATION_UNCERTAIN)
                                 }
 
@@ -1793,6 +1808,8 @@ class ThreadController(
                     end("ended: action history could not be saved")
                 } finally {
                     stillWorking?.cancel()
+                    // Still inside the thread lock, so a queued mutation sees this one as returned.
+                    releaseAbandoned(threadId, currentCoroutineContext().job)
                 }
             }
             // The device coordinator owns long tasks and UI serialization. Other mutations share the thread lock.
@@ -1845,6 +1862,7 @@ class ThreadController(
                 }
             dispatches += job
             if (serializedByDevice) deviceDispatches += job
+            if (definition?.readOnly != true && definition?.bookkeeping != true) mutationDispatches += job
         }
 
         /**
@@ -1959,6 +1977,11 @@ class ThreadController(
                     }
                 }
                 if (dispatches.any { !it.isCompleted }) {
+                    val stuck = mutationDispatches.filter { !it.isCompleted }
+                    if (stuck.isNotEmpty()) {
+                        synchronized(abandonedMutations) { abandonedMutations.getOrPut(threadId) { mutableSetOf() } += stuck }
+                        stuck.forEach { job -> job.invokeOnCompletion { releaseAbandoned(threadId, job) } }
+                    }
                     dispatcher.abandon(actionCallIds, wording().message(Wording.FORCE_STOP_ABANDONED))
                     progress[turnId]?.lastActionStatus = InvocationStatus.UNKNOWN.name
                     refreshTaskSnapshots()
@@ -2048,7 +2071,10 @@ class ThreadController(
             tasks.remove(turnId)
             progress.remove(turnId)
             coverageNotices.removeAll { it.first == turnId }
-            if (tasks.values.none { it.threadId == threadId }) mutationLocks.remove(threadId)
+            // An abandoned dispatch can still hold the lock; a fresh one would let the next mutation run beside it.
+            if (tasks.values.none { it.threadId == threadId } && mutationLocks[threadId]?.isLocked != true) {
+                mutationLocks.remove(threadId)
+            }
             updateWorkCoverage()
             if (!hasActiveTasks(threadId)) mutableWorking.update { it - threadId }
             finishSubmitting(inputId)
