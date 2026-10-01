@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Looper
 import com.colonelpanic.eva.audio.VoiceSessionService
+import kotlinx.coroutines.async
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame
@@ -160,6 +161,31 @@ class TurnWorkServiceTest {
             assertEquals(WorkCoverage.SHORT_SERVICE, host.coverage)
             assertTrue(host.interruptions.isEmpty())
             assertTrue(kotlinx.coroutines.runBlocking { TurnWorkService.ensureStarted(host) })
+        } finally {
+            controller.destroy()
+        }
+    }
+
+    @Test
+    fun `accepting work withdraws a stop deferred behind a pending start`() {
+        val host = RuntimeEnvironment.getApplication() as WorkApplication
+        TurnWorkService.start(host)
+        TurnWorkService.stop(host)
+        val controller = Robolectric.buildService(TurnWorkService::class.java).create()
+        try {
+            val service = controller.get()
+            val covered =
+                kotlinx.coroutines.runBlocking {
+                    val started =
+                        async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) { TurnWorkService.ensureStarted(host) }
+                    service.onStartCommand(null, 0, 1)
+                    service.onStartCommand(null, 0, 2)
+                    started.await()
+                }
+            assertTrue(covered)
+            assertFalse(shadowOf(service).isStoppedBySelf)
+            assertEquals(WorkCoverage.LONG_RUNNING, host.coverage)
+            assertTrue(host.interruptions.isEmpty())
         } finally {
             controller.destroy()
         }

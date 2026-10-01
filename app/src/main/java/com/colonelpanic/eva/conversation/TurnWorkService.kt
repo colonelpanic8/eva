@@ -234,10 +234,20 @@ class TurnWorkService : Service() {
             }
         }
 
+        /**
+         * Starts unless already promoted, even with a start pending: a new start withdraws a stop
+         * deferred behind that pending one, which would otherwise end coverage on arrival.
+         */
         suspend fun ensureStarted(context: Context): Boolean {
-            if (promotion.value == WorkCoverage.NONE) start(context)
+            val host = context.applicationContext as? TurnWorkHost
+            val current = promotion.value
+            if (current != WorkCoverage.LONG_RUNNING && current != WorkCoverage.SHORT_SERVICE) start(context)
             val mode = promotion.first { it != null }
-            if (mode == WorkCoverage.SHORT_SERVICE) (context.applicationContext as? TurnWorkHost)?.workCoverageLimited(SHORT_LIMIT)
+            if (mode == WorkCoverage.SHORT_SERVICE) host?.workCoverageLimited(SHORT_LIMIT)
+            if (mode == WorkCoverage.NONE && host?.needsWorkCoverage() == true) {
+                host.workCoverageLimited(START_DENIED)
+                host.interruptWork(START_DENIED)
+            }
             return mode != WorkCoverage.NONE
         }
 
