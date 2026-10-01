@@ -764,7 +764,9 @@ Voice shutdown rechecks coverage, including when an earlier attempt was refused.
 
 The ongoing notification shows the active task count, a task's text and elapsed
 time, any **looks stuck** marker or fallback limit, Stop all, and a link to Running
-work. Notification permission can hide Android notifications; thread notices and
+work; it is reposted only when that text changes. During a call the work service
+holds the voice notification's ID instead, so the call shows one notification;
+the work notification returns when the call ends. Notification permission can hide Android notifications; thread notices and
 the in-app task surface still expose restrictions. Services remain non-sticky;
 force-stop and process death do not trigger replay. A foreground service is not a
 wake lock, a lock-screen bypass, or a guarantee against OEM/process termination.
