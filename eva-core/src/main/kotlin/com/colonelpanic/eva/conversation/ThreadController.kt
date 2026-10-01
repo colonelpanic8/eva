@@ -1774,10 +1774,13 @@ class ThreadController(
                 }
             }
             // The device coordinator owns long tasks and UI serialization. Other mutations share the thread lock.
+            val serializedByDevice =
+                event.capabilityId == CapabilityRegistry.DEVICE_TASK ||
+                    runCatching { context.snapshot.resolve(proposal)?.usesDeviceUi(proposal) == true }.getOrDefault(false)
             val job =
                 taskScope.launch(start = CoroutineStart.UNDISPATCHED) {
                     try {
-                        if (definition?.readOnly == true || event.capabilityId == CapabilityRegistry.DEVICE_TASK) {
+                        if (definition?.readOnly == true || serializedByDevice) {
                             run()
                         } else {
                             val waiting =

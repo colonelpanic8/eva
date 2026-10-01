@@ -12,6 +12,7 @@ import com.colonelpanic.eva.capability.ExecutionOutcome
 import com.colonelpanic.eva.capability.InitiatorKind
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.MemoryInvocationRepository
+import com.colonelpanic.eva.capability.ToolProposal
 import com.colonelpanic.eva.conversation.MemoryConversationStore
 import com.colonelpanic.eva.conversation.ProviderStatus
 import com.colonelpanic.eva.conversation.ThreadController
@@ -598,6 +599,31 @@ class RealtimeTurnOwnershipTest {
         }
 
     @Test
+    fun `a screen action waiting on the device does not block a message on the same thread`() =
+        runTest {
+            val f = fixture()
+            f.speech("first", "r1", "Tap the blue button")
+            f.call("r1", "tap", "test.tap")
+            f.done("r1")
+            runCurrent()
+            f.speech("second", "r2", "Text Bob I'm late")
+            f.call("r2", "message", "test.mutate")
+            f.done("r2")
+            runCurrent()
+            assertEquals(listOf("test.tap", "test.mutate"), f.executions)
+            assertTrue(f.outputs("tap").isEmpty())
+            assertEquals(
+                "COMPLETED",
+                f
+                    .outputs("message")
+                    .single()
+                    .getValue("status")
+                    .jsonPrimitive.content,
+            )
+            f.close()
+        }
+
+    @Test
     fun `abandoned speech is released without shifting later response ownership`() =
         runTest {
             val f = fixture()
@@ -1009,18 +1035,20 @@ class RealtimeTurnOwnershipTest {
         val acknowledged = mutableSetOf<String>()
         private val registry =
             CapabilityRegistry(
-                listOf("test.read", "test.wait", "test.mutate", CapabilityRegistry.DEVICE_TASK).associateWith { id ->
+                listOf("test.read", "test.wait", "test.mutate", "test.tap", CapabilityRegistry.DEVICE_TASK).associateWith { id ->
                     object : ExecutionBackend {
+                        override fun usesDeviceUi(proposal: ToolProposal): Boolean = id == "test.tap"
+
                         override suspend fun unavailableReason(): String? = null
 
                         override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome {
                             executions += id
-                            if (id == "test.wait" || id == CapabilityRegistry.DEVICE_TASK) gate.await()
+                            if (id == "test.wait" || id == "test.tap" || id == CapabilityRegistry.DEVICE_TASK) gate.await()
                             return ExecutionOutcome(InvocationStatus.COMPLETED, "Done")
                         }
                     }
                 },
-                listOf("test.read", "test.wait", "test.mutate", CapabilityRegistry.DEVICE_TASK).map {
+                listOf("test.read", "test.wait", "test.mutate", "test.tap", CapabilityRegistry.DEVICE_TASK).map {
                     CapabilityDefinition(
                         it,
                         it,
