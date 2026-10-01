@@ -31,6 +31,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:${libs.versions.coroutines.get()}")
     implementation(libs.dbus.java.core)
     implementation(libs.dbus.java.unixsocket)
+    implementation(libs.mcp.client)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(testFixtures(project(":eva-core")))

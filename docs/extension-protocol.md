@@ -105,13 +105,13 @@ not express and what the assistant needs to act safely:
 Bindings and the AIDL service are therefore platform transports that produce
 MCP-shaped tools under EVA's execution semantics. That is the current contract.
 
-The intended direction, not yet implemented, is to publish those semantics as a
-profile under a documented `_meta` namespace that any MCP server could adopt, and to
-add a general MCP client adapter. A plain MCP server's tools would be treated as
-`effects: unknown`, so each needs its own grant, with its annotations kept as hints.
-A non-Android host would use that MCP client as its main extension path and supply
-its own transports (such as URL handlers, D-Bus, or command-line bindings) where
-Android uses intents and content providers.
+The desktop host already runs local MCP servers over stdio as extensions: each tool
+becomes a capability with `effects: unknown`, so each needs its own grant, and calls
+go through the dispatcher and journal (see [Architecture](architecture.md#desktop-host)).
+Still planned: publishing EVA's semantics as a profile under a documented `_meta`
+namespace that MCP servers could adopt to declare effects and receipt states, HTTP MCP
+servers on the phone, and desktop transports (such as URL handlers, D-Bus, or
+command-line bindings) where Android uses intents and content providers.
 
 ## Declarative packages
 

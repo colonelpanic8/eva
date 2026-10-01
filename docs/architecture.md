@@ -990,6 +990,17 @@ thread does: the Swing event thread in the tray app, a dedicated thread in the t
   Android tools' environment, and `just desktop-run tray` uses it.
 - One process owns the storage: the tray app, a chat, `login`, and `logout` exclude each
   other through the lock; `threads` and `summon` do not need it.
+- Local MCP servers listed in `$XDG_CONFIG_HOME/eva/mcp-servers.json` (the
+  `mcpServers` form other MCP clients use) run over stdio as extensions of the shared
+  `ExtensionRuntime`. Their tools pass EVA's extension schema rules: nullable optional
+  parameters become optional, optional parameters EVA cannot express are left out, and a
+  tool whose required parameter cannot be expressed is listed as unavailable. A plain MCP
+  server makes no effect claims EVA relies on, so every tool's effect is unknown and needs
+  its own grant (`eva-desktop allow SERVER [TOOL...]`, `deny`, `tools`). Grants bind to the
+  server's command and arguments and to its tool contract, and live in the private data
+  directory. Calls run through the dispatcher and journal: the tool's own error flag is
+  FAILED, a request that never left EVA is NOT_EXECUTED, and a lost reply is UNKNOWN.
+  Text results reach the model; images and other blocks are counted, not shown.
 
 - Storage follows the XDG base directories under `eva/`. The journal is SQLite through
   JDBC with the phone's schema (version 7), so claims, expected-state transitions,
@@ -1004,11 +1015,13 @@ thread does: the Swing event thread in the tray app, a dedicated thread in the t
   `eva-wording.yaml`.
 
 Not yet on the desktop: following the instruction catalog, `eva.yaml` configuration,
-declarative packages and grants, MCP servers, voice, a D-Bus tray menu, and screen
-control. The terminal host is verified live against the subscription backend on Linux.
+declarative packages, HTTP MCP servers, MCP image results, voice, a D-Bus tray menu, and
+a grant screen in the tray window. The terminal host is verified live against the subscription backend on Linux.
 The tray window is verified on an X11 desktop without a tray (window-only), and the
 StatusNotifierItem against an embedded D-Bus daemon; a real panel on Wayland and the
-X11 system tray are not yet verified, nor is macOS.
+X11 system tray are not yet verified, nor is macOS. The MCP client is verified live with
+`computer-use-linux`: EVA listed its tools, ran a granted read through the dispatcher,
+and answered from the result.
 
 ## Verification boundaries
 

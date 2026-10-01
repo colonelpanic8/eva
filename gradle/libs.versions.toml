@@ -23,8 +23,10 @@ slf4j = "2.0.20"
 sqliteJdbc = "3.53.4.0"
 composeMultiplatform = "1.12.1"
 dbusJava = "5.2.2"
+mcpSdk = "0.15.0"
 
 [libraries]
+mcp-client = { module = "io.modelcontextprotocol:kotlin-sdk-client", version.ref = "mcpSdk" }
 dbus-java-core = { module = "com.github.hypfvieh:dbus-java-core", version.ref = "dbusJava" }
 dbus-java-unixsocket = { module = "com.github.hypfvieh:dbus-java-transport-native-unixsocket", version.ref = "dbusJava" }
 sqlite-jdbc = { module = "org.xerial:sqlite-jdbc", version.ref = "sqliteJdbc" }
