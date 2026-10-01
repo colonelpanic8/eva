@@ -75,6 +75,9 @@ data class SettingsUiState(
     val deviceTask: com.colonelpanic.eva.data.configuration.DeviceTaskConfiguration =
         com.colonelpanic.eva.data.configuration
             .DeviceTaskConfiguration(),
+    val webResearch: com.colonelpanic.eva.web.WebResearchConfiguration =
+        com.colonelpanic.eva.web
+            .WebResearchConfiguration(),
     val spotifyClientId: String? = null,
     val spotifyAccount: String? = null,
     val spotifyPremium: Boolean? = null,
@@ -142,6 +145,7 @@ data class SettingsActions(
     val onOpenMediaControlSettings: () -> Unit = {},
     val onScreenControlChange: (Boolean) -> Unit = {},
     val onDeviceTaskChange: (com.colonelpanic.eva.data.configuration.DeviceTaskConfiguration) -> Unit = {},
+    val onWebResearchChange: (com.colonelpanic.eva.web.WebResearchConfiguration) -> Unit = {},
     val onPortalToken: (String) -> Unit = {},
     val onAllowShizuku: () -> Unit = {},
     val onSaveSpotifyClientId: (String) -> String? = { null },

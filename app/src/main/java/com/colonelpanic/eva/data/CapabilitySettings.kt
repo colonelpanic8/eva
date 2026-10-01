@@ -2,6 +2,7 @@ package com.colonelpanic.eva.data
 
 import android.annotation.SuppressLint
 import android.content.Context
+import com.colonelpanic.eva.web.WebResearchConfiguration
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
@@ -53,6 +54,28 @@ class CapabilitySettings(
     fun savePortalToken(value: String) {
         if (value.isBlank()) secrets.clear("device/portal") else secrets.write("device/portal", value.trim())
         onCredentialChanged("device/portal")
+    }
+
+    private val mutableWebResearch =
+        MutableStateFlow(
+            runCatching {
+                kotlinx.serialization.json.Json
+                    .decodeFromString<WebResearchConfiguration>(prefs.getString("capabilities.webResearch", "{}")!!)
+            }.getOrDefault(WebResearchConfiguration()),
+        )
+    val webResearchFlow = mutableWebResearch.asStateFlow()
+    val webResearch get() = mutableWebResearch.value
+
+    fun saveWebResearch(value: WebResearchConfiguration) {
+        commit {
+            putString(
+                "capabilities.webResearch",
+                kotlinx.serialization.json.Json
+                    .encodeToString(WebResearchConfiguration.serializer(), value),
+            )
+        }
+        mutableWebResearch.value = value
+        onChanged()
     }
 
     val screenControlFlow = mutableScreenControl.asStateFlow()

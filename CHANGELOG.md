@@ -4,6 +4,10 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Voice and text can research the web and report an answer with sources without opening the phone's browser. Research uses existing OpenAI access, journaled read-only receipts, external-content provenance, and portable model, reasoning, enablement, and timeout settings.
+
 ## [0.49.1] - 2026-10-01
 
 ### Fixed

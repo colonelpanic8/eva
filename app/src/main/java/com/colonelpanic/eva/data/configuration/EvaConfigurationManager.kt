@@ -641,7 +641,12 @@ class EvaConfigurationManager(
                         .mapValues { it.value.wire },
                 ),
             appearance = EvaConfiguration.Appearance(app.appearance.dynamicColor),
-            capabilities = EvaConfiguration.Capabilities(app.capabilities.screenControlEnabled, app.capabilities.deviceTask),
+            capabilities =
+                EvaConfiguration.Capabilities(
+                    app.capabilities.screenControlEnabled,
+                    app.capabilities.deviceTask,
+                    app.capabilities.webResearch,
+                ),
             messaging = EvaConfiguration.Messaging(messaging.enabled, replies, messaging.bridges),
             prompt = EvaConfiguration.Prompt(prompt.source, prompt.config.components),
             packages = packages.configuration(),
@@ -786,6 +791,7 @@ class EvaConfigurationManager(
         app.appearance.saveDynamicColor(configuration.appearance.dynamicColor)
         app.capabilities.saveScreenControl(configuration.capabilities.screenControl)
         app.capabilities.saveDeviceTask(configuration.capabilities.deviceTask)
+        app.capabilities.saveWebResearch(configuration.capabilities.webResearch)
         app.spotify.saveClientId(configuration.spotify.clientId.orEmpty())
         app.prompts.restorePortable(configuration.prompt.source, PromptConfig(configuration.prompt.components))
         val notices = app.packageSettings.restore(packages, beforePackagePreferences)
@@ -960,6 +966,7 @@ class EvaConfigurationManager(
         attempt("capabilities") {
             app.capabilities.saveScreenControl(before.capabilities.screenControl)
             app.capabilities.saveDeviceTask(before.capabilities.deviceTask)
+            app.capabilities.saveWebResearch(before.capabilities.webResearch)
         }
         attempt("Spotify client") { app.spotify.saveClientId(before.spotify.clientId.orEmpty()) }
         attempt("packages") { app.packageSettings.restore(before.packages.portable(before.services)) }

@@ -260,6 +260,39 @@ agents and sends prompts without its UI. General MCP adapters remain future work
 register capabilities through the same execution boundary. Routine phone
 actions must not depend on a remote coding agent or on automating Paseo's Android UI.
 
+### Web research
+
+The read-only native `eva.web.research` capability researches a question (and optionally
+reads a public HTTPS `sourceUrl`) without launching a browser or touching the screen.
+Both text and voice propose it through `CapabilityDispatcher`; the answer, sources,
+search queries/opened URLs, and retrieval timestamp are journaled with external-content
+provenance. Page content is data, not instructions or execution authority.
+
+Each invocation makes one isolated OpenAI Responses request with only the hosted
+`web_search` tool and no conversation history or phone tools. Responses supports hosted
+search; Realtime supports function tools, so voice calls this EVA capability. Existing
+ChatGPT subscription access is preferred; a configured API key is used only when no
+subscription is signed in, never as a silent fallback after subscription failure.
+API-key requests are billed separately. The subscription protocol is service-dependent.
+
+`capabilities.webResearch` in portable configuration holds `enabled` (default true),
+`model` (`gpt-6-sol`), `effort` (`low`), and `timeoutSeconds` (45, bounded to 5–60).
+Each field composes independently across included files. The Web research settings
+section edits those same settings. Disabling hides the tool and rejects new execution. The total deadline includes authorization and transport;
+coroutine cancellation cancels the HTTP call. Missing access is `NOT_EXECUTED`; HTTP
+errors, read-only timeouts, and incomplete streams are `FAILED`, without retries.
+Caller cancellation retains the dispatcher's `UNKNOWN` receipt after submission.
+A finished response without web evidence is still `COMPLETED` but explicitly says no
+sources were retrieved (or no citations were returned after search). Source lists are
+optional upstream; citations and available source lists are deduplicated by URL.
+Answers and structured evidence are bounded to the existing tool-result budget, with
+truncation identified in the data.
+
+The declarative web package's search/open actions remain browser handoffs without
+retrieved content. Device-task browsing remains an explicit fallback for interactive
+or authenticated sites. Research has focused JVM verification; live API-key and
+Android-device verification are separate and have not been performed.
+
 ### Device-control tasks and backend boundary
 
 `:device-control-core` is a plain Kotlin/JVM library containing the protocol v1
