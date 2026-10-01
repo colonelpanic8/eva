@@ -50,6 +50,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.ClosedSendChannelException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -74,6 +75,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import java.io.IOException
 import java.security.MessageDigest
 import java.util.UUID
 
@@ -1850,8 +1852,19 @@ class ThreadController(
                 if (current === leg && !delegated) awaitingFollowUp = true
             } catch (error: CancellationException) {
                 throw error
-            } catch (_: Exception) {
-                if (current === leg && !delegated) legLost()
+            } catch (error: Exception) {
+                if (error is IOException || error is ClosedSendChannelException) {
+                    if (current === leg && !delegated) legLost()
+                } else {
+                    // The session is still up; reopening the turn elsewhere would only hide the defect.
+                    mutableState.update {
+                        it.copy(
+                            providerMessage =
+                                "EVA could not return an action result to the conversation " +
+                                    "(${error.message ?: error::class.simpleName}). The action's receipt is saved.",
+                        )
+                    }
+                }
             }
         }
 

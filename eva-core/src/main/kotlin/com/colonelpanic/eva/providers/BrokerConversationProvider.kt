@@ -23,6 +23,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -313,7 +314,8 @@ private class BrokerSession(
     }
 
     override suspend fun submitToolResult(result: CorrelatedToolResult) {
-        check(!closed.get() && result.call.connectionEpoch == connectionEpoch && pending[result.call.callId] == result.call)
+        if (closed.get()) throw IOException("The voice broker connection is closed.")
+        check(result.call.connectionEpoch == connectionEpoch && pending[result.call.callId] == result.call)
         send(
             buildJsonObject {
                 put("type", "tool-result")

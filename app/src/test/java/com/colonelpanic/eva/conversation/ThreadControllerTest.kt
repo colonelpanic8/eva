@@ -1308,6 +1308,32 @@ class ThreadControllerTest {
         }
 
     @Test
+    fun `only a transport failure delivering a result moves the turn to a background leg`() =
+        runTest {
+            val provider = FakeProvider()
+            val background = FakeProvider(epoch = "background")
+            val controller = controller(provider, background = background)
+            advanceUntilIdle()
+            controller.connect("test")
+            advanceUntilIdle()
+            controller.submit("Do something")
+            advanceUntilIdle()
+            val turn = latestTurn(controller)
+            provider.resultFailure = IllegalStateException("Call is not pending")
+            provider.call("bug", action.id, "place" to "Park")
+            advanceUntilIdle()
+            assertEquals(1, executions)
+            assertEquals(InvocationStatus.HANDED_OFF, repository.history().single().status)
+            assertTrue(background.responseRequests.isEmpty())
+            assertTrue(controller.state.value.providerMessage.orEmpty().contains("Call is not pending"))
+
+            provider.resultFailure = java.io.IOException("Socket closed")
+            provider.call("lost", action.id, "place" to "Home")
+            advanceUntilIdle()
+            assertEquals(listOf(turn), background.responseRequests)
+        }
+
+    @Test
     fun `a turn runs every lookup and action it proposes`() =
         runTest {
             val provider = FakeProvider()
@@ -3730,7 +3756,10 @@ class ThreadControllerTest {
             channel.send(ProviderEvent.Transcript("user", text, inputId = input.id))
         }
 
+        var resultFailure: Exception? = null
+
         override suspend fun submitToolResult(result: CorrelatedToolResult) {
+            resultFailure?.let { throw it }
             results.add(result)
         }
 

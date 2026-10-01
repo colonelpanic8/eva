@@ -718,6 +718,7 @@ private class OpenAiRealtimeSession(
         }
 
     override suspend fun submitToolResult(result: CorrelatedToolResult) {
+        if (closed) throw IOException("The voice session is closed.")
         check(result.call.connectionEpoch == connectionEpoch && pending[result.call.callId] == result.call)
         sendItem(
             buildJsonObject {
