@@ -2,6 +2,7 @@ package com.colonelpanic.eva.desktop
 
 import org.freedesktop.dbus.bin.EmbeddedDBusDaemon
 import org.freedesktop.dbus.connections.impl.DBusConnectionBuilder
+import org.freedesktop.dbus.exceptions.DBusExecutionException
 import org.freedesktop.dbus.interfaces.Properties
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -12,6 +13,7 @@ import org.junit.rules.TemporaryFolder
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 class StatusNotifierTest {
     @get:Rule val folder = TemporaryFolder()
@@ -79,6 +81,40 @@ class StatusNotifierTest {
                 }
             }
         }
+    }
+
+    private class RefusingWatcher : StatusNotifierWatcher {
+        val attempts = AtomicInteger()
+
+        override fun registerStatusNotifierItem(service: String) {
+            attempts.incrementAndGet()
+            throw DBusExecutionException("not ready")
+        }
+
+        override fun getObjectPath() = "/StatusNotifierWatcher"
+    }
+
+    @Test
+    fun `a watcher that keeps refusing is retried with growing delays, not in a loop`() {
+        val address = "unix:path=${folder.root.resolve("bus")}"
+        EmbeddedDBusDaemon("$address,listen=true").use { daemon ->
+            daemon.startInBackgroundAndWait(10_000)
+            val first = DBusConnectionBuilder.forAddress(address).withShared(false).build()
+            first.requestBusName("org.kde.StatusNotifierWatcher")
+            first.exportObject("/StatusNotifierWatcher", Watcher())
+            StatusNotifier.show(onActivate = {}, busAddress = { address }).getOrThrow().use {
+                first.close()
+                DBusConnectionBuilder.forAddress(address).withShared(false).build().use { refusing ->
+                    val watcher = RefusingWatcher()
+                    refusing.requestBusName("org.kde.StatusNotifierWatcher")
+                    refusing.exportObject(watcher.objectPath, watcher)
+                    Thread.sleep(1_600)
+                    // Immediately, then after 100, 200, 400, and 800 ms: about five, never a busy loop.
+                    assertTrue("attempts=${watcher.attempts.get()}", watcher.attempts.get() in 2..7)
+                }
+            }
+        }
+        assertEquals(listOf(100L, 200L, 10_000L, 10_000L), listOf(0L, 100L, 6_000L, 10_000L).map(StatusNotifier::nextDelay))
     }
 
     private fun awaitVisible(

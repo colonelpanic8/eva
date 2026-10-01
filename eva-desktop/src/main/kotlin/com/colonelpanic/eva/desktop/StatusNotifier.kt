@@ -86,17 +86,17 @@ class StatusNotifier private constructor(
         Executors.newSingleThreadScheduledExecutor { runnable -> Thread(runnable, "eva-tray-registration").apply { isDaemon = true } }
 
     /**
-     * Registers with a watcher that just took the name, retrying with backoff: a restarting panel
-     * may own the name before it exports the watcher object. Stops once accepted, or when the name
-     * passes to someone else.
+     * Registers with a watcher that just took the name, retrying while it keeps it: a restarting
+     * panel may own the name before it exports the watcher object. Delays grow from
+     * [FIRST_RETRY_MILLIS] to [LAST_RETRY_MILLIS] and stay there; a new owner or close stops them.
      */
     private fun follow(
         owner: String,
-        delayMillis: Long = FIRST_RETRY_MILLIS,
+        delayMillis: Long,
     ) {
         retries.schedule({
             val current = runCatching { bus.GetNameOwner(WATCHER) }.getOrNull()
-            if (current == owner && !register(owner) && delayMillis < LAST_RETRY_MILLIS) follow(owner, delayMillis * 2)
+            if (current == owner && !register(owner)) follow(owner, nextDelay(delayMillis))
         }, delayMillis, TimeUnit.MILLISECONDS)
     }
 
@@ -168,6 +168,8 @@ class StatusNotifier private constructor(
         private const val WATCHER_PATH = "/StatusNotifierWatcher"
         private const val FIRST_RETRY_MILLIS = 100L
         private const val LAST_RETRY_MILLIS = 10_000L
+
+        internal fun nextDelay(previous: Long) = if (previous <= 0) FIRST_RETRY_MILLIS else minOf(previous * 2, LAST_RETRY_MILLIS)
 
         /** Shows the icon, or fails when no panel hosts one, as on a desktop without a StatusNotifierWatcher. */
         fun show(
