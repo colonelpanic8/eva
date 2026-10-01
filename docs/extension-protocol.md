@@ -1121,7 +1121,7 @@ provider-supplied metadata. No offered extension workflow is split by admission.
 Realtime configuration acknowledgement must contain the expected tool names within
 eight seconds, through the data channel or, for a configuration too large for its
 echo, a sideband connection to the call; HTTP success alone does not mark a session
-ready. See [capability execution](architecture.md#capability-execution) for evidence
+ready. A sideband that cannot be reached continues the call with a visible notice. See [capability execution](architecture.md#capability-execution) for evidence
 and verification boundaries.
 
 **Bounded multi-action requests.** `ThreadController` admits up to 32 calls per

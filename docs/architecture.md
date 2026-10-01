@@ -360,45 +360,25 @@ rounds took 0.30–0.34 / 0.43–0.59 / 0.56–2.91 seconds. For 512 tools, upda
 300,522 bytes and took 1.52–1.60 seconds. These are small samples of configuration
 latency, not controlled response benchmarks.
 
-The WebRTC probe matched EVA's multipart `POST /v1/realtime/calls` session config
-(`gpt-realtime-2.1`, low reasoning, Marin, audio output, `gpt-transcribe`, English)
-and used synthetic silence, without opening a microphone. It also sent three
-matching `session.update` events per successful call. The initial aiortc offer
-advertised `max-message-size:65536`: 128 tools with shorter descriptions succeeded,
-and a 65,532-byte acknowledgement arrived, but the next 128-byte size step did
-not. This was the probe's negotiated receive limit, **not an OpenAI count limit**.
-Changing only the advertised receive size to 1 GiB allowed all 128/256/512 tools
-with 300-character descriptions; their initial configurations were
-75,431/150,439/300,455 bytes and all echoed the exact tool counts.
+Voice sends the whole session configuration, including instructions and every tool, in
+the multipart `POST /v1/realtime/calls` request
+([WebRTC guide](https://developers.openai.com/api/docs/guides/realtime-webrtc),
+[create call](https://developers.openai.com/api/reference/resources/realtime/subresources/calls/methods/create)).
+That request has no message-size limit and OpenAI applies it in full. Only the
+`session.created`/`session.updated` echo travels over the data channel, so only the echo
+is bound by the offer's advertised `max-message-size`. EVA's pinned native WebRTC SDK
+advertises the upstream
+[256 KiB SCTP bound](https://webrtc.googlesource.com/src/+/refs/heads/main/api/sctp_transport_interface.h)
+([offer generation](https://webrtc.googlesource.com/src/+/refs/heads/main/pc/media_session.cc)).
+OpenAI does not send an echo larger than that: an earlier probe at the native bound
+received a 262,140-byte echo for 512 tools with 224-character descriptions and none
+for 225, and a probe advertising aiortc's 64 KiB default stopped at a 65,532-byte echo.
+A missing echo is therefore not evidence that the configuration failed.
 
-EVA's pinned native WebRTC SDK uses the upstream
-[256 KiB SCTP bound](https://webrtc.googlesource.com/src/+/refs/heads/main/api/sctp_transport_interface.h),
-which [offer generation advertises](https://webrtc.googlesource.com/src/+/refs/heads/main/pc/media_session.cc).
-The probe repeated the test with this advertised limit:
-
-| Functions / description characters | Initial config bytes | Update request / acknowledged event bytes | Result |
-| --- | ---: | ---: | --- |
-| 128 / 300 | 75,431 | 75,513 / 76,028 | Created and three updates, all 128 tools |
-| 256 / 300 | 150,439 | 150,521 / 151,036 | Created and three updates, all 256 tools |
-| 512 / 200 | 249,255 | 249,337 / 249,852 | Bare created, then initial configured update; three matching updates |
-| 512 / 224 | 261,543 | 261,625 / 262,140 | Created and three updates, all 512 tools |
-| 512 / 225 | 262,055 | 262,137 / no acknowledgement | Bare initial session; update timed out after 8 s |
-| 512 / 300 | 300,455 | 300,537 / no acknowledgement | Bare initial session; update timed out after 8 s |
-
-The failed 225-character update would add 512 bytes to the successful echo
-(inferred 262,652 bytes), crossing 262,144 bytes. HTTP 201 and an open data channel
-therefore do not establish that the tool configuration succeeded. This is a
-transport constraint, not a lower tool-count ceiling.
-
-The bound in that probe is the data channel's, not the configuration's. EVA posts the
-whole session configuration, including instructions and every tool, in the multipart
-`POST /v1/realtime/calls` request ([WebRTC guide](https://developers.openai.com/api/docs/guides/realtime-webrtc),
-[create call](https://developers.openai.com/api/reference/resources/realtime/subresources/calls/methods/create)),
-which has no message-size limit; OpenAI applies it in full and only its
-`session.created`/`session.updated` echo must fit the offer's advertised
-`max-message-size`. A live subscription probe on 2026-10-01 (aiortc advertising the
-native 262,144 bytes, EVA's model, voice, transcription and headers, with a code word
-in the instructions and a per-tool suffix in each description) confirmed this:
+A live subscription probe on 2026-10-01 (aiortc advertising the native 262,144 bytes,
+synthetic silence, EVA's model, voice, transcription and headers, with a code word in
+the instructions and a per-tool suffix in each description) confirmed that oversized
+configurations are applied:
 
 | Functions / description characters | Initial config bytes | Data-channel echo | Sideband echo | Model call to the last tool |
 | --- | ---: | --- | --- | --- |
@@ -409,22 +389,26 @@ in the instructions and a per-tool suffix in each description) confirmed this:
 | 2048 / 200 | 736,605 | bare created only | 2,048 tools | response `incomplete` (`max_output_tokens`) at ~106k input tokens |
 | 4096 / 100 | 1,064,285 | bare created only | 4,096 tools | not measured |
 
-OpenAI suppresses an oversized echo rather than breaking the data channel, which kept
-working. The call request took 0.9, 1.5–1.8, 3.0–3.4, 5.1–5.5 and 9.8 seconds at
-128, 512, 1,024, 2,048 and 4,096 tools.
+The data channel kept working after a suppressed echo. The call request took 0.9,
+1.5–1.8, 3.0–3.4, 5.1–5.5 and 9.8 seconds at 128, 512, 1,024, 2,048 and 4,096 tools.
 
-Voice admission therefore has no byte budget. When the final configuration is larger
-than the offer's advertised receive size minus 8 KiB (64 KiB when absent), EVA confirms
-it through a [sideband WebSocket](https://developers.openai.com/api/docs/guides/realtime-server-controls)
-to the same call (`wss://…/v1/realtime?call_id=` from the response's `Location`
-header, same authorization; it works with subscription access): it sends an unchanged
-`session.update` (`tool_choice: auto`), checks the echoed tool names, and closes the
-sideband, which leaves the call running. Smaller configurations are confirmed by their
-data-channel echo as before. Either way, missing confirmation of the expected tool
-names within eight seconds, a missing call ID, a sideband error, or a short tool list
-fails the connection with the tool count, byte size and cause; a bare session is never
-accepted as configured. Existing history acknowledgement remains a separate gate. EVA
-sends no later `session.update` over the data channel.
+Voice admission has no byte budget. A configuration whose echo fits the advertised
+receive size minus 8 KiB (64 KiB when the offer names none) is confirmed by that echo.
+A larger one is confirmed through a
+[sideband WebSocket](https://developers.openai.com/api/docs/guides/realtime-server-controls)
+to the same call (`wss://…/v1/realtime?call_id=` from the response's `Location` header,
+same authorization; subscription access works): EVA sends an unchanged `session.update`
+(`tool_choice: auto`), checks the echoed tool names, and closes the sideband, which
+leaves the call running. The sideband is a second network dependency of setup, so its
+failure is loud but not fatal: when it errors, does not answer within the
+eight-second window, or cannot be addressed because the call ID is missing, the call
+continues on the session OpenAI created and EVA shows a notice naming the tool count,
+size and cause, since the configuration was sent whole and nothing indicates it was
+rejected. Falling back to a byte budget instead would drop tools OpenAI already
+applied and would need a second call. A confirmation that names the wrong tools, or no
+session at all within eight seconds, still fails the connection with the tool count,
+byte size and cause. History acknowledgement remains a separate gate. EVA sends no later
+`session.update` over the data channel.
 
 The 512-tool bound stays because it is the highest count verified with both providers;
 Realtime accepted more, but at 2,048 tools the prompt left the model no room to answer,
@@ -610,8 +594,9 @@ tools share, and a running task's phase. Health is failure-driven
 (`ScreenControlMonitor`): a set-up backend is assumed ready. Every device backend is
 wrapped in `ReportingDeviceBackend`, so a real screen read or input that fails because
 of the backend (an exception, `BackendUnavailable`, or a timeout; not a protected or
-changed screen) marks it unhealthy with the backend and reason, such as "Shizuku
-couldn't read the screen: …", and the next success through it clears that. Missing
+changed screen) marks it unhealthy with the backend, reason and time, such as
+"Shizuku couldn't read the screen: … · 3 min ago"; the next successful read or input
+through it, including a plain direct observe, clears that. Missing
 setup (Shizuku not installed, stopped or not allowed; no Portal token) is a separate
 setup-needed state with its fix-it action. The five-second probe while EVA is in front
 is secondary evidence: a failing probe marks a backend degraded only when nothing has
