@@ -138,10 +138,27 @@ work, and undoing a remote action are distinct operations.
 ## Capability execution
 
 Adapters contribute capabilities to a registry snapshot. Admission is deterministic
-and bounded to 64 model-facing tools, reserving two voice session controls and bundled tools
-before sorted extension tools. Unavailable or excess entries remain explainable
-in the UI. New tools reach the model on the next connection; revocation blocks new
-execution immediately even if the model still sees an older catalog. For packages
+with a shared 512-tool safety bound, including session controls: the highest count
+verified with subscription Responses and Realtime, not a published provider maximum. Voice
+reserves four base session controls (end, defer, background status, background cancel),
+plus device-task revise/stop when `eva.device.task` is offered. Bundled native tools
+come first, then whole installed-service extension groups, then remaining whole
+extension/package/media groups sorted by stable source identity (capability ID prefix
+when source metadata is absent). Tools within each group are sorted by ID. Installed
+services therefore precede declarative link/intent packages, including packages for
+the same app. A group that cannot fit is skipped and smaller later groups are tried;
+admission never splits an extension or package instance's offered workflow. Overflow
+reasons report typed and voice admission separately, since skipping a larger group
+can leave room for a smaller group in only one mode. Unavailable or excess entries
+remain explainable in the UI. Extensions shows admitted phone/extension counts,
+reserved voice metadata bytes, and an always-visible list of excluded actions with
+mode-specific reasons. An attached session or background text leg with exclusions persists “N tools unavailable — see
+Extensions” in its session-start notice. The same selection supplies the session
+catalog, exclusion IDs and model note (`catalog-unavailable` in `eva-wording.yaml`);
+Settings uses the same selection and removes prompt-hidden entries from its preview.
+No speculative cost/response-quality warning band is used: the measured latency is
+configuration latency, not response latency. New tools reach the model on the next connection;
+revocation blocks new execution immediately even if the model still sees an older catalog. For packages
 refreshed from a followed repository, newly named actions are granted when that
 package's auto-enable switch is on; explicitly disabled actions remain disabled.
 Manual imports do not gain new grants this way. Installed Android providers do not
@@ -151,6 +168,79 @@ with every action unless the user turned them off. See
 An app's own installed extension takes over same-named actions from declarative
 packages that target that app; the package's other actions stay available and are
 listed under the app.
+
+The old 64-tool cap originated in EVA (`4ecc650`, replacing earlier 32-tool
+provider guards). The
+[Responses reference](https://developers.openai.com/api/reference/python/resources/responses/methods/create)
+and [Realtime session reference](https://developers.openai.com/api/reference/resources/realtime/subresources/client_secrets/methods/create)
+describe function tools without publishing a numeric tool-count ceiling. Live
+subscription probes, using the in-memory existing OAuth token and EVA's `originator`
+and account headers, completed Responses requests with 100, 128, 200, 256 and 512
+functions. The expanded requests used `gpt-6.1-sol`, 300-character descriptions,
+small closed JSON schemas, `tool_choice: none`, streaming and `store: false`:
+
+| Responses functions | Request UTF-8 bytes | Completion latency | Result |
+| --- | ---: | ---: | --- |
+| 200 | 98,500 | 2.47 s | HTTP 200, `response.completed` |
+| 256 | 126,052 | 3.60 s | HTTP 200, `response.completed` |
+| 512 | 252,004 | 4.82 s | HTTP 200, `response.completed` |
+
+Realtime WebSocket `session.update` accepted 70, 100, 128, 200, 256 and 512
+functions, echoing the exact tool counts. With 300-character descriptions, compact
+updates for 70/100/128 tools were 41,539/59,090/75,498 bytes; three alternating
+rounds took 0.30–0.34 / 0.43–0.59 / 0.56–2.91 seconds. For 512 tools, updates were
+300,522 bytes and took 1.52–1.60 seconds. These are small samples of configuration
+latency, not controlled response benchmarks.
+
+The WebRTC probe matched EVA's multipart `POST /v1/realtime/calls` session config
+(`gpt-realtime-2.1`, low reasoning, Marin, audio output, `gpt-transcribe`, English)
+and used synthetic silence, without opening a microphone. It also sent three
+matching `session.update` events per successful call. The initial aiortc offer
+advertised `max-message-size:65536`: 128 tools with shorter descriptions succeeded,
+and a 65,532-byte acknowledgement arrived, but the next 128-byte size step did
+not. This was the probe's negotiated receive limit, **not an OpenAI count limit**.
+Changing only the advertised receive size to 1 GiB allowed all 128/256/512 tools
+with 300-character descriptions; their initial configurations were
+75,431/150,439/300,455 bytes and all echoed the exact tool counts.
+
+EVA's pinned native WebRTC SDK uses the upstream
+[256 KiB SCTP bound](https://webrtc.googlesource.com/src/+/refs/heads/main/api/sctp_transport_interface.h),
+which [offer generation advertises](https://webrtc.googlesource.com/src/+/refs/heads/main/pc/media_session.cc).
+The probe repeated the test with this advertised limit:
+
+| Functions / description characters | Initial config bytes | Update request / acknowledged event bytes | Result |
+| --- | ---: | ---: | --- |
+| 128 / 300 | 75,431 | 75,513 / 76,028 | Created and three updates, all 128 tools |
+| 256 / 300 | 150,439 | 150,521 / 151,036 | Created and three updates, all 256 tools |
+| 512 / 200 | 249,255 | 249,337 / 249,852 | Bare created, then initial configured update; three matching updates |
+| 512 / 224 | 261,543 | 261,625 / 262,140 | Created and three updates, all 512 tools |
+| 512 / 225 | 262,055 | 262,137 / no acknowledgement | Bare initial session; update timed out after 8 s |
+| 512 / 300 | 300,455 | 300,537 / no acknowledgement | Bare initial session; update timed out after 8 s |
+
+The failed 225-character update would add 512 bytes to the successful echo
+(inferred 262,652 bytes), crossing 262,144 bytes. HTTP 201 and an open data channel
+therefore do not establish that the tool configuration succeeded. This is a
+transport constraint, not a lower tool-count ceiling.
+
+Voice admission allocates 224 KiB to serialized tool metadata (including quoted
+source metadata and one guidance note per source), leaving 32 KiB
+below the native transport bound for instructions, session controls and server
+fields. Whole groups that cannot fit either this byte budget or the verified
+512-tool safety bound are skipped with a visible explanation. The provider also
+checks the **final** session configuration after prompt/wording/bridge changes:
+at most 248 KiB, or the SDP-advertised receive size minus 8 KiB, whichever is smaller
+(absent SDP size defaults to 64 KiB). Oversize configuration fails before the HTTP
+call with the tool count, byte size and remediation. Missing acknowledgement of
+the expected tool names within eight seconds emits a connection error naming the
+catalog/prompt size cause; a bare session with missing tools is not accepted as
+configured. Existing history acknowledgement remains a separate gate.
+
+These probes verify configuration acceptance, not tool-selection quality, Android
+execution or audio behavior. Public API-key live acceptance and the pinned Android
+SDK's actual on-device SDP remain unverified. Prompt `hide` still applies after
+admission, by ownership agreement with the controller's concurrent changes; hidden
+entries are excluded from warnings, but can still consume reserved capacity. Moving
+`assembled.hidden` filtering before selection is the remaining integration hook.
 
 The dispatcher validates identity, arguments, binding revision, availability, and
 grants, then journals a claim before dispatch. Duplicate call IDs cannot execute

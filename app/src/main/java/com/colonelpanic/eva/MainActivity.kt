@@ -286,6 +286,26 @@ class MainActivity : ComponentActivity() {
         val spotifyAccount by eva.spotify.account.collectAsStateWithLifecycle()
         val spotifyConnect by eva.spotifyConnect.state.collectAsStateWithLifecycle()
         val configuration by eva.configuration.status.collectAsStateWithLifecycle()
+        val catalogPreview =
+            CatalogAdmission.preview(
+                eva.registry.catalog.filterNot { !screenControl && it.id in CapabilityRegistry.SCREEN_CONTROL },
+            )
+
+        fun hidden(voice: Boolean): Set<String> =
+            (prompt as? PromptState.Loaded)
+                ?.config
+                ?.assemble(
+                    com.colonelpanic.eva.conversation.prompt.PromptContext(
+                        voice,
+                        mapOf("clock" to "", "lookup_retries" to voiceLookupRetries.toString()),
+                    ),
+                )?.hidden
+                .orEmpty()
+        val visibleCatalog =
+            CatalogAdmission.Preview(
+                catalogPreview.text.without(hidden(false)),
+                catalogPreview.voice.without(hidden(true)),
+            )
         return SettingsUiState(
             configuration = configuration,
             messaging = messaging,
@@ -310,12 +330,8 @@ class MainActivity : ComponentActivity() {
                 },
             waitDefaults = waits,
             autoEnabled = remember(packages) { eva.packageSettings.autoEnabled() },
-            extensionOverflow =
-                CatalogAdmission.overflowReasons(
-                    eva.registry.catalog.filterNot {
-                        !screenControl && it.id in CapabilityRegistry.SCREEN_CONTROL
-                    },
-                ),
+            catalogAdmission = visibleCatalog,
+            extensionOverflow = CatalogAdmission.overflowReasons(visibleCatalog),
             account = account?.description,
             signIn = signIn,
             hasApiKey = hasApiKey,

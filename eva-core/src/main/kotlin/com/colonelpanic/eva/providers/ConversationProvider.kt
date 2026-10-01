@@ -14,7 +14,11 @@ data class ProviderToolDefinition(
 data class ProviderToolCatalog(
     val revision: String,
     val tools: List<ProviderToolDefinition>,
-)
+    val excludedTools: List<String> = emptyList(),
+) {
+    fun sessionNotice(label: String): String =
+        if (excludedTools.isEmpty()) label else "$label · ${excludedTools.size} tools unavailable — see Extensions"
+}
 
 data class SessionOpenRequest(
     val instructions: String,

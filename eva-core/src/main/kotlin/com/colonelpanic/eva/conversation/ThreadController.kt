@@ -198,7 +198,7 @@ class ThreadController(
     private fun phoneTools(
         snapshot: CapabilityRegistry.Snapshot,
         voice: Boolean,
-    ): List<ProviderToolDefinition> {
+    ): Pair<com.colonelpanic.eva.capability.CatalogAdmission.Selection, List<ProviderToolDefinition>> {
         val offered = snapshot.catalog.filterNot { it.id in hiddenCapabilities() }
         val controls =
             if (voice) {
@@ -207,10 +207,11 @@ class ThreadController(
             } else {
                 0
             }
-        return com.colonelpanic.eva.capability.CatalogAdmission
-            .select(offered, controls)
-            .admitted
-            .map { definition ->
+        val selection =
+            com.colonelpanic.eva.capability.CatalogAdmission
+                .select(offered, controls)
+        return selection to
+            selection.admitted.map { definition ->
                 val tool = ProviderToolDefinition(definition.id, definition.title, definition.modelDescription(), definition.inputSchema)
                 // An extension's own words are untrusted data; only EVA's tools take followed wording.
                 if (definition.source == null) wording().describe(tool) else tool
@@ -235,8 +236,18 @@ class ThreadController(
                         mapOf("source" to JsonPrimitive(definition.source!!.title), "guidance" to JsonPrimitive(definition.guidance)),
                     )
                 }
-        if (notes.isEmpty()) return ""
-        return "\n\n" + wording().message(Wording.EXTENSION_GUIDANCE) + "\n" + JsonArray(notes)
+        val unavailable =
+            if (catalog.excludedTools.isEmpty()) {
+                ""
+            } else {
+                "\n\n" + wording().message(Wording.CATALOG_UNAVAILABLE).replace("{count}", catalog.excludedTools.size.toString())
+            }
+        return unavailable +
+            if (notes.isEmpty()) {
+                ""
+            } else {
+                "\n\n" + wording().message(Wording.EXTENSION_GUIDANCE) + "\n" + JsonArray(notes)
+            }
     }
 
     private fun callEndings(snapshot: CapabilityRegistry.Snapshot): Map<String, CallEnding> {
@@ -453,7 +464,7 @@ class ThreadController(
                     val endings = if (voice) callEndings(snapshot) else emptyMap()
                     val phone = phoneTools(snapshot, voice)
                     val deviceControls =
-                        if (voice && phone.any { it.capabilityId == CapabilityRegistry.DEVICE_TASK }) {
+                        if (voice && phone.second.any { it.capabilityId == CapabilityRegistry.DEVICE_TASK }) {
                             listOf(DEVICE_TASK_REVISE, DEVICE_TASK_STOP).map(wording()::describe)
                         } else {
                             emptyList()
@@ -463,9 +474,12 @@ class ThreadController(
                             assembled
                                 .apply(
                                     (if (voice) listOf(wording().describe(END_CONVERSATION), DEFER_TO_TEXT) else emptyList()) +
-                                        deviceControls + phone,
+                                        deviceControls + phone.second,
                                 ).map { tool -> endingNote(bridgeNote(tool), endings[tool.capabilityId]) },
                             snapshot.revision,
+                        ).copy(
+                            excludedTools =
+                                phone.first.excludedIds(assembled.hidden),
                         )
                     val provider =
                         if (!voice) {
@@ -577,7 +591,9 @@ class ThreadController(
                     it.copy(providerStatus = ProviderStatus.CONNECTED, providerMessage = null, providerModel = model)
                 }
                 val label = listOfNotNull(if (voice) "Voice session" else "Text session", model).joinToString(" · ")
-                store.append(notice(threadId, null, NoticeKind.SESSION_STARTED, label))
+                store.append(
+                    notice(threadId, null, NoticeKind.SESSION_STARTED, connectionTools.getValue(opened).catalog.sessionNotice(label)),
+                )
             }
 
             is ProviderEvent.Account -> {
@@ -1404,7 +1420,13 @@ class ThreadController(
                 awaitCapabilities()
                 val assembled = assemble(voice = false)
                 val snapshot = registry.snapshot
-                val catalog = catalogOf(assembled.apply(phoneTools(snapshot, false)), snapshot.revision)
+                val phone = phoneTools(snapshot, false)
+                val catalog =
+                    catalogOf(assembled.apply(phone.second), snapshot.revision)
+                        .copy(
+                            excludedTools =
+                                phone.first.excludedIds(assembled.hidden),
+                        )
                 tools = ConnectionTools(snapshot, catalog, false)
                 val instructions =
                     assembled.instructions + extensionGuidance(snapshot, catalog) + "\n\n" +
@@ -1437,6 +1459,16 @@ class ThreadController(
                             when (event) {
                                 is ProviderEvent.Connected -> {
                                     check(event.catalogRevision == catalog.revision)
+                                    if (catalog.excludedTools.isNotEmpty()) {
+                                        store.append(
+                                            notice(
+                                                threadId,
+                                                turnId,
+                                                NoticeKind.SESSION_STARTED,
+                                                catalog.sessionNotice("Background text session"),
+                                            ),
+                                        )
+                                    }
                                     opened.requestResponse(ResponseRequest(turnId))
                                 }
 

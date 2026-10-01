@@ -321,7 +321,7 @@ class ThreadControllerTest {
             val extensions =
                 List(CatalogAdmission.LIMIT) { index ->
                     com.colonelpanic.eva.capability.CapabilityDefinition(
-                        "extension.example.action_${index.toString().padStart(2, '0')}",
+                        "extension.example.app_${index.toString().padStart(3, '0')}.action",
                         "Action $index",
                         "Action $index",
                         com.colonelpanic.eva.capability.extensions.extensionSchema,
@@ -337,15 +337,83 @@ class ThreadControllerTest {
                     BundledCapabilities.definitions.filter { it.id == CapabilityRegistry.DEVICE_TASK } + extensions,
                 )
             val voice = FakeProvider()
-            val controller = controller(voice, registry = registry, deviceTasks = coordinator, media = { VoiceMedia() })
+            val background = FakeProvider(epoch = "background")
+            val controller =
+                controller(voice, background = background, registry = registry, deviceTasks = coordinator, media = { VoiceMedia() })
             advanceUntilIdle()
             controller.connectVoice("test")
             advanceUntilIdle()
             val offered =
                 voice.request.catalog.tools
                     .map { it.capabilityId }
-            assertEquals(CatalogAdmission.LIMIT, offered.size)
+            assertTrue(offered.size <= CatalogAdmission.LIMIT)
+            assertEquals(
+                CatalogAdmission
+                    .select(registry.snapshot.catalog, CatalogAdmission.voiceControls(registry.snapshot.catalog))
+                    .admitted
+                    .count { it.id.startsWith("extension.") },
+                offered.count { it.startsWith("extension.") },
+            )
             assertTrue(offered.containsAll(listOf(CapabilityRegistry.DEVICE_TASK, "eva.device.task.revise", "eva.device.task.stop")))
+            val excluded =
+                CatalogAdmission
+                    .select(
+                        registry.snapshot.catalog,
+                        CatalogAdmission.voiceControls(registry.snapshot.catalog),
+                    ).overflow
+            assertEquals(excluded.map { it.id }, voice.request.catalog.excludedTools)
+            assertTrue(voice.request.instructions.contains("${excluded.size} enabled actions were excluded"))
+            val notice =
+                store
+                    .items(controller.state.value.threadId!!)
+                    .filterIsInstance<ThreadItem.Notice>()
+                    .single { it.kind == NoticeKind.SESSION_STARTED }
+            assertTrue(notice.text.contains("${excluded.size} tools unavailable — see Extensions"))
+            voice.input = ConversationInput("voice:catalog-turn", "")
+            voice.channel.send(ProviderEvent.ResponseStarted("voice:catalog-turn", "voice:catalog-turn"))
+            voice.channel.send(ProviderEvent.Transcript("user", "Check status"))
+            advanceUntilIdle()
+            voice.call("delegate", ThreadController.DEFER_TO_TEXT.capabilityId, "task" to "Check status")
+            advanceUntilIdle()
+            val textExcluded = CatalogAdmission.select(registry.snapshot.catalog).overflow
+            assertEquals(textExcluded.map { it.id }, background.request.catalog.excludedTools)
+            assertTrue(
+                store.items(controller.state.value.threadId!!).filterIsInstance<ThreadItem.Notice>().any {
+                    it.text == "Background text session · ${textExcluded.size} tools unavailable — see Extensions"
+                },
+            )
+        }
+
+    @Test
+    fun `text catalog overflow is persisted in the session notice and explained to the model`() =
+        runTest {
+            val definitions =
+                listOf(action) +
+                    List(CatalogAdmission.LIMIT) { index ->
+                        action.copy(id = "extension.test.group_${index.toString().padStart(3, '0')}.action")
+                    }
+            val registry =
+                CapabilityRegistry(
+                    definitions.associate { it.id to backend { ExecutionOutcome(InvocationStatus.COMPLETED, "done") } },
+                    definitions,
+                )
+            val provider = FakeProvider()
+            val controller = controller(provider, registry = registry)
+            advanceUntilIdle()
+            controller.connect("test")
+            advanceUntilIdle()
+            val selection = CatalogAdmission.select(definitions)
+            assertEquals(1, selection.overflow.size)
+            assertEquals(selection.overflow.map { it.id }, provider.request.catalog.excludedTools)
+            assertTrue(provider.request.instructions.contains("1 enabled actions were excluded"))
+            controller.disconnect()
+            advanceUntilIdle()
+            val notice =
+                store
+                    .items(controller.state.value.threadId!!)
+                    .filterIsInstance<ThreadItem.Notice>()
+                    .single { it.kind == NoticeKind.SESSION_STARTED }
+            assertEquals("Text session · 1 tools unavailable — see Extensions", notice.text)
         }
 
     @Test
