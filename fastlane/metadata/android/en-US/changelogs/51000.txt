@@ -1,0 +1,3 @@
+* Changed: Voice offers every admitted tool regardless of metadata size; the 224 KiB voice budget is gone. A configuration too large for the data channel's echo is confirmed over a sideband connection.
+* Changed: If the sideband is unreachable, the call continues with an "unconfirmed configuration" notice. A confirmation naming the wrong tools still ends the call.
+* ...see CHANGELOG.md for the rest.

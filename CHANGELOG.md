@@ -4,6 +4,8 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.51.0] - 2026-10-01
+
 ### Changed
 
 - Voice offers every admitted tool regardless of metadata size; the 224 KiB voice budget is gone. A configuration too large for the data channel's echo is confirmed over a sideband connection.
