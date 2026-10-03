@@ -4,6 +4,8 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.52.0] - 2026-10-02
+
 ### Upgrade
 
 - A configuration repository that contains skills does not load on 0.51.x; update every device before adding one.
