@@ -14,6 +14,7 @@ import com.colonelpanic.eva.conversation.prompt.PromptConfig
 import com.colonelpanic.eva.conversation.prompt.PromptDefaults
 import com.colonelpanic.eva.conversation.prompt.VoiceCallMode
 import com.colonelpanic.eva.providers.openai.OpenAiModels
+import com.colonelpanic.eva.skills.Skill
 import com.colonelpanic.eva.web.WebResearchConfiguration
 import kotlinx.serialization.Required
 import kotlinx.serialization.SerialName
@@ -41,6 +42,7 @@ data class EvaConfigurationDocument(
     val remembered: RememberedPatch? = null,
     val device: DevicePatch? = null,
     val diagnostics: DiagnosticsPatch? = null,
+    val skills: SkillsPatch? = null,
 ) {
     companion object {
         const val FORMAT = "eva"
@@ -203,6 +205,25 @@ data class SecretReference(
     val authorizations: List<String>? = null,
 )
 
+@Serializable data class SkillsPatch(
+    val installed: List<PortableSkill>? = null,
+    /** Names of skills the user switched off. */
+    val disabled: List<String>? = null,
+)
+
+/** A Codex-format skill kept as its exact files, so it moves between EVA and Codex unchanged. */
+@Serializable
+data class PortableSkill(
+    /** The exact `SKILL.md` text. */
+    val skill: String,
+    /** The exact `agents/openai.yaml` text, when the skill has one. */
+    val openai: String? = null,
+    /** Where the skill was imported from; EVA records it but does not follow it. */
+    val source: String? = null,
+) {
+    val name: String get() = Skill.parse(skill, openai).name
+}
+
 @Serializable data class DiagnosticsPatch(
     /** Adds speech, transcript-length, and other high-volume events to EVA's lifecycle trace. */
     val verboseLogging: Boolean? = null,
@@ -223,6 +244,7 @@ data class EvaConfiguration(
     val remembered: Remembered,
     val device: Device,
     val diagnostics: Diagnostics = Diagnostics(),
+    val skills: Skills = Skills(),
 ) {
     data class Models(
         val text: String,
@@ -305,6 +327,11 @@ data class EvaConfiguration(
 
     data class Diagnostics(
         val verboseLogging: Boolean = false,
+    )
+
+    data class Skills(
+        val installed: List<PortableSkill> = emptyList(),
+        val disabled: List<String> = emptyList(),
     )
 }
 
@@ -527,6 +554,11 @@ object EvaConfigurationCodec {
         device = DevicePatch(current.device.authorizations.takeIf { it != base?.device?.authorizations }).nonEmpty(),
         diagnostics =
             DiagnosticsPatch(current.diagnostics.verboseLogging.takeIf { it != (base?.diagnostics?.verboseLogging ?: false) }).nonEmpty(),
+        skills =
+            SkillsPatch(
+                current.skills.installed.takeIf { it != base?.skills?.installed.orEmpty() },
+                current.skills.disabled.takeIf { it != base?.skills?.disabled.orEmpty() },
+            ).nonEmpty(),
     )
 
     private fun EvaConfigurationDocument.materialize(): EvaConfiguration =
@@ -589,6 +621,7 @@ object EvaConfigurationCodec {
             device =
                 EvaConfiguration.Device(requireNotNull(device?.authorizations) { "device.authorizations is missing." }),
             diagnostics = EvaConfiguration.Diagnostics(diagnostics?.verboseLogging ?: false),
+            skills = EvaConfiguration.Skills(skills?.installed.orEmpty(), skills?.disabled.orEmpty()),
         )
 
     private fun EvaConfiguration.validated(): EvaConfiguration {
@@ -791,6 +824,18 @@ object EvaConfigurationCodec {
         require(remembered.chosenNumbers.values.all { it >= 0 }) { "Invalid remembered number choice." }
         require(device.authorizations.all { it in DEVICE_AUTHORIZATIONS }) { "Unknown device authorization." }
         require(device.authorizations.distinct().size == device.authorizations.size) { "Duplicate device authorization." }
+        val skillNames =
+            skills.installed.map { item ->
+                try {
+                    item.source?.https("skills.installed source")
+                    Skill.parse(item.skill, item.openai).name
+                } catch (failure: IllegalArgumentException) {
+                    throw IllegalArgumentException("A skill in skills.installed is invalid: ${failure.message}", failure)
+                }
+            }
+        require(skillNames.distinct().size == skillNames.size) { "Two installed skills share a name." }
+        require(skills.disabled.all(Skill::isName)) { "skills.disabled lists an invalid skill name." }
+        require(skills.disabled.distinct().size == skills.disabled.size) { "Duplicate disabled skill." }
         return copy(
             voice = voice.copy(endCallAfter = voice.endCallAfter.toSortedMap()),
             packages =
@@ -812,6 +857,7 @@ object EvaConfigurationCodec {
             // Numbers remembered before they were kept whole cannot be recovered, so they are dropped.
             remembered = remembered.copy(chosenNumbers = remembered.chosenNumbers.filterKeys(PhoneNumberKey.E164::matches).toSortedMap()),
             device = device.copy(authorizations = device.authorizations.sorted()),
+            skills = skills.copy(installed = skills.installed.sortedBy { it.name }, disabled = skills.disabled.sorted()),
         )
     }
 
@@ -844,6 +890,11 @@ object EvaConfigurationCodec {
             credentials = document.credentials?.copy(required = document.credentials.required?.sortedBy { it.id }),
             remembered = document.remembered?.copy(chosenNumbers = document.remembered.chosenNumbers?.toSortedMap()),
             device = document.device?.copy(authorizations = document.device.authorizations?.sorted()),
+            skills =
+                document.skills?.copy(
+                    installed = document.skills.installed?.sortedBy { it.name },
+                    disabled = document.skills.disabled?.sorted(),
+                ),
         )
 
     private fun merge(
@@ -911,6 +962,11 @@ object EvaConfigurationCodec {
         remembered = RememberedPatch(override.remembered?.chosenNumbers ?: base.remembered?.chosenNumbers).nonEmpty(),
         device = DevicePatch(override.device?.authorizations ?: base.device?.authorizations).nonEmpty(),
         diagnostics = DiagnosticsPatch(override.diagnostics?.verboseLogging ?: base.diagnostics?.verboseLogging).nonEmpty(),
+        skills =
+            SkillsPatch(
+                override.skills?.installed ?: base.skills?.installed,
+                override.skills?.disabled ?: base.skills?.disabled,
+            ).nonEmpty(),
     )
 
     private fun validateInclude(path: String) {
@@ -965,6 +1021,8 @@ object EvaConfigurationCodec {
     private fun RememberedPatch.nonEmpty() = takeIf { chosenNumbers != null }
 
     private fun DevicePatch.nonEmpty() = takeIf { authorizations != null }
+
+    private fun SkillsPatch.nonEmpty() = takeIf { installed != null || disabled != null }
 
     private fun DiagnosticsPatch.nonEmpty() = takeIf { verboseLogging != null }
 

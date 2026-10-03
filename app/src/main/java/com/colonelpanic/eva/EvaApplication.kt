@@ -263,6 +263,19 @@ class EvaApplication :
         )
     }
 
+    val skills by lazy {
+        com.colonelpanic.eva.data.SkillSettings(
+            com.colonelpanic.eva.data
+                .AndroidMemoryFiles(filesDir),
+            configuration::onLocalChange,
+        )
+    }
+
+    val skillImporter by lazy {
+        com.colonelpanic.eva.data
+            .SkillImporter(skills, scope)
+    }
+
     val memories by lazy {
         com.colonelpanic.eva.data
             .MemoryStore(
@@ -447,6 +460,11 @@ class EvaApplication :
                 putAll(
                     com.colonelpanic.eva.capability.MemoryCapabilities
                         .backends(memories),
+                )
+                put(
+                    com.colonelpanic.eva.capability.SkillCapabilities.USE,
+                    com.colonelpanic.eva.capability.SkillCapabilities
+                        .backend(skills::enabled) { prompts.wording.value },
                 )
                 putAll(
                     mapOf(
@@ -828,6 +846,7 @@ class EvaApplication :
                     .mapValues { it.value.label }
             },
             callEndings = { settings.callEndings.value },
+            skills = skills::enabled,
             hiddenCapabilities = ::switchedOffCapabilities,
             prompt = { prompts.load() },
         ).also { controller ->

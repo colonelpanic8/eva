@@ -85,7 +85,7 @@ on-phone ChatGPT sign-in and an API-key alternative, an Android assistant
 surface, persistent threads, Android action adapters, and importable extension
 packages. Messaging has a shared SMS/MMS and notification-reply interface; direct
 SMS sending is device-verified, while notification replies are JVM-tested.
-Prompt instructions are editable YAML. Device verification varies by feature; implementation is not a promise of universal app or device support.
+Prompt instructions are editable YAML, and Codex-format skills load on demand. Device verification varies by feature; implementation is not a promise of universal app or device support.
 
 Paseo workspace discovery, recent-message reads, and link handoffs are available
 through the installable Paseo extension with a compatible Paseo build. Native

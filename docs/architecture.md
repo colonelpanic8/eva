@@ -848,6 +848,39 @@ of notes, expiry, or semantic search. Forgetting removes the saved note but does
 not erase prior conversation or action history. The implementation has JVM
 coverage; physical-device verification is pending.
 
+## Skills
+
+A skill is a procedure the user wrote for a kind of request, in the
+[Codex skill format](https://learn.chatgpt.com/docs/build-skills): a `SKILL.md`
+with `name` and `description` frontmatter and a Markdown body, and optionally the
+`agents/openai.yaml` beside it. EVA keeps both files as their exact text so a skill
+moves between EVA and Codex unchanged. It reads `name`, `description`, and the body
+from `SKILL.md`, and `interface.display_name`, `interface.short_description`,
+`policy.allow_implicit_invocation`, and `dependencies.tools` from `openai.yaml`;
+other keys are ignored, as Codex ignores them. Names and descriptions follow the
+Agent Skills limits Codex enforces (64 and 1,024 characters); the body has none.
+
+Loading is on demand, as in Codex. While any skill is enabled, sessions offer the
+bundled `eva.skills.use` tool, whose description lists each enabled skill's name
+and description after the `skills` note from `eva-wording.yaml`. A skill whose
+`openai.yaml` disallows implicit invocation is marked `onlyWhenNamed`. Using a
+skill returns its body, prefixed by the `skill-loaded` note, as a read-only
+result; results longer than the model result budget are cut with a visible marker.
+With no skill enabled the tool is not offered. A skill is text for the model: it
+cannot add tools, grant actions, or change confirmation rules, and `scripts/`,
+`references/`, and `assets/` are not read. `dependencies.tools` are shown on the
+skill as tools EVA does not provide.
+
+The drawer's **Skills** screen lists installed skills with an on/off switch and
+Remove, installs a pasted `SKILL.md` and `openai.yaml`, and fetches a skill from an
+HTTPS address: a raw `SKILL.md`, its folder, or the GitHub page of either (read from
+`raw.githubusercontent.com`). A fetch also tries `agents/openai.yaml` beside it and
+says when none was found. The source address is recorded, not followed. Installing
+a skill of the same name replaces it and keeps its switch. Skills are portable
+settings in the `skills` group, so they sync and restore with the configuration
+repository. The implementation has JVM coverage; physical-device verification is
+pending.
+
 ## Messaging
 
 The **Messaging** drawer destination owns phone-permission status, contact-name
@@ -1113,6 +1146,7 @@ The schema separates these groups:
 | `credentials` | Required scoped secret references and endpoints, never credential values |
 | `remembered` | Saved number-choice preferences |
 | `device` | Desired device authorizations to check on the destination |
+| `skills` | `installed`: exact `SKILL.md` and `openai.yaml` text with the address it came from; `disabled`: names switched off |
 
 An `include` list composes relative files under the selected folder. Includes are
 applied in order and the including file overrides them. Scalar settings merge by
@@ -1124,6 +1158,10 @@ rejected. EVA writes version 3. Versions 1 and 2 remain readable; legacy bundled
 package references are reported for manual reinstall and omitted on the next complete write.
 UI writes retain includes and store local overrides.
 They normalize the root YAML and remove its comments; included files are not rewritten.
+
+A skill switched off in a root file over a shared base needs only its name in the
+root's `skills.disabled`; the base's `skills.installed` is inherited. A disabled name
+with no installed skill is kept, so a base can bring the skill back already off.
 
 Imported extension JSON remains exact text rather than a re-encoded approximation:
 restoring configuration must preserve the bytes whose digest and identity were

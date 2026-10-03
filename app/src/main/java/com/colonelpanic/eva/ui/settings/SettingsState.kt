@@ -36,6 +36,10 @@ data class SettingsUiState(
     /** Bridges whose token is missing on this device or was saved for another origin. */
     val messagingBridgesNeedingToken: Set<String> = emptySet(),
     val rememberedNumbers: Int = 0,
+    val skills: List<com.colonelpanic.eva.data.InstalledSkill> = emptyList(),
+    val skillImport: com.colonelpanic.eva.data.SkillImportState =
+        com.colonelpanic.eva.data
+            .SkillImportState(),
     val memories: com.colonelpanic.eva.data.Memories =
         com.colonelpanic.eva.data
             .Memories(),
@@ -115,6 +119,11 @@ data class SettingsActions(
     val onForgetRememberedNumbers: () -> Unit = {},
     val onKeepMemory: (String) -> Unit = {},
     val onForgetMemory: (String) -> Unit = {},
+    val onSkillEnable: (String, Boolean) -> Unit = { _, _ -> },
+    val onSkillRemove: (String) -> Unit = {},
+    val onSkillFetch: (String) -> Unit = {},
+    /** Answers whether the pasted skill was installed; the importer state says why not. */
+    val onSkillPaste: (String, String) -> Boolean = { _, _ -> false },
     val onOpenAppSettings: () -> Unit = {},
     val onRepositoryRefresh: () -> Unit = {},
     val onRepositoryRefreshNew: () -> Unit = {},

@@ -266,6 +266,8 @@ class MainActivity : ComponentActivity() {
         val messagingBridgeChecks by eva.bridgeMessaging.checks.collectAsStateWithLifecycle()
         val rememberedNumbers by eva.chosenNumbers.count.collectAsStateWithLifecycle()
         val memories by eva.memories.state.collectAsStateWithLifecycle()
+        val skills by eva.skills.state.collectAsStateWithLifecycle()
+        val skillImport by eva.skillImporter.state.collectAsStateWithLifecycle()
         LaunchedEffect(Unit) { runCatching { eva.memories.load() } }
         val deviceTask by eva.capabilities.deviceTaskFlow.collectAsStateWithLifecycle()
         val webResearch by eva.capabilities.webResearchFlow.collectAsStateWithLifecycle()
@@ -328,6 +330,8 @@ class MainActivity : ComponentActivity() {
                 },
             rememberedNumbers = rememberedNumbers,
             memories = memories,
+            skills = skills,
+            skillImport = skillImport,
             plugins = plugins,
             extensions = extensions,
             packages = packages,
@@ -503,6 +507,10 @@ class MainActivity : ComponentActivity() {
                 onForgetRememberedNumbers = { lifecycleScope.launch { eva.chosenNumbers.forget() } },
                 onKeepMemory = { name -> editMemory { eva.memories.keep(name) } },
                 onForgetMemory = { name -> editMemory { eva.memories.forget(name) } },
+                onSkillEnable = eva.skills::setEnabled,
+                onSkillRemove = eva.skills::remove,
+                onSkillFetch = eva.skillImporter::fetch,
+                onSkillPaste = eva.skillImporter::paste,
                 onOpenAppSettings = ::openAppSettings,
                 onOpenMediaControlSettings = ::openMediaControlSettings,
                 onScreenControlChange = eva.capabilities::saveScreenControl,

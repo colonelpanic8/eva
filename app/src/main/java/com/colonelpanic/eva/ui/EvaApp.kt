@@ -33,10 +33,11 @@ import com.colonelpanic.eva.ui.settings.MessagingScreen
 import com.colonelpanic.eva.ui.settings.SettingsActions
 import com.colonelpanic.eva.ui.settings.SettingsScreen
 import com.colonelpanic.eva.ui.settings.SettingsUiState
+import com.colonelpanic.eva.ui.settings.SkillsScreen
 import com.colonelpanic.eva.ui.theme.EvaTheme
 import kotlinx.coroutines.launch
 
-internal enum class EvaDestination { CONVERSATION, RUNNING_WORK, EXTENSIONS, MESSAGING, MEMORY, PROMPT, SETTINGS, ABOUT }
+internal enum class EvaDestination { CONVERSATION, RUNNING_WORK, EXTENSIONS, MESSAGING, MEMORY, SKILLS, PROMPT, SETTINGS, ABOUT }
 
 /**
  * Top-level destinations behind a navigation drawer. A navigation library would only
@@ -162,6 +163,10 @@ fun EvaApp(
 
             EvaDestination.MEMORY -> {
                 MemoryScreen(state = settings, actions = settingsActions, onOpenDrawer = { openDrawer() })
+            }
+
+            EvaDestination.SKILLS -> {
+                SkillsScreen(state = settings, actions = settingsActions, onOpenDrawer = { openDrawer() })
             }
 
             EvaDestination.PROMPT -> {

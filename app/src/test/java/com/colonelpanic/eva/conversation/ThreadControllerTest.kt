@@ -16,6 +16,7 @@ import com.colonelpanic.eva.capability.ExecutionBackend
 import com.colonelpanic.eva.capability.ExecutionOutcome
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.MemoryInvocationRepository
+import com.colonelpanic.eva.capability.SkillCapabilities
 import com.colonelpanic.eva.conversation.prompt.PromptComponent
 import com.colonelpanic.eva.conversation.prompt.PromptConfig
 import com.colonelpanic.eva.conversation.prompt.PromptConfigException
@@ -125,6 +126,7 @@ class ThreadControllerTest {
         deviceTasks: com.colonelpanic.eva.devicecontrol.DeviceTaskCoordinator? = null,
         callEndings: () -> Map<String, CallEnding> = { emptyMap() },
         messagingBridges: () -> Map<String, String> = { emptyMap() },
+        skills: () -> List<com.colonelpanic.eva.skills.Skill> = { emptyList() },
         now: () -> Long = System::currentTimeMillis,
         conversationStore: ConversationStore = store,
         accepted: suspend () -> Unit = {},
@@ -147,6 +149,7 @@ class ThreadControllerTest {
         hiddenCapabilities = hiddenCapabilities,
         callEndings = callEndings,
         messagingBridges = messagingBridges,
+        skills = skills,
         prompt = prompt,
         onBackgroundAnswer = { answers += it },
         onBackgroundAnswerDelivered = { deliveredAnswers += it },
@@ -680,6 +683,46 @@ class ThreadControllerTest {
             assertEquals(TurnStatus.INTERRUPTED, store.turns(task.threadId).single().status)
             assertTrue(store.items(task.threadId).filterIsInstance<ThreadItem.Notice>().any { it.text.contains("Force-stopped by you") })
             assertEquals(0, executions)
+        }
+
+    @Test
+    fun `the skill tool lists enabled skills and is withheld while there are none`() =
+        runTest {
+            val use = SkillCapabilities.definition
+            val withSkills =
+                CapabilityRegistry(
+                    mapOf(
+                        use.id to backend { ExecutionOutcome(InvocationStatus.COMPLETED, "loaded") },
+                        lookup.id to backend { ExecutionOutcome(InvocationStatus.COMPLETED, "found") },
+                    ),
+                    listOf(use, lookup),
+                )
+            val planning =
+                com.colonelpanic.eva.skills.Skill
+                    .parse("---\nname: daily-planning\ndescription: Plan the user's day.\n---\nRead the agenda first.")
+            val provider = FakeProvider()
+            controller(provider, registry = withSkills, skills = { listOf(planning) }).also {
+                advanceUntilIdle()
+                it.connect("test")
+            }
+            advanceUntilIdle()
+            val description =
+                provider.request.catalog.tools
+                    .single { it.capabilityId == use.id }
+                    .description
+            assertTrue(description.contains(Wording.bundled.message(Wording.SKILLS)))
+            assertTrue(description.contains("\"name\":\"daily-planning\",\"description\":\"Plan the user's day.\""))
+
+            val none = FakeProvider()
+            controller(none, registry = withSkills).also {
+                advanceUntilIdle()
+                it.connect("test")
+            }
+            advanceUntilIdle()
+            assertTrue(
+                none.request.catalog.tools
+                    .none { it.capabilityId == use.id },
+            )
         }
 
     @Test

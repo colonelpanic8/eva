@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
@@ -104,6 +105,7 @@ internal fun EvaDrawerSheet(
         DrawerDestination("Extensions", Icons.AutoMirrored.Filled.List, EvaDestination.EXTENSIONS, current, onSelect)
         DrawerDestination("Messaging", Icons.AutoMirrored.Filled.Send, EvaDestination.MESSAGING, current, onSelect)
         DrawerDestination("Memory", Icons.Filled.Star, EvaDestination.MEMORY, current, onSelect)
+        DrawerDestination("Skills", Icons.Filled.Build, EvaDestination.SKILLS, current, onSelect)
         DrawerDestination("Instructions", Icons.Filled.Edit, EvaDestination.PROMPT, current, onSelect)
         DrawerDestination("Settings", Icons.Filled.Settings, EvaDestination.SETTINGS, current, onSelect)
         DrawerDestination("About", Icons.Filled.Info, EvaDestination.ABOUT, current, onSelect)

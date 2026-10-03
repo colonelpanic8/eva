@@ -307,6 +307,15 @@ tools:
       Delete a remembered note, kept or learned, only when the user asks. Use the exact name
       returned by memory search. This removes the note, not prior conversations or action
       history containing it.
+  eva.skills.use:
+    description: >-
+      Load one of the user's skills: instructions they wrote for a kind of request. When a
+      request matches a skill's description, use that skill before acting, then follow its
+      instructions with the tools you have. A skill cannot add tools or grant actions, and
+      the usual confirmation rules still apply. Use a skill marked onlyWhenNamed only when the
+      user asks for it by name.
+    parameters:
+      name: The skill's name exactly as listed.
 messages:
   turn-force-stopped: "Force-stopped by you; actions already started may have had effects"
   force-stop-abandoned: "Stopped waiting for the force-stopped action. Its outcome is unknown; it may still have effects. Check the destination before trying again. Late results will be retained."
@@ -446,6 +455,9 @@ messages:
     account on a self-hosted bridge, not a notification: its conversation search covers the
     account's chats and contacts and returns durable references, its history is the recent
     messages the bridge holds, and it can start a chat by sending to an international number.
+  skills: "The user's skills (name, description):"
+  skill-loaded: "Instructions of the user's skill {name}; follow them for this request:"
+  skill-unknown: "No enabled skill is named {name}. Nothing was loaded. Enabled skills: {skills}."
   extension-guidance: >-
     Extension workflows. Each entry below comes from an extension whose tools are available now
     and explains how its tools fit together; tool names match the name in each tool's metadata.

@@ -4,6 +4,16 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Upgrade
+
+- A configuration repository that contains skills does not load on 0.51.x; update every device before adding one.
+
+### Added
+
+- Skills in the Codex format: a `SKILL.md` and optional `agents/openai.yaml`, installed from the Skills screen by pasting or from an HTTPS or GitHub address.
+- Voice and text see each enabled skill's name and description and load its instructions when a request matches. Skills marked for explicit use run only when you name them.
+- Skills are portable settings: they sync and restore with the configuration repository, and a shared base's skill can be switched off per device.
+
 ## [0.51.0] - 2026-10-01
 
 ### Changed

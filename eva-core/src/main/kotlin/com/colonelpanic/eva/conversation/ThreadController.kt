@@ -13,6 +13,7 @@ import com.colonelpanic.eva.capability.InvocationRecord
 import com.colonelpanic.eva.capability.InvocationRepository
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.ProposalRejectedException
+import com.colonelpanic.eva.capability.SkillCapabilities
 import com.colonelpanic.eva.capability.ToolProposal
 import com.colonelpanic.eva.capability.ToolSchema
 import com.colonelpanic.eva.capability.UnsupportedJournalVersionException
@@ -107,6 +108,8 @@ class ThreadController(
     private val callEndings: () -> Map<String, CallEnding> = { emptyMap() },
     /** Configured messaging bridges, service name to label, named to the model on the shared messaging tools. */
     private val messagingBridges: () -> Map<String, String> = { emptyMap() },
+    /** Enabled skills, named to the model on the skill tool. */
+    private val skills: () -> List<com.colonelpanic.eva.skills.Skill> = { emptyList() },
     /** Capabilities the user has switched off. They are left out of the catalog entirely. */
     private val hiddenCapabilities: () -> Set<String> = { emptySet() },
     /** Read at every connection, so an edit to the prompt file applies to the next session. */
@@ -384,7 +387,11 @@ class ThreadController(
         promptHidden: Set<String>,
     ): Pair<com.colonelpanic.eva.capability.CatalogAdmission.Selection, List<ProviderToolDefinition>> {
         // Prompt-hidden tools leave before admission so they never take capacity from offered ones.
-        val offered = snapshot.catalog.filterNot { it.id in hiddenCapabilities() || it.id in promptHidden }
+        val noSkills = skills().isEmpty()
+        val offered =
+            snapshot.catalog.filterNot {
+                it.id in hiddenCapabilities() || it.id in promptHidden || (noSkills && it.id == SkillCapabilities.USE)
+            }
         val controls =
             if (voice) {
                 com.colonelpanic.eva.capability.CatalogAdmission
@@ -472,6 +479,13 @@ class ThreadController(
             description =
                 tool.description + "\n\n" + wording().message(Wording.MESSAGING_BRIDGES).replace("{services}", listed),
         )
+    }
+
+    /** Like the bridge note: which skills exist is configuration, named on the skill tool in followed wording. */
+    private fun skillNote(tool: ProviderToolDefinition): ProviderToolDefinition {
+        if (tool.capabilityId != SkillCapabilities.USE) return tool
+        val catalog = SkillCapabilities.catalog(skills()).takeIf { it.isNotEmpty() } ?: return tool
+        return tool.copy(description = tool.description + "\n\n" + wording().message(Wording.SKILLS) + "\n" + catalog)
     }
 
     /** The prompt and the catalog are decided together: components rewrite and hide tools. */
@@ -709,7 +723,7 @@ class ThreadController(
                                         }
                                     ) +
                                         deviceControls + phone.second,
-                                ).map { tool -> endingNote(bridgeNote(tool), endings[tool.capabilityId]) },
+                                ).map { tool -> endingNote(skillNote(bridgeNote(tool)), endings[tool.capabilityId]) },
                             snapshot.revision,
                         ).copy(
                             excludedTools = phone.first.excluded(),

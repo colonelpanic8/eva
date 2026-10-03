@@ -667,6 +667,7 @@ class EvaConfigurationManager(
                     ).distinct().sorted(),
                 ),
             diagnostics = EvaConfiguration.Diagnostics(app.diagnostics.verboseLogging),
+            skills = app.skills.portable(),
         )
     }
 
@@ -792,6 +793,7 @@ class EvaConfigurationManager(
         app.settings.saveCallEndings(configuration.voice.callEndings())
         app.appearance.saveDynamicColor(configuration.appearance.dynamicColor)
         app.diagnostics.saveVerboseLogging(configuration.diagnostics.verboseLogging)
+        app.skills.replace(configuration.skills)
         app.capabilities.saveScreenControl(configuration.capabilities.screenControl)
         app.capabilities.saveDeviceTask(configuration.capabilities.deviceTask)
         app.capabilities.saveWebResearch(configuration.capabilities.webResearch)
@@ -968,6 +970,7 @@ class EvaConfigurationManager(
         attempt("voice call endings") { app.settings.saveCallEndings(before.voice.callEndings()) }
         attempt("appearance") { app.appearance.saveDynamicColor(before.appearance.dynamicColor) }
         attempt("diagnostics") { app.diagnostics.saveVerboseLogging(before.diagnostics.verboseLogging) }
+        attempt("skills") { app.skills.replace(before.skills) }
         attempt("capabilities") {
             app.capabilities.saveScreenControl(before.capabilities.screenControl)
             app.capabilities.saveDeviceTask(before.capabilities.deviceTask)

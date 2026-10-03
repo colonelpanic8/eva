@@ -168,6 +168,51 @@ class ConfigurationCompositionTest {
     }
 
     @Test
+    fun `skills keep their exact files and a shared base can be switched off locally`() {
+        val skill = "---\nname: daily-planning\ndescription: Plan the day.\n# a comment Codex keeps\n---\n\nRead the agenda first.\n"
+        val openai = "interface:\n  display_name: \"Daily planning\"\n"
+        val base = fullConfiguration()
+        val withSkill =
+            base.copy(
+                skills = EvaConfiguration.Skills(listOf(PortableSkill(skill, openai, "https://example.com/daily-planning/SKILL.md"))),
+            )
+        val encoded = EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(withSkill))
+        val resolved = EvaConfigurationCodec.resolve(reader(mapOf(EvaConfigurationCodec.FILE_NAME to encoded))).configuration
+        assertEquals(withSkill, resolved)
+        assertEquals(
+            skill,
+            resolved.skills.installed
+                .single()
+                .skill,
+        )
+        assertFalse(EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(base)).contains("skills"))
+
+        val switchedOff = withSkill.copy(skills = withSkill.skills.copy(disabled = listOf("daily-planning")))
+        val override = EvaConfigurationCodec.overrides(switchedOff, EvaConfigurationCodec.complete(withSkill), listOf("base.yaml"))
+        assertEquals(SkillsPatch(disabled = listOf("daily-planning")), override.skills)
+        assertEquals(
+            switchedOff,
+            EvaConfigurationCodec
+                .resolve(
+                    reader(mapOf(EvaConfigurationCodec.FILE_NAME to EvaConfigurationCodec.encode(override), "base.yaml" to encoded)),
+                ).configuration,
+        )
+
+        for (invalid in listOf(listOf(PortableSkill("no frontmatter")), listOf(PortableSkill(skill), PortableSkill(skill)))) {
+            val document = EvaConfigurationCodec.complete(base.copy(skills = EvaConfiguration.Skills(invalid)))
+            assertThrows(IllegalArgumentException::class.java) {
+                EvaConfigurationCodec.resolve(
+                    reader(
+                        mapOf(
+                            EvaConfigurationCodec.FILE_NAME to EvaConfigurationCodec.encode(document.copy(skills = SkillsPatch(invalid))),
+                        ),
+                    ),
+                )
+            }
+        }
+    }
+
+    @Test
     fun `bearer reference kind round trips and mismatched kinds are rejected`() {
         val current = fullConfiguration()
         val reference = EvaConfigurationCodec.serviceSecretId(SERVICE_NAME, "bearer")

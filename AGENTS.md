@@ -96,6 +96,7 @@ Both use the same package names. Paths below are relative to those roots:
 | Persistence, settings, secrets | `data/` |
 | Lifecycle trace, diagnostics export, redaction | `diagnostics/` |
 | Prompt YAML, composition, following its source | `conversation/prompt/`, `data/PromptStore.kt` |
+| Codex-format skills and the skill tool | `skills/`, `capability/SkillCapabilities.kt`, `data/SkillSettings.kt`, `ui/settings/SkillsScreen.kt` |
 | App navigation and settings | `ui/EvaApp.kt`, `ui/settings/`, `ui/prompt/` |
 
 - Declarative package catalog: `colonelpanic8/eva-extensions`. Shipped defaults are
