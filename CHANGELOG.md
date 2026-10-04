@@ -4,6 +4,16 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.53.0] - 2026-10-04
+
+### Added
+
+- A device task lists every step it takes under its row in the conversation: each screen read, tap, text entry, scroll and app launch, with the backend (Portal or Shizuku) that ran it. Steps appear live while the task runs and stay in the thread afterward; tap the row to see why the worker took each one.
+
+### Changed
+
+- A running action is labeled "Running" instead of "Opening app".
+
 ## [0.52.0] - 2026-10-02
 
 ### Upgrade
