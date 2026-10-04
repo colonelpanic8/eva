@@ -103,7 +103,10 @@ It reports local pending commits when the network or push fails. Managed Git can
 be disabled without deleting its checkout or device-local token.
 
 Both modes create =eva.yaml= from current settings when it is absent, or restore
-the complete configuration graph already present. Choose the same repository on
+the complete configuration graph already present. Skills can live in the same
+repository as Codex-format folders, =.agents/skills/<name>/SKILL.md= (or
+=skills/<name>/SKILL.md=); EVA loads them with the configuration, and Codex finds the
+same folders when it opens the repository. Choose the same repository on
 another device to restore its configuration; EVA lists any credentials, apps, or
 Android authorizations still needed. Use =include= files to share a base and keep
 local overrides.

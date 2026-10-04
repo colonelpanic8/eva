@@ -40,6 +40,14 @@ class FileConfigurationDirectory(
         return file.readBytes().toString(Charsets.UTF_8)
     }
 
+    override fun directories(path: String): List<String> =
+        resolve(path)
+            .takeIf { it.isDirectory }
+            ?.listFiles()
+            .orEmpty()
+            .filter { it.isDirectory && it.canonicalFile == it.absoluteFile }
+            .map { it.name }
+
     override fun replaceRoot(
         text: String,
         expectedRootFingerprint: String?,
@@ -148,6 +156,19 @@ class SafConfigurationDirectory(
         return file?.let(::readDocument)
     }
 
+    override fun directories(path: String): List<String> {
+        val folder = find(path) ?: return emptyList()
+        val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, DocumentsContract.getDocumentId(folder.uri))
+        return queryChildren(children)
+            ?.use { cursor ->
+                buildList {
+                    while (cursor.moveToNext()) {
+                        if (cursor.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR) add(cursor.getString(1))
+                    }
+                }
+            }.orEmpty()
+    }
+
     override fun replaceRoot(
         text: String,
         expectedRootFingerprint: String?,
@@ -214,7 +235,12 @@ class SafConfigurationDirectory(
     }
 
     private fun queryChildren(uri: Uri): Cursor? {
-        val projection = arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+        val projection =
+            arrayOf(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE,
+            )
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             resolver.query(uri, projection, Bundle.EMPTY, null)
         } else {

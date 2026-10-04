@@ -59,6 +59,48 @@ class ManagedGitRepositoryTest {
     }
 
     @Test
+    fun `skill folders pushed from another clone arrive with a pull and survive EVA's own commits`() {
+        val fixture = fixtureWithInitial("one")
+        val phone = fixture.repository("phone").also { it.connect() }
+        val desktop = File(fixture.root, "desktop")
+        Git
+            .cloneRepository()
+            .setURI(fixture.remote.toURI().toString())
+            .setDirectory(desktop)
+            .call()
+            .use { git ->
+                File(desktop, ".agents/skills/journaling").mkdirs()
+                File(
+                    desktop,
+                    ".agents/skills/journaling/SKILL.md",
+                ).writeText("---\nname: journaling\ndescription: Reflect.\n---\nAsk one question.\n")
+                git.add().addFilepattern(".agents").call()
+                git
+                    .commit()
+                    .setMessage("Add a skill")
+                    .setAuthor("Test", "test@example.com")
+                    .call()
+                git.push().setRemote("origin").call()
+            }
+
+        assertEquals(GitCondition.PULLED, phone.synchronize().condition)
+        assertEquals(
+            listOf(".agents/skills/journaling"),
+            EvaConfigurationCodec
+                .resolve(phone.directory)
+                .configuration.skills.repository
+                .map { it.path },
+        )
+        update(phone, "two")
+        assertEquals(GitCondition.PUSHED, phone.commitAndPush().condition)
+        Git.open(desktop).use { git ->
+            git.pull().call()
+            assertTrue(File(desktop, ".agents/skills/journaling/SKILL.md").readText().contains("Ask one question."))
+        }
+        phone.close()
+    }
+
+    @Test
     fun `invalid remote configuration does not move local head or checkout`() {
         val fixture = fixtureWithInitial("valid")
         val local = fixture.repository("local").also { it.connect() }

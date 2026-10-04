@@ -2,6 +2,7 @@ package com.colonelpanic.eva.data
 
 import com.colonelpanic.eva.data.configuration.EvaConfiguration
 import com.colonelpanic.eva.data.configuration.PortableSkill
+import com.colonelpanic.eva.data.configuration.RepositorySkill
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -39,7 +40,7 @@ class SkillSettingsTest {
         assertEquals(listOf("packing"), settings.portable().disabled)
         assertEquals(
             "Check the weather.",
-            settings.state.value
+            settings.state.value.skills
                 .single { it.skill.name == "packing" }
                 .skill.body,
         )
@@ -64,5 +65,32 @@ class SkillSettingsTest {
         assertEquals(listOf("journaling"), settings.enabled().map { it.name })
         settings.setEnabled("journaling", false)
         assertEquals(listOf("from-shared-base", "journaling"), settings.portable().disabled)
+    }
+
+    @Test
+    fun `repository skill folders change only through the repository and leave when it is unlinked`() {
+        val settings = SkillSettings(files)
+        settings.replace(
+            EvaConfiguration.Skills(
+                repository = listOf(RepositorySkill(".agents/skills/journaling", skill("journaling"))),
+                problems = listOf("Skill folder skills/broken was not loaded: no frontmatter"),
+            ),
+        )
+
+        assertEquals(
+            ".agents/skills/journaling",
+            settings.state.value.skills
+                .single()
+                .folder,
+        )
+        assertThrows(IllegalArgumentException::class.java) { settings.install(skill("journaling", "Other."), null, null) }
+        assertThrows(IllegalArgumentException::class.java) { settings.remove("journaling") }
+        settings.setEnabled("journaling", false)
+        assertEquals(emptyList<String>(), settings.enabled().map { it.name })
+        assertEquals(listOf("journaling"), settings.portable().disabled)
+
+        settings.forgetRepository()
+        assertEquals(EvaConfiguration.Skills(disabled = listOf("journaling")), settings.portable())
+        assertEquals(SkillLibrary(), settings.state.value)
     }
 }

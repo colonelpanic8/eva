@@ -224,6 +224,15 @@ data class PortableSkill(
     val name: String get() = Skill.parse(skill, openai).name
 }
 
+/** A skill folder in the configuration repository, read in place and never written by EVA. */
+@Serializable
+data class RepositorySkill(
+    /** The folder, relative to the configuration root, such as `.agents/skills/journaling`. */
+    val path: String,
+    val skill: String,
+    val openai: String? = null,
+)
+
 @Serializable data class DiagnosticsPatch(
     /** Adds speech, transcript-length, and other high-volume events to EVA's lifecycle trace. */
     val verboseLogging: Boolean? = null,
@@ -332,6 +341,10 @@ data class EvaConfiguration(
     data class Skills(
         val installed: List<PortableSkill> = emptyList(),
         val disabled: List<String> = emptyList(),
+        /** Skill folders found in the configuration repository; not written to `eva.yaml`. */
+        val repository: List<RepositorySkill> = emptyList(),
+        /** Why skill folders in the repository were not loaded. */
+        val problems: List<String> = emptyList(),
     )
 }
 
@@ -349,11 +362,17 @@ data class ResolvedConfiguration(
 
 fun interface ConfigurationReader {
     fun read(path: String): String?
+
+    /** Names of the folders directly inside [path], or none when it is not a folder. */
+    fun directories(path: String): List<String> = emptyList()
 }
 
 object EvaConfigurationCodec {
     const val FILE_NAME = "eva.yaml"
     const val MAX_FILE_BYTES = 4_194_304
+
+    /** Where skill folders live in a configuration repository: Codex's repository location, then a plain one. */
+    val SKILL_FOLDERS = listOf(".agents/skills", "skills")
     const val MAX_GRAPH_BYTES = 8_388_608
     private const val MAX_FILES = 32
     private const val MAX_DEPTH = 8
@@ -456,8 +475,28 @@ object EvaConfigurationCodec {
         digest.update(rootPath.toByteArray(Charsets.UTF_8))
         digest.update(byteArrayOf(0))
         digest.update(rootText.toByteArray(Charsets.UTF_8))
+        val folder = rootPath.substringBeforeLast('/', "")
+        val skillFolders =
+            SKILL_FOLDERS.flatMap { parent ->
+                val directory = if (folder.isEmpty()) parent else "$folder/$parent"
+                reader.directories(directory).sorted().mapNotNull { name ->
+                    val path = "$directory/$name"
+                    val skill = reader.read("$path/SKILL.md") ?: return@mapNotNull null
+                    val openai = reader.read("$path/agents/openai.yaml")
+                    listOfNotNull("$path/SKILL.md" to skill, openai?.let { "$path/agents/openai.yaml" to it }).forEach { (file, text) ->
+                        totalBytes += text.toByteArray(Charsets.UTF_8).size
+                        require(totalBytes <= MAX_GRAPH_BYTES) { "Configuration and its skill folders are too large." }
+                        listOf(digest, includedDigest).forEach {
+                            it.update(file.toByteArray(Charsets.UTF_8))
+                            it.update(byteArrayOf(0))
+                            it.update(text.toByteArray(Charsets.UTF_8))
+                        }
+                    }
+                    RepositorySkill(if (folder.isEmpty()) path else path.removePrefix("$folder/"), skill, openai)
+                }
+            }
         val merged = merge(included, root.copy(include = emptyList()))
-        val resolved = merged.materialize().validated()
+        val resolved = merged.materialize().validated().withRepositorySkills(skillFolders)
         return ResolvedConfiguration(
             resolved,
             root,
@@ -467,8 +506,30 @@ object EvaConfigurationCodec {
             includedDigest.digest().hex(),
             rootText,
             paths.toSet(),
-            listOfNotNull(merged.capabilities?.webResearch?.normalizationNotice()),
+            listOfNotNull(merged.capabilities?.webResearch?.normalizationNotice()) + resolved.skills.problems,
         )
+    }
+
+    /**
+     * A broken or duplicate skill folder is reported and skipped rather than failing the whole
+     * configuration, so one bad file in the repository does not stop everything else from loading.
+     */
+    private fun EvaConfiguration.withRepositorySkills(found: List<RepositorySkill>): EvaConfiguration {
+        val names = skills.installed.map { it.name }.toMutableSet()
+        val problems = mutableListOf<String>()
+        val loaded =
+            found.filter { folder ->
+                val name =
+                    runCatching { Skill.parse(folder.skill, folder.openai).name }
+                        .getOrElse { failure ->
+                            problems += "Skill folder ${folder.path} was not loaded: ${failure.message}"
+                            return@filter false
+                        }
+                names.add(name).also { added ->
+                    if (!added) problems += "Skill folder ${folder.path} was not loaded: another skill is already named $name."
+                }
+            }
+        return copy(skills = skills.copy(repository = loaded, problems = problems))
     }
 
     fun resolve(reader: ConfigurationReader): ResolvedConfiguration = resolve(FILE_NAME, reader)

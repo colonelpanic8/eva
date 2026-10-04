@@ -212,6 +212,7 @@ class EvaConfigurationManager(
                                 linked.attach(SafConfigurationDirectory(app, tree.toUri()))
                             } else {
                                 linked.detach()
+                                app.skills.forgetRepository()
                                 null
                             }
                         disableGitInternal()

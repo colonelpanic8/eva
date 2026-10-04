@@ -2,6 +2,7 @@ package com.colonelpanic.eva.data
 
 import com.colonelpanic.eva.data.configuration.EvaConfiguration
 import com.colonelpanic.eva.data.configuration.PortableSkill
+import com.colonelpanic.eva.data.configuration.RepositorySkill
 import com.colonelpanic.eva.skills.Skill
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,28 +16,44 @@ data class InstalledSkill(
     val files: PortableSkill,
     val skill: Skill,
     val enabled: Boolean,
+    /** The skill's folder in the configuration repository, or null for one installed in EVA. */
+    val folder: String? = null,
+)
+
+data class SkillLibrary(
+    val skills: List<InstalledSkill> = emptyList(),
+    /** Why skill folders in the configuration repository were not loaded. */
+    val problems: List<String> = emptyList(),
 )
 
 @Serializable
 private data class StoredSkills(
     val installed: List<PortableSkill> = emptyList(),
     val disabled: List<String> = emptyList(),
+    val repository: List<RepositorySkill> = emptyList(),
+    val problems: List<String> = emptyList(),
 )
 
-/** The user's skills. Portable: every change is written to the user configuration. */
+/**
+ * The user's skills: ones installed in EVA, kept in `eva.yaml`, and skill folders in the
+ * configuration repository, which only the repository changes. Every edit is portable.
+ */
 class SkillSettings(
     private val files: MemoryFiles,
     private val onChanged: () -> Unit = {},
 ) {
     private var stored = read()
-    private val mutable = MutableStateFlow(stored.installed())
+    private val mutable = MutableStateFlow(stored.library())
     val state = mutable.asStateFlow()
 
     /** Skills the model may load, in name order. */
-    fun enabled(): List<Skill> = state.value.filter { it.enabled }.map { it.skill }
+    fun enabled(): List<Skill> =
+        state.value.skills
+            .filter { it.enabled }
+            .map { it.skill }
 
     @Synchronized
-    fun portable(): EvaConfiguration.Skills = EvaConfiguration.Skills(stored.installed, stored.disabled)
+    fun portable(): EvaConfiguration.Skills = EvaConfiguration.Skills(stored.installed, stored.disabled, stored.repository, stored.problems)
 
     /** Installs a skill, replacing one with the same name and keeping its on/off choice. */
     @Synchronized
@@ -49,8 +66,10 @@ class SkillSettings(
         origin?.let { require(URI(it).scheme == "https") { "A skill's source must be an HTTPS address." } }
         val portable = PortableSkill(skill, openai?.takeIf(String::isNotBlank), origin)
         val parsed = Skill.parse(portable.skill, portable.openai)
-        val enabled = state.value.firstOrNull { it.skill.name == parsed.name }?.enabled ?: true
-        save(state.value.filterNot { it.skill.name == parsed.name } + InstalledSkill(portable, parsed, enabled))
+        state.value.skills.firstOrNull { it.skill.name == parsed.name && it.folder != null }?.let {
+            throw IllegalArgumentException("${parsed.name} comes from ${it.folder} in your configuration repository; change it there.")
+        }
+        save(stored.copy(installed = stored.installed.filterNot { it.name == parsed.name } + portable))
         return parsed
     }
 
@@ -58,40 +77,59 @@ class SkillSettings(
     fun setEnabled(
         name: String,
         enabled: Boolean,
-    ) = save(state.value.map { if (it.skill.name == name) it.copy(enabled = enabled) else it })
+    ) {
+        save(stored.copy(disabled = if (enabled) stored.disabled - name else (stored.disabled + name).distinct()))
+    }
 
     @Synchronized
     fun remove(name: String) {
-        stored = stored.copy(disabled = stored.disabled - name)
-        save(state.value.filterNot { it.skill.name == name })
+        require(state.value.skills.none { it.skill.name == name && it.folder != null }) {
+            "$name comes from your configuration repository; delete its folder there."
+        }
+        save(stored.copy(installed = stored.installed.filterNot { it.name == name }, disabled = stored.disabled - name))
     }
 
-    /** Restores the configured skills; a disabled name with no installed skill is kept for when it returns. */
+    /** Restores the configured skills; a disabled name with no skill is kept for when it returns. */
     @Synchronized
     fun replace(configuration: EvaConfiguration.Skills) {
-        val next = StoredSkills(configuration.installed, configuration.disabled)
-        val installed = next.installed()
+        val next = StoredSkills(configuration.installed, configuration.disabled, configuration.repository, configuration.problems)
+        val library = next.library()
         write(next)
         stored = next
-        mutable.value = installed
+        mutable.value = library
     }
 
-    private fun save(skills: List<InstalledSkill>) {
-        val sorted = skills.sortedBy { it.skill.name }
-        val names = sorted.map { it.skill.name }.toSet()
-        val retainedDisabled = stored.disabled.filter { it !in names }
-        val next =
-            StoredSkills(sorted.map { it.files }, (sorted.filterNot { it.enabled }.map { it.skill.name } + retainedDisabled).sorted())
+    /** Skill folders belong to the repository they came from, so unlinking it drops them. */
+    @Synchronized
+    fun forgetRepository() {
+        if (stored.repository.isEmpty() && stored.problems.isEmpty()) return
+        val next = stored.copy(repository = emptyList(), problems = emptyList())
+        val library = next.library()
         write(next)
         stored = next
-        mutable.value = sorted
+        mutable.value = library
+    }
+
+    private fun save(next: StoredSkills) {
+        val sorted = next.copy(installed = next.installed.sortedBy { it.name }, disabled = next.disabled.sorted())
+        val library = sorted.library()
+        write(sorted)
+        stored = sorted
+        mutable.value = library
         onChanged()
     }
 
-    private fun StoredSkills.installed(): List<InstalledSkill> =
-        installed
-            .map { files -> Skill.parse(files.skill, files.openai).let { InstalledSkill(files, it, it.name !in disabled) } }
-            .sortedBy { it.skill.name }
+    private fun StoredSkills.library(): SkillLibrary {
+        fun entry(
+            files: PortableSkill,
+            folder: String?,
+        ) = Skill.parse(files.skill, files.openai).let { InstalledSkill(files, it, it.name !in disabled, folder) }
+        return SkillLibrary(
+            (installed.map { entry(it, null) } + repository.map { entry(PortableSkill(it.skill, it.openai), it.path) })
+                .sortedBy { it.skill.name },
+            problems,
+        )
+    }
 
     private fun read(): StoredSkills = files.read(FILE)?.let { Json.decodeFromString<StoredSkills>(it) } ?: StoredSkills()
 

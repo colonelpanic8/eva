@@ -41,9 +41,13 @@ class LinkedConfiguration(
                 val text = EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(current))
                 selected.replaceRoot(text, expectedRootFingerprint = null)
                 val saved = EvaConfigurationCodec.resolve(reader = selected)
-                require(saved.configuration == current) { "Saved configuration did not resolve to the current settings." }
+                require(saved.configuration.withoutFolderSkills() == current.withoutFolderSkills()) {
+                    "Saved configuration did not resolve to the current settings."
+                }
                 directory = selected
                 resolved = saved
+                // Skill folders already in the repository, or left from a previous one, are the folder's to decide.
+                if (saved.configuration != current) setupRequired = applyTransactionally(saved).setupRequired
                 LinkedConfigurationResult.Saved(setupRequired)
             } else {
                 val disk = EvaConfigurationCodec.resolve(reader = selected)
@@ -172,3 +176,5 @@ class LinkedConfiguration(
         }
     }
 }
+
+private fun EvaConfiguration.withoutFolderSkills() = copy(skills = skills.copy(repository = emptyList(), problems = emptyList()))

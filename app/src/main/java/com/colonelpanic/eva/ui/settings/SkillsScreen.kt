@@ -32,6 +32,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.colonelpanic.eva.data.InstalledSkill
+import com.colonelpanic.eva.data.SkillLibrary
 import com.colonelpanic.eva.data.configuration.PortableSkill
 import com.colonelpanic.eva.skills.Skill
 import com.colonelpanic.eva.ui.MenuButton
@@ -67,13 +68,31 @@ fun SkillsScreen(
                     .verticalScroll(rememberScrollState()),
         ) {
             SettingsSection("Installed") {
-                if (state.skills.isEmpty()) {
+                if (state.skills.skills.isEmpty()) {
                     SettingsRow(
                         title = "No skills yet",
                         supporting = "A skill is a SKILL.md file of instructions for a kind of request, as in Codex. Add one below.",
                     )
                 }
-                state.skills.forEach { SkillRow(it, actions) }
+                state.skills.skills.forEach { SkillRow(it, actions) }
+                state.skills.problems.forEach { problem ->
+                    SettingsBlock { Text(problem, color = MaterialTheme.colorScheme.error) }
+                }
+            }
+            SettingsDivider()
+            SettingsSection("From your configuration repository") {
+                SettingsBlock {
+                    Text(
+                        if (state.configuration.linkedFolder != null || state.configuration.gitEnabled) {
+                            "Skill folders in the linked repository load automatically: .agents/skills/<name>/SKILL.md " +
+                                "(where Codex looks) or skills/<name>/SKILL.md, each with an optional agents/openai.yaml. " +
+                                "Change or delete them in the repository; the switch here still turns them off."
+                        } else {
+                            "Link a configuration repository in Settings → User configuration, then put skill folders in it " +
+                                "at .agents/skills/<name>/SKILL.md or skills/<name>/SKILL.md. They load with the repository."
+                        },
+                    )
+                }
             }
             SettingsDivider()
             AddSkillSection(state, actions)
@@ -88,6 +107,7 @@ private fun SkillRow(
     actions: SettingsActions,
 ) {
     val skill = installed.skill
+    val origin = installed.folder?.let { "From the repository: $it" } ?: installed.files.source
     SettingsRow(
         title = skill.title,
         supporting =
@@ -98,11 +118,11 @@ private fun SkillRow(
                 skill.dependencies
                     .takeIf { it.isNotEmpty() }
                     ?.let { "Expects tools EVA cannot provide: ${it.joinToString()}" },
-                installed.files.source,
+                origin,
             ).joinToString("\n"),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = { actions.onSkillRemove(skill.name) }) { Text("Remove") }
+            if (installed.folder == null) TextButton(onClick = { actions.onSkillRemove(skill.name) }) { Text("Remove") }
             Switch(
                 checked = installed.enabled,
                 onCheckedChange = { actions.onSkillEnable(skill.name, it) },
@@ -170,7 +190,21 @@ private fun SkillsPreview() {
     val text = "---\nname: daily-planning\ndescription: Use when the user asks to plan their day.\n---\nList today's agenda first."
     EvaTheme(dynamicColor = false) {
         SkillsScreen(
-            state = SettingsUiState(skills = listOf(InstalledSkill(PortableSkill(text), Skill.parse(text), enabled = true))),
+            state =
+                SettingsUiState(
+                    skills =
+                        SkillLibrary(
+                            listOf(
+                                InstalledSkill(PortableSkill(text), Skill.parse(text), enabled = true),
+                                InstalledSkill(
+                                    PortableSkill(text.replace("daily-planning", "journaling")),
+                                    Skill.parse(text.replace("daily-planning", "journaling")),
+                                    enabled = false,
+                                    folder = ".agents/skills/journaling",
+                                ),
+                            ),
+                        ),
+                ),
             actions = SettingsActions(),
             onOpenDrawer = {},
         )

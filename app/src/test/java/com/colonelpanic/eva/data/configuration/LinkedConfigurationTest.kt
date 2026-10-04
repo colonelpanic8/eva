@@ -3,6 +3,7 @@ package com.colonelpanic.eva.data.configuration
 import com.colonelpanic.eva.conversation.prompt.PromptComponent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -35,6 +36,54 @@ class LinkedConfigurationTest {
             val saved = linked.localChange() as LinkedConfigurationResult.Saved
             assertTrue(saved.setupRequired.isEmpty())
             assertTrue((linked.reload() as LinkedConfigurationResult.Loaded).setupRequired.isEmpty())
+        }
+
+    @Test
+    fun `skill folders in a repository load with it, follow its edits, and never enter eva yaml`() =
+        runTest {
+            var local = configuration()
+            val linked = linked(snapshot = { local }, apply = { local = it })
+
+            fun skill(
+                name: String,
+                body: String,
+            ) = "---\nname: $name\ndescription: About $name.\n---\n$body\n"
+            val repository =
+                FakeDirectory(
+                    "repository",
+                    mutableMapOf(
+                        ".agents/skills/journaling/SKILL.md" to skill("journaling", "Ask one question."),
+                        ".agents/skills/journaling/agents/openai.yaml" to "policy:\n  allow_implicit_invocation: false\n",
+                        "skills/packing/SKILL.md" to skill("packing", "Check the weather."),
+                        "skills/notes/README.md" to "Not a skill.",
+                    ),
+                )
+
+            assertTrue(linked.attach(repository) is LinkedConfigurationResult.Saved)
+            assertEquals(listOf(".agents/skills/journaling", "skills/packing"), local.skills.repository.map { it.path })
+            assertEquals(
+                "policy:\n  allow_implicit_invocation: false\n",
+                local.skills.repository
+                    .first()
+                    .openai,
+            )
+            assertFalse(repository.files.getValue("eva.yaml").contains("Ask one question"))
+
+            repository.files["skills/packing/SKILL.md"] = skill("packing", "Pack light.")
+            repository.files["skills/broken/SKILL.md"] = "no frontmatter"
+            val reloaded = linked.reload() as LinkedConfigurationResult.Loaded
+            assertTrue(
+                local.skills.repository
+                    .single { it.path == "skills/packing" }
+                    .skill
+                    .contains("Pack light."),
+            )
+            assertTrue(reloaded.setupRequired.single().startsWith("Skill folder skills/broken was not loaded"))
+
+            local = local.copy(skills = local.skills.copy(disabled = listOf("packing")))
+            assertTrue(linked.localChange() is LinkedConfigurationResult.Saved)
+            assertTrue(repository.files.getValue("eva.yaml").contains("disabled:\n  - packing"))
+            assertFalse(repository.files.getValue("eva.yaml").contains("Pack light."))
         }
 
     @Test
@@ -419,6 +468,14 @@ class LinkedConfigurationTest {
         var duringReplacement: ((MutableMap<String, String>) -> Unit)? = null
 
         override fun read(path: String): String? = files[path]
+
+        override fun directories(path: String): List<String> =
+            files.keys
+                .filter { it.startsWith("$path/") }
+                .map { it.removePrefix("$path/") }
+                .filter { '/' in it }
+                .map { it.substringBefore('/') }
+                .distinct()
 
         override fun replaceRoot(
             text: String,

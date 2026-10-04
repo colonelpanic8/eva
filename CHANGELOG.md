@@ -4,6 +4,11 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Skills can live in the configuration repository as Codex-format folders, `.agents/skills/<name>/SKILL.md` or `skills/<name>/SKILL.md`. They load and update with the repository, and the Skills screen can switch them off.
+- A skill folder that cannot be read is skipped and named on the Skills screen; the rest of the configuration still loads.
+
 ## [0.54.0] - 2026-10-04
 
 ### Changed

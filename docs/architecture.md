@@ -874,8 +874,21 @@ cannot add tools, grant actions, or change confirmation rules, and `scripts/`,
 `references/`, and `assets/` are not read. `dependencies.tools` are shown on the
 skill as tools EVA does not provide.
 
+A linked configuration repository can also hold skills as folders, in Codex's
+repository layout: `.agents/skills/<name>/SKILL.md`, or `skills/<name>/SKILL.md`,
+each with an optional `agents/openai.yaml`. Every folder directly under either
+location that has a `SKILL.md` is loaded when the configuration is read, so adding,
+editing, or deleting a skill is a commit to the repository, and the same folder works
+when Codex opens the repository. EVA never writes these files. Their text is part of
+the configuration fingerprint, so an edit arriving by Sync or Reload is applied, but it
+is not copied into `eva.yaml`. A folder whose `SKILL.md` cannot be read, or whose name
+is already taken, is skipped and reported on the Skills screen and as a configuration
+notice; everything else still loads. Turning a folder skill off writes its name to
+`skills.disabled`. Disabling Managed Git with no folder linked drops folder skills.
+
 The drawer's **Skills** screen lists installed skills with an on/off switch and
-Remove, installs a pasted `SKILL.md` and `openai.yaml`, and fetches a skill from an
+Remove (folder skills show their path instead and change only in the repository),
+installs a pasted `SKILL.md` and `openai.yaml`, and fetches a skill from an
 HTTPS address: a raw `SKILL.md`, its folder, or the GitHub page of either (read from
 `raw.githubusercontent.com`). A fetch also tries `agents/openai.yaml` beside it and
 says when none was found. The source address is recorded, not followed. Installing
@@ -1149,7 +1162,7 @@ The schema separates these groups:
 | `credentials` | Required scoped secret references and endpoints, never credential values |
 | `remembered` | Saved number-choice preferences |
 | `device` | Desired device authorizations to check on the destination |
-| `skills` | `installed`: exact `SKILL.md` and `openai.yaml` text with the address it came from; `disabled`: names switched off |
+| `skills` | `installed`: exact `SKILL.md` and `openai.yaml` text with the address it came from; `disabled`: names switched off. Skill folders in the repository are read in place, not listed here |
 
 An `include` list composes relative files under the selected folder. Includes are
 applied in order and the including file overrides them. Scalar settings merge by

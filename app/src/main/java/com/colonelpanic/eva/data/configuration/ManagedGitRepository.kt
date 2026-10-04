@@ -497,6 +497,17 @@ class ManagedGitRepository(
                 return loader.bytes.toString(Charsets.UTF_8)
             }
         }
+
+        override fun directories(path: String): List<String> {
+            val folder =
+                TreeWalk.forPath(repository, path, commit.tree)?.use {
+                    if (it.getFileMode(0) == FileMode.TREE) it.getObjectId(0) else null
+                } ?: return emptyList()
+            return TreeWalk(repository).use { walk ->
+                walk.addTree(folder)
+                buildList { while (walk.next()) if (walk.getFileMode(0) == FileMode.TREE) add(walk.nameString) }
+            }
+        }
     }
 
     private companion object {

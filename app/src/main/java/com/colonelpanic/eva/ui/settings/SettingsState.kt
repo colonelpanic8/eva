@@ -36,7 +36,9 @@ data class SettingsUiState(
     /** Bridges whose token is missing on this device or was saved for another origin. */
     val messagingBridgesNeedingToken: Set<String> = emptySet(),
     val rememberedNumbers: Int = 0,
-    val skills: List<com.colonelpanic.eva.data.InstalledSkill> = emptyList(),
+    val skills: com.colonelpanic.eva.data.SkillLibrary =
+        com.colonelpanic.eva.data
+            .SkillLibrary(),
     val skillImport: com.colonelpanic.eva.data.SkillImportState =
         com.colonelpanic.eva.data
             .SkillImportState(),
