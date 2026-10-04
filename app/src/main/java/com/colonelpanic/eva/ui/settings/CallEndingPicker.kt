@@ -1,8 +1,11 @@
 package com.colonelpanic.eva.ui.settings
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -21,7 +24,10 @@ internal fun CallEndingPicker(
 ) {
     var open by remember { mutableStateOf(false) }
     Box {
-        TextButton(onClick = { open = true }) { Text("Voice call: ${(chosen ?: declared).label()}") }
+        TextButton(onClick = { open = true }) {
+            Text((chosen ?: declared).label())
+            Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+        }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             CallEnding.entries.forEach { ending ->
                 DropdownMenuItem(
@@ -36,9 +42,9 @@ internal fun CallEndingPicker(
     }
 }
 
-private fun CallEnding.label() =
+internal fun CallEnding.label() =
     when (this) {
-        CallEnding.NEVER -> "stays open"
-        CallEnding.AFTER_REPLY -> "ends after EVA confirms"
-        CallEnding.IMMEDIATELY -> "ends right away"
+        CallEnding.NEVER -> "Call stays open"
+        CallEnding.AFTER_REPLY -> "Ends after reply"
+        CallEnding.IMMEDIATELY -> "Ends right away"
     }

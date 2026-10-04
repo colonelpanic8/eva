@@ -63,8 +63,12 @@ class CapabilitySettings(
 
     fun portalToken(): String? = secrets.read("device/portal")
 
+    private val mutableHasPortalToken = MutableStateFlow(portalToken() != null)
+    val hasPortalToken = mutableHasPortalToken.asStateFlow()
+
     fun savePortalToken(value: String) {
         if (value.isBlank()) secrets.clear("device/portal") else secrets.write("device/portal", value.trim())
+        mutableHasPortalToken.value = value.isNotBlank()
         onCredentialChanged("device/portal")
     }
 

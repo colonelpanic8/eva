@@ -64,13 +64,8 @@ internal fun DeviceTaskBackendList(
 ) {
     val now by wallClock()
     SettingsBlock {
-        Text("Device task backends", style = MaterialTheme.typography.bodyLarge)
-        Text(
-            "Tasks use the first ready backend in this order. One that cannot read the screen hands over to the " +
-                "next before any action is taken.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Text("Device task backends", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
+        SettingsNote("Tasks use the first ready backend. One that can't read the screen hands off to the next before acting.")
     }
     backendRows(backends).forEach { backend ->
         val label = if (backend == "portal") "Portal" else "Shizuku"

@@ -58,6 +58,7 @@ data class SettingsUiState(
     val signIn: SignInState = SignInState.Idle,
     val hasApiKey: Boolean = false,
     val hasHostLink: Boolean = false,
+    val hasPortalToken: Boolean = false,
     val textModel: String = "",
     val realtimeModel: String = "",
     val availableTextModels: List<String> = emptyList(),

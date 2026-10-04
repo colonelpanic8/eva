@@ -4,6 +4,13 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Extensions has Installed, Sources, and Settings tabs. Each extension row shows how many of its actions are on; tapping it opens its actions, setup, and options on one panel.
+- Each action shows a label for what it does (reads, changes data, hands off) and a two-line description. Tapping it shows its parameters and return values with types, required fields, allowed values, and bounds, plus whether a call ends after it.
+- An imported package's review lists the apps and servers it reaches, and each of its actions opens to show its types and destination.
+- Settings, Extensions, and Messaging use the same row, note, and panel styles. Git sync, API key, paired host, Portal token, Spotify Client ID, and messaging-bridge forms stay collapsed until opened, and wait times are edited in place.
+
 ## [0.53.0] - 2026-10-04
 
 ### Added

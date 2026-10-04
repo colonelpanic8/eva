@@ -258,7 +258,7 @@ package it installed: the instance ID survives, grants move onto the new content
 and actions the new content no longer declares are dropped. A catalog is not
 publisher authentication; following one says the publisher is trusted. A single
 package can also be previewed from a raw HTTPS URL of the file itself.
-The Extensions tab also offers Import extension file. The system document picker grants
+The Sources tab also offers Choose a file. The system document picker grants
 temporary read access; EVA bounds the stream to the same package size limit and
 copies its exact bytes before preview. No persistent file permission is needed.
 Every file import gets a fresh source and instance identity; reimporting a file

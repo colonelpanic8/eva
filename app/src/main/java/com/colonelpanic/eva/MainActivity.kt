@@ -250,6 +250,7 @@ class MainActivity : ComponentActivity() {
         val settings = eva.settings
         val hasApiKey by settings.hasApiKey.collectAsStateWithLifecycle()
         val hasHostLink by settings.hasHostLink.collectAsStateWithLifecycle()
+        val hasPortalToken by eva.capabilities.hasPortalToken.collectAsStateWithLifecycle()
         val textModel by settings.textModelFlow.collectAsStateWithLifecycle()
         val realtimeModel by settings.realtimeModelFlow.collectAsStateWithLifecycle()
         val reasoningEffort by settings.reasoningEffortFlow.collectAsStateWithLifecycle()
@@ -347,6 +348,7 @@ class MainActivity : ComponentActivity() {
             signIn = signIn,
             hasApiKey = hasApiKey,
             hasHostLink = hasHostLink,
+            hasPortalToken = hasPortalToken,
             textModel = textModel,
             realtimeModel = realtimeModel,
             availableTextModels = models[ModelKind.TEXT].orEmpty(),

@@ -50,21 +50,16 @@ fun ExtensionsScreen(
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             PrimaryTabRow(selectedTabIndex = selected) {
-                listOf("Extensions", "Settings").forEachIndexed { index, title ->
+                listOf("Installed", "Sources", "Settings").forEachIndexed { index, title ->
                     Tab(selected = selected == index, onClick = { selected = index }, text = { Text(title) })
                 }
             }
             key(selected) {
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                     when (selected) {
-                        0 -> {
-                            ExtensionsSection(state, actions)
-                            ExtensionCatalogSection(state.plugins, actions)
-                        }
-
-                        else -> {
-                            GeneralExtensionSettingsSection(state, actions)
-                        }
+                        0 -> ExtensionsSection(state, actions)
+                        1 -> ExtensionCatalogSection(state.plugins, actions)
+                        else -> GeneralExtensionSettingsSection(state, actions)
                     }
                     Spacer(Modifier.height(24.dp))
                 }
