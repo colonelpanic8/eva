@@ -273,6 +273,54 @@ class TextTaskAgentTest {
             assertTrue(feedback.length < 200)
         }
 
+    @Test fun stepsDescribeEachInputWithItsBackendAndRedactPasswords() =
+        runTest {
+            fun field(
+                index: Int,
+                text: String,
+                password: Boolean = false,
+            ) = com.colonelpanic.eva.devicecontrol.proto.Element(
+                index,
+                com.colonelpanic.eva.devicecontrol.proto.Role.EDIT_TEXT,
+                text = text,
+                editable = true,
+                password = password,
+                bounds =
+                    com.colonelpanic.eva.devicecontrol.proto
+                        .Bounds(0, index * 50, 100, index * 50 + 50),
+                depth = 0,
+            )
+            val form = screen.copy(elements = listOf(field(0, "Username"), field(1, "", password = true)))
+            val phone =
+                FakeDeviceBackend(form) { action ->
+                    ActionResult(action.actionId, action.kind, true, "now", "now", form, executionStatus = ExecutionStatus.EXECUTED)
+                }
+            val backend =
+                com.colonelpanic.eva.devicecontrol.PreferredDeviceBackend(
+                    listOf(
+                        com.colonelpanic.eva.devicecontrol.PreferredDeviceBackend
+                            .Candidate("Shizuku", { null }) { phone },
+                    ),
+                )
+            val calls =
+                ArrayDeque(
+                    listOf(
+                        reply("set_text", """{"element":0,"text":"sam","replace":true,"intent":"Fill the user"}"""),
+                        reply("set_text", """{"element":1,"text":"hunter2","replace":true,"intent":"Fill the password"}"""),
+                        finish(),
+                    ),
+                )
+            val agent = TextTaskAgent(backend, WorkerModel { calls.removeFirst() }, wording)
+            assertEquals(TaskStatus.COMPLETED, agent.run("sign in") {}.status)
+            val (user, password) = agent.steps
+            assertEquals("Enter \"sam\" in \"Username\"", user.detail)
+            assertEquals("Fill the user", user.intent)
+            assertEquals("Shizuku", user.backend)
+            assertEquals("ok", user.result)
+            assertEquals("Enter \"<password>\" in \"<password>\"", password.detail)
+            assertFalse(agent.steps.any { "hunter2" in it.detail })
+        }
+
     @Test fun noCallRetainsAssistantOutputAndReminder() =
         runTest {
             val requests = mutableListOf<WorkerRequest>()

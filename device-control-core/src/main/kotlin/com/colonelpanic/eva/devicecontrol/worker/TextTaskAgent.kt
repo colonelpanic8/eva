@@ -1,6 +1,7 @@
 package com.colonelpanic.eva.devicecontrol.worker
 
 import com.colonelpanic.eva.devicecontrol.DeviceBackend
+import com.colonelpanic.eva.devicecontrol.PreferredDeviceBackend
 import com.colonelpanic.eva.devicecontrol.StepTiming
 import com.colonelpanic.eva.devicecontrol.TaskAgent
 import com.colonelpanic.eva.devicecontrol.TaskPhase
@@ -262,13 +263,30 @@ class TextTaskAgent(
                 pendingReply = reply
                 val call = reply.calls.firstOrNull()
                 if (call == null) {
-                    steps += WorkerStep(step, rev, "invalid_tool_count", "not_dispatched", StepTiming(observationMillis, modelMillis))
+                    steps +=
+                        WorkerStep(
+                            step,
+                            rev,
+                            "invalid_tool_count",
+                            "not_dispatched",
+                            StepTiming(observationMillis, modelMillis),
+                            detail = "No action chosen",
+                        )
                     note = wording.note("one_call")
                     noCall++
                     if (noCall >= 2) return result(TaskStatus.FAILED, "no_tool_call")
                     continue
                 }
                 noCall = 0
+                // Redact secret text in replayed calls as well as progress history.
+                val safeArgs =
+                    if (call.name == "set_text" &&
+                        before.elements.getOrNull(call.arguments["element"]?.jsonPrimitive?.intOrNull ?: -1)?.password == true
+                    ) {
+                        JsonObject(call.arguments + ("text" to JsonPrimitive("<password>")))
+                    } else {
+                        call.arguments
+                    }
                 steps +=
                     WorkerStep(
                         step,
@@ -279,16 +297,10 @@ class TextTaskAgent(
                         call.id,
                         call.responseId,
                         call.outputItemId,
+                        detail = describe(call.name, safeArgs, before),
+                        intent = safeArgs.text("intent"),
+                        backend = activeBackend(),
                     )
-                // Redact secret text in replayed calls as well as progress history.
-                val safeArgs =
-                    if (call.name == "set_text" &&
-                        before.elements.getOrNull(call.arguments["element"]?.jsonPrimitive?.intOrNull ?: -1)?.password == true
-                    ) {
-                        JsonObject(call.arguments + ("text" to JsonPrimitive("<password>")))
-                    } else {
-                        call.arguments
-                    }
                 callHistory[step] = "${call.name}(${clip(safeArgs.toString(), MAX_REPLAYED_ARGS)})"
                 if (safeArgs != call.arguments) {
                     val redacted = call.copy(arguments = safeArgs)
@@ -306,6 +318,7 @@ class TextTaskAgent(
                         refused++
                         continue
                     }
+                    steps[steps.lastIndex] = steps.last().copy(result = "asked")
                     progress(TaskPhase.NEEDS_INPUT, question, StepTiming(observationMillis, modelMillis))
                     note = question
                     val wait = clock()
@@ -403,7 +416,7 @@ class TextTaskAgent(
                         observation?.packageName in settings.launchAliases[action.packageName].orEmpty() &&
                         r?.error is com.colonelpanic.eva.devicecontrol.proto.AppNotFound
                 val outcome = if (aliasedLaunch) "ok" else r?.error?.javaClass?.simpleName ?: if (r?.ok == false) "failed" else "ok"
-                steps[steps.lastIndex] = steps.last().copy(result = outcome, timing = timing)
+                steps[steps.lastIndex] = steps.last().copy(result = outcome, timing = timing, backend = activeBackend())
                 progress(TaskPhase.PROGRESS, "${call.name}: $outcome", timing)
                 if (isStopped) return result(TaskStatus.CANCELLED, "cancelled")
                 if (revision != rev) continue
@@ -537,6 +550,94 @@ class TextTaskAgent(
         return ProtocolJson.decodeFromJsonElement(Action.serializer(), JsonObject(fields))
     }
 
+    private fun activeBackend() = (backend as? PreferredDeviceBackend)?.active
+
+    private fun JsonObject.text(name: String) = (get(name) as? JsonPrimitive)?.takeIf { it.isString }?.content
+
+    /** What a call does, in words a person reading the conversation can follow. */
+    private fun describe(
+        name: String,
+        args: JsonObject,
+        o: Observation,
+    ): String {
+        fun quoted(value: String?) = JsonPrimitive(clip(value.orEmpty(), QUOTED_CHARS)).toString()
+
+        fun target() = quoted(label(o, args["element"]?.jsonPrimitive?.intOrNull))
+
+        fun point(prefix: String) = "(${args[prefix + "x"]?.jsonPrimitive?.content}, ${args[prefix + "y"]?.jsonPrimitive?.content})"
+        return when (name) {
+            "observe" -> {
+                "Read the screen"
+            }
+
+            "launch_app" -> {
+                "Open ${args.text("package")}" + (args.text("activity")?.let { " ($it)" } ?: "")
+            }
+
+            "activate_element" -> {
+                "Tap ${target()}"
+            }
+
+            "long_press" -> {
+                "Long-press ${target()}"
+            }
+
+            "set_text" -> {
+                (if ((args["replace"] as? JsonPrimitive)?.content == "false") "Append " else "Enter ") +
+                    "${quoted(args.text("text"))} in ${target()}"
+            }
+
+            "scroll" -> {
+                "Scroll ${args.text("direction")}" +
+                    if (args["element"]?.jsonPrimitive?.intOrNull != null) " in ${target()}" else ""
+            }
+
+            "back" -> {
+                "Press Back"
+            }
+
+            "home" -> {
+                "Go Home"
+            }
+
+            "tap_point" -> {
+                "Tap at ${point("")}"
+            }
+
+            "swipe" -> {
+                "Swipe from ${point("start_")} to ${point("end_")}"
+            }
+
+            "screenshot" -> {
+                "Take a screenshot"
+            }
+
+            "ime_action" -> {
+                "Press ${args.text("action")} in ${target()}"
+            }
+
+            "open_url" -> {
+                "Open ${args.text("url")}"
+            }
+
+            "open_notifications" -> {
+                "Open notifications"
+            }
+
+            "ask_user" -> {
+                "Ask: ${args.text("question")}"
+            }
+
+            "finish" -> {
+                "Finish: ${args.text("summary")}"
+            }
+
+            else -> {
+                name
+            }
+        }
+    }
+
     private fun signature(o: Observation) = "${o.packageName}/${o.activity}:${o.elements}"
 
     private fun identity(e: Element) = listOf(e.role, e.text, e.contentDescription, e.resourceId, e.checked, e.selected)
@@ -605,6 +706,7 @@ class TextTaskAgent(
             max: Int,
         ) = if (value.length <= max) value else value.take(max - 1) + "…"
 
+        private const val QUOTED_CHARS = 120
         private val FILLER =
             "the and you your for with was are has have this that from not but its will been is on in at of to a an it i my me what when where who which how does did time tell find according page open chrome app screen phone please can"
                 .split(
@@ -622,4 +724,10 @@ data class WorkerStep(
     val callId: String? = null,
     val responseId: String? = null,
     val outputItemId: String? = null,
+    /** The call in words, with password text redacted. */
+    val detail: String = kind,
+    /** Why the worker said it made the call. */
+    val intent: String? = null,
+    /** The backend serving the task when the step ran, once one has read the screen. */
+    val backend: String? = null,
 )

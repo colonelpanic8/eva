@@ -51,6 +51,18 @@ data class ConversationEntry(
     /** Set when this entry is a text leg rather than an action. */
     val textLeg: TextLegDetails? = null,
     val initiator: ActionInitiator? = null,
+    /** Each screen read and input a device task made, live while it runs. */
+    val deviceSteps: List<DeviceStep> = emptyList(),
+)
+
+data class DeviceStep(
+    val step: Int,
+    val kind: String,
+    val detail: String,
+    /** `ok`, `not_dispatched`, `asked`, a finish status, or the backend's error name. */
+    val result: String,
+    val intent: String? = null,
+    val backend: String? = null,
 )
 
 data class TextLegDetails(

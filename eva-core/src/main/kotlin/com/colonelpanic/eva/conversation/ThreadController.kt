@@ -516,6 +516,7 @@ class ThreadController(
                 val owned = running?.takeIf { it.threadId == shownThreadId }
                 mutableState.update {
                     it.copy(
+                        entries = it.entries.withLiveSteps(owned),
                         deviceTaskActive = owned != null,
                         deviceTaskProgress = owned?.progress?.let { progress -> progress.message ?: progressLabel(progress.phase) },
                     )
@@ -606,7 +607,7 @@ class ThreadController(
         }
         // Every turn is listed, so every item is too; a window would strip older turns of their actions.
         val items = store.items(id, limit = Int.MAX_VALUE)
-        val entries = projectEntries(store.turns(id), items, receipts(items))
+        val entries = projectEntries(store.turns(id), items, receipts(items)).withLiveSteps(deviceTasks?.running?.value)
         mutableState.update {
             it.copy(
                 threadId = id,
@@ -618,6 +619,12 @@ class ThreadController(
             )
         }
     }
+
+    private fun List<ConversationEntry>.withLiveSteps(running: com.colonelpanic.eva.devicecontrol.DeviceTaskCoordinator.Running?) =
+        withLiveSteps(
+            running?.callId,
+            running?.steps.orEmpty().map { DeviceStep(it.step, it.kind, it.detail, it.result, it.intent, it.backend) },
+        )
 
     private suspend fun receipts(items: List<ThreadItem>): Map<String, InvocationRecord> {
         val wanted = items.filterIsInstance<ThreadItem.ActionCall>().map { it.callId }.toSet()

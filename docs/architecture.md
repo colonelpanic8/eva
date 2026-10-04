@@ -644,9 +644,12 @@ worker. An unresolved primitive effect remains UNKNOWN at terminal task receipt,
 even if later actions succeed. The task uses neither `BudgetedBackend` nor
 `BoundedExecution`, returns no startup handoff, and holds its lease until terminal
 completion/drain. Its one receipt includes task/revision identity, effects, and
-per-step kind, result and observation/model/action timings. Step receipts also retain
-the device-worker initiator, task/leg ID, call ID, and available response/output-item
-IDs, separate from the outer call's initiator. A stop before any
+per-step kind, a readable description (password text redacted), the worker's stated
+intent, the serving backend, result and observation/model/action timings. Step receipts
+also retain the device-worker initiator, task/leg ID, call ID, and available
+response/output-item IDs, separate from the outer call's initiator. The conversation
+lists every step under the task's action row, live from the running task and
+afterwards from the receipt. A stop before any
 completed effect is NOT_EXECUTED; known partial work is FAILED; unresolved work is
 UNKNOWN. Journal recovery never replays a task.
 

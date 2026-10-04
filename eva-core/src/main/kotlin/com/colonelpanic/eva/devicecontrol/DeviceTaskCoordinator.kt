@@ -9,6 +9,7 @@ import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.ToolProposal
 import com.colonelpanic.eva.conversation.prompt.Wording
 import com.colonelpanic.eva.devicecontrol.worker.TextTaskAgent
+import com.colonelpanic.eva.devicecontrol.worker.WorkerStep
 import com.colonelpanic.eva.diagnostics.EvaTrace
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -57,6 +58,7 @@ class DeviceTaskCoordinator(
         val progress: TaskProgress? = null,
         val callId: String,
         val job: kotlinx.coroutines.CompletableJob,
+        val steps: List<WorkerStep> = emptyList(),
     )
 
     private val mutableRunning = MutableStateFlow<Running?>(null)
@@ -165,8 +167,12 @@ class DeviceTaskCoordinator(
             try {
                 val result =
                     agent.run(goal) { progress ->
+                        val steps = agent.steps.toList()
                         synchronized(monitor) {
-                            mutableRunning.value?.takeIf { it.agent === agent }?.let { mutableRunning.value = it.copy(progress = progress) }
+                            mutableRunning.value?.takeIf { it.agent === agent }?.let {
+                                mutableRunning.value =
+                                    it.copy(progress = progress, steps = steps)
+                            }
                         }
                     }
                 synchronized(monitor) { if (screenEpoch == epoch && result.status == TaskStatus.COMPLETED) uncertainScreen = false }
@@ -218,6 +224,9 @@ class DeviceTaskCoordinator(
                                         put("step", step.step)
                                         put("revision", step.revision)
                                         put("kind", step.kind)
+                                        put("detail", step.detail)
+                                        step.intent?.let { put("intent", it) }
+                                        step.backend?.let { put("backend", it) }
                                         step.callId?.let { put("callId", it) }
                                         put(
                                             "initiator",
