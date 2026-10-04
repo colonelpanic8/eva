@@ -4,6 +4,7 @@ import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.capability.InvocationRecord
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.displayMessage
+import com.colonelpanic.eva.conversation.prompt.Wording
 import com.colonelpanic.eva.providers.HistoryItem
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -182,6 +183,7 @@ fun projectHistory(
     limit: Int = HISTORY_ITEM_LIMIT,
     /** The store's read was itself bounded, so the thread may hold more than [items]. */
     readBounded: Boolean = false,
+    questionHistoryNote: String = Wording.bundled.message(Wording.BACKGROUND_QUESTION_HISTORY),
 ): List<HistoryItem> {
     val latestQuestions = items.filterIsInstance<ThreadItem.Question>().associateBy { it.evidence.questionId }
     val projected = items.filter { it !is ThreadItem.Question || latestQuestions[it.evidence.questionId] === it }
@@ -198,7 +200,7 @@ fun projectHistory(
         kept.map { item ->
             when (item) {
                 is ThreadItem.Question -> {
-                    HistoryItem.Question(item.evidence.data())
+                    HistoryItem.Question(item.evidence.data(), questionHistoryNote)
                 }
 
                 is ThreadItem.UserMessage -> {

@@ -1,6 +1,8 @@
 package com.colonelpanic.eva.conversation
 
+import com.colonelpanic.eva.conversation.prompt.Wording
 import com.colonelpanic.eva.providers.HistoryItem
+import com.colonelpanic.eva.providers.openai.toOpenAiMessages
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -44,6 +46,17 @@ class QuestionProjectionTest {
                 .single()
                 .children.size,
         )
+    }
+
+    @Test fun `followed history framing reaches the provider separately from exchange data`() {
+        val wording = Wording(messages = mapOf(Wording.BACKGROUND_QUESTION_HISTORY to "Followed question framing"))
+        val history =
+            projectHistory(listOf(answered), emptyMap(), questionHistoryNote = wording.message(Wording.BACKGROUND_QUESTION_HISTORY))
+        val messages = history.single().toOpenAiMessages()
+        assertEquals("developer", messages.first().role)
+        assertEquals("Followed question framing", messages.first().text)
+        assertEquals("user", messages.last().role)
+        assertTrue(messages.last().text.contains("Tokyo"))
     }
 
     @Test fun `a tail containing only the answer still includes the question and attribution as data`() {

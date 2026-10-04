@@ -4088,6 +4088,100 @@ class ThreadControllerTest {
     }
 
     @Test
+    fun `question diagnostics omit content and finished tasks release question state`() =
+        runTest {
+            val events = mutableListOf<com.colonelpanic.eva.diagnostics.TraceEvent>()
+            val previous = com.colonelpanic.eva.diagnostics.EvaTrace.sink
+            com.colonelpanic.eva.diagnostics.EvaTrace.sink =
+                com.colonelpanic.eva.diagnostics
+                    .TraceSink { events += it }
+            try {
+                val (voice, background, controller) = questionFixture()
+                background.call("ask", ThreadController.ASK_USER.capabilityId, "question" to "Private question text")
+                runCurrent()
+                val question = controller.state.value.currentQuestion!!
+                voice.channel.send(ProviderEvent.ContextDelivery(listOf(voice.deliveryIds.last()!!), false))
+                runCurrent()
+                controller.submit("Private answer text")
+                runCurrent()
+                val field = ThreadController::class.java.getDeclaredField("questions").apply { isAccessible = true }
+                val retained = field.get(controller) as Map<*, *>
+                assertTrue(retained.containsKey(question.questionId))
+                background.channel.send(ProviderEvent.ResponseEnded(background.input.id, "completed"))
+                runCurrent()
+                assertFalse(retained.containsKey(question.questionId))
+                controller.submitAnswer(question.questionId, "late answer")
+                runCurrent()
+                assertEquals(1, background.results.count { it.call.callId == "ask" })
+                val traces = events.filter { it.name.startsWith("question.") }
+                assertTrue(
+                    traces
+                        .map {
+                            it.name
+                        }.containsAll(
+                            listOf(
+                                "question.asked",
+                                "question.relay_submitted",
+                                "question.delivery_failed",
+                                "question.answer_attempt",
+                                "question.resolved",
+                            ),
+                        ),
+                )
+                assertTrue(traces.none { "Private" in it.line() || "late answer" in it.line() })
+                assertTrue(traces.any { it.name == "question.answer_attempt" && it.fields["result"] == "background-answer-accepted" })
+                voice.startVoice("next-owner", "Another task")
+                runCurrent()
+                voice.call("delegate-next", ThreadController.DEFER_TO_TEXT.capabilityId, "task" to "Another task")
+                runCurrent()
+                background.input = ConversationInput(background.request.continuation!!.turnId, "")
+                background.call("ask-next", ThreadController.ASK_USER.capabilityId, "question" to "Next question")
+                runCurrent()
+                assertTrue(
+                    controller.state.value.currentQuestion!!
+                        .order > question.order,
+                )
+                controller.stopTask()
+                runCurrent()
+                controller.disconnect()
+                runCurrent()
+            } finally {
+                com.colonelpanic.eva.diagnostics.EvaTrace.sink = previous
+            }
+        }
+
+    @Test
+    fun `question resolution is persisted even when its task is missing`() =
+        runTest {
+            val (_, background, controller) = questionFixture()
+            background.call("ask", ThreadController.ASK_USER.capabilityId, "question" to "Which city?")
+            runCurrent()
+            val evidence = controller.state.value.currentQuestion!!
+            val taskField = ThreadController::class.java.getDeclaredField("tasks").apply { isAccessible = true }
+
+            @Suppress("UNCHECKED_CAST")
+            val tasks = taskField.get(controller) as MutableMap<String, Any>
+            val owner = tasks.remove(evidence.taskId)!!
+            val questionField = ThreadController::class.java.getDeclaredField("questions").apply { isAccessible = true }
+            val question = (questionField.get(controller) as Map<*, *>)[evidence.questionId]!!
+            try {
+                ThreadController::class.java.declaredMethods
+                    .single { it.name == "resolveQuestion" }
+                    .apply { isAccessible = true }
+                    .invoke(controller, question, QuestionResolution.CANCELLED)
+                runCurrent()
+                val stored = store.items(controller.state.value.threadId!!).filterIsInstance<ThreadItem.Question>().last()
+                assertEquals(QuestionResolution.CANCELLED, stored.evidence.resolution)
+            } finally {
+                tasks[evidence.taskId] = owner
+                controller.stopTask()
+                runCurrent()
+                controller.disconnect()
+                runCurrent()
+            }
+        }
+
+    @Test
     fun `two text questions retain their leg and relay oldest first while sibling actions run`() =
         runTest {
             val (voice, background, controller) = questionFixture()

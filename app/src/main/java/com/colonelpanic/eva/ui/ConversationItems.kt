@@ -47,6 +47,7 @@ import com.colonelpanic.eva.conversation.ConversationEntry
 import com.colonelpanic.eva.conversation.DeviceStep
 import com.colonelpanic.eva.conversation.EntryGroup
 import com.colonelpanic.eva.conversation.EntryStatus
+import com.colonelpanic.eva.conversation.QuestionResolution
 import com.colonelpanic.eva.conversation.TextLegDetails
 import com.colonelpanic.eva.conversation.TurnStatus
 import com.colonelpanic.eva.providers.ProviderToolCatalog
@@ -240,6 +241,7 @@ private fun TextLegBlock(
     val expanded = toggled ?: (leg.status == TurnStatus.OPEN)
     var showPrompt by rememberSaveable(entry.id + ":prompt") { mutableStateOf(false) }
     val status = leg.presentation()
+    val actionCount = actions.count { it.question == null }
     val waitingForAnswer = actions.any { it.question?.waiting == true }
     val task = leg.task ?: "Finish the request after the call ended"
     Surface(
@@ -266,8 +268,11 @@ private fun TextLegBlock(
                         StatusIndicator(status)
                         Text(
                             text =
-                                "Text agent" +
-                                    if (actions.none { it.question == null }) "" else " · ${actions.count { it.question == null }} actions",
+                                when (actionCount) {
+                                    0 -> "Text agent"
+                                    1 -> "Text agent · 1 action"
+                                    else -> "Text agent · $actionCount actions"
+                                },
                             style = MaterialTheme.typography.labelLarge,
                             modifier = Modifier.weight(1f, fill = false),
                         )
@@ -578,8 +583,22 @@ internal fun QuestionExchange(question: com.colonelpanic.eva.conversation.Questi
         Text(question.question, style = MaterialTheme.typography.bodyMedium)
         question.answer?.let { Text("Answer: $it", style = MaterialTheme.typography.bodyMedium) }
         Text(
-            if (question.waiting) "Waiting for your answer" else question.resolution.name.lowercase(),
-            style = MaterialTheme.typography.labelSmall,
+            when (question.resolution) {
+                QuestionResolution.PENDING -> "Waiting for your answer"
+                QuestionResolution.SUBMITTING -> "Sending answer…"
+                QuestionResolution.ACCEPTED -> "Answered"
+                QuestionResolution.FAILED -> "Couldn't deliver"
+                QuestionResolution.CANCELLED -> "Cancelled"
+                QuestionResolution.INTERRUPTED -> "Interrupted"
+            },
+            style = MaterialTheme.typography.labelMedium,
+            color =
+                when (question.resolution) {
+                    QuestionResolution.PENDING, QuestionResolution.SUBMITTING -> MaterialTheme.colorScheme.tertiary
+                    QuestionResolution.ACCEPTED -> MaterialTheme.colorScheme.primary
+                    QuestionResolution.FAILED -> MaterialTheme.colorScheme.error
+                    QuestionResolution.CANCELLED, QuestionResolution.INTERRUPTED -> MaterialTheme.colorScheme.onSurfaceVariant
+                },
         )
     }
 }

@@ -67,8 +67,7 @@ internal fun HistoryItem.toOpenAiMessages(): List<OpenAiHistoryMessage> =
             listOf(
                 OpenAiHistoryMessage(
                     "developer",
-                    com.colonelpanic.eva.conversation.prompt.Wording.bundled
-                        .message("background-question-history"),
+                    note,
                 ),
                 OpenAiHistoryMessage("user", data.toString()),
             )

@@ -132,6 +132,7 @@ class ThreadController(
     )
 
     private val questions = linkedMapOf<String, PendingQuestion>()
+    private var nextQuestionOrder = 0L
     private val questionWrites = Mutex()
     private val transcriptItems = mutableMapOf<Pair<ConversationSession, String>, String>()
 
@@ -334,12 +335,12 @@ class ThreadController(
     private val journalJobs = java.util.concurrent.ConcurrentHashMap<Job, TurnTask>()
 
     private fun launchFinalization(
-        owner: TurnTask,
+        owner: TurnTask?,
         block: suspend CoroutineScope.() -> Unit,
     ): Job =
         scope.launch(NonCancellable, start = CoroutineStart.LAZY, block = block).also { job ->
             turnJobs += job
-            journalJobs[job] = owner
+            if (owner != null) journalJobs[job] = owner
             job.invokeOnCompletion {
                 turnJobs -= job
                 journalJobs.remove(job)
@@ -825,6 +826,7 @@ class ThreadController(
                                     projectHistory(
                                         items,
                                         receipts(items),
+                                        questionHistoryNote = wording().message(Wording.BACKGROUND_QUESTION_HISTORY),
                                         readBounded =
                                             items.size >= ConversationStore.DEFAULT_ITEM_LIMIT,
                                     ),
@@ -1159,6 +1161,7 @@ class ThreadController(
                             ?.value
                     if (!event.delivered && relay != null && id == QUESTION_DELIVERY + relay.key) {
                         questionRelays[opened to relay.key] = relay.copy(held = false, failed = true)
+                        EvaTrace.info("question.delivery_failed", "questionId" to relay.key)
                     }
                 }
             }
@@ -1222,11 +1225,17 @@ class ThreadController(
                             tasks[running.turnId]?.textLegId,
                             QuestionSource.DEVICE_TASK,
                             checkNotNull(progress.message),
-                            order = questions.size.toLong(),
+                            order = nextQuestionOrder++,
                         ),
                         deviceKey = key,
                     )
                 questions[id] = question
+                EvaTrace.info(
+                    "question.asked",
+                    "questionId" to id,
+                    "task" to question.evidence.taskId,
+                    "source" to question.evidence.source,
+                )
                 val evidence = question.evidence
                 val owner = checkNotNull(tasks[running.turnId])
                 launchFinalization(owner) {
@@ -1249,17 +1258,18 @@ class ThreadController(
         if (!question.evidence.waiting) return
         question.evidence = question.evidence.copy(resolution = resolution)
         val evidence = question.evidence
-        val owner = tasks[evidence.taskId] ?: return
+        val owner = tasks[evidence.taskId]
+        EvaTrace.info("question.resolved", "questionId" to evidence.questionId, "resolution" to resolution)
         launchFinalization(owner) {
             try {
                 recordQuestion(question, evidence)
             } catch (_: Exception) {
                 mutableState.update { it.copy(errorMessage = SessionController.STORAGE_ERROR) }
-                owner.interrupt(SessionController.STORAGE_ERROR)
+                owner?.interrupt(SessionController.STORAGE_ERROR)
                 return@launchFinalization
             }
             session?.takeIf { attachedThreadId == question.threadId && connectionTools[it]?.voice == true }?.let { voice ->
-                runCatching { voice.submitContext(wording().message("background-question-resolved"), false, evidence.data()) }
+                runCatching { voice.submitContext(wording().message(Wording.BACKGROUND_QUESTION_RESOLVED), false, evidence.data()) }
             }
         }
     }
@@ -1279,11 +1289,32 @@ class ThreadController(
         provenance: AnswerProvenance,
         transcriptItemId: String? = null,
     ): String {
+        var result = "cancelled"
+        try {
+            result = consumeQuestion(threadId, taskId, questionId, answer, provenance, transcriptItemId)
+            return result
+        } finally {
+            EvaTrace.info("question.answer_attempt", "questionId" to questionId, "provenance" to provenance, "result" to result)
+        }
+    }
+
+    private suspend fun consumeQuestion(
+        threadId: String,
+        taskId: String,
+        questionId: String,
+        answer: String,
+        provenance: AnswerProvenance,
+        transcriptItemId: String? = null,
+    ): String {
         val question =
             questions[questionId]?.takeIf { it.threadId == threadId && it.evidence.taskId == taskId }
-                ?: return "background-answer-missing"
-        if (answer.isBlank()) return "background-answer-invalid"
-        if (question.evidence.resolution != QuestionResolution.PENDING || tasks[taskId]?.active != true) return "background-answer-stale"
+                ?: return Wording.BACKGROUND_ANSWER_MISSING
+        if (answer.isBlank()) return Wording.BACKGROUND_ANSWER_INVALID
+        if (question.evidence.resolution != QuestionResolution.PENDING ||
+            tasks[taskId]?.active != true
+        ) {
+            return Wording.BACKGROUND_ANSWER_STALE
+        }
         question.evidence =
             question.evidence.copy(
                 resolution = QuestionResolution.SUBMITTING,
@@ -1296,7 +1327,7 @@ class ThreadController(
             if (question.evidence.resolution != QuestionResolution.SUBMITTING ||
                 tasks[taskId]?.active != true
             ) {
-                return "background-answer-stale"
+                return Wording.BACKGROUND_ANSWER_STALE
             }
             val accepted =
                 if (question.evidence.source == QuestionSource.DEVICE_TASK) {
@@ -1310,7 +1341,7 @@ class ThreadController(
                             CorrelatedToolResult(
                                 checkNotNull(question.call),
                                 "COMPLETED",
-                                wording().message("background-answer-result"),
+                                wording().message(Wording.BACKGROUND_ANSWER_RESULT),
                                 question.evidence.data(),
                             ),
                         )
@@ -1319,7 +1350,7 @@ class ThreadController(
                 }
             resolveQuestion(question, if (accepted) QuestionResolution.ACCEPTED else QuestionResolution.FAILED)
             questionsChanged()
-            return if (accepted) "background-answer-accepted" else "background-answer-stale"
+            return if (accepted) Wording.BACKGROUND_ANSWER_ACCEPTED else Wording.BACKGROUND_ANSWER_STALE
         } catch (error: CancellationException) {
             resolveQuestion(question, QuestionResolution.CANCELLED)
             questionsChanged()
@@ -1328,7 +1359,7 @@ class ThreadController(
             resolveQuestion(question, QuestionResolution.FAILED)
             tasks[taskId]?.questionFailed()
             questionsChanged()
-            return "background-answer-failed"
+            return Wording.BACKGROUND_ANSWER_FAILED
         }
     }
 
@@ -1352,8 +1383,14 @@ class ThreadController(
             if (session !== voice || currentQuestion(attachedThreadId) !== question || !question.evidence.waiting) return@launch
             val accepted =
                 runCatching {
-                    voice.submitContext(wording().message("background-question"), true, question.evidence.data(), QUESTION_DELIVERY + key)
+                    voice.submitContext(
+                        wording().message(Wording.BACKGROUND_QUESTION),
+                        true,
+                        question.evidence.data(),
+                        QUESTION_DELIVERY + key,
+                    )
                 }.getOrDefault(false)
+            EvaTrace.info("question.relay_submitted", "questionId" to key, "accepted" to accepted)
             if (!accepted) questionRelays[relayKey]?.let { questionRelays[relayKey] = it.copy(held = false) }
         }
     }
@@ -1413,7 +1450,7 @@ class ThreadController(
                 correction,
                 AnswerProvenance.DEVICE_REVISION,
                 transcriptId,
-            ) == "background-answer-accepted"
+            ) == Wording.BACKGROUND_ANSWER_ACCEPTED
         } else {
             deviceTasks?.revise(threadId, correction) == true
         }
@@ -1430,7 +1467,7 @@ class ThreadController(
                 if (event.capabilityId ==
                     BACKGROUND_ANSWER.capabilityId
                 ) {
-                    "background-answer-invalid"
+                    Wording.BACKGROUND_ANSWER_INVALID
                 } else {
                     Wording.BACKGROUND_INVALID
                 }
@@ -1456,7 +1493,7 @@ class ThreadController(
             opened.submitToolResult(
                 CorrelatedToolResult(
                     event.call,
-                    if (key == "background-answer-accepted") "COMPLETED" else "NOT_EXECUTED",
+                    if (key == Wording.BACKGROUND_ANSWER_ACCEPTED) "COMPLETED" else "NOT_EXECUTED",
                     wording().message(key),
                 ),
             )
@@ -1840,7 +1877,7 @@ class ThreadController(
         }
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             val key = answerQuestion(threadId, question?.evidence?.taskId.orEmpty(), questionId, text, AnswerProvenance.TYPED)
-            if (key != "background-answer-accepted") mutableState.update { it.copy(providerMessage = wording().message(key)) }
+            if (key != Wording.BACKGROUND_ANSWER_ACCEPTED) mutableState.update { it.copy(providerMessage = wording().message(key)) }
         }
     }
 
@@ -2018,7 +2055,7 @@ class ThreadController(
         var active = true
             private set
 
-        fun questionFailed() = fail(wording().message("background-answer-failed"))
+        fun questionFailed() = fail(wording().message(Wording.BACKGROUND_ANSWER_FAILED))
 
         private suspend fun askUser(
             event: ProviderEvent.ToolCallReady,
@@ -2039,17 +2076,23 @@ class ThreadController(
                 event.rejection != null || definition == null || ToolSchema.error(definition.inputSchema, event.arguments) != null ||
                 text.isNullOrBlank()
             ) {
-                opened.submitToolResult(CorrelatedToolResult(event.call, "NOT_EXECUTED", wording().message("background-ask-invalid")))
+                opened.submitToolResult(CorrelatedToolResult(event.call, "NOT_EXECUTED", wording().message(Wording.BACKGROUND_ASK_INVALID)))
                 return
             }
             val question =
                 PendingQuestion(
                     threadId,
-                    QuestionEvidence(id, turnId, legId, QuestionSource.TEXT_AGENT, text, order = questions.size.toLong()),
+                    QuestionEvidence(id, turnId, legId, QuestionSource.TEXT_AGENT, text, order = nextQuestionOrder++),
                     opened,
                     event.call,
                 )
             questions[id] = question
+            EvaTrace.info(
+                "question.asked",
+                "questionId" to id,
+                "task" to question.evidence.taskId,
+                "source" to question.evidence.source,
+            )
             recordQuestion(question)
             questionsChanged()
         }
@@ -2392,7 +2435,7 @@ class ThreadController(
                         it.evidence.waiting
                 }
             ) {
-                fail(wording().message("background-question-unresolved"))
+                fail(wording().message(Wording.BACKGROUND_QUESTION_UNRESOLVED))
                 return
             }
             if (deviceTasks?.owns(turnId) == true) return
@@ -2543,6 +2586,13 @@ class ThreadController(
             background = null
             leg = null
             tasks.remove(turnId)
+            val resolved =
+                questions.values
+                    .filter { it.evidence.taskId == turnId && !it.evidence.waiting }
+                    .map { it.evidence.questionId }
+                    .toSet()
+            questions.keys.removeAll(resolved)
+            questionRelays.keys.removeAll { it.second in resolved }
             progress.remove(turnId)
             coverageNotices.removeAll { it.first == turnId }
             // An abandoned dispatch can still hold the lock; a fresh one would let the next mutation run beside it.
@@ -2676,6 +2726,7 @@ class ThreadController(
                             projectHistory(
                                 items,
                                 receipts(items),
+                                questionHistoryNote = wording().message(Wording.BACKGROUND_QUESTION_HISTORY),
                                 readBounded =
                                     items.size >= ConversationStore.DEFAULT_ITEM_LIMIT,
                             )
@@ -2894,7 +2945,7 @@ class ThreadController(
         }
 
         private val DEVICE_CONTROLS = setOf("eva.device.task.revise", "eva.device.task.stop")
-        private const val QUESTION_DELIVERY = "device-question:"
+        private const val QUESTION_DELIVERY = "question:"
 
         val DEFER_TO_TEXT by lazy {
             Wording.bundled.describe(

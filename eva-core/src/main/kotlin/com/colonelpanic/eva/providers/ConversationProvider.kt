@@ -72,6 +72,7 @@ data class SessionOpenRequest(
 sealed interface HistoryItem {
     data class Question(
         val data: JsonObject,
+        val note: String,
     ) : HistoryItem
 
     data class User(
