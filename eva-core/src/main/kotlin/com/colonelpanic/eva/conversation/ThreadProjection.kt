@@ -1,9 +1,15 @@
 package com.colonelpanic.eva.conversation
 
+import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.capability.InvocationRecord
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.displayMessage
 import com.colonelpanic.eva.providers.HistoryItem
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 
 /** What the screen shows for a thread: one entry per turn, actions under it, notices between. */
 fun projectEntries(
@@ -60,6 +66,13 @@ fun projectEntries(
                         result = receipt?.message,
                         parentId = item.legId ?: turnId,
                         initiator = receipt?.initiator ?: item.initiator,
+                        deviceSteps =
+                            receipt
+                                ?.data
+                                ?.takeIf { item.capabilityId == CapabilityRegistry.DEVICE_TASK }
+                                ?.let(
+                                    ::deviceSteps,
+                                ).orEmpty(),
                     )
             }
 
@@ -110,6 +123,29 @@ fun projectEntries(
         }
     }
 }
+
+/** A device task receipt's steps; receipts from before steps were described fall back to the tool name. */
+private fun deviceSteps(data: JsonObject): List<DeviceStep> =
+    (data["steps"] as? JsonArray).orEmpty().mapNotNull { element ->
+        val step = element as? JsonObject ?: return@mapNotNull null
+
+        fun text(name: String) = (step[name] as? JsonPrimitive)?.contentOrNull
+        val kind = text("kind") ?: return@mapNotNull null
+        DeviceStep(
+            (step["step"] as? JsonPrimitive)?.intOrNull ?: 0,
+            kind,
+            text("detail") ?: kind,
+            text("result").orEmpty(),
+            text("intent"),
+            text("backend"),
+        )
+    }
+
+/** Shows a running task's steps on its action before its receipt records them. */
+fun List<ConversationEntry>.withLiveSteps(
+    callId: String?,
+    steps: List<DeviceStep>,
+): List<ConversationEntry> = if (callId == null) this else map { if (it.id == callId) it.copy(deviceSteps = steps) else it }
 
 private fun InvocationStatus.entryStatus() =
     when (this) {

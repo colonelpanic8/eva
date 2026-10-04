@@ -1,10 +1,13 @@
 package com.colonelpanic.eva.conversation
 
+import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.capability.CapabilitySource
 import com.colonelpanic.eva.capability.InvocationRecord
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.ReceiptProvenance
 import com.colonelpanic.eva.providers.HistoryItem
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -47,6 +50,42 @@ class ThreadProjectionTest {
         val evidence = projectHistory(items, receipts).single() as HistoryItem.ActionEvidence
         assertEquals(provenance, evidence.provenance)
         assertEquals("Opened", evidence.message)
+    }
+
+    @Test
+    fun `a device task shows each step its receipt recorded`() {
+        val turns = listOf(Turn("turn-1", thread, "text Sam", TurnStatus.ANSWERED, 1))
+        val items =
+            listOf(
+                ThreadItem.ActionCall(
+                    "c2",
+                    thread,
+                    "turn-1",
+                    2,
+                    "call-1",
+                    CapabilityRegistry.DEVICE_TASK,
+                    "Device task",
+                    mapOf("goal" to "g"),
+                ),
+            )
+        val data =
+            Json
+                .parseToJsonElement(
+                    """{"steps":[
+                    {"step":1,"kind":"activate_element","detail":"Tap \"Send\"","intent":"Send it","backend":"Shizuku","result":"ok"},
+                    {"step":2,"kind":"finish","result":"completed"}
+                ]}""",
+                ).jsonObject
+        val record =
+            receipt("call-1", InvocationStatus.COMPLETED, "Sent")
+                .copy(capabilityId = CapabilityRegistry.DEVICE_TASK, data = data)
+        assertEquals(
+            listOf(
+                DeviceStep(1, "activate_element", "Tap \"Send\"", "ok", "Send it", "Shizuku"),
+                DeviceStep(2, "finish", "finish", "completed"),
+            ),
+            projectEntries(turns, items, mapOf("call-1" to record)).single { it.id == "call-1" }.deviceSteps,
+        )
     }
 
     @Test

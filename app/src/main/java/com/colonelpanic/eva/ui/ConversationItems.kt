@@ -44,6 +44,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import com.colonelpanic.eva.conversation.ConversationEntry
+import com.colonelpanic.eva.conversation.DeviceStep
 import com.colonelpanic.eva.conversation.EntryGroup
 import com.colonelpanic.eva.conversation.EntryStatus
 import com.colonelpanic.eva.conversation.TextLegDetails
@@ -352,9 +353,78 @@ private fun ActionRow(action: ConversationEntry) {
             } else {
                 (action.result ?: action.response).lineSequence().firstOrNull { it.isNotBlank() }?.let { DetailText(it, maxLines = 1) }
             }
+            if (action.deviceSteps.isNotEmpty()) DeviceSteps(action.deviceSteps, status.inProgress, expanded)
         }
     }
 }
+
+/** Every screen read and input a device task made, with the backend that served it; tap the row for the worker's reasons. */
+@Composable
+private fun DeviceSteps(
+    steps: List<DeviceStep>,
+    running: Boolean,
+    expanded: Boolean,
+) {
+    HorizontalDivider()
+    val backends = steps.mapNotNull { it.backend }.distinct()
+    DetailText(
+        "${steps.size} ${if (steps.size == 1) "step" else "steps"}" + if (backends.isEmpty()) "" else " · ${backends.joinToString(" → ")}",
+    )
+    steps.forEachIndexed { index, step ->
+        val status = step.presentation(running && index == steps.lastIndex)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(modifier = Modifier.padding(top = 4.dp)) { StatusIndicator(status) }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "${step.step}. ${step.detail}",
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = if (expanded) Int.MAX_VALUE else 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (status.label.isNotEmpty()) {
+                    Text(
+                        text = status.label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = status.color(),
+                    )
+                }
+                if (expanded) step.intent?.let { DetailText(it) }
+            }
+        }
+    }
+}
+
+private fun DeviceStep.presentation(current: Boolean): StatusPresentation =
+    when {
+        result == "ok" -> {
+            StatusPresentation("", inProgress = false) { MaterialTheme.colorScheme.primary }
+        }
+
+        kind == "finish" && result == "completed" -> {
+            StatusPresentation(
+                "Completed",
+                inProgress = false,
+            ) { MaterialTheme.colorScheme.primary }
+        }
+
+        result == "asked" -> {
+            StatusPresentation(if (current) "Waiting for your answer" else "Asked", inProgress = current) {
+                MaterialTheme.colorScheme.tertiary
+            }
+        }
+
+        result == "not_dispatched" && current -> {
+            StatusPresentation("Running", inProgress = true) { MaterialTheme.colorScheme.tertiary }
+        }
+
+        result == "not_dispatched" -> {
+            StatusPresentation("Not run", inProgress = false) { MaterialTheme.colorScheme.onSurfaceVariant }
+        }
+
+        else -> {
+            StatusPresentation(result.ifBlank { "Failed" }, inProgress = false) { MaterialTheme.colorScheme.error }
+        }
+    }
 
 @Composable
 private fun DetailText(
@@ -450,7 +520,7 @@ internal fun EntryStatus.presentation(): StatusPresentation =
         }
 
         EntryStatus.DISPATCHING -> {
-            StatusPresentation("Opening app", inProgress = true) { MaterialTheme.colorScheme.tertiary }
+            StatusPresentation("Running", inProgress = true) { MaterialTheme.colorScheme.tertiary }
         }
 
         EntryStatus.HANDED_OFF -> {
