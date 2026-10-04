@@ -1,6 +1,8 @@
 package com.colonelpanic.eva.ui.settings
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -10,9 +12,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -23,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -148,14 +151,10 @@ private fun NotificationMessagingSection(
     actions: SettingsActions,
 ) {
     SettingsSection("Other messaging apps") {
-        SettingsBlock {
-            Text(
-                "SMS/MMS uses Android's messaging permissions. Other apps can expose recent messages and reply actions through notifications.",
-            )
-        }
         SettingsSwitchRow(
             "Read messaging notifications",
-            "Let EVA use messaging notification excerpts in conversations with your configured model. This is not full chat history. Replies need separate app approval.",
+            "EVA reads the excerpts messaging apps show in notifications, not full history, and may share them with your " +
+                "configured model. Replies need approval per app.",
             state.messaging.enabled,
             actions.onMessagingEnable,
         )
@@ -173,9 +172,7 @@ private fun NotificationMessagingSection(
             SettingsBlock {
                 TextButton(onClick = actions.onMessagingRefresh) { Text("Refresh messaging apps") }
                 if (state.messagingApps.isEmpty()) {
-                    Text(
-                        "No messaging apps discovered yet. Receive a message with a notification, then refresh.",
-                    )
+                    SettingsNote("No messaging apps found yet. Receive a message with a notification, then refresh.")
                 }
             }
             state.messagingApps.forEach { app ->
@@ -202,9 +199,9 @@ private fun MessagingBridgesSection(
 ) {
     SettingsSection("Messaging services") {
         SettingsBlock {
-            Text(
-                "A self-hosted messaging bridge links one account, such as WhatsApp, with its full recent history and new chats. " +
-                    "Name it the way you would say it, for example whatsapp. The token stays on this phone.",
+            SettingsNote(
+                "A self-hosted bridge links one account, such as WhatsApp, with its recent history and new chats. " +
+                    "Its token stays on this phone.",
             )
         }
         state.messaging.bridges.forEach { (name, bridge) ->
@@ -222,42 +219,72 @@ private fun BridgeEditor(
     check: String?,
     actions: SettingsActions,
 ) {
-    SettingsBlock {
-        var service by remember(name) { mutableStateOf(name.orEmpty()) }
-        var label by remember(name, bridge?.label) { mutableStateOf(bridge?.label.orEmpty()) }
-        var origin by remember(name, bridge?.origin) { mutableStateOf(bridge?.origin.orEmpty()) }
-        var token by remember(name) { mutableStateOf("") }
-        var error by remember(name) { mutableStateOf<String?>(null) }
-        Text(if (name == null) "Add a messaging service" else "Service $name")
-        if (needsToken) Text("A token is required on this device.")
-        if (name == null) {
-            OutlinedTextField(service, { service = it }, label = { Text("Service name, as spoken to EVA") }, singleLine = true)
-        }
-        OutlinedTextField(label, { label = it }, label = { Text("Label") }, singleLine = true)
-        OutlinedTextField(origin, { origin = it }, label = { Text("HTTPS bridge URL (origin only)") }, singleLine = true)
-        OutlinedTextField(
-            token,
-            { token = it },
-            label = { Text(if (name == null || needsToken) "Bearer token" else "New bearer token (blank keeps the saved one)") },
-            visualTransformation = PasswordVisualTransformation(),
-            singleLine = true,
-        )
-        error?.let { Text(it) }
-        OutlinedButton(onClick = {
-            error = actions.onSaveMessagingBridge(name ?: service, label, origin, token)
-            if (error == null) {
-                token = ""
-                if (name == null) {
-                    service = ""
-                    label = ""
-                    origin = ""
+    var service by remember(name) { mutableStateOf(name.orEmpty()) }
+    var label by remember(name, bridge?.label) { mutableStateOf(bridge?.label.orEmpty()) }
+    var origin by remember(name, bridge?.origin) { mutableStateOf(bridge?.origin.orEmpty()) }
+    var token by remember(name) { mutableStateOf("") }
+    var error by remember(name) { mutableStateOf<String?>(null) }
+    var expanded by rememberSaveable(name) { mutableStateOf(needsToken) }
+    ExpandableSettingsRow(
+        title = if (name == null) "Add a service" else bridge?.label?.takeIf { it.isNotBlank() } ?: name,
+        supporting =
+            when {
+                name == null -> null
+                needsToken -> "A token is needed on this device"
+                else -> listOfNotNull(name, check).joinToString(" · ")
+            },
+        supportingIsError = needsToken,
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+    ) {
+        SettingsBlock {
+            if (name == null) {
+                OutlinedTextField(
+                    service,
+                    { service = it },
+                    label = { Text("Service name") },
+                    supportingText = { Text("How you'll say it to EVA, such as whatsapp") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            OutlinedTextField(label, { label = it }, label = { Text("Label") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(
+                origin,
+                { origin = it },
+                label = { Text("HTTPS bridge URL") },
+                supportingText = { Text("Origin only, such as https://bridge.example.com") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                token,
+                { token = it },
+                label = { Text(if (name == null || needsToken) "Bearer token" else "New bearer token") },
+                supportingText = if (name == null || needsToken) null else ({ Text("Blank keeps the saved one") }),
+                visualTransformation = PasswordVisualTransformation(),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            error?.let { SettingsNote(it, error = true) }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = {
+                    error = actions.onSaveMessagingBridge(name ?: service, label, origin, token)
+                    if (error == null) {
+                        token = ""
+                        if (name == null) {
+                            service = ""
+                            label = ""
+                            origin = ""
+                            expanded = false
+                        }
+                    }
+                }) { Text(if (name == null) "Add" else "Save") }
+                if (name != null) {
+                    TextButton(onClick = { actions.onCheckMessagingBridge(name) }) { Text("Test") }
+                    TextButton(onClick = { actions.onRemoveMessagingBridge(name) }) { Text("Remove") }
                 }
             }
-        }) { Text(if (name == null) "Add service" else "Save") }
-        if (name != null) {
-            check?.let { Text(it) }
-            TextButton(onClick = { actions.onCheckMessagingBridge(name) }) { Text("Test connection") }
-            TextButton(onClick = { actions.onRemoveMessagingBridge(name) }) { Text("Remove service") }
         }
     }
 }

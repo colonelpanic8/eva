@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -33,17 +34,21 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.colonelpanic.eva.adapters.android.DeviceControlHost
 import com.colonelpanic.eva.conversation.prompt.VoiceCallMode
+import com.colonelpanic.eva.data.configuration.EvaConfigurationCodec
 import com.colonelpanic.eva.providers.openai.OpenAiModels
 import com.colonelpanic.eva.providers.openai.SignInState
 import com.colonelpanic.eva.providers.spotify.SpotifyConnectState
@@ -128,26 +133,24 @@ private fun BackgroundWorkSection(
     count: Int,
     onRunningWork: () -> Unit,
 ) {
-    var period by remember(state.stallPeriodSeconds) { mutableStateOf(state.stallPeriodSeconds.toString()) }
     SettingsSection("Background work") {
-        SettingsBlock {
-            SettingsRow(title = "Running work", supporting = "$count active tasks") {
-                TextButton(onClick = onRunningWork) { Text("Open") }
-            }
-            Text("Flag tasks that have made no progress. This never stops a task automatically.")
-            OutlinedTextField(
-                value = period,
-                onValueChange = { period = it },
-                label = { Text("Looks stuck after (seconds)") },
-                singleLine = true,
-                isError = period.toIntOrNull()?.let { it > 0 } != true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            TextButton(
-                enabled = period.toIntOrNull()?.let { it > 0 && it != state.stallPeriodSeconds } == true,
-                onClick = { period.toIntOrNull()?.takeIf { it > 0 }?.let(actions.onStallPeriodSeconds) },
-            ) { Text("Save") }
+        SettingsRow(title = "Running work", supporting = plural(count, "active task")) {
+            TextButton(onClick = onRunningWork) { Text("Open") }
         }
+        SecondsSettingRow(
+            title = "Flag as stuck after",
+            supporting = "Tasks with no progress are flagged, never stopped.",
+            seconds = state.stallPeriodSeconds.toLong(),
+            onSave = { draft ->
+                val seconds = draft.toIntOrNull()
+                if (seconds == null || seconds <= 0) {
+                    "Enter whole seconds above zero."
+                } else {
+                    actions.onStallPeriodSeconds(seconds)
+                    null
+                }
+            },
+        )
     }
 }
 
@@ -164,107 +167,111 @@ private fun ConfigurationSection(
     var username by remember(git.username) { mutableStateOf(git.username) }
     var token by remember { mutableStateOf("") }
     var inputError by remember { mutableStateOf<String?>(null) }
-    SettingsSection("User configuration") {
+    val configuration = state.configuration
+    var gitExpanded by rememberSaveable { mutableStateOf(false) }
+    SettingsSection("Your configuration") {
         SettingsBlock {
-            Text(
-                state.configuration.linkedFolder?.let {
-                    "Linked to $it/${com.colonelpanic.eva.data.configuration.EvaConfigurationCodec.FILE_NAME}"
-                }
-                    ?: "Choose a synced folder, or let EVA manage a real Git checkout.",
+            SettingsNote(
+                configuration.linkedFolder?.let { "Saved to $it/${EvaConfigurationCodec.FILE_NAME}" }
+                    ?: "Keep your settings in a synced folder, or let EVA manage a Git checkout.",
             )
-            state.configuration.message?.let {
-                Text(
-                    it,
-                    color =
-                        if (state.configuration.isError) {
-                            MaterialTheme.colorScheme.error
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                )
-            }
-            if (state.configuration.gitEnabled) {
-                Text(
-                    "Git status: ${state.configuration.gitCondition.name.lowercase().replace('_', ' ')}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            state.configuration.setupRequired.forEach { Text("Setup required: $it", color = MaterialTheme.colorScheme.error) }
-            SettingsRow(
-                title = "Managed Git sync",
-                supporting = "HTTPS only; the token stays encrypted on this device.",
-            ) {
-                Switch(checked = state.configuration.gitEnabled, onCheckedChange = actions.onGitEnabled)
-            }
-            OutlinedTextField(
-                value = remote,
-                onValueChange = { remote = it },
-                label = { Text("HTTPS remote URL") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            OutlinedTextField(
-                value = branch,
-                onValueChange = { branch = it },
-                label = { Text("Branch") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            OutlinedTextField(
-                value = authorName,
-                onValueChange = { authorName = it },
-                label = { Text("Commit author name") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            OutlinedTextField(
-                value = authorEmail,
-                onValueChange = { authorEmail = it },
-                label = { Text("Commit author email") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            OutlinedTextField(
-                value = username,
-                onValueChange = { username = it },
-                label = { Text("Git username") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            OutlinedTextField(
-                value = token,
-                onValueChange = { token = it },
-                label = { Text(if (git.tokenPresent) "New Git token (optional)" else "Git token") },
-                supportingText = { Text(if (git.tokenPresent) "A token is saved on this device." else "Needed to push an HTTPS remote.") },
-                visualTransformation = PasswordVisualTransformation(),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            inputError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    enabled = !state.configuration.busy,
-                    onClick = {
-                        inputError = actions.onSaveGit(remote, branch, authorName, authorEmail, username, token)
-                        if (inputError == null) token = ""
-                    },
-                ) { Text("Save & connect") }
-                if (state.configuration.gitEnabled && state.configuration.linkedFolder != null) {
-                    OutlinedButton(enabled = !state.configuration.busy, onClick = actions.onReloadConfiguration) { Text("Sync") }
-                }
-                if (git.tokenPresent) {
-                    TextButton(onClick = actions.onClearGitToken) { Text("Remove token") }
-                }
-            }
-            if (!state.configuration.gitEnabled) {
-                Text("Folder mode keeps Git operations in another app.", style = MaterialTheme.typography.bodySmall)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = actions.onSelectConfigurationFolder) {
-                        Text(if (state.configuration.linkedFolder == null) "Choose folder" else "Change folder")
-                    }
-                    if (state.configuration.linkedFolder != null) {
+            configuration.message?.let { SettingsNote(it, error = configuration.isError) }
+            configuration.setupRequired.forEach { SettingsNote("Setup required: $it", error = true) }
+        }
+        if (!configuration.gitEnabled) {
+            SettingsRow(title = "Synced folder", supporting = configuration.linkedFolder ?: "Another app keeps the folder in sync") {
+                Row {
+                    if (configuration.linkedFolder != null) {
                         TextButton(onClick = actions.onReloadConfiguration) { Text("Reload") }
+                    }
+                    TextButton(onClick = actions.onSelectConfigurationFolder) {
+                        Text(if (configuration.linkedFolder == null) "Choose" else "Change")
+                    }
+                }
+            }
+        }
+        ExpandableSettingsRow(
+            title = "Managed Git",
+            supporting =
+                if (configuration.gitEnabled) {
+                    "${git.remoteUrl.removePrefix("https://")} · ${configuration.gitCondition.name.lowercase().replace('_', ' ')}"
+                } else {
+                    "EVA keeps its own checkout, over HTTPS"
+                },
+            expanded = gitExpanded,
+            onExpandedChange = { gitExpanded = it },
+            trailing = {
+                Switch(
+                    checked = configuration.gitEnabled,
+                    onCheckedChange = {
+                        if (it) gitExpanded = true
+                        actions.onGitEnabled(it)
+                    },
+                    modifier = Modifier.semantics { contentDescription = "Managed Git" },
+                )
+            },
+        ) {
+            SettingsBlock {
+                OutlinedTextField(
+                    value = remote,
+                    onValueChange = { remote = it },
+                    label = { Text("HTTPS remote URL") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = branch,
+                    onValueChange = { branch = it },
+                    label = { Text("Branch") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = authorName,
+                    onValueChange = { authorName = it },
+                    label = { Text("Commit author name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = authorEmail,
+                    onValueChange = { authorEmail = it },
+                    label = { Text("Commit author email") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = username,
+                    onValueChange = { username = it },
+                    label = { Text("Git username") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = token,
+                    onValueChange = { token = it },
+                    label = { Text(if (git.tokenPresent) "New Git token (optional)" else "Git token") },
+                    supportingText = {
+                        Text(if (git.tokenPresent) "A token is saved on this phone." else "Needed to push. Stored encrypted on this phone.")
+                    },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                inputError?.let { SettingsNote(it, error = true) }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        enabled = !configuration.busy,
+                        onClick = {
+                            inputError = actions.onSaveGit(remote, branch, authorName, authorEmail, username, token)
+                            if (inputError == null) token = ""
+                        },
+                    ) { Text("Save & connect") }
+                    if (configuration.gitEnabled && configuration.linkedFolder != null) {
+                        OutlinedButton(enabled = !configuration.busy, onClick = actions.onReloadConfiguration) { Text("Sync") }
+                    }
+                    if (git.tokenPresent) {
+                        TextButton(onClick = actions.onClearGitToken) { Text("Remove token") }
                     }
                 }
             }
@@ -286,22 +293,19 @@ private fun AccountSection(
             SettingsBlock { ChatGptSignIn(state.signIn, actions.onSignIn, actions.onCancelSignIn) }
         }
         SecretField(
+            title = "OpenAI API key",
+            helper = "Pay per use instead of a ChatGPT subscription",
             label = "OpenAI API key",
-            savedTitle = "OpenAI API key",
-            savedSupporting = "Saved on this phone",
-            helper = "The metered alternative to a ChatGPT subscription.",
             saved = state.hasApiKey,
-            saveLabel = "Save key on this phone",
             onSave = actions.onSaveApiKey,
             onClear = actions.onClearApiKey,
         )
         SecretField(
+            title = "Paired host",
+            helper = "Route conversations through a host you paired",
             label = "Paired host link",
-            savedTitle = "Paired host",
-            savedSupporting = "Link saved on this phone",
-            helper = "Routes conversations through a paired host instead of OpenAI directly.",
             saved = state.hasHostLink,
-            saveLabel = "Save link on this phone",
+            savedSupporting = "Link saved on this phone",
             onSave = actions.onSaveHostLink,
             onClear = actions.onClearHostLink,
         )
@@ -335,11 +339,7 @@ private fun ModelsSection(
                 OpenAiModels.VOICE_REASONING_EFFORTS,
                 actions.onSelectVoiceReasoningEffort,
             )
-            Text(
-                text = "A change applies to the next connection.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            SettingsNote("Changes apply from the next connection.")
         }
     }
 }
@@ -376,11 +376,11 @@ private fun AssistantSection(
             checked = state.callMode == VoiceCallMode.ONE_REQUEST,
             onCheckedChange = actions.onEndAfterOneRequestChange,
         )
+        if (state.nativeCallEndings.isNotEmpty()) {
+            SettingsBlock { SettingsNote("After these succeed in a call. A failed action always leaves the call open.") }
+        }
         state.nativeCallEndings.forEach { action ->
-            SettingsRow(
-                title = action.title,
-                supporting = "Whether a voice call ends once this succeeds. It stays open if the action fails.",
-            ) {
+            SettingsRow(title = action.title) {
                 CallEndingPicker(action.declared, state.callEndings[action.id]) { actions.onCallEnding(action.id, it) }
             }
         }
@@ -399,20 +399,13 @@ private fun MediaSection(
 ) {
     SettingsSection("Media controls") {
         SettingsRow(
-            title =
-                if (state.canSeeMediaSessions) {
-                    "EVA can see and control what is playing"
-                } else {
-                    "EVA can press play and skip, but cannot see what is playing"
-                },
+            title = if (state.canSeeMediaSessions) "Sees what's playing" else "Play and skip only",
             supporting =
                 if (state.canSeeMediaSessions) {
-                    "Pausing, skipping, and now-playing work for any app with lock-screen controls, and EVA " +
-                        "reports what actually happened instead of only that a button was sent."
+                    "EVA can tell which app is playing what, and confirm its controls worked."
                 } else {
-                    "Turning on notification access lets EVA read what is playing, choose between apps, and confirm " +
-                        "a pause worked. Android offers nothing narrower, so it also delivers your notifications to " +
-                        "EVA. Reading message notifications additionally requires the opt-in on the Messaging screen."
+                    "To see what's playing, EVA needs notification access. Android grants nothing narrower, so " +
+                        "your notifications reach EVA too; it reads messages only if you allow that under Messaging."
                 },
         ) {
             TextButton(onClick = actions.onOpenMediaControlSettings) { Text("Change") }
@@ -433,20 +426,13 @@ private fun ScreenControlSection(
     SettingsSection("Screen control") {
         SettingsSwitchRow(
             title = "Let EVA read and tap the screen",
-            supporting =
-                "Device tasks and direct screen actions use the first ready backend below. " +
-                    "Off removes screen control from the model’s tool catalog.",
+            supporting = "Uses the first ready backend below. Off hides screen control from the model entirely.",
             checked = state.screenControlEnabled,
             onCheckedChange = actions.onScreenControlChange,
         )
         if (state.canControlScreen && state.shizukuAccess != null && state.shizukuAccess != DeviceControlHost.ALLOWED) {
-            SettingsBlock {
-                Text(
-                    state.shizukuAccess,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                TextButton(onClick = actions.onAllowShizuku) { Text("Allow Shizuku access") }
+            SettingsRow(title = "Shizuku", supporting = state.shizukuAccess) {
+                TextButton(onClick = actions.onAllowShizuku) { Text("Allow") }
             }
         }
         DeviceTaskBackendList(
@@ -454,21 +440,17 @@ private fun ScreenControlSection(
             routes = state.screenControlStatus.routes.associateBy { it.name },
             onChange = { actions.onDeviceTaskChange(state.deviceTask.copy(backends = it)) },
         )
-        var token by remember { mutableStateOf("") }
-        OutlinedTextField(
-            value = token,
-            onValueChange = {
-                token = it
+        SecretField(
+            title = "Portal token",
+            helper = "The bearer token shown in the Portal app",
+            label = "Portal bearer token",
+            saved = state.hasPortalToken,
+            onSave = {
+                actions.onPortalToken(it)
+                null
             },
-            label = { Text("Portal bearer token") },
-            visualTransformation =
-                androidx.compose.ui.text.input
-                    .PasswordVisualTransformation(),
+            onClear = { actions.onPortalToken("") },
         )
-        TextButton(onClick = {
-            actions.onPortalToken(token)
-            token = ""
-        }) { Text("Save Portal token") }
     }
 }
 
@@ -480,56 +462,24 @@ private fun SpotifySection(
     val uriHandler = LocalUriHandler.current
     var clientId by remember(state.spotifyClientId) { mutableStateOf(state.spotifyClientId.orEmpty()) }
     var error by remember { mutableStateOf<String?>(null) }
+    var expanded by rememberSaveable { mutableStateOf(false) }
     SettingsSection("Spotify") {
-        SettingsBlock {
-            Text(
-                "Queueing songs goes through Spotify's own API, which needs a Client ID from a free Spotify " +
-                    "developer app. Create one at developer.spotify.com/dashboard, add the redirect URI " +
-                    "eva://spotify, and paste the Client ID here.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            OutlinedTextField(
-                value = clientId,
-                onValueChange = {
-                    clientId = it
-                    error = null
-                },
-                label = { Text("Spotify Client ID") },
-                supportingText = error?.let { message -> { Text(message) } },
-                isError = error != null,
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            OutlinedButton(
-                onClick = { error = actions.onSaveSpotifyClientId(clientId) },
-                enabled = clientId.trim() != state.spotifyClientId.orEmpty(),
-            ) { Text("Save") }
-        }
         if (state.spotifyAccount != null) {
-            SettingsRow(title = state.spotifyAccount, supporting = "Connected") {
+            SettingsRow(
+                title = state.spotifyAccount,
+                supporting = if (state.spotifyPremium == false) "Connected · Queueing songs needs Spotify Premium" else "Connected",
+            ) {
                 TextButton(onClick = actions.onDisconnectSpotify) { Text("Disconnect") }
-            }
-            if (state.spotifyPremium == false) {
-                SettingsBlock {
-                    Text(
-                        "Spotify only lets Premium accounts queue songs.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
             }
         } else if (state.spotifyClientId != null) {
             SettingsBlock {
                 when (val connect = state.spotifyConnect) {
                     is SpotifyConnectState.Idle -> {
-                        Button(onClick = { actions.onConnectSpotify()?.let(uriHandler::openUri) }) {
-                            Text("Connect Spotify")
-                        }
+                        Button(onClick = { actions.onConnectSpotify()?.let(uriHandler::openUri) }) { Text("Connect Spotify") }
                     }
 
                     is SpotifyConnectState.Waiting -> {
-                        Text("Finish signing in with Spotify in your browser.")
+                        SettingsNote("Finish signing in with Spotify in your browser.")
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(onClick = { uriHandler.openUri(connect.authorizationUrl) }) { Text("Open sign-in page") }
                             TextButton(onClick = actions.onCancelSpotifyConnect) { Text("Cancel") }
@@ -537,10 +487,41 @@ private fun SpotifySection(
                     }
 
                     is SpotifyConnectState.Failed -> {
-                        Text(connect.message, color = MaterialTheme.colorScheme.error)
+                        SettingsNote(connect.message, error = true)
                         Button(onClick = { actions.onConnectSpotify()?.let(uriHandler::openUri) }) { Text("Retry") }
                     }
                 }
+            }
+        }
+        ExpandableSettingsRow(
+            title = "Client ID",
+            supporting = state.spotifyClientId ?: "Needed to queue songs through Spotify",
+            expanded = expanded,
+            onExpandedChange = { expanded = it },
+        ) {
+            SettingsBlock {
+                SettingsNote(
+                    "Create a free app at developer.spotify.com/dashboard with the redirect URI eva://spotify, then paste its Client ID.",
+                )
+                OutlinedTextField(
+                    value = clientId,
+                    onValueChange = {
+                        clientId = it
+                        error = null
+                    },
+                    label = { Text("Spotify Client ID") },
+                    supportingText = error?.let { message -> { Text(message) } },
+                    isError = error != null,
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Button(
+                    onClick = {
+                        error = actions.onSaveSpotifyClientId(clientId)
+                        if (error == null) expanded = false
+                    },
+                    enabled = clientId.trim() != state.spotifyClientId.orEmpty(),
+                ) { Text("Save") }
             }
         }
     }
@@ -555,7 +536,7 @@ private fun AppearanceSection(
     SettingsSection("Appearance") {
         SettingsSwitchRow(
             title = "Use wallpaper colors",
-            supporting = "Follow your phone's Material You palette instead of EVA's blue",
+            supporting = "Follow your phone's palette instead of EVA's blue",
             checked = state.dynamicColor,
             onCheckedChange = actions.onDynamicColorChange,
         )
@@ -570,71 +551,71 @@ private fun DiagnosticsSection(
     SettingsSection("Diagnostics") {
         SettingsSwitchRow(
             title = "Verbose logging",
-            supporting = "Also record speech and transcript timing events. Message text and credentials are never logged.",
+            supporting = "Also record speech and transcript timing. Message text and credentials are never logged.",
             checked = state.verboseLogging,
             onCheckedChange = actions.onVerboseLogging,
         )
         SettingsBlock {
-            Text(
-                "Exports are JSON files for the share sheet. Credential values are redacted; " +
-                    "a conversation export includes its messages and action details.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            SettingsNote(
+                "Exports are JSON for the share sheet. Credentials are redacted; a thread export includes its messages and actions.",
             )
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = actions.onExportLogs) { Text("Export recent logs") }
-                OutlinedButton(onClick = actions.onShareThreadDiagnostics, enabled = state.hasCurrentThread) {
-                    Text("Share diagnostics for current thread")
-                }
+                OutlinedButton(onClick = actions.onExportLogs) { Text("Export logs") }
+                OutlinedButton(onClick = actions.onShareThreadDiagnostics, enabled = state.hasCurrentThread) { Text("Share this thread") }
             }
         }
     }
 }
 
 /**
- * One field for both stored secrets. Neither value is ever read back into the UI, so a
- * saved secret shows only that it exists; a rejected one shows why.
+ * A stored secret. None is ever read back into the UI, so a saved one shows only that it exists
+ * and a rejected one shows why. A secret EVA cannot report as saved takes no [onClear].
  */
 @Composable
 private fun SecretField(
-    label: String,
-    savedTitle: String,
-    savedSupporting: String,
+    title: String,
     helper: String,
-    saved: Boolean,
-    saveLabel: String,
+    label: String,
     onSave: (String) -> String?,
-    onClear: () -> Unit,
+    saved: Boolean = false,
+    savedSupporting: String = "Saved on this phone",
+    onClear: (() -> Unit)? = null,
 ) {
-    var draft by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
-    if (saved) {
-        SettingsRow(title = savedTitle, supporting = savedSupporting) {
+    if (saved && onClear != null) {
+        SettingsRow(title = title, supporting = savedSupporting) {
             TextButton(onClick = onClear) { Text("Remove") }
         }
         return
     }
-    SettingsBlock {
-        OutlinedTextField(
-            value = draft,
-            onValueChange = {
-                draft = it
-                error = null
-            },
-            label = { Text(label) },
-            supportingText = { Text(error ?: helper) },
-            isError = error != null,
-            visualTransformation = PasswordVisualTransformation(),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedButton(
-            onClick = {
-                error = onSave(draft)
-                if (error == null) draft = ""
-            },
-            enabled = draft.isNotBlank(),
-        ) { Text(saveLabel) }
+    var draft by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    ExpandableSettingsRow(title = title, supporting = helper, expanded = expanded, onExpandedChange = { expanded = it }) {
+        SettingsBlock {
+            OutlinedTextField(
+                value = draft,
+                onValueChange = {
+                    draft = it
+                    error = null
+                },
+                label = { Text(label) },
+                supportingText = error?.let { message -> { Text(message) } },
+                isError = error != null,
+                visualTransformation = PasswordVisualTransformation(),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Button(
+                onClick = {
+                    error = onSave(draft)
+                    if (error == null) {
+                        draft = ""
+                        expanded = false
+                    }
+                },
+                enabled = draft.isNotBlank(),
+            ) { Text("Save on this phone") }
+        }
     }
 }
 
