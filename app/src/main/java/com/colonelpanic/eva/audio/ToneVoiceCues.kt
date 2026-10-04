@@ -3,12 +3,13 @@ package com.colonelpanic.eva.audio
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import android.os.Build
 import kotlin.concurrent.thread
 
 /**
- * Plays the session cues as generated tones. Sonification usage keeps them on whatever the
- * phone is already using for alerts, so a cue is audible both while the session holds
- * communication routing and after it has handed that routing back.
+ * Plays the session cues as generated tones. Neither usage is silenced by the ringer: the start
+ * cue rides the live call route at call volume, and the end cue, played after that route is
+ * handed back, uses the assistant stream at media volume rather than the earpiece.
  */
 internal class ToneVoiceCues(
     private val sampleRate: Int = CUE_SAMPLE_RATE,
@@ -16,10 +17,28 @@ internal class ToneVoiceCues(
     override fun play(cue: VoiceCue) {
         val samples = cueSamples(cue, sampleRate)
         // A cue is never worth failing a session over: a device that refuses the track stays silent.
-        thread(name = "eva-voice-cue", isDaemon = true) { runCatching { sound(samples) } }
+        thread(name = "eva-voice-cue", isDaemon = true) { runCatching { sound(samples, usage(cue)) } }
     }
 
-    private fun sound(samples: ShortArray) {
+    private fun usage(cue: VoiceCue): Int =
+        when (cue) {
+            VoiceCue.Started -> {
+                AudioAttributes.USAGE_VOICE_COMMUNICATION
+            }
+
+            VoiceCue.Ended -> {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    AudioAttributes.USAGE_ASSISTANT
+                } else {
+                    AudioAttributes.USAGE_MEDIA
+                }
+            }
+        }
+
+    private fun sound(
+        samples: ShortArray,
+        usage: Int,
+    ) {
         val bytes = samples.size * Short.SIZE_BYTES
         val track =
             AudioTrack
@@ -27,7 +46,7 @@ internal class ToneVoiceCues(
                 .setAudioAttributes(
                     AudioAttributes
                         .Builder()
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                        .setUsage(usage)
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                         .build(),
                 ).setAudioFormat(

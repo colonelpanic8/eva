@@ -239,9 +239,10 @@ stable subscription protocol guarantee.
 Realtime voice uses WebRTC audio and explicit microphone ownership, mute, route,
 focus, and teardown handling. The session owns its audible edges: a rising cue when
 the transport connects and a falling one when it is torn down, played once per
-session so a reconnection inside the disconnect grace period stays quiet. Cues use
-sonification attributes rather than the call route, which the session has already
-handed back by the time it ends. Losing audio focus to another app, such as a phone
+session so a reconnection inside the disconnect grace period stays quiet. The start
+cue plays on the live call route and the end cue on the assistant stream, since the
+session has already handed the call route back by then; neither is muted by silent or
+vibrate mode, which silences sonification. Losing audio focus to another app, such as a phone
 call or music EVA just started, ends the call instead of pausing it; a duck request
 such as a notification sound does not. Text and voice share capability execution. Realtime
 input identity must survive late transcripts and asynchronous tool events:
