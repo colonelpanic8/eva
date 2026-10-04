@@ -324,6 +324,9 @@ object WorkNotifications {
         tasks: List<TaskSnapshot>,
         coverage: WorkCoverage,
     ): Pair<String, String> {
+        tasks.firstOrNull { it.question != null }?.let { asking ->
+            return "EVA needs your answer" to asking.question.orEmpty()
+        }
         val top = tasks.firstOrNull { it.looksStuck } ?: tasks.firstOrNull()
         val elapsed = top?.let { ((System.currentTimeMillis() - it.startedAt).coerceAtLeast(0) / 60_000) } ?: 0
         val details =

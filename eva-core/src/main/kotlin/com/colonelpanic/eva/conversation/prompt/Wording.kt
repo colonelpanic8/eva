@@ -63,6 +63,7 @@ data class Wording(
         const val DEVICE_TASK_STOPPING = "device-task-stopping"
         const val DEVICE_TASK_NONE = "device-task-none"
         const val DEVICE_TASK_INVALID = "device-task-invalid"
+        const val DEVICE_TASK_QUESTION = "device-task-question"
         const val HANDOFF_INVALID = "handoff-invalid"
         const val HANDOFF_STARTED = "handoff-started"
         const val HANDOFF_TIMEOUT = "handoff-timeout"

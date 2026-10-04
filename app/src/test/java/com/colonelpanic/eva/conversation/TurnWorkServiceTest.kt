@@ -229,6 +229,14 @@ class TurnWorkServiceTest {
             "EVA background work ready",
             WorkNotifications.running(host, emptyList(), WorkCoverage.LONG_RUNNING).extras.getCharSequence(Notification.EXTRA_TITLE),
         )
+        val asking =
+            WorkNotifications.running(
+                host,
+                listOf(task, task.copy(taskId = "device", state = TaskState.NEEDS_INPUT, question = "Home or work network?")),
+                WorkCoverage.LONG_RUNNING,
+            )
+        assertEquals("EVA needs your answer", asking.extras.getCharSequence(Notification.EXTRA_TITLE))
+        assertEquals("Home or work network?", asking.extras.getCharSequence(Notification.EXTRA_TEXT))
         val text = notification.extras.getCharSequence(Notification.EXTRA_TEXT).toString()
         assertTrue(text.contains("Find the answer"))
         assertTrue(text.contains("4m elapsed"))
