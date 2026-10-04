@@ -4,6 +4,8 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.54.0] - 2026-10-04
+
 ### Changed
 
 - Extensions has Installed, Sources, and Settings tabs. Each extension row shows how many of its actions are on; tapping it opens its actions, setup, and options on one panel.

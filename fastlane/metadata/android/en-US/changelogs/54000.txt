@@ -1,0 +1,3 @@
+* Changed: Extensions has Installed, Sources, and Settings tabs. Each extension row shows how many of its actions are on; tapping it opens its actions, setup, and options on one panel.
+* Changed: Each action shows a label for what it does (reads, changes data, hands off) and a two-line description. Tapping it shows its parameters and return values with types, required fields, allowed values, and bounds, plus whether a call ends after it.
+* ...see CHANGELOG.md for the rest.
