@@ -320,10 +320,11 @@ class TextTaskAgent(
                     }
                     steps[steps.lastIndex] = steps.last().copy(result = "asked")
                     progress(TaskPhase.NEEDS_INPUT, question, StepTiming(observationMillis, modelMillis))
-                    note = question
                     val wait = clock()
                     while (!isStopped && revision == rev) mailbox.receive()
                     waited += clock() - wait
+                    val replies = synchronized(control) { revisions.takeLast((revisionNumber - rev).toInt()) }
+                    note = wording.note("answer", "reply" to replies.joinToString("\n"))
                     continue
                 }
                 if (call.name == "finish") {

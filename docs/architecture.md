@@ -697,9 +697,23 @@ owning thread independently of the pending tool result. Typed corrections go
 straight to the running task's mailbox. In voice, the model routes new speech:
 the intercepted `eva.device.task.revise` and `eva.device.task.stop` tools revise
 or stop the running task (stop leaves queued work in place), and anything else
-becomes its own queued action. Only two cases bypass the model: a spoken answer
-that began while the worker waited on `ask_user`, bound to the owner captured when
-speech began, and a bare stop/cancel utterance.
+becomes its own queued action. A bare stop/cancel utterance, bound to the owner
+captured when speech began, bypasses the model. The worker cannot hear the call,
+so when it waits on `ask_user`, EVA sends the attached voice session on that
+thread a lifecycle note quoting the question, with a delivery ID. The voice model
+asks the user and relays the answer with `eva.device.task.revise`; the worker
+receives the revisions made during its wait as its `ask_user` result. A voice call
+that attaches while the question waits gets it on connecting. A failed delivery is
+not resent. While the question is not with the voice model (a provider without
+`submitContext`, revise not offered, or a failed delivery), speech that begins
+during the wait goes to the worker as its answer if the same question is still
+waiting when its transcript arrives, as typed text does. The Broker provider reports
+neither context notes nor speech starts, so its calls get neither path; answer by
+typing. A one-request call does not quietly hang up while the question waits. Outside
+a call, the work notification shows the question; during one, the call's notification
+replaces it. Realtime cannot withdraw a queued note, so an answer typed before the
+announcement plays can leave the model asking a question already answered; its
+wording tells it not to.
 Revision bumps and stop latches are synchronous, bypassing the turn mutex and
 provider result queue. Obsolete inference is cancelled and its plan discarded;
 revision forces fresh observation. Provider speech `cancelled` does not complete

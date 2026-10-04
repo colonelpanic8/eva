@@ -15,6 +15,8 @@ data class TaskSnapshot(
     val holdsDeviceLease: Boolean,
     val coverage: WorkCoverage,
     val looksStuck: Boolean = false,
+    /** What a device task asked the user, while it waits for the answer. */
+    val question: String? = null,
 )
 
 enum class TaskKind { VOICE_TURN, TYPED_TURN, DELEGATED_TEXT_AGENT, REHOMED_CONTINUATION, DEVICE_TASK }

@@ -124,11 +124,21 @@ class ThreadController(
 ) {
     private val deviceSpeechOwners = mutableMapOf<String, DeviceSpeech>()
 
-    /** Speech that began while a device task ran; [answering] when the task was waiting on the user's answer. */
+    /** The device-task question each voice attachment was last given. */
+    private val questionRelays = mutableMapOf<ConversationSession, QuestionRelay>()
+
+    /** [held] while the voice model has the question queued or delivered; [failed] once its delivery failed. */
+    private data class QuestionRelay(
+        val key: String,
+        val held: Boolean,
+        val failed: Boolean = false,
+    )
+
+    /** Speech that began while a device task ran; [question] when it waited on a question voice was not given. */
     private data class DeviceSpeech(
         val threadId: String,
         val turnId: String,
-        val answering: Boolean,
+        val question: String?,
     )
 
     data class BackgroundAnswer(
@@ -221,6 +231,7 @@ class ThreadController(
                     holdsLease,
                     workCoverage,
                     baseState.canStall() && now - record.lastProgressAt >= stallPeriodMillis(),
+                    device?.progress?.message?.takeIf { ownsDevice && baseState == TaskState.NEEDS_INPUT },
                 )
             }
         taskTrace.observe(mutableTaskSnapshots.value)
@@ -513,6 +524,9 @@ class ThreadController(
             deviceTasks?.running?.collect { running ->
                 running?.let { taskProgress(it.turnId) }
                 refreshTaskSnapshots()
+                // A call stays open while the task waits on the user's answer.
+                if (pendingQuestionKey(attachedThreadId) != null) disarmQuietHangUp()
+                relayDeviceQuestion()
                 val owned = running?.takeIf { it.threadId == shownThreadId }
                 mutableState.update {
                     it.copy(
@@ -833,6 +847,7 @@ class ThreadController(
                     heldNotices.remove(openedSession)
                     voiceTurns.keys.removeAll { it.first === openedSession }
                     pendingAnnouncements.keys.removeAll { it.first === openedSession }
+                    questionRelays.remove(openedSession)
                     withContext(NonCancellable) {
                         try {
                             openedSession?.close()
@@ -868,6 +883,7 @@ class ThreadController(
                     it.copy(providerStatus = ProviderStatus.CONNECTED, providerMessage = held.lastOrNull(), providerModel = model)
                 }
                 updateWorkCoverage()
+                relayDeviceQuestion()
                 val label = listOfNotNull(if (voice) "Voice session" else "Text session", model).joinToString(" · ")
                 store.append(
                     notice(threadId, null, NoticeKind.SESSION_STARTED, connectionTools.getValue(opened).catalog.sessionNotice(label)),
@@ -904,15 +920,15 @@ class ThreadController(
                     }
                 if (event.role == "user") {
                     val owner = event.itemId?.let { deviceSpeechOwners.remove(opened.connectionEpoch + ":" + it) }
-                    // Other speech is the voice model's to route: it may revise or stop the task, or
-                    // ask for something else, which queues behind it.
+                    // Other speech is the voice model's to route: it may revise or stop the task, relay an
+                    // answer to its question, or ask for something else, which queues behind it.
                     if (owner != null && deviceTasks?.owns(owner.turnId) == true) {
                         if (event.text.trim().lowercase() in
                             setOf("stop", "cancel", "stop device task", "cancel device task")
                         ) {
                             deviceTasks.stop(owner.turnId)
                             tasks[owner.turnId]?.interrupt(wording().message(Wording.TURN_STOP_REQUESTED))
-                        } else if (owner.answering) {
+                        } else if (owner.question != null && owner.question == pendingQuestionKey(owner.threadId)) {
                             deviceTasks.revise(owner.threadId, event.text)
                         }
                     }
@@ -1009,7 +1025,11 @@ class ThreadController(
                 val owner = deviceTasks?.running?.value?.takeIf { it.threadId == threadId }
                 if (owner != null) {
                     deviceSpeechOwners[opened.connectionEpoch + ":" + event.itemId] =
-                        DeviceSpeech(owner.threadId, owner.turnId, owner.progress?.phase == TaskPhase.NEEDS_INPUT)
+                        DeviceSpeech(
+                            owner.threadId,
+                            owner.turnId,
+                            pendingQuestionKey(threadId)?.takeUnless { questionHeld(opened) },
+                        )
                 }
             }
 
@@ -1062,7 +1082,7 @@ class ThreadController(
                 } else if (voice && replyHangUp) {
                     endCall(ENDED_AFTER_ACTION)
                 } else if (voice && task?.actionServiced == true && connectionTools[opened]?.callMode == VoiceCallMode.ONE_REQUEST &&
-                    !hasUnreportedWork(opened)
+                    !hasUnreportedWork(opened) && pendingQuestionKey(threadId) == null
                 ) {
                     // The model decides when a request is fully served, but one whose action is done and
                     // reported does not stay open just because it forgot to hang up: silence ends it.
@@ -1084,6 +1104,10 @@ class ThreadController(
                     pendingAnnouncements.remove(opened to id)?.let { answer ->
                         if (event.delivered) onBackgroundAnswerDelivered(answer)
                     }
+                    val relay = questionRelays[opened]
+                    if (!event.delivered && relay != null && id == QUESTION_DELIVERY + relay.key) {
+                        questionRelays[opened] = relay.copy(held = false, failed = true)
+                    }
                 }
             }
 
@@ -1092,6 +1116,61 @@ class ThreadController(
             }
 
             ProviderEvent.Closed -> {}
+        }
+    }
+
+    private fun pendingQuestionKey(threadId: String?): String? =
+        deviceTasks
+            ?.running
+            ?.value
+            ?.takeIf { it.threadId == threadId }
+            ?.progress
+            ?.takeIf { it.phase == TaskPhase.NEEDS_INPUT && !it.message.isNullOrBlank() }
+            ?.let { "${it.taskId}:${it.step}" }
+
+    /** Whether [voice] has been given the question the device task is waiting on, so it relays the answer. */
+    private fun questionHeld(voice: ConversationSession): Boolean {
+        val relay = questionRelays[voice] ?: return false
+        return relay.held && relay.key == pendingQuestionKey(attachedThreadId)
+    }
+
+    /**
+     * Gives attached voice the question a device task is waiting on. The task cannot hear the call,
+     * so the voice model asks the user and relays the answer through revise. While the question is
+     * not with the model (no context support, revise not offered, or a failed delivery, which is
+     * not resent), speech that starts while the task waits goes to it directly instead.
+     */
+    private fun relayDeviceQuestion() {
+        val running = deviceTasks?.running?.value ?: return
+        val question = running.progress?.message ?: return
+        val key = pendingQuestionKey(running.threadId) ?: return
+        val voice =
+            session?.takeIf {
+                attachedThreadId == running.threadId &&
+                    connectionTools[it]?.voice == true &&
+                    connectionTools[it]?.catalog?.tools?.any { tool -> tool.capabilityId == DEVICE_TASK_REVISE.capabilityId } == true
+            } ?: return
+        val previous = questionRelays[voice]?.takeIf { it.key == key }
+        if (previous != null && (previous.held || previous.failed)) return
+        questionRelays[voice] = QuestionRelay(key, held = true)
+        scope.launch {
+            val accepted =
+                runCatching {
+                    voice.submitContext(
+                        wording().message(Wording.DEVICE_TASK_QUESTION),
+                        respond = true,
+                        data =
+                            buildJsonObject {
+                                put("taskId", running.turnId)
+                                put("question", question)
+                                put("contentTrust", "external_data")
+                            },
+                        deliveryId = QUESTION_DELIVERY + key,
+                    )
+                }.getOrDefault(false)
+            // Unaccepted before the call is ready; connecting tries again.
+            if (!accepted) questionRelays[voice]?.takeIf { it.key == key }?.let { questionRelays[voice] = it.copy(held = false) }
+            EvaTrace.info("device_task.question_relayed", "turn" to running.turnId, "accepted" to accepted)
         }
     }
 
@@ -2459,6 +2538,7 @@ class ThreadController(
         }
 
         private val DEVICE_CONTROLS = setOf("eva.device.task.revise", "eva.device.task.stop")
+        private const val QUESTION_DELIVERY = "device-question:"
 
         val DEFER_TO_TEXT by lazy {
             Wording.bundled.describe(

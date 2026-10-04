@@ -48,6 +48,7 @@ class TextTaskAgentTest {
                 "text_result",
                 "text_verified",
                 "screenshot_attached",
+                "answer",
             ).associateWith {
                 "$it {goal} {revisions} {result} {count}"
             },
@@ -154,30 +155,34 @@ class TextTaskAgentTest {
             )
         }
 
-    @Test fun askUserWaitsForMailboxWithoutFinishingTask() =
+    @Test fun askUserWaitsForMailboxAndReturnsTheReplyAsItsResult() =
         runTest {
             var calls = 0
+            var answered: String? = null
             val phone = phone()
             val agent =
                 TextTaskAgent(
                     phone,
-                    WorkerModel {
+                    WorkerModel { request ->
                         if (calls++ ==
                             0
                         ) {
                             reply("ask_user", """{"question":"Which branch?"}""")
                         } else {
+                            answered = request.messages.single { it.resultFor == "call" }.text
                             finish()
                         }
                     },
-                    wording,
+                    wording.copy(notices = wording.notices + ("answer" to "replied {reply}")),
                 )
             val result = async { agent.run("hours") {} }
             runCurrent()
             assertFalse(result.isCompleted)
             assertTrue(phone.actions.isEmpty())
             agent.revise("Riverside")
+            agent.revise("Also check Sunday")
             assertEquals(TaskStatus.COMPLETED, result.await().status)
+            assertEquals("replied Riverside\nAlso check Sunday", answered)
         }
 
     @Test fun stopDrainsAnIssuedActionAndRetainsKnownPartialEffect() =

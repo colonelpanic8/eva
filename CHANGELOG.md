@@ -4,6 +4,11 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- When a device task asks a question during a voice call, EVA now passes the question to the voice assistant, which asks you and relays your answer. Before, the question only appeared on screen, and whatever you said next went to the task as its answer. That still happens if the voice assistant can't be given the question.
+- While a device task waits for your answer, the background-work notification shows its question when no call is active, and a one-request call stays open instead of hanging up after a pause.
+
 ## [0.56.0] - 2026-10-04
 
 ### Fixed

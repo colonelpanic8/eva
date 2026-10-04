@@ -1085,7 +1085,7 @@ class ThreadControllerTest {
         }
 
     @Test
-    fun `voice looks things up and revises or stops a running device task without waiting for it`() =
+    fun `voice relays a device task's question, looks things up, and revises or stops the task without waiting for it`() =
         runTest {
             val entered = CompletableDeferred<Unit>()
             var requests = 0
@@ -1135,21 +1135,33 @@ class ThreadControllerTest {
             voice.channel.send(ProviderEvent.ResponseStarted("voice:turn-1", "voice:turn-1"))
             voice.call("task", CapabilityRegistry.DEVICE_TASK, "goal" to "Open Wi-Fi settings")
             runCurrent()
-            // An answer to the task's own question goes straight to it.
+            // The task cannot hear the call: voice is asked to put its question to the user, once.
             assertEquals(
                 com.colonelpanic.eva.devicecontrol.TaskPhase.NEEDS_INPUT,
                 coordinator.running.value!!
                     .progress
                     ?.phase,
             )
+            val asked = voice.contexts.filter { "Home or work network?" in it.first }
+            assertEquals(1, asked.size)
+            assertTrue(asked.single().second)
+            // Speech is the voice model's to route, so it reaches the task only when relayed.
             voice.channel.send(ProviderEvent.SpeechInputStarted("answer"))
             voice.channel.send(ProviderEvent.Transcript("user", "The home one", "answer"))
             runCurrent()
+            assertEquals(
+                0L,
+                coordinator.running.value!!
+                    .agent.revision,
+            )
+            voice.call("reply", ThreadController.DEVICE_TASK_REVISE.capabilityId, "correction" to "The home one")
+            runCurrent()
             entered.await()
+            assertEquals(1, voice.contexts.count { "Home or work network?" in it.first })
 
             voice.call("look", lookup.id, "query" to "weather")
             runCurrent()
-            assertEquals("Found weather", voice.results.single().message)
+            assertEquals("Found weather", voice.results.last().message)
 
             voice.call(
                 "fix",
@@ -1170,6 +1182,74 @@ class ThreadControllerTest {
             val task = voice.results.single { it.call.callId == "task" }
             assertEquals("NOT_EXECUTED", task.status)
             assertTrue(controller.state.value.working)
+        }
+
+    @Test
+    fun `a device task question that never reaches voice takes the next speech as its answer`() =
+        runTest {
+            val answered = CompletableDeferred<Unit>()
+            var requests = 0
+            val coordinator =
+                com.colonelpanic.eva.devicecontrol.DeviceTaskCoordinator {
+                    com.colonelpanic.eva.devicecontrol.worker.TextTaskAgent(
+                        waitingPhone(),
+                        {
+                            if (requests++ == 0) {
+                                com.colonelpanic.eva.devicecontrol.worker.WorkerReply(
+                                    listOf(
+                                        com.colonelpanic.eva.devicecontrol.worker.WorkerCall(
+                                            "ask",
+                                            "ask_user",
+                                            buildJsonObject { put("question", "Home or work network?") },
+                                        ),
+                                    ),
+                                )
+                            } else {
+                                answered.complete(Unit)
+                                kotlinx.coroutines.awaitCancellation()
+                            }
+                        },
+                        com.colonelpanic.eva.devicecontrol
+                            .workerWording(Wording.bundled),
+                    )
+                }
+            val registry =
+                CapabilityRegistry(
+                    mapOf(CapabilityRegistry.DEVICE_TASK to coordinator),
+                    BundledCapabilities.definitions.filter { it.id == CapabilityRegistry.DEVICE_TASK },
+                )
+            val voice = FakeProvider()
+            val controller = controller(voice, registry = registry, deviceTasks = coordinator, media = { VoiceMedia() })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            voice.input = ConversationInput("voice:turn-1", "")
+            voice.channel.send(ProviderEvent.ResponseStarted("voice:turn-1", "voice:turn-1"))
+            voice.call("task", CapabilityRegistry.DEVICE_TASK, "goal" to "Open Wi-Fi settings")
+            runCurrent()
+            // A failed delivery, reported once per item, is not resent.
+            assertEquals(1, voice.contexts.count { "Home or work network?" in it.first })
+            repeat(2) {
+                voice.channel.send(ProviderEvent.ContextDelivery(listOf(voice.deliveryIds.single()!!), delivered = false))
+            }
+            runCurrent()
+            assertEquals(1, voice.contexts.count { "Home or work network?" in it.first })
+            assertEquals(
+                0L,
+                coordinator.running.value!!
+                    .agent.revision,
+            )
+            voice.channel.send(ProviderEvent.SpeechInputStarted("answer"))
+            voice.channel.send(ProviderEvent.Transcript("user", "The home one", "answer"))
+            runCurrent()
+            answered.await()
+            assertEquals(
+                1L,
+                coordinator.running.value!!
+                    .agent.revision,
+            )
+            controller.stopDeviceTask()
+            advanceUntilIdle()
         }
 
     @Test
@@ -4002,6 +4082,7 @@ class ThreadControllerTest {
         val results = mutableListOf<CorrelatedToolResult>()
         val responseRequests = mutableListOf<String>()
         val contexts = mutableListOf<Pair<String, Boolean>>()
+        val deliveryIds = mutableListOf<String?>()
         var submissions = 0
         var closes = 0
 
@@ -4033,6 +4114,7 @@ class ThreadControllerTest {
         ): Boolean {
             if (!supportsContext) return false
             contexts += (note + (data?.let { "\n" + it } ?: "")) to respond
+            deliveryIds += deliveryId
             return true
         }
 
