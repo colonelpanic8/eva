@@ -4,9 +4,12 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.56.0] - 2026-10-04
+
 ### Fixed
 
 - The start and end chimes of a voice call play again when the phone is on silent or vibrate. The start chime plays at call volume and the end chime at media volume.
+- The voice session notification keeps its status bar icon during a call.
 
 ## [0.55.0] - 2026-10-04
 
