@@ -142,11 +142,17 @@ class VoiceSessionService : Service() {
 
     private fun createChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        getSystemService(NotificationManager::class.java).createNotificationChannel(
-            NotificationChannel(CHANNEL, "Voice session", NotificationManager.IMPORTANCE_LOW).apply {
+        val manager = getSystemService(NotificationManager::class.java)
+        // Below default importance the notification counts as silent, and Android hides silent
+        // notifications' status bar icons. Importance is fixed at creation, hence a new channel.
+        manager.createNotificationChannel(
+            NotificationChannel(CHANNEL, "Voice session", NotificationManager.IMPORTANCE_DEFAULT).apply {
                 description = "Shown while EVA is in a voice conversation"
+                setSound(null, null)
+                enableVibration(false)
             },
         )
+        runCatching { manager.deleteNotificationChannel(LEGACY_CHANNEL) }
     }
 
     private fun action(
@@ -183,7 +189,7 @@ class VoiceSessionService : Service() {
             .setSilent(true)
             .setShowWhen(false)
             .setContentIntent(open)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .apply {
                 addAction(action(content.microphoneAction, ACTION_TOGGLE_MICROPHONE, 1))
                 addAction(action("End", ACTION_END, 2))
@@ -192,7 +198,8 @@ class VoiceSessionService : Service() {
 
     companion object {
         private const val START_DENIED = "Android could not keep voice active. Invoke EVA through the system assistant and try again."
-        private const val CHANNEL = "eva.voice"
+        private const val CHANNEL = "eva.voice.active"
+        private const val LEGACY_CHANNEL = "eva.voice"
         internal const val NOTIFICATION_ID = 41
         private const val ACTION_TOGGLE_MICROPHONE = "com.colonelpanic.eva.audio.TOGGLE_MICROPHONE"
         private const val ACTION_END = "com.colonelpanic.eva.audio.END"
