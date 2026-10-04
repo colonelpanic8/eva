@@ -17,6 +17,13 @@ class VoiceNotificationTest {
     }
 
     @Test
+    fun `a pending question is visible during a voice call without losing microphone controls`() {
+        val status = VoiceSessionStatus(connected, live, "Which city?")
+        assertEquals("Which city?", voiceNotificationContent(status).text)
+        assertEquals("Mute", voiceNotificationContent(status).microphoneAction)
+    }
+
+    @Test
     fun `the notification reports the same status the in-app controls show`() {
         val status = VoiceSessionStatus(connected, live.copy(microphoneMuted = true))
         assertEquals("Voice connected, mic muted", voiceNotificationContent(status).text)

@@ -14,6 +14,9 @@ data class ConversationState(
     val working: Boolean = false,
     /** The shown thread has a request on the live attachment, blocking another typed request. */
     val foregroundWorking: Boolean = false,
+    val currentQuestion: QuestionEvidence? = null,
+    val pendingQuestionCount: Int = 0,
+    val voiceQuestion: String? = null,
     val deviceTaskActive: Boolean = false,
     /** The shown thread's running device task phase or step note; cleared when the task ends. */
     val deviceTaskProgress: String? = null,
@@ -32,7 +35,10 @@ data class ConversationState(
 
     val acceptsTextInput: Boolean get() =
         !isLoading && errorMessage == null && !voiceOnAnotherThread &&
-            (deviceTaskActive || (!isSubmitting && !foregroundWorking && providerStatus == ProviderStatus.CONNECTED && !voiceMode))
+            (
+                currentQuestion != null || deviceTaskActive ||
+                    (!isSubmitting && !foregroundWorking && providerStatus == ProviderStatus.CONNECTED && !voiceMode)
+            )
 }
 
 data class ConversationEntry(
@@ -50,6 +56,7 @@ data class ConversationEntry(
     val parentId: String? = null,
     /** Set when this entry is a text leg rather than an action. */
     val textLeg: TextLegDetails? = null,
+    val question: QuestionEvidence? = null,
     val initiator: ActionInitiator? = null,
     /** Each screen read and input a device task made, live while it runs. */
     val deviceSteps: List<DeviceStep> = emptyList(),

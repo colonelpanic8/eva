@@ -183,7 +183,7 @@ class VoiceSessionService : Service() {
         return NotificationCompat
             .Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setContentTitle("EVA is listening")
+            .setContentTitle(if (status.question == null) "EVA is listening" else "EVA needs your answer")
             .setContentText(content.text)
             .setOngoing(true)
             .setSilent(true)

@@ -15,8 +15,9 @@ data class TaskSnapshot(
     val holdsDeviceLease: Boolean,
     val coverage: WorkCoverage,
     val looksStuck: Boolean = false,
-    /** What a device task asked the user, while it waits for the answer. */
+    /** The task's oldest pending question, also used by notifications. */
     val question: String? = null,
+    val questions: List<QuestionEvidence> = emptyList(),
 )
 
 enum class TaskKind { VOICE_TURN, TYPED_TURN, DELEGATED_TEXT_AGENT, REHOMED_CONTINUATION, DEVICE_TASK }

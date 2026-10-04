@@ -4,6 +4,11 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Background text agents can ask questions and receive answers on the same leg. Voice and typed answers identify the exact question; pending questions are presented in order, with exchanges retained in thread history.
+- Pending questions appear in the voice-call notification and composer as well as background work. Cancelling a task or recovering after a restart makes unanswered questions unavailable without replaying its actions.
+
 ## [0.57.0] - 2026-10-04
 
 ### Fixed

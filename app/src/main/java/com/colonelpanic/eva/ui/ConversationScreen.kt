@@ -74,6 +74,7 @@ internal fun ConversationScreen(
     state: ConversationState,
     hasCredential: Boolean,
     onSubmit: (String) -> Unit,
+    onAnswer: (String, String) -> Unit = { _, answer -> onSubmit(answer) },
     onStopTask: () -> Unit = {},
     onConnect: () -> Unit,
     onVoice: () -> Unit,
@@ -92,9 +93,11 @@ internal fun ConversationScreen(
     onOpenExtensions: () -> Unit = {},
 ) {
     var draft by rememberSaveable { mutableStateOf("") }
+    var draftQuestionId by rememberSaveable { mutableStateOf<String?>(null) }
+    var draftQuestionText by rememberSaveable { mutableStateOf<String?>(null) }
     val storageFailed = state.errorMessage != null
     val canSend =
-        draft.isNotBlank() && state.acceptsTextInput
+        draft.isNotBlank() && !state.voiceOnAnotherThread && !storageFailed && (state.acceptsTextInput || draftQuestionId != null)
     val listState = rememberLazyListState()
     val groups = remember(state.entries) { groups(state.entries) }
     val inSession = state.voiceMode && state.providerStatus != ProviderStatus.DISCONNECTED
@@ -105,8 +108,10 @@ internal fun ConversationScreen(
 
     fun send() {
         if (!canSend) return
-        onSubmit(draft.trim())
+        draftQuestionId?.let { onAnswer(it, draft.trim()) } ?: onSubmit(draft.trim())
         draft = ""
+        draftQuestionId = null
+        draftQuestionText = null
     }
 
     Scaffold(
@@ -159,10 +164,25 @@ internal fun ConversationScreen(
                 }
                 Composer(
                     draft = draft,
-                    onDraftChange = { draft = it },
+                    onDraftChange = {
+                        if (draft.isBlank()) {
+                            draftQuestionId = state.currentQuestion?.questionId
+                            draftQuestionText = state.currentQuestion?.question
+                        }
+                        draft = it
+                        if (it.isBlank()) {
+                            draftQuestionId = null
+                            draftQuestionText = null
+                        }
+                    },
                     enabled = !storageFailed && !state.voiceOnAnotherThread,
                     canSend = canSend,
-                    supportingText = composerHint(state),
+                    supportingText =
+                        if (draftQuestionId != null && draftQuestionId != state.currentQuestion?.questionId) {
+                            "This question is no longer current: $draftQuestionText"
+                        } else {
+                            composerHint(state)
+                        },
                     onSend = ::send,
                 )
             }

@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.StateFlow
 data class VoiceSessionStatus(
     val state: RealtimeMediaState = RealtimeMediaState.Idle,
     val controls: MediaControls = MediaControls(),
+    val question: String? = null,
 )
 
 /**
@@ -30,6 +31,6 @@ data class VoiceNotificationContent(
 
 internal fun voiceNotificationContent(status: VoiceSessionStatus): VoiceNotificationContent =
     VoiceNotificationContent(
-        text = voiceStatusLabel(status.state, status.controls),
+        text = status.question ?: voiceStatusLabel(status.state, status.controls),
         microphoneAction = if (status.controls.microphoneMuted) "Unmute" else "Mute",
     )

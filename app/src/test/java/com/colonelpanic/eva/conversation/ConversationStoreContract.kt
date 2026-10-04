@@ -52,6 +52,22 @@ abstract class ConversationStoreContract {
                         ThreadItem.TextLeg("rehomed", first.id, turn.id, 5, null, "Continue", 0),
                         ThreadItem.ActionCall("leg-action", first.id, turn.id, 6, "call-2", "eva.test", "Test action", emptyMap(), "leg"),
                         ThreadItem.Notice("notice", first.id, null, 7, NoticeKind.REHOMED, "Moved to background"),
+                        ThreadItem.Question(
+                            "question",
+                            first.id,
+                            turn.id,
+                            8,
+                            QuestionEvidence(
+                                "q",
+                                turn.id,
+                                "leg",
+                                QuestionSource.TEXT_AGENT,
+                                "Which city?",
+                                QuestionResolution.ACCEPTED,
+                                "Tokyo",
+                                AnswerProvenance.TYPED,
+                            ),
+                        ),
                     )
                 expected.forEach { fixture.store.append(it) }
 

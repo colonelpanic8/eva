@@ -237,6 +237,19 @@ class TurnWorkServiceTest {
             )
         assertEquals("EVA needs your answer", asking.extras.getCharSequence(Notification.EXTRA_TITLE))
         assertEquals("Home or work network?", asking.extras.getCharSequence(Notification.EXTRA_TEXT))
+        val ordered =
+            WorkNotifications.running(
+                host,
+                listOf(
+                    task.copy(questions = listOf(QuestionEvidence("later", "turn", null, QuestionSource.TEXT_AGENT, "Later?", order = 2))),
+                    task.copy(
+                        taskId = "second",
+                        questions = listOf(QuestionEvidence("first", "second", null, QuestionSource.DEVICE_TASK, "First?", order = 1)),
+                    ),
+                ),
+                WorkCoverage.LONG_RUNNING,
+            )
+        assertEquals("First?", ordered.extras.getCharSequence(Notification.EXTRA_TEXT))
         val text = notification.extras.getCharSequence(Notification.EXTRA_TEXT).toString()
         assertTrue(text.contains("Find the answer"))
         assertTrue(text.contains("4m elapsed"))

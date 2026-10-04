@@ -233,6 +233,7 @@ object DiagnosticsExport {
             put(
                 "type",
                 when (item) {
+                    is ThreadItem.Question -> "question"
                     is ThreadItem.UserMessage -> "user"
                     is ThreadItem.AssistantMessage -> "assistant"
                     is ThreadItem.ActionCall -> "action"
@@ -243,6 +244,11 @@ object DiagnosticsExport {
             put("at", iso(item.createdAtMillis))
             item.turnId?.let { put("turnId", it) }
             when (item) {
+                is ThreadItem.Question -> {
+                    put("questionId", item.evidence.questionId)
+                    put("resolution", item.evidence.resolution.name)
+                }
+
                 is ThreadItem.UserMessage -> {
                     put("spoken", item.spoken)
                     put("text", bounded(item.text))

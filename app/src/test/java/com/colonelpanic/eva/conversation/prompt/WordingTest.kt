@@ -22,6 +22,8 @@ class WordingTest {
                         ThreadController.DEFER_TO_TEXT,
                         ThreadController.BACKGROUND_STATUS,
                         ThreadController.BACKGROUND_CANCEL,
+                        ThreadController.ASK_USER,
+                        ThreadController.BACKGROUND_ANSWER,
                     ).map { it.capabilityId to it.inputSchema }
             ).toMap()
         // The catalog also words tools that only another host, such as the desktop, offers.
@@ -48,6 +50,8 @@ class WordingTest {
                 ThreadController.DEFER_TO_TEXT,
                 ThreadController.BACKGROUND_STATUS,
                 ThreadController.BACKGROUND_CANCEL,
+                ThreadController.ASK_USER,
+                ThreadController.BACKGROUND_ANSWER,
                 ThreadController.DEVICE_TASK_REVISE,
                 ThreadController.DEVICE_TASK_STOP,
             )

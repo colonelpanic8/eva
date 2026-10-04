@@ -70,7 +70,7 @@ object CatalogAdmission {
 
     /** Session controls, plus revising and stopping a device task when one can run. */
     fun voiceControls(definitions: List<CapabilityDefinition>): Int =
-        4 + if (definitions.any { it.id == CapabilityRegistry.DEVICE_TASK }) 2 else 0
+        5 + if (definitions.any { it.id == CapabilityRegistry.DEVICE_TASK }) 2 else 0
 
     fun overflowReasons(definitions: List<CapabilityDefinition>): Map<String, String> = overflowReasons(preview(definitions))
 

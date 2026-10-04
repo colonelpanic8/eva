@@ -63,6 +63,17 @@ internal data class OpenAiHistoryMessage(
 
 internal fun HistoryItem.toOpenAiMessages(): List<OpenAiHistoryMessage> =
     when (this) {
+        is HistoryItem.Question -> {
+            listOf(
+                OpenAiHistoryMessage(
+                    "developer",
+                    com.colonelpanic.eva.conversation.prompt.Wording.bundled
+                        .message("background-question-history"),
+                ),
+                OpenAiHistoryMessage("user", data.toString()),
+            )
+        }
+
         is HistoryItem.User -> {
             listOf(OpenAiHistoryMessage("user", text))
         }
