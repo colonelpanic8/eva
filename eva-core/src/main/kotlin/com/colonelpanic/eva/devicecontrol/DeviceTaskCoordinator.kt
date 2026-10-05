@@ -76,6 +76,24 @@ class DeviceTaskCoordinator(
             true
         }
 
+    fun answer(
+        threadId: String,
+        turnId: String,
+        questionKey: String,
+        answer: String,
+    ): Boolean =
+        synchronized(monitor) {
+            val task = mutableRunning.value?.takeIf { it.threadId == threadId && it.turnId == turnId } ?: return false
+            val progress = task.progress?.takeIf { it.phase == TaskPhase.NEEDS_INPUT } ?: return false
+            if ("${progress.taskId}:${progress.step}" != questionKey || progress.revision != task.agent.revision ||
+                task.agent.isStopped
+            ) {
+                return false
+            }
+            task.agent.revise(answer)
+            true
+        }
+
     fun stop(turnId: String? = null): Boolean =
         synchronized(monitor) {
             if (turnId != null) stoppedTurns += turnId

@@ -615,6 +615,7 @@ class MainActivity : ComponentActivity() {
                     onShowThread = controller::showThread,
                     onStopTask = controller::stopTask,
                     onSubmit = controller::submit,
+                    onAnswer = controller::submitAnswer,
                     onConnect = { controller.connect(eva.settings.hostLink()) },
                     onVoice = ::startVoice,
                     onAssistant = ::showAssistant,

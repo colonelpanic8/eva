@@ -225,6 +225,10 @@ class JdbcConversationStore(
                 "created_at" to item.createdAtMillis,
             )
         when (item) {
+            is ThreadItem.Question -> {
+                columns += mapOf("type" to "question", "text" to item.evidence.encode())
+            }
+
             is ThreadItem.UserMessage -> {
                 columns += mapOf("type" to USER_MESSAGE, "text" to item.text, "spoken" to item.spoken.int())
             }
@@ -283,6 +287,17 @@ class JdbcConversationStore(
         val turnId = nullableString("turn_id")
         val createdAt = getLong("created_at")
         return when (val type = getString("type")) {
+            "question" -> {
+                ThreadItem.Question(
+                    id,
+                    threadId,
+                    checkNotNull(turnId),
+                    createdAt,
+                    com.colonelpanic.eva.conversation.QuestionEvidence
+                        .decode(getString("text")),
+                )
+            }
+
             USER_MESSAGE -> {
                 ThreadItem.UserMessage(id, threadId, turnId, createdAt, getString("text"), flag("spoken"))
             }

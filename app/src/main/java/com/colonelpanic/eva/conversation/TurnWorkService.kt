@@ -324,6 +324,9 @@ object WorkNotifications {
         tasks: List<TaskSnapshot>,
         coverage: WorkCoverage,
     ): Pair<String, String> {
+        tasks.flatMap { it.questions }.filter { it.waiting }.minByOrNull { it.order }?.let { asking ->
+            return "EVA needs your answer" to asking.question
+        }
         tasks.firstOrNull { it.question != null }?.let { asking ->
             return "EVA needs your answer" to asking.question.orEmpty()
         }

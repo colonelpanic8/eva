@@ -281,6 +281,11 @@ class SqliteConversationStore(
             put("turn_id", turnId)
             put("created_at", createdAtMillis)
             when (this@values) {
+                is ThreadItem.Question -> {
+                    put("type", "question")
+                    put("text", evidence.encode())
+                }
+
                 is ThreadItem.UserMessage -> {
                     put("type", USER_MESSAGE)
                     put("text", text)
@@ -342,6 +347,17 @@ class SqliteConversationStore(
         val turnId = nullableString("turn_id")
         val createdAt = long("created_at")
         return when (string("type")) {
+            "question" -> {
+                ThreadItem.Question(
+                    id,
+                    threadId,
+                    checkNotNull(turnId),
+                    createdAt,
+                    com.colonelpanic.eva.conversation.QuestionEvidence
+                        .decode(string("text")),
+                )
+            }
+
             USER_MESSAGE -> {
                 ThreadItem.UserMessage(id, threadId, turnId, createdAt, string("text"), boolean("spoken"))
             }

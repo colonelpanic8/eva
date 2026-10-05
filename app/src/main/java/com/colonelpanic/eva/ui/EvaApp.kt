@@ -66,6 +66,7 @@ fun EvaApp(
     onStopAllWork: () -> Unit = {},
     onShareDiagnostics: (String) -> Unit = {},
     onSubmit: (String) -> Unit,
+    onAnswer: (String, String) -> Unit = { _, answer -> onSubmit(answer) },
     onConnect: () -> Unit = {},
     onVoice: () -> Unit = {},
     onAssistant: () -> Unit = {},
@@ -123,6 +124,7 @@ fun EvaApp(
                     state = state,
                     hasCredential = settings.hasCredential,
                     onSubmit = onSubmit,
+                    onAnswer = onAnswer,
                     onStopTask = onStopTask,
                     onConnect = onConnect,
                     onVoice = onVoice,
@@ -206,15 +208,46 @@ internal const val VOICE_SESSION_LABEL = "Voice session · ask for a phone actio
 internal fun composerHint(state: ConversationState): String {
     val voiceConnected = state.voiceMode && state.providerStatus == ProviderStatus.CONNECTED
     return when {
-        state.errorMessage != null -> "Sending is paused until you restart EVA."
-        state.isLoading -> "Loading your action history…"
-        state.voiceOnAnotherThread -> "The voice call is in another conversation. Return to it, or disconnect to use text here."
-        state.deviceTaskActive -> "Add a correction or answer, or type stop."
-        state.isSubmitting || state.working -> "Working on your last request…"
-        voiceConnected -> "Speak to EVA, or disconnect to use text."
-        state.voiceMode -> "Setting up voice…"
-        state.providerStatus != ProviderStatus.CONNECTED -> "Connect to start a conversation."
-        else -> "Ask naturally. EVA chooses from available actions."
+        state.errorMessage != null -> {
+            "Sending is paused until you restart EVA."
+        }
+
+        state.isLoading -> {
+            "Loading your action history…"
+        }
+
+        state.voiceOnAnotherThread -> {
+            "The voice call is in another conversation. Return to it, or disconnect to use text here."
+        }
+
+        state.currentQuestion != null -> {
+            "Answering: ${state.currentQuestion?.question}" +
+                if (state.pendingQuestionCount > 1) " (${state.pendingQuestionCount} pending)" else ""
+        }
+
+        state.deviceTaskActive -> {
+            "Add a correction or answer, or type stop."
+        }
+
+        state.isSubmitting || state.working -> {
+            "Working on your last request…"
+        }
+
+        voiceConnected -> {
+            "Speak to EVA, or disconnect to use text."
+        }
+
+        state.voiceMode -> {
+            "Setting up voice…"
+        }
+
+        state.providerStatus != ProviderStatus.CONNECTED -> {
+            "Connect to start a conversation."
+        }
+
+        else -> {
+            "Ask naturally. EVA chooses from available actions."
+        }
     }
 }
 

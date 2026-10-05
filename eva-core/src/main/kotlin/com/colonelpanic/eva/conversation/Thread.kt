@@ -33,6 +33,14 @@ sealed interface ThreadItem {
     val turnId: String?
     val createdAtMillis: Long
 
+    data class Question(
+        override val id: String,
+        override val threadId: String,
+        override val turnId: String,
+        override val createdAtMillis: Long,
+        val evidence: QuestionEvidence,
+    ) : ThreadItem
+
     data class UserMessage(
         override val id: String,
         override val threadId: String,

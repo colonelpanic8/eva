@@ -851,7 +851,14 @@ class EvaApplication :
             prompt = { prompts.load() },
         ).also { controller ->
             scope.launch {
-                controller.state.collect { mutableVoiceSession.value = VoiceSessionStatus(it.mediaState, it.mediaControls) }
+                controller.state.collect {
+                    mutableVoiceSession.value =
+                        VoiceSessionStatus(
+                            it.mediaState,
+                            it.mediaControls,
+                            it.voiceQuestion,
+                        )
+                }
             }
             scope.launch {
                 val transition =

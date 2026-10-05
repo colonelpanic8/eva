@@ -47,6 +47,7 @@ import com.colonelpanic.eva.conversation.ConversationEntry
 import com.colonelpanic.eva.conversation.DeviceStep
 import com.colonelpanic.eva.conversation.EntryGroup
 import com.colonelpanic.eva.conversation.EntryStatus
+import com.colonelpanic.eva.conversation.QuestionResolution
 import com.colonelpanic.eva.conversation.TextLegDetails
 import com.colonelpanic.eva.conversation.TurnStatus
 import com.colonelpanic.eva.providers.ProviderToolCatalog
@@ -140,6 +141,10 @@ internal fun ConversationEntryItem(
         SessionDivider(entry.response, onOpenExtensions.takeIf { entry.response.endsWith(ProviderToolCatalog.SEE_EXTENSIONS) })
         return
     }
+    entry.question?.let {
+        QuestionExchange(it)
+        return
+    }
     entry.textLeg?.let {
         TextLegBlock(entry, it, children.map(EntryGroup::entry))
         return
@@ -176,7 +181,13 @@ internal fun ConversationEntryItem(
                 children.forEach { child ->
                     key(child.entry.id) {
                         val leg = child.entry.textLeg
-                        if (leg == null) ActionRow(child.entry) else TextLegBlock(child.entry, leg, child.actions)
+                        if (child.entry.question != null) {
+                            QuestionExchange(checkNotNull(child.entry.question))
+                        } else if (leg == null) {
+                            ActionRow(child.entry)
+                        } else {
+                            TextLegBlock(child.entry, leg, child.actions)
+                        }
                     }
                 }
             }
@@ -230,6 +241,8 @@ private fun TextLegBlock(
     val expanded = toggled ?: (leg.status == TurnStatus.OPEN)
     var showPrompt by rememberSaveable(entry.id + ":prompt") { mutableStateOf(false) }
     val status = leg.presentation()
+    val actionCount = actions.count { it.question == null }
+    val waitingForAnswer = actions.any { it.question?.waiting == true }
     val task = leg.task ?: "Finish the request after the call ended"
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -255,12 +268,19 @@ private fun TextLegBlock(
                         StatusIndicator(status)
                         Text(
                             text =
-                                "Text agent" +
-                                    if (actions.isEmpty()) "" else " · ${actions.size} ${if (actions.size == 1) "action" else "actions"}",
+                                when (actionCount) {
+                                    0 -> "Text agent"
+                                    1 -> "Text agent · 1 action"
+                                    else -> "Text agent · $actionCount actions"
+                                },
                             style = MaterialTheme.typography.labelLarge,
                             modifier = Modifier.weight(1f, fill = false),
                         )
-                        Text(text = status.label, style = MaterialTheme.typography.labelMedium, color = status.color())
+                        Text(
+                            text = if (waitingForAnswer) "Waiting for your answer" else status.label,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = status.color(),
+                        )
                     }
                     Text(
                         text = task,
@@ -275,7 +295,13 @@ private fun TextLegBlock(
             if (expanded) {
                 if (actions.isNotEmpty()) {
                     Box(modifier = Modifier.padding(end = 12.dp)) {
-                        ActionBranch { actions.forEach { action -> key(action.id) { ActionRow(action) } } }
+                        ActionBranch {
+                            actions.forEach { action ->
+                                key(action.id) {
+                                    action.question?.let { QuestionExchange(it) } ?: ActionRow(action)
+                                }
+                            }
+                        }
                     }
                 }
                 Surface(onClick = { showPrompt = !showPrompt }, color = Color.Transparent) {
@@ -339,7 +365,11 @@ private fun ActionRow(action: ConversationEntry) {
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
-                Text(text = status.label, style = MaterialTheme.typography.labelMedium, color = status.color())
+                Text(
+                    text = status.label,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = status.color(),
+                )
             }
             if (expanded) {
                 action.capabilityId?.let { DetailText(it) }
@@ -546,3 +576,29 @@ internal fun EntryStatus.presentation(): StatusPresentation =
             StatusPresentation("Outcome unknown", inProgress = false) { MaterialTheme.colorScheme.error }
         }
     }
+
+@Composable
+internal fun QuestionExchange(question: com.colonelpanic.eva.conversation.QuestionEvidence) {
+    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(question.question, style = MaterialTheme.typography.bodyMedium)
+        question.answer?.let { Text("Answer: $it", style = MaterialTheme.typography.bodyMedium) }
+        Text(
+            when (question.resolution) {
+                QuestionResolution.PENDING -> "Waiting for your answer"
+                QuestionResolution.SUBMITTING -> "Sending answer…"
+                QuestionResolution.ACCEPTED -> "Answered"
+                QuestionResolution.FAILED -> "Couldn't deliver"
+                QuestionResolution.CANCELLED -> "Cancelled"
+                QuestionResolution.INTERRUPTED -> "Interrupted"
+            },
+            style = MaterialTheme.typography.labelMedium,
+            color =
+                when (question.resolution) {
+                    QuestionResolution.PENDING, QuestionResolution.SUBMITTING -> MaterialTheme.colorScheme.tertiary
+                    QuestionResolution.ACCEPTED -> MaterialTheme.colorScheme.primary
+                    QuestionResolution.FAILED -> MaterialTheme.colorScheme.error
+                    QuestionResolution.CANCELLED, QuestionResolution.INTERRUPTED -> MaterialTheme.colorScheme.onSurfaceVariant
+                },
+        )
+    }
+}

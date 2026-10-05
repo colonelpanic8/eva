@@ -66,7 +66,7 @@ thread history: the last 40 items, after a note saying how many earlier items ar
 shown ("at least N" when the store read of 200 items was itself bounded); an earlier
 answer that was cut off says so. Voice can also hand a long request to that leg with its
 continue-in-text session tool. The text leg receives a fresh catalog from the
-same capability registry, including enabled extensions, and retains the turn's
+same capability registry, including enabled extensions and a reserved ask-user control slot, and retains the turn's
 action claims and receipts. Turn IDs belong to the store rather than a provider's session-local
 counter. The SQLite journal links requests, tool calls, receipts, and responses.
 Each text leg is its own thread item recording the delegated task, the exact
@@ -132,6 +132,45 @@ including its owned device task; unknown, finished, or other-thread IDs return
 `NOT_EXECUTED`. Cancellation does not undo actions already started; their receipts
 still determine effects. `ANSWERED` means the text leg answered, not that every
 action succeeded.
+
+Background text legs (delegated or rehomed) also offer `eva.session.ask_user`.
+A valid call records an independently identified question and returns immediately to
+provider event collection, withholding its tool result. Responses waits locally after
+its HTTP/JSON or subscription HTTP/SSE exchange has ended; no request or mutation
+lock remains open for this wait. Sibling calls in the same response can execute,
+but the next inference waits for every call's result. Agents are instructed to ask
+before proposing actions that depend on an answer. Multiple questions, including
+text and device questions on the same turn, retain separate identities.
+
+Questions are ordered by arrival per thread. Voice is given only the oldest pending
+question, followed by the next after resolution. `eva.session.background_answer`
+requires `taskId`, `questionId`, and `answer`; it validates ownership and consumes the
+question once. COMPLETED means the answer was accepted by the waiting agent, not
+that the task completed or that all sibling calls finished. It resumes the same leg
+through the withheld tool result, without a fresh delegation. Background status
+includes the pending question IDs, source, and text. The composer names the current
+question and pending count, accepts answers without a provider connection, and binds
+a draft answer to the question shown when typing began. A stale answer never answers
+a newer question. The legacy device revise tool still accepts answers.
+
+Questions and resolutions are structured thread events, nested under their text leg
+when one exists and separate from its final answer. Each resolution retains the
+question, source, task/leg IDs, answer provenance, and a linked transcript item when
+available; a model relay does not invent another user message. History projects these
+exchanges as quoted data and keeps the full exchange even if the earlier question
+event falls outside its window. Answering through another route sends attached voice
+a non-responding resolution note. Pending state is in memory: after process death,
+recovery records unanswered exchanges as interrupted, never resumes their calls or
+replays actions. Existing thread records remain readable.
+
+Question waits are NEEDS_INPUT, excluded from stall detection and automatic quiet
+hang-up, and retain existing work-service coverage. Stop, failure, force stop, and
+coverage loss invalidate questions before draining sibling actions. A provider that
+ends a text response with an unanswered question fails explicitly. Questions hold no
+mutation lock and answering never clears mutation uncertainty. Android can still
+terminate background coverage, and API-key continuations depend on retained server
+history; a failed continuation is reported rather than restarted. These flows are
+JVM-tested with fake transports; device verification remains separate.
 
 When a background turn answers, fails, or is interrupted, EVA sends a lifecycle
 note to a voice attachment on the same thread with its task ID and terminal state.
@@ -311,7 +350,7 @@ assembled prompt's `hide` lists remove tools first, so hidden tools take no capa
 deterministic with a shared 512-tool safety bound, including session controls: the
 highest count verified with subscription Responses and Realtime, not a published
 provider maximum. Voice
-reserves four base session controls (end, defer, background status, background cancel),
+reserves five base session controls (end, defer, background status, background cancel, background answer),
 plus device-task revise/stop when `eva.device.task` is offered. Bundled native tools
 come first, then whole installed-service extension groups, then remaining whole
 extension/package/media groups sorted by stable source identity (capability ID prefix
@@ -699,21 +738,19 @@ the intercepted `eva.device.task.revise` and `eva.device.task.stop` tools revise
 or stop the running task (stop leaves queued work in place), and anything else
 becomes its own queued action. A bare stop/cancel utterance, bound to the owner
 captured when speech began, bypasses the model. The worker cannot hear the call,
-so when it waits on `ask_user`, EVA sends the attached voice session on that
-thread a lifecycle note quoting the question, with a delivery ID. The voice model
-asks the user and relays the answer with `eva.device.task.revise`; the worker
-receives the revisions made during its wait as its `ask_user` result. A voice call
-that attaches while the question waits gets it on connecting. A failed delivery is
-not resent. While the question is not with the voice model (a provider without
-`submitContext`, revise not offered, or a failed delivery), speech that begins
-during the wait goes to the worker as its answer if the same question is still
-waiting when its transcript arrives, as typed text does. The Broker provider reports
-neither context notes nor speech starts, so its calls get neither path; answer by
-typing. A one-request call does not quietly hang up while the question waits. Outside
-a call, the work notification shows the question; during one, the call's notification
-replaces it. Realtime cannot withdraw a queued note, so an answer typed before the
-announcement plays can leave the model asking a question already answered; its
-wording tells it not to.
+so its `ask_user` joins the same ordered question queue as background text agents.
+The voice model answers with `eva.session.background_answer`; the coordinator checks
+the owning turn, worker task ID, question step, and revision before waking the worker.
+The worker receives revisions made during its wait as its `ask_user` result.
+A call attaching while a question waits receives it on connecting. Failed deliveries
+are not resent; while voice does not hold the current question, speech that starts
+during that wait is forwarded only if the same question is still current when its
+transcript arrives. Duplicate model answers then receive NOT_EXECUTED. The Broker
+provider supports neither context notes nor correlated speech starts: answer by typing.
+The work notification shows the current question outside a call, and the shared voice
+notification shows it during a call. Neither adds an alerting notification.
+Realtime cannot withdraw queued notes; a resolution note and wording discourage
+obsolete questions, while exact question IDs prevent stale answers affecting new work.
 Revision bumps and stop latches are synchronous, bypassing the turn mutex and
 provider result queue. Obsolete inference is cancelled and its plan discarded;
 revision forces fresh observation. Provider speech `cancelled` does not complete

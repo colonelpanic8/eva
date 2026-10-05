@@ -22,6 +22,8 @@ class WordingTest {
                         ThreadController.DEFER_TO_TEXT,
                         ThreadController.BACKGROUND_STATUS,
                         ThreadController.BACKGROUND_CANCEL,
+                        ThreadController.ASK_USER,
+                        ThreadController.BACKGROUND_ANSWER,
                     ).map { it.capabilityId to it.inputSchema }
             ).toMap()
         // The catalog also words tools that only another host, such as the desktop, offers.
@@ -37,6 +39,19 @@ class WordingTest {
         listOf(Wording.DEVICE_TASK_REVISED, Wording.DEVICE_TASK_STOPPING, Wording.DEVICE_TASK_NONE, Wording.DEVICE_TASK_INVALID)
             .forEach { assertTrue(Wording.bundled.message(it).isNotBlank()) }
         assertTrue(ThreadController.DEVICE_TASK_REVISE.description.isNotBlank())
+        listOf(
+            Wording.BACKGROUND_QUESTION,
+            Wording.BACKGROUND_QUESTION_RESOLVED,
+            Wording.BACKGROUND_QUESTION_HISTORY,
+            Wording.BACKGROUND_ANSWER_ACCEPTED,
+            Wording.BACKGROUND_ANSWER_RESULT,
+            Wording.BACKGROUND_ANSWER_INVALID,
+            Wording.BACKGROUND_ANSWER_MISSING,
+            Wording.BACKGROUND_ANSWER_STALE,
+            Wording.BACKGROUND_ANSWER_FAILED,
+            Wording.BACKGROUND_ASK_INVALID,
+            Wording.BACKGROUND_QUESTION_UNRESOLVED,
+        ).forEach { assertTrue("Missing bundled note: $it", Wording.bundled.messages[it]?.isNotBlank() == true) }
     }
 
     @Test
@@ -48,6 +63,8 @@ class WordingTest {
                 ThreadController.DEFER_TO_TEXT,
                 ThreadController.BACKGROUND_STATUS,
                 ThreadController.BACKGROUND_CANCEL,
+                ThreadController.ASK_USER,
+                ThreadController.BACKGROUND_ANSWER,
                 ThreadController.DEVICE_TASK_REVISE,
                 ThreadController.DEVICE_TASK_STOP,
             )

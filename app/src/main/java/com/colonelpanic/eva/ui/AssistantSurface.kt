@@ -189,8 +189,10 @@ private fun LatestTurn(entries: List<ConversationEntry>) {
 }
 
 @Composable
-private fun CompactAction(action: ConversationEntry) =
-    CompactRow(action.actionTitle ?: action.capabilityId ?: "Action", action.status.presentation())
+private fun CompactAction(action: ConversationEntry) {
+    action.question?.let { QuestionExchange(it) }
+        ?: CompactRow(action.actionTitle ?: action.capabilityId ?: "Action", action.status.presentation())
+}
 
 @Composable
 private fun CompactRow(

@@ -63,6 +63,16 @@ internal data class OpenAiHistoryMessage(
 
 internal fun HistoryItem.toOpenAiMessages(): List<OpenAiHistoryMessage> =
     when (this) {
+        is HistoryItem.Question -> {
+            listOf(
+                OpenAiHistoryMessage(
+                    "developer",
+                    note,
+                ),
+                OpenAiHistoryMessage("user", data.toString()),
+            )
+        }
+
         is HistoryItem.User -> {
             listOf(OpenAiHistoryMessage("user", text))
         }

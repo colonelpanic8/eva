@@ -4,6 +4,7 @@ import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.capability.InvocationRecord
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.displayMessage
+import com.colonelpanic.eva.conversation.prompt.Wording
 import com.colonelpanic.eva.providers.HistoryItem
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -31,6 +32,20 @@ fun projectEntries(
         val turnId = item.turnId?.takeIf { it in byTurn }
         if (turnId != null) place(turnId)
         when (item) {
+            is ThreadItem.Question -> {
+                val question = item.evidence
+                place(question.questionId)
+                built[question.questionId] =
+                    ConversationEntry(
+                        question.questionId,
+                        "",
+                        "",
+                        if (question.waiting) EntryStatus.PENDING else EntryStatus.ANSWER,
+                        parentId = question.legId ?: turnId,
+                        question = question,
+                    )
+            }
+
             is ThreadItem.UserMessage -> {
                 if (turnId != null) {
                     if (turnId !in requests) requests[turnId] = item.text
@@ -168,9 +183,12 @@ fun projectHistory(
     limit: Int = HISTORY_ITEM_LIMIT,
     /** The store's read was itself bounded, so the thread may hold more than [items]. */
     readBounded: Boolean = false,
+    questionHistoryNote: String = Wording.bundled.message(Wording.BACKGROUND_QUESTION_HISTORY),
 ): List<HistoryItem> {
-    val kept = items.takeLast(limit)
-    val dropped = items.size - kept.size
+    val latestQuestions = items.filterIsInstance<ThreadItem.Question>().associateBy { it.evidence.questionId }
+    val projected = items.filter { it !is ThreadItem.Question || latestQuestions[it.evidence.questionId] === it }
+    val kept = projected.takeLast(limit)
+    val dropped = projected.size - kept.size
     val head =
         when {
             readBounded && dropped > 0 -> listOf(HistoryItem.Note("At least $dropped earlier items in this conversation are not shown."))
@@ -181,6 +199,10 @@ fun projectHistory(
     return head +
         kept.map { item ->
             when (item) {
+                is ThreadItem.Question -> {
+                    HistoryItem.Question(item.evidence.data(), questionHistoryNote)
+                }
+
                 is ThreadItem.UserMessage -> {
                     HistoryItem.User(item.text)
                 }

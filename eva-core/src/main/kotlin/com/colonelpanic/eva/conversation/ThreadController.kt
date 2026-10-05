@@ -75,6 +75,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import java.io.IOException
 import java.security.MessageDigest
@@ -122,10 +123,23 @@ class ThreadController(
     private val nowMillis: () -> Long = System::currentTimeMillis,
     private val deviceTasks: com.colonelpanic.eva.devicecontrol.DeviceTaskCoordinator? = null,
 ) {
+    private data class PendingQuestion(
+        val threadId: String,
+        var evidence: QuestionEvidence,
+        val target: ConversationSession? = null,
+        val call: CallIdentity? = null,
+        val deviceKey: String? = null,
+    )
+
+    private val questions = linkedMapOf<String, PendingQuestion>()
+    private var nextQuestionOrder = 0L
+    private val questionWrites = Mutex()
+    private val transcriptItems = mutableMapOf<Pair<ConversationSession, String>, String>()
+
     private val deviceSpeechOwners = mutableMapOf<String, DeviceSpeech>()
 
-    /** The device-task question each voice attachment was last given. */
-    private val questionRelays = mutableMapOf<ConversationSession, QuestionRelay>()
+    /** Question delivery state is local to each voice attachment. */
+    private val questionRelays = mutableMapOf<Pair<ConversationSession, String>, QuestionRelay>()
 
     /** [held] while the voice model has the question queued or delivered; [failed] once its delivery failed. */
     private data class QuestionRelay(
@@ -134,7 +148,7 @@ class ThreadController(
         val failed: Boolean = false,
     )
 
-    /** Speech that began while a device task ran; [question] when it waited on a question voice was not given. */
+    /** Speech ownership captured before transcription; [question] selects the fallback answer target. */
     private data class DeviceSpeech(
         val threadId: String,
         val turnId: String,
@@ -204,7 +218,7 @@ class ThreadController(
                     taskState(
                         task.active,
                         task.turnId in deviceTasks?.releasing?.value.orEmpty(),
-                        ownsDevice && device?.progress?.phase == TaskPhase.NEEDS_INPUT,
+                        pendingQuestions(task.threadId).any { it.evidence.taskId == task.turnId },
                         task.actionCallIds.any { it in deviceTasks?.waitingForLease?.value.orEmpty() },
                         ownsDevice,
                         record.waiting,
@@ -231,7 +245,8 @@ class ThreadController(
                     holdsLease,
                     workCoverage,
                     baseState.canStall() && now - record.lastProgressAt >= stallPeriodMillis(),
-                    device?.progress?.message?.takeIf { ownsDevice && baseState == TaskState.NEEDS_INPUT },
+                    pendingQuestions(task.threadId).firstOrNull { it.evidence.taskId == task.turnId }?.evidence?.question,
+                    pendingQuestions(task.threadId).filter { it.evidence.taskId == task.turnId }.map { it.evidence },
                 )
             }
         taskTrace.observe(mutableTaskSnapshots.value)
@@ -320,12 +335,12 @@ class ThreadController(
     private val journalJobs = java.util.concurrent.ConcurrentHashMap<Job, TurnTask>()
 
     private fun launchFinalization(
-        owner: TurnTask,
+        owner: TurnTask?,
         block: suspend CoroutineScope.() -> Unit,
     ): Job =
         scope.launch(NonCancellable, start = CoroutineStart.LAZY, block = block).also { job ->
             turnJobs += job
-            journalJobs[job] = owner
+            if (owner != null) journalJobs[job] = owner
             job.invokeOnCompletion {
                 turnJobs -= job
                 journalJobs.remove(job)
@@ -396,6 +411,7 @@ class ThreadController(
         snapshot: CapabilityRegistry.Snapshot,
         voice: Boolean,
         promptHidden: Set<String>,
+        textControls: Int = 0,
     ): Pair<com.colonelpanic.eva.capability.CatalogAdmission.Selection, List<ProviderToolDefinition>> {
         // Prompt-hidden tools leave before admission so they never take capacity from offered ones.
         val noSkills = skills().isEmpty()
@@ -408,7 +424,7 @@ class ThreadController(
                 com.colonelpanic.eva.capability.CatalogAdmission
                     .voiceControls(offered)
             } else {
-                0
+                textControls
             }
         val selection =
             com.colonelpanic.eva.capability.CatalogAdmission
@@ -522,11 +538,9 @@ class ThreadController(
         scope.launch { deviceTasks?.releasing?.collect { refreshTaskSnapshots() } }
         scope.launch {
             deviceTasks?.running?.collect { running ->
+                syncDeviceQuestion()
                 running?.let { taskProgress(it.turnId) }
                 refreshTaskSnapshots()
-                // A call stays open while the task waits on the user's answer.
-                if (pendingQuestionKey(attachedThreadId) != null) disarmQuietHangUp()
-                relayDeviceQuestion()
                 val owned = running?.takeIf { it.threadId == shownThreadId }
                 mutableState.update {
                     it.copy(
@@ -544,6 +558,22 @@ class ThreadController(
             try {
                 repository.recoverInterrupted()
                 store.recoverInterrupted().forEach { turn ->
+                    store
+                        .items(turn.threadId, limit = Int.MAX_VALUE)
+                        .filterIsInstance<ThreadItem.Question>()
+                        .filter { it.turnId == turn.id }
+                        .associateBy { it.evidence.questionId }
+                        .values
+                        .filter { it.evidence.waiting }
+                        .forEach {
+                            store.append(
+                                it.copy(
+                                    id = UUID.randomUUID().toString(),
+                                    createdAtMillis = nowMillis(),
+                                    evidence = it.evidence.copy(resolution = QuestionResolution.INTERRUPTED),
+                                ),
+                            )
+                        }
                     store.append(notice(turn.threadId, turn.id, NoticeKind.INTERRUPTED, "EVA closed before this request finished."))
                 }
                 shownThreadId = store.threads().firstOrNull()?.id
@@ -604,6 +634,13 @@ class ThreadController(
     private suspend fun refresh() = refreshLock.withLock { load() }
 
     private suspend fun load() {
+        mutableState.update {
+            it.copy(
+                currentQuestion = currentQuestion(shownThreadId)?.evidence,
+                pendingQuestionCount = pendingQuestions(shownThreadId).size,
+                voiceQuestion = currentQuestion(attachedThreadId)?.evidence?.question,
+            )
+        }
         val id = shownThreadId
         val summaries =
             store.threads().map { ThreadSummary(it.id, it.title, it.updatedAtMillis, hasActiveTasks(it.id)) }
@@ -738,6 +775,7 @@ class ThreadController(
                                                 DEFER_TO_TEXT,
                                                 BACKGROUND_STATUS,
                                                 BACKGROUND_CANCEL,
+                                                BACKGROUND_ANSWER,
                                             ).map(wording()::describe)
                                         } else {
                                             emptyList()
@@ -788,6 +826,7 @@ class ThreadController(
                                     projectHistory(
                                         items,
                                         receipts(items),
+                                        questionHistoryNote = wording().message(Wording.BACKGROUND_QUESTION_HISTORY),
                                         readBounded =
                                             items.size >= ConversationStore.DEFAULT_ITEM_LIMIT,
                                     ),
@@ -847,7 +886,8 @@ class ThreadController(
                     heldNotices.remove(openedSession)
                     voiceTurns.keys.removeAll { it.first === openedSession }
                     pendingAnnouncements.keys.removeAll { it.first === openedSession }
-                    questionRelays.remove(openedSession)
+                    transcriptItems.keys.removeAll { it.first === openedSession }
+                    questionRelays.keys.removeAll { it.first === openedSession }
                     withContext(NonCancellable) {
                         try {
                             openedSession?.close()
@@ -883,7 +923,7 @@ class ThreadController(
                     it.copy(providerStatus = ProviderStatus.CONNECTED, providerMessage = held.lastOrNull(), providerModel = model)
                 }
                 updateWorkCoverage()
-                relayDeviceQuestion()
+                relayQuestions()
                 val label = listOfNotNull(if (voice) "Voice session" else "Text session", model).joinToString(" · ")
                 store.append(
                     notice(threadId, null, NoticeKind.SESSION_STARTED, connectionTools.getValue(opened).catalog.sessionNotice(label)),
@@ -919,23 +959,32 @@ class ThreadController(
                         else -> null
                     }
                 if (event.role == "user") {
+                    val transcriptId = UUID.randomUUID().toString()
+                    event.inputId?.let { transcriptItems[opened to it] = transcriptId }
                     val owner = event.itemId?.let { deviceSpeechOwners.remove(opened.connectionEpoch + ":" + it) }
                     // Other speech is the voice model's to route: it may revise or stop the task, relay an
                     // answer to its question, or ask for something else, which queues behind it.
-                    if (owner != null && deviceTasks?.owns(owner.turnId) == true) {
-                        if (event.text.trim().lowercase() in
-                            setOf("stop", "cancel", "stop device task", "cancel device task")
+                    if (owner != null) {
+                        if (event.text.trim().lowercase() in setOf("stop", "cancel", "stop device task", "cancel device task") &&
+                            deviceTasks?.owns(owner.turnId) == true
                         ) {
                             deviceTasks.stop(owner.turnId)
                             tasks[owner.turnId]?.interrupt(wording().message(Wording.TURN_STOP_REQUESTED))
                         } else if (owner.question != null && owner.question == pendingQuestionKey(owner.threadId)) {
-                            deviceTasks.revise(owner.threadId, event.text)
+                            answerQuestion(
+                                owner.threadId,
+                                owner.turnId,
+                                owner.question,
+                                event.text,
+                                AnswerProvenance.SPOKEN_FALLBACK,
+                                transcriptId,
+                            )
                         }
                     }
                     task?.request = event.text
                     store.append(
                         ThreadItem.UserMessage(
-                            UUID.randomUUID().toString(),
+                            transcriptId,
                             threadId,
                             task?.turnId ?: event.inputId?.let { voiceTurns[opened to it]?.turnId },
                             nowMillis(),
@@ -1022,13 +1071,15 @@ class ThreadController(
             }
 
             is ProviderEvent.SpeechInputStarted -> {
-                val owner = deviceTasks?.running?.value?.takeIf { it.threadId == threadId }
-                if (owner != null) {
+                val question = currentQuestion(threadId)
+                val device = deviceTasks?.running?.value?.takeIf { it.threadId == threadId }
+                val turnId = question?.evidence?.taskId ?: device?.turnId
+                if (turnId != null) {
                     deviceSpeechOwners[opened.connectionEpoch + ":" + event.itemId] =
                         DeviceSpeech(
-                            owner.threadId,
-                            owner.turnId,
-                            pendingQuestionKey(threadId)?.takeUnless { questionHeld(opened) },
+                            threadId,
+                            turnId,
+                            question?.evidence?.questionId?.takeUnless { questionHeld(opened) },
                         )
                 }
             }
@@ -1104,9 +1155,13 @@ class ThreadController(
                     pendingAnnouncements.remove(opened to id)?.let { answer ->
                         if (event.delivered) onBackgroundAnswerDelivered(answer)
                     }
-                    val relay = questionRelays[opened]
+                    val relay =
+                        questionRelays.entries
+                            .firstOrNull { it.key.first === opened && QUESTION_DELIVERY + it.key.second == id }
+                            ?.value
                     if (!event.delivered && relay != null && id == QUESTION_DELIVERY + relay.key) {
-                        questionRelays[opened] = relay.copy(held = false, failed = true)
+                        questionRelays[opened to relay.key] = relay.copy(held = false, failed = true)
+                        EvaTrace.info("question.delivery_failed", "questionId" to relay.key)
                     }
                 }
             }
@@ -1119,58 +1174,224 @@ class ThreadController(
         }
     }
 
-    private fun pendingQuestionKey(threadId: String?): String? =
-        deviceTasks
-            ?.running
-            ?.value
-            ?.takeIf { it.threadId == threadId }
-            ?.progress
-            ?.takeIf { it.phase == TaskPhase.NEEDS_INPUT && !it.message.isNullOrBlank() }
-            ?.let { "${it.taskId}:${it.step}" }
+    private fun pendingQuestions(threadId: String?) = questions.values.filter { it.threadId == threadId && it.evidence.waiting }
 
-    /** Whether [voice] has been given the question the device task is waiting on, so it relays the answer. */
-    private fun questionHeld(voice: ConversationSession): Boolean {
-        val relay = questionRelays[voice] ?: return false
-        return relay.held && relay.key == pendingQuestionKey(attachedThreadId)
+    private fun currentQuestion(threadId: String?) = pendingQuestions(threadId).firstOrNull()
+
+    private fun pendingQuestionKey(threadId: String?) = currentQuestion(threadId)?.evidence?.questionId
+
+    private suspend fun recordQuestion(
+        question: PendingQuestion,
+        evidence: QuestionEvidence = question.evidence,
+    ) {
+        questionWrites.withLock {
+            store.append(ThreadItem.Question(UUID.randomUUID().toString(), question.threadId, evidence.taskId, nowMillis(), evidence))
+        }
+        requestRefresh()
     }
 
-    /**
-     * Gives attached voice the question a device task is waiting on. The task cannot hear the call,
-     * so the voice model asks the user and relays the answer through revise. While the question is
-     * not with the model (no context support, revise not offered, or a failed delivery, which is
-     * not resent), speech that starts while the task waits goes to it directly instead.
-     */
-    private fun relayDeviceQuestion() {
-        val running = deviceTasks?.running?.value ?: return
-        val question = running.progress?.message ?: return
-        val key = pendingQuestionKey(running.threadId) ?: return
+    private fun questionsChanged() {
+        mutableState.update {
+            it.copy(
+                currentQuestion = currentQuestion(shownThreadId)?.evidence,
+                pendingQuestionCount = pendingQuestions(shownThreadId).size,
+                voiceQuestion = currentQuestion(attachedThreadId)?.evidence?.question,
+            )
+        }
+        if (pendingQuestionKey(attachedThreadId) != null) disarmQuietHangUp()
+        refreshTaskSnapshots()
+        relayQuestions()
+        requestRefresh()
+    }
+
+    private fun syncDeviceQuestion() {
+        val running = deviceTasks?.running?.value
+        val progress = running?.progress?.takeIf { it.phase == TaskPhase.NEEDS_INPUT && !it.message.isNullOrBlank() }
+        val key = progress?.let { "${it.taskId}:${it.step}" }
+        questions.values.filter { it.evidence.source == QuestionSource.DEVICE_TASK && it.evidence.waiting && it.deviceKey != key }.forEach {
+            resolveQuestion(it, QuestionResolution.CANCELLED)
+        }
+        if (running != null && progress != null && key != null && tasks[running.turnId]?.active == true &&
+            !running.agent.isStopped && progress.revision == running.agent.revision
+        ) {
+            val id = "device:$key"
+            if (id !in questions) {
+                val question =
+                    PendingQuestion(
+                        running.threadId,
+                        QuestionEvidence(
+                            id,
+                            running.turnId,
+                            tasks[running.turnId]?.textLegId,
+                            QuestionSource.DEVICE_TASK,
+                            checkNotNull(progress.message),
+                            order = nextQuestionOrder++,
+                        ),
+                        deviceKey = key,
+                    )
+                questions[id] = question
+                EvaTrace.info(
+                    "question.asked",
+                    "questionId" to id,
+                    "task" to question.evidence.taskId,
+                    "source" to question.evidence.source,
+                )
+                val evidence = question.evidence
+                val owner = checkNotNull(tasks[running.turnId])
+                launchFinalization(owner) {
+                    try {
+                        recordQuestion(question, evidence)
+                    } catch (_: Exception) {
+                        mutableState.update { it.copy(errorMessage = SessionController.STORAGE_ERROR) }
+                        owner.interrupt(SessionController.STORAGE_ERROR)
+                    }
+                }
+            }
+        }
+        questionsChanged()
+    }
+
+    private fun resolveQuestion(
+        question: PendingQuestion,
+        resolution: QuestionResolution,
+    ) {
+        if (!question.evidence.waiting) return
+        question.evidence = question.evidence.copy(resolution = resolution)
+        val evidence = question.evidence
+        val owner = tasks[evidence.taskId]
+        EvaTrace.info("question.resolved", "questionId" to evidence.questionId, "resolution" to resolution)
+        launchFinalization(owner) {
+            try {
+                recordQuestion(question, evidence)
+            } catch (_: Exception) {
+                mutableState.update { it.copy(errorMessage = SessionController.STORAGE_ERROR) }
+                owner?.interrupt(SessionController.STORAGE_ERROR)
+                return@launchFinalization
+            }
+            session?.takeIf { attachedThreadId == question.threadId && connectionTools[it]?.voice == true }?.let { voice ->
+                runCatching { voice.submitContext(wording().message(Wording.BACKGROUND_QUESTION_RESOLVED), false, evidence.data()) }
+            }
+        }
+    }
+
+    private fun cancelQuestions(turnId: String) {
+        val pending = questions.values.filter { it.evidence.taskId == turnId && it.evidence.waiting }
+        if (pending.isEmpty()) return
+        pending.forEach { resolveQuestion(it, QuestionResolution.CANCELLED) }
+        questionsChanged()
+    }
+
+    private suspend fun answerQuestion(
+        threadId: String,
+        taskId: String,
+        questionId: String,
+        answer: String,
+        provenance: AnswerProvenance,
+        transcriptItemId: String? = null,
+    ): String {
+        var result = "cancelled"
+        try {
+            result = consumeQuestion(threadId, taskId, questionId, answer, provenance, transcriptItemId)
+            return result
+        } finally {
+            EvaTrace.info("question.answer_attempt", "questionId" to questionId, "provenance" to provenance, "result" to result)
+        }
+    }
+
+    private suspend fun consumeQuestion(
+        threadId: String,
+        taskId: String,
+        questionId: String,
+        answer: String,
+        provenance: AnswerProvenance,
+        transcriptItemId: String? = null,
+    ): String {
+        val question =
+            questions[questionId]?.takeIf { it.threadId == threadId && it.evidence.taskId == taskId }
+                ?: return Wording.BACKGROUND_ANSWER_MISSING
+        if (answer.isBlank()) return Wording.BACKGROUND_ANSWER_INVALID
+        if (question.evidence.resolution != QuestionResolution.PENDING ||
+            tasks[taskId]?.active != true
+        ) {
+            return Wording.BACKGROUND_ANSWER_STALE
+        }
+        question.evidence =
+            question.evidence.copy(
+                resolution = QuestionResolution.SUBMITTING,
+                answer = answer,
+                provenance = provenance,
+                transcriptItemId = transcriptItemId,
+            )
+        try {
+            recordQuestion(question)
+            if (question.evidence.resolution != QuestionResolution.SUBMITTING ||
+                tasks[taskId]?.active != true
+            ) {
+                return Wording.BACKGROUND_ANSWER_STALE
+            }
+            val accepted =
+                if (question.evidence.source == QuestionSource.DEVICE_TASK) {
+                    deviceTasks?.answer(threadId, taskId, checkNotNull(question.deviceKey), answer) == true
+                } else {
+                    val target = checkNotNull(question.target)
+                    if (tasks[taskId]?.leg !== target) {
+                        false
+                    } else {
+                        target.submitToolResult(
+                            CorrelatedToolResult(
+                                checkNotNull(question.call),
+                                "COMPLETED",
+                                wording().message(Wording.BACKGROUND_ANSWER_RESULT),
+                                question.evidence.data(),
+                            ),
+                        )
+                        true
+                    }
+                }
+            resolveQuestion(question, if (accepted) QuestionResolution.ACCEPTED else QuestionResolution.FAILED)
+            questionsChanged()
+            return if (accepted) Wording.BACKGROUND_ANSWER_ACCEPTED else Wording.BACKGROUND_ANSWER_STALE
+        } catch (error: CancellationException) {
+            resolveQuestion(question, QuestionResolution.CANCELLED)
+            questionsChanged()
+            throw error
+        } catch (_: Exception) {
+            resolveQuestion(question, QuestionResolution.FAILED)
+            tasks[taskId]?.questionFailed()
+            questionsChanged()
+            return Wording.BACKGROUND_ANSWER_FAILED
+        }
+    }
+
+    private fun questionHeld(voice: ConversationSession): Boolean =
+        pendingQuestionKey(attachedThreadId)?.let { questionRelays[voice to it]?.held } == true
+
+    private fun relayQuestions() {
+        val question = currentQuestion(attachedThreadId) ?: return
+        if (question.evidence.resolution != QuestionResolution.PENDING) return
+        val key = question.evidence.questionId
         val voice =
             session?.takeIf {
-                attachedThreadId == running.threadId &&
-                    connectionTools[it]?.voice == true &&
-                    connectionTools[it]?.catalog?.tools?.any { tool -> tool.capabilityId == DEVICE_TASK_REVISE.capabilityId } == true
+                connectionTools[it]?.voice == true &&
+                    connectionTools[it]?.catalog?.tools?.any { tool -> tool.capabilityId == BACKGROUND_ANSWER.capabilityId } == true
             } ?: return
-        val previous = questionRelays[voice]?.takeIf { it.key == key }
+        val relayKey = voice to key
+        val previous = questionRelays[relayKey]
         if (previous != null && (previous.held || previous.failed)) return
-        questionRelays[voice] = QuestionRelay(key, held = true)
+        questionRelays[relayKey] = QuestionRelay(key, held = true)
         scope.launch {
+            if (session !== voice || currentQuestion(attachedThreadId) !== question || !question.evidence.waiting) return@launch
             val accepted =
                 runCatching {
                     voice.submitContext(
-                        wording().message(Wording.DEVICE_TASK_QUESTION),
-                        respond = true,
-                        data =
-                            buildJsonObject {
-                                put("taskId", running.turnId)
-                                put("question", question)
-                                put("contentTrust", "external_data")
-                            },
-                        deliveryId = QUESTION_DELIVERY + key,
+                        wording().message(Wording.BACKGROUND_QUESTION),
+                        true,
+                        question.evidence.data(),
+                        QUESTION_DELIVERY + key,
                     )
                 }.getOrDefault(false)
-            // Unaccepted before the call is ready; connecting tries again.
-            if (!accepted) questionRelays[voice]?.takeIf { it.key == key }?.let { questionRelays[voice] = it.copy(held = false) }
-            EvaTrace.info("device_task.question_relayed", "turn" to running.turnId, "accepted" to accepted)
+            EvaTrace.info("question.relay_submitted", "questionId" to key, "accepted" to accepted)
+            if (!accepted) questionRelays[relayKey]?.let { questionRelays[relayKey] = it.copy(held = false) }
         }
     }
 
@@ -1204,7 +1425,7 @@ class ThreadController(
                     "NOT_EXECUTED" to Wording.DEVICE_TASK_INVALID
                 }
 
-                deviceTasks.revise(threadId, correction) -> {
+                reviseOrAnswerDevice(threadId, correction, transcriptItems[opened to event.call.inputId]) -> {
                     "COMPLETED" to Wording.DEVICE_TASK_REVISED
                 }
 
@@ -1215,6 +1436,26 @@ class ThreadController(
         opened.submitToolResult(CorrelatedToolResult(event.call, status, wording().message(key)))
     }
 
+    private suspend fun reviseOrAnswerDevice(
+        threadId: String,
+        correction: String,
+        transcriptId: String?,
+    ): Boolean {
+        val question = pendingQuestions(threadId).firstOrNull { it.evidence.source == QuestionSource.DEVICE_TASK }
+        return if (question != null) {
+            answerQuestion(
+                threadId,
+                question.evidence.taskId,
+                question.evidence.questionId,
+                correction,
+                AnswerProvenance.DEVICE_REVISION,
+                transcriptId,
+            ) == Wording.BACKGROUND_ANSWER_ACCEPTED
+        } else {
+            deviceTasks?.revise(threadId, correction) == true
+        }
+    }
+
     private suspend fun controlBackgroundTask(
         event: ProviderEvent.ToolCallReady,
         opened: ConversationSession,
@@ -1222,7 +1463,40 @@ class ThreadController(
     ) {
         val definition = connectionTools[opened]?.catalog?.tools?.find { it.capabilityId == event.capabilityId }
         if (definition == null || ToolSchema.error(definition.inputSchema, event.arguments) != null) {
-            opened.submitToolResult(CorrelatedToolResult(event.call, "NOT_EXECUTED", wording().message(Wording.BACKGROUND_INVALID)))
+            val message =
+                if (event.capabilityId ==
+                    BACKGROUND_ANSWER.capabilityId
+                ) {
+                    Wording.BACKGROUND_ANSWER_INVALID
+                } else {
+                    Wording.BACKGROUND_INVALID
+                }
+            opened.submitToolResult(CorrelatedToolResult(event.call, "NOT_EXECUTED", wording().message(message)))
+            return
+        }
+        if (event.capabilityId == BACKGROUND_ANSWER.capabilityId) {
+            val key =
+                answerQuestion(
+                    threadId,
+                    event.arguments
+                        .getValue("taskId")
+                        .jsonPrimitive.content,
+                    event.arguments
+                        .getValue("questionId")
+                        .jsonPrimitive.content,
+                    event.arguments
+                        .getValue("answer")
+                        .jsonPrimitive.content,
+                    AnswerProvenance.VOICE_MODEL,
+                    transcriptItems[opened to event.call.inputId],
+                )
+            opened.submitToolResult(
+                CorrelatedToolResult(
+                    event.call,
+                    if (key == Wording.BACKGROUND_ANSWER_ACCEPTED) "COMPLETED" else "NOT_EXECUTED",
+                    wording().message(key),
+                ),
+            )
             return
         }
         if (event.capabilityId == BACKGROUND_STATUS.capabilityId) {
@@ -1256,6 +1530,10 @@ class ThreadController(
                         put("task", clipped(live[turn.id]?.request ?: legs[turn.id]?.task ?: turn.request, 256))
                         put("state", live[turn.id]?.state?.name ?: turn.status.name)
                         put("looksStuck", live[turn.id]?.looksStuck ?: false)
+                        put(
+                            "questions",
+                            JsonArray(pendingQuestions(threadId).filter { it.evidence.taskId == turn.id }.map { it.evidence.data() }),
+                        )
                         put("actions", live[turn.id]?.actionCount ?: actions.size)
                         put("historyLimited", items.size == BACKGROUND_STATUS_ITEMS && task == null)
                         actions.lastOrNull()?.let { id -> records[id]?.let { put("lastActionStatus", it.status.name) } }
@@ -1395,7 +1673,7 @@ class ThreadController(
         quietHangUp =
             scope.launch {
                 delay(quietHangUpMillis())
-                if (thisAttempt == attempt && quietArmed && !hasUnreportedWork(session)) {
+                if (thisAttempt == attempt && quietArmed && !hasUnreportedWork(session) && pendingQuestionKey(attachedThreadId) == null) {
                     quietArmed = false
                     endCall(ENDED_AFTER_REQUEST)
                 }
@@ -1583,8 +1861,38 @@ class ThreadController(
         turnJobs.toList().joinAll()
     }
 
+    fun submitAnswer(
+        questionId: String,
+        text: String,
+    ) {
+        if (state.value.voiceOnAnotherThread || text.isBlank()) return
+        val threadId = shownThreadId ?: return
+        val question = questions[questionId]
+        if (question?.threadId == threadId && question.evidence.source == QuestionSource.DEVICE_TASK &&
+            text.trim().lowercase() in setOf("stop", "cancel", "stop device task", "cancel device task") &&
+            question.evidence.resolution == QuestionResolution.PENDING && deviceTasks?.owns(question.evidence.taskId) == true
+        ) {
+            stopDeviceTask()
+            return
+        }
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            val key = answerQuestion(threadId, question?.evidence?.taskId.orEmpty(), questionId, text, AnswerProvenance.TYPED)
+            if (key != Wording.BACKGROUND_ANSWER_ACCEPTED) mutableState.update { it.copy(providerMessage = wording().message(key)) }
+        }
+    }
+
     fun submit(text: String) {
         if (state.value.voiceOnAnotherThread) return
+        if (text.trim().lowercase() in setOf("stop", "cancel", "stop device task", "cancel device task") &&
+            deviceTasks?.running?.value?.threadId == shownThreadId && reviseDeviceTask(text)
+        ) {
+            return
+        }
+        val question = currentQuestion(shownThreadId)
+        if (text.isNotBlank() && question != null) {
+            submitAnswer(question.evidence.questionId, text)
+            return
+        }
         if (text.isNotBlank() && reviseDeviceTask(text)) return
         val current = state.value
         val opened = session ?: return
@@ -1703,6 +2011,9 @@ class ThreadController(
             private set
         val originLeg = leg
         val originInputId = inputId
+        var textLegId: String? = null
+            private set
+        private var backgroundSessionId: String? = null
         private var background: ConversationSession? = null
         private val backgroundReady = CompletableDeferred<Boolean>()
         var backgroundState = "CONNECTING"
@@ -1743,6 +2054,48 @@ class ThreadController(
         private val answerParts = mutableListOf<String>()
         var active = true
             private set
+
+        fun questionFailed() = fail(wording().message(Wording.BACKGROUND_ANSWER_FAILED))
+
+        private suspend fun askUser(
+            event: ProviderEvent.ToolCallReady,
+            opened: ConversationSession,
+            legId: String,
+        ) {
+            val definition = tools.catalog.tools.find { it.capabilityId == ASK_USER.capabilityId }
+            val id = "text:$turnId:${event.call.connectionEpoch}:${event.call.callId}"
+            if (id in questions) return
+            val text = (event.arguments["question"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+            if (!active || leg !== opened || event.call.connectionEpoch != opened.connectionEpoch ||
+                event.call.inputId != inputId || event.call.providerSessionId != backgroundSessionId ||
+                event.call.catalogRevision != tools.catalog.revision ||
+                (
+                    event.call.initiator != null &&
+                        (event.call.initiator.kind != InitiatorKind.TEXT_AGENT || event.call.initiator.legId != legId)
+                ) ||
+                event.rejection != null || definition == null || ToolSchema.error(definition.inputSchema, event.arguments) != null ||
+                text.isNullOrBlank()
+            ) {
+                opened.submitToolResult(CorrelatedToolResult(event.call, "NOT_EXECUTED", wording().message(Wording.BACKGROUND_ASK_INVALID)))
+                return
+            }
+            val question =
+                PendingQuestion(
+                    threadId,
+                    QuestionEvidence(id, turnId, legId, QuestionSource.TEXT_AGENT, text, order = nextQuestionOrder++),
+                    opened,
+                    event.call,
+                )
+            questions[id] = question
+            EvaTrace.info(
+                "question.asked",
+                "questionId" to id,
+                "task" to question.evidence.taskId,
+                "source" to question.evidence.source,
+            )
+            recordQuestion(question)
+            questionsChanged()
+        }
 
         fun dispatch(
             event: ProviderEvent.ToolCallReady,
@@ -2077,6 +2430,14 @@ class ThreadController(
 
         /** Providers report this once per input, after any tool follow-up, so it is the answer's end. */
         fun generationEnded(status: String) {
+            if (questions.values.any {
+                    it.evidence.taskId == turnId && it.evidence.source == QuestionSource.TEXT_AGENT &&
+                        it.evidence.waiting
+                }
+            ) {
+                fail(wording().message(Wording.BACKGROUND_QUESTION_UNRESOLVED))
+                return
+            }
             if (deviceTasks?.owns(turnId) == true) return
             when {
                 status == "cancelled" && rehomed -> interrupt(wording().message(Wording.BACKGROUND_RESPONSE_CANCELLED))
@@ -2088,6 +2449,7 @@ class ThreadController(
         fun complete() {
             if (!active) return
             active = false
+            cancelQuestions(turnId)
             answered = true
             refreshTaskSnapshots()
             launchFinalization(this) {
@@ -2182,6 +2544,7 @@ class ThreadController(
             if (!active) return
             EvaTrace.info("task.interrupted", "task" to turnId, "reason" to reason)
             active = false
+            cancelQuestions(turnId)
             refreshTaskSnapshots()
             launchFinalization(this) {
                 backgroundReady.complete(false)
@@ -2203,6 +2566,7 @@ class ThreadController(
                 return
             }
             active = false
+            cancelQuestions(turnId)
             backgroundReady.complete(false)
             val drainingDevice = deviceTasks?.stop(turnId) == true
             launchFinalization(this) {
@@ -2222,6 +2586,13 @@ class ThreadController(
             background = null
             leg = null
             tasks.remove(turnId)
+            val resolved =
+                questions.values
+                    .filter { it.evidence.taskId == turnId && !it.evidence.waiting }
+                    .map { it.evidence.questionId }
+                    .toSet()
+            questions.keys.removeAll(resolved)
+            questionRelays.keys.removeAll { it.second in resolved }
             progress.remove(turnId)
             coverageNotices.removeAll { it.first == turnId }
             // An abandoned dispatch can still hold the lock; a fresh one would let the next mutation run beside it.
@@ -2340,9 +2711,9 @@ class ThreadController(
                         awaitCapabilities()
                         val assembled = assemble(voice = false)
                         val snapshot = registry.snapshot
-                        val phone = phoneTools(snapshot, false, assembled.hidden)
+                        val phone = phoneTools(snapshot, false, assembled.hidden, textControls = 1)
                         val catalog =
-                            catalogOf(assembled.apply(phone.second), snapshot.revision)
+                            catalogOf(assembled.apply(phone.second + wording().describe(ASK_USER)), snapshot.revision)
                                 .copy(excludedTools = phone.first.excluded())
                         tools = ConnectionTools(snapshot, catalog, false)
                         val instructions =
@@ -2355,6 +2726,7 @@ class ThreadController(
                             projectHistory(
                                 items,
                                 receipts(items),
+                                questionHistoryNote = wording().message(Wording.BACKGROUND_QUESTION_HISTORY),
                                 readBounded =
                                     items.size >= ConversationStore.DEFAULT_ITEM_LIMIT,
                             )
@@ -2368,6 +2740,7 @@ class ThreadController(
                                 instructions,
                                 history.size,
                             )
+                        textLegId = textLeg.id
                         store.append(textLeg)
                         val opened =
                             backgroundProviderFactory().open(
@@ -2397,6 +2770,7 @@ class ThreadController(
                                             check(event.catalogRevision == catalog.revision)
                                             if (!connected) {
                                                 connected = true
+                                                backgroundSessionId = event.sessionId
                                                 store.recordOffered(
                                                     threadId,
                                                     turnId,
@@ -2433,7 +2807,13 @@ class ThreadController(
                                         }
 
                                         is ProviderEvent.ToolCallReady -> {
-                                            if (backgroundState == "WORKING" && event.call.inputId == turnId) dispatch(event, textLeg.id)
+                                            if (backgroundState == "WORKING" && event.call.inputId == turnId) {
+                                                if (event.capabilityId == ASK_USER.capabilityId) {
+                                                    askUser(event, opened, textLeg.id)
+                                                } else {
+                                                    dispatch(event, textLeg.id)
+                                                }
+                                            }
                                         }
 
                                         is ProviderEvent.AssistantText -> {
@@ -2537,8 +2917,35 @@ class ThreadController(
             )
         }
 
+        val ASK_USER by lazy {
+            Wording.bundled.describe(
+                ProviderToolDefinition(
+                    "eva.session.ask_user",
+                    "Ask the user",
+                    "",
+                    Json
+                        .parseToJsonElement(
+                            """{"type":"object","properties":{"question":{"type":"string","minLength":1}},"required":["question"],"additionalProperties":false}""",
+                        ).jsonObject,
+                ),
+            )
+        }
+        val BACKGROUND_ANSWER by lazy {
+            Wording.bundled.describe(
+                ProviderToolDefinition(
+                    "eva.session.background_answer",
+                    "Answer a background question",
+                    "",
+                    Json
+                        .parseToJsonElement(
+                            """{"type":"object","properties":{"taskId":{"type":"string","minLength":1},"questionId":{"type":"string","minLength":1},"answer":{"type":"string","minLength":1}},"required":["taskId","questionId","answer"],"additionalProperties":false}""",
+                        ).jsonObject,
+                ),
+            )
+        }
+
         private val DEVICE_CONTROLS = setOf("eva.device.task.revise", "eva.device.task.stop")
-        private const val QUESTION_DELIVERY = "device-question:"
+        private const val QUESTION_DELIVERY = "question:"
 
         val DEFER_TO_TEXT by lazy {
             Wording.bundled.describe(
@@ -2579,7 +2986,8 @@ class ThreadController(
             )
         }
 
-        private val BACKGROUND_CONTROLS = setOf("eva.session.background_status", "eva.session.background_cancel")
+        private val BACKGROUND_CONTROLS =
+            setOf("eva.session.background_status", "eva.session.background_cancel", "eva.session.background_answer")
         private const val BACKGROUND_STATUS_ITEMS = 512
         private const val BACKGROUND_RECENT_TASKS = 5
         private const val BACKGROUND_START_TIMEOUT_MILLIS = 15_000L

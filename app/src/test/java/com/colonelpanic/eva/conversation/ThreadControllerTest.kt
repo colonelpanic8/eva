@@ -181,7 +181,7 @@ class ThreadControllerTest {
             runCurrent()
             assertEquals(1, background.responseRequests.size)
             assertEquals("HANDED_OFF", voice.results.last().status)
-            controller.stopAllTasks()
+            controller.interruptAll("Test complete")
             advanceUntilIdle()
         }
 
@@ -236,7 +236,7 @@ class ThreadControllerTest {
                     .getValue("state")
                     .jsonPrimitive.content,
             )
-            controller.stopAllTasks()
+            controller.interruptAll("Test complete")
             advanceUntilIdle()
         }
 
@@ -441,7 +441,7 @@ class ThreadControllerTest {
             assertFalse(controller.workCoverageNotice("Denied"))
             runCurrent()
             assertTrue(store.items(task.threadId).filterIsInstance<ThreadItem.Notice>().none { it.kind == NoticeKind.COVERAGE_LIMIT })
-            controller.stopAllTasks()
+            controller.interruptAll("Test complete")
             advanceUntilIdle()
         }
 
@@ -459,7 +459,7 @@ class ThreadControllerTest {
             controller.stopBackgroundTasks()
             advanceUntilIdle()
             assertEquals(listOf(task.taskId), controller.taskSnapshots.value.map { it.taskId })
-            controller.stopAllTasks()
+            controller.interruptAll("Test complete")
             advanceUntilIdle()
             assertTrue(controller.taskSnapshots.value.isEmpty())
         }
@@ -509,7 +509,7 @@ class ThreadControllerTest {
                     .single()
                     .lastProgressAt,
             )
-            controller.stopAllTasks()
+            controller.interruptAll("Test complete")
             advanceUntilIdle()
         }
 
@@ -617,7 +617,7 @@ class ThreadControllerTest {
             assertEquals(2, tasks.size)
             assertEquals(2, tasks.map { it.threadId }.distinct().size)
             assertEquals(TaskKind.REHOMED_CONTINUATION, tasks.single { it.taskId == first.taskId }.kind)
-            controller.stopAllTasks()
+            controller.interruptAll("Test complete")
             advanceUntilIdle()
             assertTrue(controller.taskSnapshots.value.isEmpty())
             tasks.forEach { assertEquals(TurnStatus.INTERRUPTED, store.turns(it.threadId).single().status) }
@@ -962,7 +962,7 @@ class ThreadControllerTest {
             advanceUntilIdle()
             voice.call("delegate", ThreadController.DEFER_TO_TEXT.capabilityId, "task" to "Check status")
             advanceUntilIdle()
-            val textExcluded = CatalogAdmission.select(registry.snapshot.catalog).overflow
+            val textExcluded = CatalogAdmission.select(registry.snapshot.catalog, 1).overflow
             assertEquals(
                 textExcluded.map { it.id },
                 background.request.catalog.excludedTools
@@ -972,7 +972,7 @@ class ThreadControllerTest {
                 store.items(controller.state.value.threadId!!).filterIsInstance<ThreadItem.Notice>().any {
                     it.text ==
                         "Background text session · ${textExcluded.size} tools unavailable: " +
-                        "${textExcluded.single().title} — see Extensions"
+                        "${textExcluded.joinToString(", ") { it.title }} — see Extensions"
                 },
             )
         }
@@ -1043,7 +1043,7 @@ class ThreadControllerTest {
     fun `prompt-hidden tools take no catalog capacity and hide their device-task controls`() =
         runTest {
             val extensions =
-                List(CatalogAdmission.LIMIT - 4) { index ->
+                List(CatalogAdmission.LIMIT - 5) { index ->
                     action.copy(id = "extension.test.group_${index.toString().padStart(3, '0')}.action")
                 }
             val coordinator =
@@ -1157,7 +1157,7 @@ class ThreadControllerTest {
             voice.call("reply", ThreadController.DEVICE_TASK_REVISE.capabilityId, "correction" to "The home one")
             runCurrent()
             entered.await()
-            assertEquals(1, voice.contexts.count { "Home or work network?" in it.first })
+            assertEquals(1, voice.contexts.count { it.second && "Home or work network?" in it.first })
 
             voice.call("look", lookup.id, "query" to "weather")
             runCurrent()
@@ -1228,12 +1228,12 @@ class ThreadControllerTest {
             voice.call("task", CapabilityRegistry.DEVICE_TASK, "goal" to "Open Wi-Fi settings")
             runCurrent()
             // A failed delivery, reported once per item, is not resent.
-            assertEquals(1, voice.contexts.count { "Home or work network?" in it.first })
+            assertEquals(1, voice.contexts.count { it.second && "Home or work network?" in it.first })
             repeat(2) {
                 voice.channel.send(ProviderEvent.ContextDelivery(listOf(voice.deliveryIds.single()!!), delivered = false))
             }
             runCurrent()
-            assertEquals(1, voice.contexts.count { "Home or work network?" in it.first })
+            assertEquals(1, voice.contexts.count { it.second && "Home or work network?" in it.first })
             assertEquals(
                 0L,
                 coordinator.running.value!!
@@ -3404,6 +3404,7 @@ class ThreadControllerTest {
                     "eva.session.defer_to_text",
                     "eva.session.background_status",
                     "eva.session.background_cancel",
+                    "eva.session.background_answer",
                     action.id,
                     lookup.id,
                 ),
@@ -3451,7 +3452,13 @@ class ThreadControllerTest {
             controller.connectVoice("test")
             advanceUntilIdle()
             assertEquals(
-                listOf("eva.session.end", "eva.session.defer_to_text", "eva.session.background_status", "eva.session.background_cancel"),
+                listOf(
+                    "eva.session.end",
+                    "eva.session.defer_to_text",
+                    "eva.session.background_status",
+                    "eva.session.background_cancel",
+                    "eva.session.background_answer",
+                ),
                 provider.request.catalog.tools
                     .map { it.capabilityId }
                     .filter { it.startsWith("eva.") },
@@ -4061,6 +4068,603 @@ class ThreadControllerTest {
             assertEquals(background.request.catalog.excludedTools, records[1].excludedTools)
         }
 
+    private suspend fun TestScope.questionFixture(
+        registry: CapabilityRegistry = this@ThreadControllerTest.registry,
+        deviceTasks: com.colonelpanic.eva.devicecontrol.DeviceTaskCoordinator? = null,
+    ): Triple<FakeProvider, FakeProvider, ThreadController> {
+        val voice = FakeProvider()
+        val background = FakeProvider(epoch = "questions")
+        val controller =
+            controller(voice, background = background, registry = registry, deviceTasks = deviceTasks, media = { VoiceMedia() })
+        advanceUntilIdle()
+        controller.connectVoice("test")
+        advanceUntilIdle()
+        voice.startVoice("question-owner", "Research")
+        runCurrent()
+        voice.call("delegate", ThreadController.DEFER_TO_TEXT.capabilityId, "task" to "Research")
+        runCurrent()
+        background.input = ConversationInput(background.request.continuation!!.turnId, "")
+        return Triple(voice, background, controller)
+    }
+
+    @Test
+    fun `question diagnostics omit content and finished tasks release question state`() =
+        runTest {
+            val events = mutableListOf<com.colonelpanic.eva.diagnostics.TraceEvent>()
+            val previous = com.colonelpanic.eva.diagnostics.EvaTrace.sink
+            com.colonelpanic.eva.diagnostics.EvaTrace.sink =
+                com.colonelpanic.eva.diagnostics
+                    .TraceSink { events += it }
+            try {
+                val (voice, background, controller) = questionFixture()
+                background.call("ask", ThreadController.ASK_USER.capabilityId, "question" to "Private question text")
+                runCurrent()
+                val question = controller.state.value.currentQuestion!!
+                voice.channel.send(ProviderEvent.ContextDelivery(listOf(voice.deliveryIds.last()!!), false))
+                runCurrent()
+                controller.submit("Private answer text")
+                runCurrent()
+                val field = ThreadController::class.java.getDeclaredField("questions").apply { isAccessible = true }
+                val retained = field.get(controller) as Map<*, *>
+                assertTrue(retained.containsKey(question.questionId))
+                background.channel.send(ProviderEvent.ResponseEnded(background.input.id, "completed"))
+                runCurrent()
+                assertFalse(retained.containsKey(question.questionId))
+                controller.submitAnswer(question.questionId, "late answer")
+                runCurrent()
+                assertEquals(1, background.results.count { it.call.callId == "ask" })
+                val traces = events.filter { it.name.startsWith("question.") }
+                assertTrue(
+                    traces
+                        .map {
+                            it.name
+                        }.containsAll(
+                            listOf(
+                                "question.asked",
+                                "question.relay_submitted",
+                                "question.delivery_failed",
+                                "question.answer_attempt",
+                                "question.resolved",
+                            ),
+                        ),
+                )
+                assertTrue(traces.none { "Private" in it.line() || "late answer" in it.line() })
+                assertTrue(traces.any { it.name == "question.answer_attempt" && it.fields["result"] == "background-answer-accepted" })
+                voice.startVoice("next-owner", "Another task")
+                runCurrent()
+                voice.call("delegate-next", ThreadController.DEFER_TO_TEXT.capabilityId, "task" to "Another task")
+                runCurrent()
+                background.input = ConversationInput(background.request.continuation!!.turnId, "")
+                background.call("ask-next", ThreadController.ASK_USER.capabilityId, "question" to "Next question")
+                runCurrent()
+                assertTrue(
+                    controller.state.value.currentQuestion!!
+                        .order > question.order,
+                )
+                controller.stopTask()
+                runCurrent()
+                controller.disconnect()
+                runCurrent()
+            } finally {
+                com.colonelpanic.eva.diagnostics.EvaTrace.sink = previous
+            }
+        }
+
+    @Test
+    fun `question resolution is persisted even when its task is missing`() =
+        runTest {
+            val (_, background, controller) = questionFixture()
+            background.call("ask", ThreadController.ASK_USER.capabilityId, "question" to "Which city?")
+            runCurrent()
+            val evidence = controller.state.value.currentQuestion!!
+            val taskField = ThreadController::class.java.getDeclaredField("tasks").apply { isAccessible = true }
+
+            @Suppress("UNCHECKED_CAST")
+            val tasks = taskField.get(controller) as MutableMap<String, Any>
+            val owner = tasks.remove(evidence.taskId)!!
+            val questionField = ThreadController::class.java.getDeclaredField("questions").apply { isAccessible = true }
+            val question = (questionField.get(controller) as Map<*, *>)[evidence.questionId]!!
+            try {
+                ThreadController::class.java.declaredMethods
+                    .single { it.name == "resolveQuestion" }
+                    .apply { isAccessible = true }
+                    .invoke(controller, question, QuestionResolution.CANCELLED)
+                runCurrent()
+                val stored = store.items(controller.state.value.threadId!!).filterIsInstance<ThreadItem.Question>().last()
+                assertEquals(QuestionResolution.CANCELLED, stored.evidence.resolution)
+            } finally {
+                tasks[evidence.taskId] = owner
+                controller.stopTask()
+                runCurrent()
+                controller.disconnect()
+                runCurrent()
+            }
+        }
+
+    @Test
+    fun `two text questions retain their leg and relay oldest first while sibling actions run`() =
+        runTest {
+            val (voice, background, controller) = questionFixture()
+            background.call("ask-1", ThreadController.ASK_USER.capabilityId, "question" to "Which city?")
+            background.call("ask-2", ThreadController.ASK_USER.capabilityId, "question" to "Which date?")
+            background.call("lookup", lookup.id, "query" to "weather")
+            runCurrent()
+            val first = controller.state.value.currentQuestion!!
+            assertEquals("Which city?", first.question)
+            assertEquals(2, controller.state.value.pendingQuestionCount)
+            assertEquals(
+                TaskState.NEEDS_INPUT,
+                controller.taskSnapshots.value
+                    .single { it.taskId == first.taskId }
+                    .state,
+            )
+            assertEquals(listOf("lookup"), background.results.map { it.call.callId })
+            assertEquals(1, voice.contexts.count { it.second && "Which city?" in it.first })
+            assertEquals(0, voice.contexts.count { it.second && "Which date?" in it.first })
+            voice.call(
+                "answer-1",
+                ThreadController.BACKGROUND_ANSWER.capabilityId,
+                "taskId" to first.taskId,
+                "questionId" to first.questionId,
+                "answer" to "Tokyo",
+            )
+            runCurrent()
+            assertEquals("COMPLETED", voice.results.last().status)
+            assertEquals(
+                "Tokyo",
+                background.results
+                    .single { it.call.callId == "ask-1" }
+                    .data!!["answer"]!!
+                    .jsonPrimitive.content,
+            )
+            assertEquals(
+                "Which date?",
+                controller.state.value.currentQuestion!!
+                    .question,
+            )
+            assertEquals(1, voice.contexts.count { it.second && "Which date?" in it.first })
+            assertTrue(voice.contexts.any { !it.second && "Tokyo" in it.first })
+            voice.call(
+                "duplicate",
+                ThreadController.BACKGROUND_ANSWER.capabilityId,
+                "taskId" to first.taskId,
+                "questionId" to first.questionId,
+                "answer" to "Kyoto",
+            )
+            runCurrent()
+            assertEquals("NOT_EXECUTED", voice.results.last().status)
+            assertEquals(1, background.results.count { it.call.callId == "ask-1" })
+            controller.submit("Friday")
+            runCurrent()
+            assertNull(controller.state.value.currentQuestion)
+            assertEquals(1, background.results.count { it.call.callId == "ask-2" })
+            assertEquals(1, background.responseRequests.size)
+            assertTrue(controller.state.value.working)
+            background.channel.send(ProviderEvent.AssistantText(background.input.id, "Done", false))
+            background.channel.send(ProviderEvent.ResponseEnded(background.input.id, "completed"))
+            runCurrent()
+            val evidence = store.items(first.taskId.let { controller.state.value.threadId!! }).filterIsInstance<ThreadItem.Question>()
+            assertEquals(2, evidence.count { it.evidence.resolution == QuestionResolution.ACCEPTED })
+            assertEquals(1, store.items(controller.state.value.threadId!!).filterIsInstance<ThreadItem.TextLeg>().size)
+            controller.disconnect()
+            runCurrent()
+        }
+
+    @Test
+    fun `typed and model answers cannot both consume a question and disconnected typing resumes the leg`() =
+        runTest {
+            val (voice, background, controller) = questionFixture()
+            background.call("ask", ThreadController.ASK_USER.capabilityId, "question" to "Which city?")
+            runCurrent()
+            val first = controller.state.value.currentQuestion!!
+            controller.submit("Tokyo")
+            voice.call(
+                "racing",
+                ThreadController.BACKGROUND_ANSWER.capabilityId,
+                "taskId" to first.taskId,
+                "questionId" to first.questionId,
+                "answer" to "Kyoto",
+            )
+            runCurrent()
+            assertEquals(1, background.results.count { it.call.callId == "ask" })
+            assertEquals("NOT_EXECUTED", voice.results.last().status)
+            background.call("ask-again", ThreadController.ASK_USER.capabilityId, "question" to "Which date?")
+            runCurrent()
+            controller.disconnect()
+            runCurrent()
+            assertTrue(controller.state.value.acceptsTextInput)
+            controller.submit("Friday")
+            runCurrent()
+            assertEquals(1, background.results.count { it.call.callId == "ask-again" })
+            assertEquals(0, background.closes)
+            controller.stopTask()
+            runCurrent()
+        }
+
+    @Test
+    fun `failed text question delivery enables fallback once with transcript provenance`() =
+        runTest {
+            val (voice, background, controller) = questionFixture()
+            background.call("ask", ThreadController.ASK_USER.capabilityId, "question" to "Which city?")
+            runCurrent()
+            val first = controller.state.value.currentQuestion!!
+            voice.channel.send(ProviderEvent.ContextDelivery(listOf(voice.deliveryIds.last()!!), false))
+            voice.channel.send(ProviderEvent.SpeechInputStarted("reply"))
+            voice.channel.send(ProviderEvent.Transcript("user", "Tokyo", "reply", "voice:reply"))
+            runCurrent()
+            assertEquals(1, background.results.count { it.call.callId == "ask" })
+            val evidence =
+                store
+                    .items(controller.state.value.threadId!!)
+                    .filterIsInstance<ThreadItem.Question>()
+                    .last { it.evidence.questionId == first.questionId }
+                    .evidence
+            assertEquals(AnswerProvenance.SPOKEN_FALLBACK, evidence.provenance)
+            assertTrue(store.items(controller.state.value.threadId!!).any { it.id == evidence.transcriptItemId })
+            assertEquals(1, voice.contexts.count { it.second && "Which city?" in it.first })
+            controller.stopTask()
+            runCurrent()
+            controller.disconnect()
+            runCurrent()
+        }
+
+    @Test
+    fun `ending a response with an unresolved question fails instead of completing the task`() =
+        runTest {
+            val (_, background, controller) = questionFixture()
+            background.call("ask", ThreadController.ASK_USER.capabilityId, "question" to "Which city?")
+            runCurrent()
+            val first = controller.state.value.currentQuestion!!
+            background.channel.send(ProviderEvent.ResponseEnded(background.input.id, "completed"))
+            runCurrent()
+            assertNull(controller.state.value.currentQuestion)
+            assertEquals(TurnStatus.FAILED, store.turns(controller.state.value.threadId!!).single { it.id == first.taskId }.status)
+            assertTrue(background.results.isEmpty())
+            controller.disconnect()
+            runCurrent()
+        }
+
+    @Test
+    fun `stop force stop and coverage loss invalidate questions before accepting another answer`() =
+        runTest {
+            for (mode in 0..2) {
+                val (voice, background, controller) = questionFixture()
+                background.call("ask-$mode", ThreadController.ASK_USER.capabilityId, "question" to "Which city?")
+                runCurrent()
+                val first = controller.state.value.currentQuestion!!
+                when (mode) {
+                    0 -> controller.stopTask()
+                    1 -> controller.forceStopTask(first.taskId)
+                    else -> controller.interruptBackgroundWork("Coverage lost")
+                }
+                voice.call(
+                    "late-$mode",
+                    ThreadController.BACKGROUND_ANSWER.capabilityId,
+                    "taskId" to first.taskId,
+                    "questionId" to first.questionId,
+                    "answer" to "Tokyo",
+                )
+                runCurrent()
+                assertNull(controller.state.value.currentQuestion)
+                assertEquals("NOT_EXECUTED", voice.results.last().status)
+                assertTrue(background.results.isEmpty())
+                assertEquals(1, background.closes)
+                controller.disconnect()
+                runCurrent()
+            }
+        }
+
+    @Test
+    fun `text and device questions on the same turn have separate consumable identities`() =
+        runTest {
+            var requests = 0
+            val coordinator =
+                com.colonelpanic.eva.devicecontrol.DeviceTaskCoordinator {
+                    com.colonelpanic.eva.devicecontrol.worker.TextTaskAgent(
+                        waitingPhone(),
+                        {
+                            if (requests++ == 0) {
+                                com.colonelpanic.eva.devicecontrol.worker.WorkerReply(
+                                    listOf(
+                                        com.colonelpanic.eva.devicecontrol.worker.WorkerCall(
+                                            "ask",
+                                            "ask_user",
+                                            buildJsonObject { put("question", "Which network?") },
+                                        ),
+                                    ),
+                                )
+                            } else {
+                                kotlinx.coroutines.awaitCancellation()
+                            }
+                        },
+                        com.colonelpanic.eva.devicecontrol
+                            .workerWording(Wording.bundled),
+                    )
+                }
+            val registry =
+                CapabilityRegistry(
+                    mapOf(CapabilityRegistry.DEVICE_TASK to coordinator),
+                    BundledCapabilities.definitions.filter { it.id == CapabilityRegistry.DEVICE_TASK },
+                )
+            val (voice, background, controller) = questionFixture(registry, coordinator)
+            background.call("text-question", ThreadController.ASK_USER.capabilityId, "question" to "Which city?")
+            background.call("device", CapabilityRegistry.DEVICE_TASK, "goal" to "Open Wi-Fi")
+            runCurrent()
+            val questions =
+                controller.taskSnapshots.value
+                    .single { it.questions.isNotEmpty() }
+                    .questions
+            assertEquals(2, questions.size)
+            assertEquals(1, questions.map { it.taskId }.distinct().size)
+            val device = questions.single { it.source == QuestionSource.DEVICE_TASK }
+            val text = questions.single { it.source == QuestionSource.TEXT_AGENT }
+            assertEquals(
+                text.questionId,
+                controller.state.value.currentQuestion!!
+                    .questionId,
+            )
+            voice.call(
+                "device-answer",
+                ThreadController.BACKGROUND_ANSWER.capabilityId,
+                "taskId" to device.taskId,
+                "questionId" to device.questionId,
+                "answer" to "Home",
+            )
+            runCurrent()
+            assertEquals(
+                1L,
+                coordinator.running.value!!
+                    .agent.revision,
+            )
+            assertEquals(
+                text.questionId,
+                controller.state.value.currentQuestion!!
+                    .questionId,
+            )
+            voice.call(
+                "device-duplicate",
+                ThreadController.BACKGROUND_ANSWER.capabilityId,
+                "taskId" to device.taskId,
+                "questionId" to device.questionId,
+                "answer" to "Work",
+            )
+            runCurrent()
+            assertEquals("NOT_EXECUTED", voice.results.last().status)
+            assertEquals(
+                1L,
+                coordinator.running.value!!
+                    .agent.revision,
+            )
+            controller.submit("Tokyo")
+            runCurrent()
+            assertEquals(1, background.results.count { it.call.callId == "text-question" })
+            controller.stopTask()
+            runCurrent()
+            controller.disconnect()
+            runCurrent()
+        }
+
+    @Test
+    fun `Connected retries an unaccepted question and reconnect does not replay an accepted answer`() =
+        runTest {
+            val (voice, background, controller) = questionFixture()
+            voice.supportsContext = false
+            background.call("ask", ThreadController.ASK_USER.capabilityId, "question" to "Which city?")
+            runCurrent()
+            assertEquals(0, voice.contexts.count { it.second && "Which city?" in it.first })
+            voice.supportsContext = true
+            voice.channel.send(ProviderEvent.Connected("session", voice.request.catalog.revision))
+            runCurrent()
+            assertEquals(1, voice.contexts.count { it.second && "Which city?" in it.first })
+            voice.channel.send(ProviderEvent.Connected("session", voice.request.catalog.revision))
+            runCurrent()
+            assertEquals(1, voice.contexts.count { it.second && "Which city?" in it.first })
+            controller.submit("Tokyo")
+            runCurrent()
+            controller.disconnect()
+            runCurrent()
+            controller.connectVoice("test")
+            runCurrent()
+            assertEquals(1, voice.contexts.count { it.second && "Which city?" in it.first })
+            assertEquals(1, background.results.count { it.call.callId == "ask" })
+            controller.stopTask()
+            runCurrent()
+            controller.disconnect()
+            runCurrent()
+        }
+
+    @Test
+    fun `question answers cannot cross thread boundaries and status lists exact pending identities`() =
+        runTest {
+            val (voice, background, controller) = questionFixture()
+            background.call("ask", ThreadController.ASK_USER.capabilityId, "question" to "Which city?")
+            runCurrent()
+            val first = controller.state.value.currentQuestion!!
+            voice.call("status", ThreadController.BACKGROUND_STATUS.capabilityId)
+            runCurrent()
+            assertTrue(
+                voice.results
+                    .last()
+                    .data
+                    .toString()
+                    .contains(first.questionId),
+            )
+            assertTrue(
+                voice.results
+                    .last()
+                    .data
+                    .toString()
+                    .contains("TEXT_AGENT"),
+            )
+            controller.disconnect()
+            runCurrent()
+            controller.newThread()
+            runCurrent()
+            controller.connectVoice("test")
+            runCurrent()
+            voice.startVoice("other", "Answer")
+            runCurrent()
+            voice.call(
+                "wrong-thread",
+                ThreadController.BACKGROUND_ANSWER.capabilityId,
+                "taskId" to first.taskId,
+                "questionId" to first.questionId,
+                "answer" to "Tokyo",
+            )
+            runCurrent()
+            assertEquals("NOT_EXECUTED", voice.results.last().status)
+            assertTrue(background.results.isEmpty())
+            controller.interruptAll("Test complete")
+            runCurrent()
+            controller.disconnect()
+            runCurrent()
+        }
+
+    @Test
+    fun `recovery preserves the question and marks its unfinished exchange interrupted`() =
+        runTest {
+            val thread = store.createThread("Old")
+            val turn = store.openTurn(thread.id, "Research", "old")
+            val question = QuestionEvidence("old-question", turn.id, "old-leg", QuestionSource.TEXT_AGENT, "Which city?")
+            store.append(ThreadItem.Question("asked", thread.id, turn.id, 1, question))
+            val controller = controller(FakeProvider())
+            runCurrent()
+            assertNull(controller.state.value.currentQuestion)
+            val evidence =
+                store
+                    .items(thread.id)
+                    .filterIsInstance<ThreadItem.Question>()
+                    .last()
+                    .evidence
+            assertEquals(QuestionResolution.INTERRUPTED, evidence.resolution)
+            assertEquals("Which city?", evidence.question)
+            assertEquals(TurnStatus.INTERRUPTED, store.turns(thread.id).single().status)
+        }
+
+    @Test
+    fun `cancelling a question does not wait for a sibling mutation to drain`() =
+        runTest {
+            for (mode in 0..2) {
+                val gate = CompletableDeferred<Unit>()
+                var started = 0
+                val blocking =
+                    object : ExecutionBackend {
+                        override suspend fun unavailableReason(): String? = null
+
+                        override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome =
+                            withContext(NonCancellable) {
+                                started++
+                                gate.await()
+                                ExecutionOutcome(InvocationStatus.COMPLETED, "Completed once")
+                            }
+                    }
+                val registry = CapabilityRegistry(mapOf(action.id to blocking), listOf(action))
+                val (voice, background, controller) = questionFixture(registry)
+                background.call("mutation-$mode", action.id, "place" to "Park")
+                background.call("ask-$mode", ThreadController.ASK_USER.capabilityId, "question" to "Which city?")
+                runCurrent()
+                val first = controller.state.value.currentQuestion!!
+                assertEquals(1, started)
+                when (mode) {
+                    0 -> controller.stopTask()
+                    1 -> controller.forceStopTask(first.taskId)
+                    else -> controller.interruptBackgroundWork("Coverage lost")
+                }
+                runCurrent()
+                assertNull(controller.state.value.currentQuestion)
+                voice.call(
+                    "late-$mode",
+                    ThreadController.BACKGROUND_ANSWER.capabilityId,
+                    "taskId" to first.taskId,
+                    "questionId" to first.questionId,
+                    "answer" to "Tokyo",
+                )
+                runCurrent()
+                assertEquals("NOT_EXECUTED", voice.results.last().status)
+                assertTrue(background.results.none { it.call.callId == "ask-$mode" })
+                gate.complete(Unit)
+                runCurrent()
+                assertEquals(1, started)
+                assertEquals(1, background.closes)
+                controller.disconnect()
+                runCurrent()
+            }
+        }
+
+    @Test
+    fun `a question disarms a quiet timer and a new action cannot rearm it while waiting`() =
+        runTest {
+            val voice = FakeProvider()
+            val background = FakeProvider(epoch = "background")
+            val media = VoiceMedia()
+            val controller = controller(voice, background = background, media = { media })
+            runCurrent()
+            controller.connectVoice("test", callMode = VoiceCallMode.ONE_REQUEST)
+            runCurrent()
+            voice.startVoice("delegate-owner", "Research")
+            runCurrent()
+            voice.call("delegate", ThreadController.DEFER_TO_TEXT.capabilityId, "task" to "Research")
+            runCurrent()
+            background.input = ConversationInput(background.request.continuation!!.turnId, "")
+            voice.startVoice("action", "Open park")
+            runCurrent()
+            voice.call("action", action.id, "place" to "Park")
+            runCurrent()
+            voice.channel.send(ProviderEvent.AssistantText(voice.input.id, "Opened", false))
+            voice.channel.send(ProviderEvent.ResponseEnded(voice.input.id, "completed"))
+            runCurrent()
+            advanceTimeBy(4_000)
+            background.call("ask", ThreadController.ASK_USER.capabilityId, "question" to "Which city?")
+            runCurrent()
+            advanceTimeBy(10_000)
+            runCurrent()
+            assertFalse(media.closed)
+            voice.startVoice("second-action", "Open lake")
+            runCurrent()
+            voice.call("action-2", action.id, "place" to "Lake")
+            runCurrent()
+            voice.channel.send(ProviderEvent.AssistantText(voice.input.id, "Opened", false))
+            voice.channel.send(ProviderEvent.ResponseEnded(voice.input.id, "completed"))
+            runCurrent()
+            advanceTimeBy(10_000)
+            runCurrent()
+            assertFalse(media.closed)
+            controller.stopTask()
+            runCurrent()
+            controller.disconnect()
+            runCurrent()
+        }
+
+    @Test
+    fun `a draft answer bound to an old question cannot answer its successor`() =
+        runTest {
+            val (_, background, controller) = questionFixture()
+            background.call("first", ThreadController.ASK_USER.capabilityId, "question" to "Which city?")
+            background.call("second", ThreadController.ASK_USER.capabilityId, "question" to "Which date?")
+            runCurrent()
+            val old =
+                controller.state.value.currentQuestion!!
+                    .questionId
+            controller.submit("Tokyo")
+            runCurrent()
+            controller.submitAnswer(old, "Kyoto")
+            runCurrent()
+            assertEquals(
+                "Which date?",
+                controller.state.value.currentQuestion!!
+                    .question,
+            )
+            assertEquals(1, background.results.size)
+            assertTrue(
+                controller.state.value.providerMessage!!
+                    .contains("no longer waiting"),
+            )
+            controller.stopTask()
+            runCurrent()
+            controller.disconnect()
+            runCurrent()
+        }
+
     private class FakeProvider(
         val openGate: CompletableDeferred<Unit>? = null,
         epoch: String = "epoch",
@@ -4068,7 +4672,7 @@ class ThreadControllerTest {
         val autoConnect: Boolean = true,
         val responseGate: CompletableDeferred<Unit>? = null,
         val responseFailure: Exception? = null,
-        val supportsContext: Boolean = true,
+        var supportsContext: Boolean = true,
     ) : ConversationProvider,
         ConversationSession {
         override val connectionEpoch = epoch

@@ -70,6 +70,11 @@ data class SessionOpenRequest(
  * are instructions; external action evidence remains attributed, quoted data.
  */
 sealed interface HistoryItem {
+    data class Question(
+        val data: JsonObject,
+        val note: String,
+    ) : HistoryItem
+
     data class User(
         val text: String,
     ) : HistoryItem
