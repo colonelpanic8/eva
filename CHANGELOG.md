@@ -4,6 +4,8 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.58.0] - 2026-10-05
+
 ### Added
 
 - Background text agents can ask questions and receive answers on the same leg. Voice and typed answers identify the exact question; pending questions are presented in order, with exchanges retained in thread history.

@@ -1,0 +1,2 @@
+* Added: Background text agents can ask questions and receive answers on the same leg. Voice and typed answers identify the exact question; pending questions are presented in order, with exchanges retained in thread history.
+* Added: Pending questions appear in the voice-call notification and composer as well as background work. Cancelling a task or recovering after a restart makes unanswered questions unavailable without replaying its actions.
