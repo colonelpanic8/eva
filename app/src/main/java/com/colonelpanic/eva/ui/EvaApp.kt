@@ -82,6 +82,11 @@ fun EvaApp(
         if (runningWorkRequest > 0) destination = EvaDestination.RUNNING_WORK
     }
     var showScreenControl by rememberSaveable { mutableStateOf(false) }
+
+    fun openScreenControl() {
+        showScreenControl = true
+        destination = EvaDestination.SETTINGS
+    }
     val uriHandler = LocalUriHandler.current
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -138,10 +143,9 @@ fun EvaApp(
                     onRetryMicrophone = onRetryMicrophone,
                     onDismissDenial = onDismissDenial,
                     screenControl = settings.screenControlStatus,
-                    onOpenScreenControl = {
-                        showScreenControl = true
-                        destination = EvaDestination.SETTINGS
-                    },
+                    screenControlRepairing = settings.screenControlRepairing,
+                    onOpenScreenControl = ::openScreenControl,
+                    onRepairScreenControl = { route -> settingsActions.onRepairScreenControl(route.backend, ::openScreenControl) },
                     onShareDiagnostics = onShareDiagnostics,
                     onOpenExtensions = { destination = EvaDestination.EXTENSIONS },
                 )

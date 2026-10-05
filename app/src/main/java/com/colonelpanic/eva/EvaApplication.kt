@@ -101,7 +101,9 @@ class EvaApplication :
     val shizukuShellHost by lazy { if (Build.VERSION.SDK_INT >= 37) ShizukuShellHost(this) else null }
 
     /** Screen control needs Shizuku too, but not Android 17: its helper only needs UiAutomation. */
-    val deviceControlHost by lazy { if (Build.VERSION.SDK_INT >= 30) DeviceControlHost(this) else null }
+    val deviceControlHost: DeviceControlHost? by lazy {
+        if (Build.VERSION.SDK_INT >= 30) DeviceControlHost(this) { scope.launch { screenControl.refresh() } } else null
+    }
     private val screenActions by lazy {
         ScreenActions(
             enabled = { capabilities.screenControlEnabled },
@@ -311,13 +313,20 @@ class EvaApplication :
 
     private val portalHttp by lazy { okhttp3.OkHttpClient() }
 
-    private suspend fun portalProblem(): String? {
-        val token = capabilities.portalToken() ?: return PORTAL_TOKEN_MISSING
-        val health =
-            com.colonelpanic.eva.devicecontrol.portal
-                .PortalClient(capabilities.deviceTask.portalPort, { token }, portalHttp)
-                .health()
-        return when (health) {
+    /** Null when no Portal token is saved. */
+    private suspend fun portalHealth(): com.colonelpanic.eva.devicecontrol.portal.PortalHealth? {
+        val token = capabilities.portalToken() ?: return null
+        return com.colonelpanic.eva.devicecontrol.portal
+            .PortalClient(capabilities.deviceTask.portalPort, { token }, portalHttp)
+            .health()
+    }
+
+    private suspend fun portalProblem(): String? =
+        when (portalHealth()) {
+            null -> {
+                PORTAL_TOKEN_MISSING
+            }
+
             com.colonelpanic.eva.devicecontrol.portal.PortalHealth.READY -> {
                 null
             }
@@ -330,7 +339,52 @@ class EvaApplication :
                 "Portal is not running. Turn on Portal's accessibility service."
             }
         }
+
+    private val screenControlRepair by lazy {
+        com.colonelpanic.eva.devicecontrol.ScreenControlRepair(
+            context = this,
+            helper = { deviceControlHost },
+            portalHealth = ::portalHealth,
+            portalPort = { capabilities.deviceTask.portalPort },
+            verify = ::verifyBackend,
+            taskRunning = { deviceTasks.running.value != null },
+        )
     }
+
+    /** Fixes a backend in place where EVA can, or says where the user can. */
+    suspend fun repairScreenControl(backend: String): com.colonelpanic.eva.devicecontrol.RepairOutcome =
+        screenControlRepair.repair(backend).also {
+            EvaTrace.info("screen_control.repair", "backend" to backend, "outcome" to it.javaClass.simpleName)
+            screenControl.refresh()
+        }
+
+    /** A real screen read, so the backend's health reflects it rather than a probe. */
+    private suspend fun verifyBackend(name: String): String? =
+        try {
+            kotlinx.coroutines.withTimeout(VERIFY_READ_MILLIS) { deviceBackend(name).observe() }
+            null
+        } catch (error: kotlinx.coroutines.TimeoutCancellationException) {
+            "it did not read the screen within ${VERIFY_READ_MILLIS / 1000} seconds."
+        } catch (error: com.colonelpanic.eva.devicecontrol.ObservationFailure) {
+            when (error.error) {
+                is com.colonelpanic.eva.devicecontrol.proto.BackendUnavailable,
+                is com.colonelpanic.eva.devicecontrol.proto.Timeout,
+                -> {
+                    screenControl.status.value.routes
+                        .firstOrNull { it.backend == name }
+                        ?.problem ?: "it could not read the screen."
+                }
+
+                else -> {
+                    screenControl.record(name, null)
+                    null
+                }
+            }
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            "it could not read the screen: ${error.message ?: error.javaClass.simpleName}"
+        }
 
     /** Capabilities a settings switch removes from every session's catalog. */
     fun switchedOffCapabilities(): Set<String> =
@@ -890,4 +944,5 @@ class EvaApplication :
 }
 
 private const val SCREEN_CONTROL_API = "Screen control requires Android 11 or newer."
+private const val VERIFY_READ_MILLIS = 20_000L
 private const val PORTAL_TOKEN_MISSING = "Provision the Portal token in EVA's Screen control settings."

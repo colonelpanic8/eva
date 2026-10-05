@@ -437,8 +437,10 @@ private fun ScreenControlSection(
         }
         DeviceTaskBackendList(
             backends = state.deviceTask.backends,
-            routes = state.screenControlStatus.routes.associateBy { it.name },
+            routes = state.screenControlStatus.routes.associateBy { it.backend },
+            repairing = state.screenControlRepairing,
             onChange = { actions.onDeviceTaskChange(state.deviceTask.copy(backends = it)) },
+            onRepair = { backend -> actions.onRepairScreenControl(backend) {} },
         )
         SecretField(
             title = "Portal token",

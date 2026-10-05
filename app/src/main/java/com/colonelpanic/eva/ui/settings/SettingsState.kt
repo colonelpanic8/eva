@@ -81,6 +81,8 @@ data class SettingsUiState(
     val screenControlStatus: com.colonelpanic.eva.devicecontrol.ScreenControlStatus =
         com.colonelpanic.eva.devicecontrol
             .ScreenControlStatus(),
+    /** Backends a repair is running for. */
+    val screenControlRepairing: Set<String> = emptySet(),
     val deviceTask: com.colonelpanic.eva.data.configuration.DeviceTaskConfiguration =
         com.colonelpanic.eva.data.configuration
             .DeviceTaskConfiguration(),
@@ -167,6 +169,8 @@ data class SettingsActions(
     val onWebResearchChange: (com.colonelpanic.eva.web.WebResearchConfiguration) -> Unit = {},
     val onPortalToken: (String) -> Unit = {},
     val onAllowShizuku: () -> Unit = {},
+    /** Repairs a backend; the callback opens Screen control settings when the fix is there. */
+    val onRepairScreenControl: (backend: String, openSettings: () -> Unit) -> Unit = { _, _ -> },
     val onSaveSpotifyClientId: (String) -> String? = { null },
     val onConnectSpotify: () -> String? = { null },
     val onCancelSpotifyConnect: () -> Unit = {},

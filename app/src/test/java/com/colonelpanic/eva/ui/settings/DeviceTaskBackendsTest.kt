@@ -19,11 +19,12 @@ class DeviceTaskBackendsTest {
     fun aBackendNobodyCheckedClaimsNothingAndOthersSayWhy() {
         val now = 10 * 60_000L
         assertEquals("Not checked yet.", backendState(null, now))
-        assertEquals("Ready.", backendState(ScreenControlStatus.Route("Portal", null, ScreenControlStatus.Health.READY), now))
+        assertEquals("Ready.", backendState(ScreenControlStatus.Route("portal", "Portal", null, ScreenControlStatus.Health.READY), now))
         assertEquals(
             "The last screen action through it failed · 3 min ago. Shizuku couldn't read the screen: helper didn't connect",
             backendState(
                 ScreenControlStatus.Route(
+                    "shizuku",
                     "Shizuku",
                     "Shizuku couldn't read the screen: helper didn't connect",
                     ScreenControlStatus.Health.UNHEALTHY,

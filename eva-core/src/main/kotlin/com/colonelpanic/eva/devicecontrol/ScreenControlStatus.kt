@@ -22,6 +22,8 @@ data class ScreenControlStatus(
     }
 
     data class Route(
+        /** The configured backend ID, such as `portal`. */
+        val backend: String,
         val name: String,
         val problem: String?,
         val health: Health = if (problem == null) Health.READY else Health.UNHEALTHY,
@@ -119,19 +121,19 @@ class ScreenControlMonitor(
         val lastSuccess = entry.lastSuccess
         return when {
             entry.setup != null -> {
-                ScreenControlStatus.Route(name, entry.setup, ScreenControlStatus.Health.SETUP_NEEDED)
+                ScreenControlStatus.Route(backend, name, entry.setup, ScreenControlStatus.Health.SETUP_NEEDED)
             }
 
             entry.failure != null -> {
-                ScreenControlStatus.Route(name, entry.failure, ScreenControlStatus.Health.UNHEALTHY, entry.failedAt)
+                ScreenControlStatus.Route(backend, name, entry.failure, ScreenControlStatus.Health.UNHEALTHY, entry.failedAt)
             }
 
             entry.probeFailure != null && (lastSuccess == null || since == null || since > lastSuccess) -> {
-                ScreenControlStatus.Route(name, entry.probeFailure, ScreenControlStatus.Health.DEGRADED, since)
+                ScreenControlStatus.Route(backend, name, entry.probeFailure, ScreenControlStatus.Health.DEGRADED, since)
             }
 
             else -> {
-                ScreenControlStatus.Route(name, null, ScreenControlStatus.Health.READY)
+                ScreenControlStatus.Route(backend, name, null, ScreenControlStatus.Health.READY)
             }
         }
     }
