@@ -1,0 +1,2 @@
+* Added: Tap a Portal or Shizuku status on the conversation bar, or **Reconnect** in Screen control settings, to repair a backend that is not ready. With Shizuku allowed, EVA turns Portal's accessibility service back on (or restarts it) itself; without it, EVA opens Accessibility settings. For Shizuku, EVA restarts its helper, asks for access, or opens Shizuku when it is stopped. A repair counts as fixed only after a real screen read through that backend.
+* ...see CHANGELOG.md for the rest.
