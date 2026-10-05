@@ -4,6 +4,8 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.59.1] - 2026-10-05
+
 ### Fixed
 
 - Portal no longer stays broken after Play Store force-stops it. Play Store force-stops sideloaded Portal every few days, and Android then removes Portal's accessibility service from the enabled list. When EVA checks Portal and finds its service missing, it now puts it back through Shizuku without a tap, at most once a minute. This happens before a device task or screen action, and while EVA is open.
