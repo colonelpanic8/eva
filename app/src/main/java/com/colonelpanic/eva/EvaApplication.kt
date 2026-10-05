@@ -336,7 +336,12 @@ class EvaApplication :
             }
 
             com.colonelpanic.eva.devicecontrol.portal.PortalHealth.UNREACHABLE -> {
-                "Portal is not running. Turn on Portal's accessibility service."
+                if (screenControlRepair.restorePortal()) {
+                    EvaTrace.info("screen_control.portal_restored")
+                    null
+                } else {
+                    "Portal is not running. Turn on Portal's accessibility service, or tap Portal to reconnect."
+                }
             }
         }
 

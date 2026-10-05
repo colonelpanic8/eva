@@ -9,6 +9,8 @@ import com.colonelpanic.eva.adapters.android.DeviceControlHost
 import com.colonelpanic.eva.devicecontrol.portal.PortalHealth
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 
 /** What tapping a backend that is not ready does: fix it in place where EVA can, else open where the user can. */
@@ -66,8 +68,41 @@ class ScreenControlRepair(
     private val taskRunning: () -> Boolean,
     private val portalService: () -> PortalService? = { installedPortalService(context) },
     private val portalStartMillis: Long = PORTAL_START_MILLIS,
+    private val elapsedMillis: () -> Long = android.os.SystemClock::elapsedRealtime,
 ) {
+    private val restoreLock = Mutex()
+    private var lastRestoreMillis: Long? = null
+
     suspend fun repair(backend: String): RepairOutcome = if (backend == "portal") repairPortal() else repairShizuku()
+
+    /**
+     * Puts Portal's accessibility service back when it is no longer listed, without a tap.
+     * Android drops a force-stopped app's services from that list, and Play Store force-stops
+     * sideloaded Portal every few days. A service that is listed but silent is left to a tap.
+     * Returns whether Portal answers afterwards.
+     */
+    suspend fun restorePortal(): Boolean = restoreLock.withLock { restorePortalOnce() }
+
+    private suspend fun restorePortalOnce(): Boolean {
+        val service = portalService()?.takeUnless { it.enabled } ?: return false
+        val last = lastRestoreMillis
+        if (last != null && elapsedMillis() - last < RESTORE_INTERVAL_MILLIS) return false
+        val shizuku = helper()?.takeIf { it.accessStatus() == DeviceControlHost.ALLOWED } ?: return false
+        lastRestoreMillis = elapsedMillis()
+        try {
+            shizuku.enableAccessibilityService(service.component, restart = false)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            return false
+        }
+        return awaitPortal()
+    }
+
+    private suspend fun awaitPortal(): Boolean =
+        withTimeoutOrNull(portalStartMillis) {
+            while (portalHealth() != PortalHealth.READY) delay(POLL_MILLIS)
+        } != null
 
     private suspend fun repairPortal(): RepairOutcome {
         when (portalHealth()) {
@@ -98,11 +133,7 @@ class ScreenControlRepair(
             )
         }
         val did = if (service.enabled) "Restarted Portal's accessibility service" else "Turned Portal's accessibility service back on"
-        val answered =
-            withTimeoutOrNull(portalStartMillis) {
-                while (portalHealth() != PortalHealth.READY) delay(POLL_MILLIS)
-            }
-        if (answered == null) {
+        if (!awaitPortal()) {
             val portal = context.packageManager.getLaunchIntentForPackage(service.component.packageName)
             return RepairOutcome.Open(
                 portal ?: settings,
@@ -163,6 +194,7 @@ class ScreenControlRepair(
         private val PORTAL_PACKAGES = setOf("com.mobilerun.portal", "com.droidrun.portal")
         private const val PORTAL_START_MILLIS = 8_000L
         private const val POLL_MILLIS = 400L
+        private const val RESTORE_INTERVAL_MILLIS = 60_000L
 
         fun installedPortalService(context: Context): PortalService? {
             val accessibility = context.getSystemService(AccessibilityManager::class.java) ?: return null
