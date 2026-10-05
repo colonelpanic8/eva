@@ -14,4 +14,6 @@ interface IDeviceControl {
     ParcelFileDescriptor screenshot(long timeoutMillis) = 5;
     /** Portal-shaped screen state as UTF-8 JSON, streamed because a full tree can exceed Binder's limit. */
     ParcelFileDescriptor state(long timeoutMillis) = 6;
+    /** Turns one accessibility service on, or off and on again when [restart] and it is already on. */
+    void enableAccessibilityService(String component, boolean restart) = 7;
 }

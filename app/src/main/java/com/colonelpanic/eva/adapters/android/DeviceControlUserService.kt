@@ -3,6 +3,7 @@ package com.colonelpanic.eva.adapters.android
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.annotation.SuppressLint
 import android.app.UiAutomation
+import android.content.ComponentName
 import android.graphics.Bitmap
 import android.os.Binder
 import android.os.HandlerThread
@@ -26,8 +27,8 @@ import kotlin.system.exitProcess
 
 /**
  * Runs inside the Shizuku user service as shell (UID 2000), never in EVA's own process. It accepts
- * only the fixed Portal-shaped primitives in [PortalCommands]; there is no general shell or planner
- * on this side.
+ * only the fixed Portal-shaped primitives in [PortalCommands] and turning on a named accessibility
+ * service; there is no general shell or planner on this side.
  */
 @RequiresApi(30)
 @SuppressLint("PrivateApi", "DiscouragedPrivateApi")
@@ -84,6 +85,46 @@ class DeviceControlUserService : IDeviceControl.Stub() {
         }
         return stream(png.toByteArray(), "eva-device-control-screenshot")
     }
+
+    @Synchronized
+    override fun enableAccessibilityService(
+        component: String,
+        restart: Boolean,
+    ) {
+        require(Process.myUid() == SHELL_UID) { "Device control must run as Android's shell user" }
+        val service = requireNotNull(ComponentName.unflattenFromString(component)) { "Not an accessibility service: $component" }
+        val deadline = SystemClock.elapsedRealtime() + SETTINGS_TIMEOUT_MILLIS
+        val identity = Binder.clearCallingIdentity()
+        try {
+            val others =
+                secure("get", ENABLED_SERVICES, deadline = deadline)
+                    .trim()
+                    .takeUnless { it == "null" }
+                    .orEmpty()
+                    .split(':')
+                    .filter { it.isNotBlank() && ComponentName.unflattenFromString(it) != service }
+            if (restart) {
+                if (others.isEmpty()) {
+                    secure("delete", ENABLED_SERVICES, deadline = deadline)
+                } else {
+                    secure("put", ENABLED_SERVICES, others.joinToString(":"), deadline = deadline)
+                }
+                SystemClock.sleep(RESTART_PAUSE_MILLIS)
+            }
+            secure("put", ENABLED_SERVICES, (others + service.flattenToString()).joinToString(":"), deadline = deadline)
+            secure("put", "accessibility_enabled", "1", deadline = deadline)
+        } catch (error: PortalCommands.Failure) {
+            throw IllegalStateException(error.message)
+        } finally {
+            Binder.restoreCallingIdentity(identity)
+        }
+    }
+
+    private fun secure(
+        verb: String,
+        vararg args: String,
+        deadline: Long,
+    ): String = PortalCommands.exec(listOf("settings", verb, "secure") + args, deadline)
 
     private fun stream(
         bytes: ByteArray,
@@ -186,6 +227,9 @@ class DeviceControlUserService : IDeviceControl.Stub() {
         const val IDLE_MILLIS = 20_000L
         const val ROOT_WAIT_MILLIS = 1_000L
         const val FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES = 0x1
+        const val ENABLED_SERVICES = "enabled_accessibility_services"
+        const val SETTINGS_TIMEOUT_MILLIS = 10_000L
+        const val RESTART_PAUSE_MILLIS = 500L
     }
 }
 

@@ -386,7 +386,7 @@ internal object PortalCommands {
     }
 
     /** Fixed argv, no shell: arguments were validated above and cannot be reinterpreted. */
-    private fun exec(
+    fun exec(
         command: List<String>,
         deadline: Long,
     ): String {

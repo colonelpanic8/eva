@@ -41,6 +41,7 @@ import com.colonelpanic.eva.conversation.WorkNotifications
 import com.colonelpanic.eva.conversation.prompt.PromptYaml
 import com.colonelpanic.eva.conversation.prompt.VoiceCallMode
 import com.colonelpanic.eva.data.PromptState
+import com.colonelpanic.eva.devicecontrol.RepairOutcome
 import com.colonelpanic.eva.diagnostics.AndroidDiagnostics
 import com.colonelpanic.eva.providers.openai.ModelKind
 import com.colonelpanic.eva.ui.EvaApp
@@ -57,11 +58,13 @@ import com.colonelpanic.eva.ui.settings.SettingsUiState
 import com.colonelpanic.eva.ui.theme.EvaTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val voice: VoiceAccessModel by viewModels()
     private val shizukuAccess = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    private val screenControlRepairing = kotlinx.coroutines.flow.MutableStateFlow<Set<String>>(emptySet())
     private var surface: Launch
         get() = voice.surface
         set(value) {
@@ -275,8 +278,9 @@ class MainActivity : ComponentActivity() {
         val webResearchNotice by eva.capabilities.webResearchNoticeFlow.collectAsStateWithLifecycle()
         val screenControl by eva.capabilities.screenControlFlow.collectAsStateWithLifecycle()
         val shizuku by shizukuAccess.collectAsStateWithLifecycle()
-        LaunchedEffect(Unit) { eva.deviceControlHost?.let { shizukuAccess.value = it.accessStatus() } }
         val screenControlStatus by eva.screenControl.status.collectAsStateWithLifecycle()
+        LaunchedEffect(screenControlStatus) { eva.deviceControlHost?.let { shizukuAccess.value = it.accessStatus() } }
+        val repairing by screenControlRepairing.collectAsStateWithLifecycle()
         LaunchedEffect(screenControl, deviceTask, shizuku) {
             repeatOnLifecycle(Lifecycle.State.RESUMED) {
                 while (true) {
@@ -370,6 +374,7 @@ class MainActivity : ComponentActivity() {
             webResearch = webResearch,
             webResearchNotice = webResearchNotice,
             screenControlStatus = screenControlStatus,
+            screenControlRepairing = repairing,
             deviceTask = deviceTask,
             spotifyClientId = spotifyClientId,
             spotifyAccount = spotifyAccount?.description,
@@ -525,6 +530,7 @@ class MainActivity : ComponentActivity() {
                 onAllowShizuku = {
                     eva.deviceControlHost?.let { host -> lifecycleScope.launch { shizukuAccess.value = host.requestAccess() } }
                 },
+                onRepairScreenControl = ::repairScreenControl,
                 onSaveSpotifyClientId = { clientId -> save { eva.spotify.saveClientId(clientId) } },
                 onConnectSpotify = {
                     eva.spotifyConnect.begin(
@@ -546,6 +552,41 @@ class MainActivity : ComponentActivity() {
                 },
             )
         }
+
+    private fun repairScreenControl(
+        backend: String,
+        openSettings: () -> Unit,
+    ) {
+        if (backend in screenControlRepairing.value) return
+        screenControlRepairing.update { it + backend }
+        lifecycleScope.launch {
+            val outcome =
+                try {
+                    eva.repairScreenControl(backend)
+                } finally {
+                    screenControlRepairing.update { it - backend }
+                    eva.deviceControlHost?.let { shizukuAccess.value = it.accessStatus() }
+                }
+            when (outcome) {
+                is RepairOutcome.Open -> {
+                    try {
+                        startActivity(outcome.intent)
+                    } catch (_: ActivityNotFoundException) {
+                        openSettings()
+                    }
+                }
+
+                is RepairOutcome.OpenSettings -> {
+                    openSettings()
+                }
+
+                is RepairOutcome.Fixed, is RepairOutcome.Failed -> {
+                    Unit
+                }
+            }
+            Toast.makeText(this@MainActivity, outcome.message, Toast.LENGTH_LONG).show()
+        }
+    }
 
     private fun shareThreadDiagnostics(threadId: String) = shareDiagnostics { threadExport(threadId) }
 

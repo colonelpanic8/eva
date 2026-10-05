@@ -13,6 +13,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -60,7 +61,9 @@ internal fun moveBackend(
 internal fun DeviceTaskBackendList(
     backends: List<String>,
     routes: Map<String, ScreenControlStatus.Route>,
+    repairing: Set<String>,
     onChange: (List<String>) -> Unit,
+    onRepair: (String) -> Unit,
 ) {
     val now by wallClock()
     SettingsBlock {
@@ -71,7 +74,7 @@ internal fun DeviceTaskBackendList(
         val label = if (backend == "portal") "Portal" else "Shizuku"
         val enabled = backend in backends
         val position = backends.indexOf(backend)
-        val route = routes[label]
+        val route = routes[backend]
         Row(
             modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -99,6 +102,11 @@ internal fun DeviceTaskBackendList(
                             MaterialTheme.colorScheme.onSurfaceVariant
                         },
                 )
+                if (enabled && route != null && route.health != ScreenControlStatus.Health.READY) {
+                    TextButton(onClick = { onRepair(backend) }, enabled = backend !in repairing) {
+                        Text(if (backend in repairing) "Reconnecting…" else "Reconnect")
+                    }
+                }
             }
             if (enabled) {
                 IconButton(onClick = { onChange(moveBackend(backends, backend, -1)) }, enabled = position > 0) {

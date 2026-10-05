@@ -88,7 +88,9 @@ internal fun ConversationScreen(
     onRetryMicrophone: () -> Unit,
     onDismissDenial: () -> Unit,
     screenControl: ScreenControlStatus = ScreenControlStatus(),
+    screenControlRepairing: Set<String> = emptySet(),
     onOpenScreenControl: () -> Unit = {},
+    onRepairScreenControl: (ScreenControlStatus.Route) -> Unit = {},
     onShareDiagnostics: (String) -> Unit = {},
     onOpenExtensions: () -> Unit = {},
 ) {
@@ -126,7 +128,13 @@ internal fun ConversationScreen(
                 },
                 navigationIcon = { MenuButton(onOpenDrawer) },
                 actions = {
-                    ScreenControlChip(screenControl, state.deviceTaskActive, onOpenScreenControl)
+                    ScreenControlChip(
+                        screenControl,
+                        state.deviceTaskActive,
+                        screenControlRepairing,
+                        onOpenScreenControl,
+                        onRepairScreenControl,
+                    )
                     ThreadMenu(state.threadId, onShareDiagnostics)
                 },
                 colors = evaTopAppBarColors(),

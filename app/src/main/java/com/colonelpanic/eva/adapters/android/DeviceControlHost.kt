@@ -11,6 +11,7 @@ import androidx.activity.ComponentActivity
 import androidx.lifecycle.Lifecycle
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import java.lang.ref.WeakReference
@@ -22,7 +23,9 @@ import java.lang.ref.WeakReference
 @SuppressLint("NewApi")
 class DeviceControlHost(
     context: Context,
-) {
+    /** Shizuku's binder arrived or died, so the access status may have changed. */
+    private val onAccessChanged: () -> Unit = {},
+) : com.colonelpanic.eva.devicecontrol.ShizukuHelper {
     private val applicationContext = context.applicationContext
     private var surface: WeakReference<ComponentActivity>? = null
     private var service: IDeviceControl? = null
@@ -36,7 +39,7 @@ class DeviceControlHost(
             .daemon(false)
             .processNameSuffix("device_control")
             .tag("eva-device-control")
-            .version(3)
+            .version(4)
 
     private val permissionListener =
         rikka.shizuku.Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
@@ -50,7 +53,10 @@ class DeviceControlHost(
         rikka.shizuku.Shizuku.OnBinderDeadListener {
             service = null
             pendingBinding?.completeExceptionally(ShizukuUnavailableException(SERVER_STOPPED))
+            onAccessChanged()
         }
+
+    private val binderReceivedListener = rikka.shizuku.Shizuku.OnBinderReceivedListener { onAccessChanged() }
 
     private val connection =
         object : ServiceConnection {
@@ -71,6 +77,7 @@ class DeviceControlHost(
     init {
         rikka.shizuku.Shizuku.addRequestPermissionResultListener(permissionListener)
         rikka.shizuku.Shizuku.addBinderDeadListener(binderDeadListener)
+        rikka.shizuku.Shizuku.addBinderReceivedListener(binderReceivedListener)
     }
 
     fun attach(activity: ComponentActivity) {
@@ -94,7 +101,7 @@ class DeviceControlHost(
         }
 
     /** Settings status line; [ALLOWED] once EVA may start the helper. */
-    suspend fun accessStatus(): String =
+    override suspend fun accessStatus(): String =
         withContext(Dispatchers.Main.immediate) {
             when {
                 !isShizukuInstalled() -> NOT_INSTALLED
@@ -105,7 +112,7 @@ class DeviceControlHost(
         }
 
     /** Asks Shizuku from EVA's own screen, so later voice and background requests need no prompt. */
-    suspend fun requestAccess(): String =
+    override suspend fun requestAccess(): String =
         withContext(Dispatchers.Main.immediate) {
             try {
                 requireService()
@@ -114,6 +121,24 @@ class DeviceControlHost(
                 error.message ?: accessStatus()
             }
         }
+
+    /** Replaces the helper process, which drops a wedged UiAutomation connection with it. */
+    override suspend fun restartHelper() {
+        withContext(Dispatchers.Main.immediate) {
+            service = null
+            runCatching { rikka.shizuku.Shizuku.unbindUserService(serviceArgs, connection, true) }
+            delay(HELPER_EXIT_MILLIS)
+            requireService()
+        }
+    }
+
+    override suspend fun enableAccessibilityService(
+        component: ComponentName,
+        restart: Boolean,
+    ) {
+        val helper = withContext(Dispatchers.Main.immediate) { requireService() }
+        withContext(Dispatchers.IO) { helper.enableAccessibilityService(component.flattenToString(), restart) }
+    }
 
     suspend fun state(
         timeoutMillis: Long,
@@ -207,7 +232,8 @@ class DeviceControlHost(
 
     companion object {
         const val NOT_INSTALLED = "Shizuku is not installed. Install and start Shizuku to let EVA use the screen."
-        const val SERVER_STOPPED = "Shizuku is not running. Start it before asking EVA to use the screen."
+        const val SERVER_STOPPED =
+            "Shizuku is not running, or EVA has not heard from it since it restarted. Start it in Shizuku, then come back to EVA."
         const val PERMISSION_DENIED = "Shizuku access was denied. Allow EVA in Shizuku before trying again."
         const val SURFACE_REQUIRED = "Open EVA once to allow Shizuku access before it can use the screen."
         const val ALLOWED = "Shizuku is running and EVA is allowed."
@@ -215,5 +241,6 @@ class DeviceControlHost(
 
         private const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
         private const val PERMISSION_REQUEST_CODE = 62118
+        private const val HELPER_EXIT_MILLIS = 300L
     }
 }
