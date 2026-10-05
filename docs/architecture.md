@@ -660,6 +660,13 @@ observers), not to an EVA that stays in front. Returning from Shizuku is such a
 transition. A repair reports fixed only after a real screen read through the backend
 succeeds, and that read updates the route's health.
 
+Android drops a force-stopped app's accessibility services from the enabled list, and
+Play Store force-stops sideloaded Portal every few days. So when Portal's check finds
+it unreachable and its service is no longer listed, EVA puts the service back through
+Shizuku without a tap. This happens at most once a minute, both when a device task or
+screen action is admitted and on the probe while EVA is in front. A service that is
+listed but silent is left for the tap repair, so that EVA does not toggle it repeatedly.
+
 Portal on the same phone is the first default backend. Its full typed action set
 includes Unicode replace/append text, password redaction, screenshot PNGs, Enter
 for IME actions, URLs, and notifications. Mutating HTTP requests are not retried;
