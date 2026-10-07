@@ -4,6 +4,8 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.60.0] - 2026-10-07
+
 ### Added
 
 - Typing while EVA works steers the running request. EVA reads the message at its next step, or right after the answer it was writing, and answers it in the same turn.

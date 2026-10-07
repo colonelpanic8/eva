@@ -1,0 +1,3 @@
+* Added: Typing while EVA works steers the running request. EVA reads the message at its next step, or right after the answer it was writing, and answers it in the same turn.
+* Added: A message the running request can no longer take is listed above the composer and sent as the next request when the current one finishes. Messages still waiting when the session ends are named instead of dropped.
+* ...see CHANGELOG.md for the rest.
