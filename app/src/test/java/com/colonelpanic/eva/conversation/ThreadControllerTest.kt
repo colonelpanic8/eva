@@ -1657,24 +1657,63 @@ class ThreadControllerTest {
         }
 
     @Test
-    fun `a new request is refused while the thread is still working`() =
+    fun `typed input while EVA works steers the running request within its turn`() =
         runTest {
             val provider = FakeProvider()
             val controller = controller(provider)
             advanceUntilIdle()
             controller.connect("unused")
             advanceUntilIdle()
-            controller.submit("First")
+            controller.submit("Open the park")
             advanceUntilIdle()
-            provider.channel.send(ProviderEvent.ResponseEnded(provider.input.id, "completed"))
+            assertTrue(controller.state.value.acceptsTextInput)
+            controller.submit("Actually the zoo")
+            advanceUntilIdle()
+            assertEquals(1, provider.submissions)
+            assertEquals(listOf(provider.input.id to "Actually the zoo"), provider.steers)
+            assertEquals(emptyList<String>(), controller.state.value.waitingInputs)
+            val messages = store.items(controller.state.value.threadId!!).filterIsInstance<ThreadItem.UserMessage>()
+            assertEquals(listOf("Open the park", "Actually the zoo"), messages.map { it.text })
+            assertEquals(listOf(latestTurn(controller)), messages.map { it.turnId }.distinct())
+        }
+
+    @Test
+    fun `input the running response cannot take is sent as the next request`() =
+        runTest {
+            val provider = FakeProvider(steerable = false)
+            val controller = controller(provider)
+            advanceUntilIdle()
+            controller.connect("unused")
+            advanceUntilIdle()
+            controller.submit("First")
             advanceUntilIdle()
             controller.submit("Second")
             advanceUntilIdle()
-            assertEquals(2, provider.submissions)
-            controller.submit("Third")
+            assertEquals(1, provider.submissions)
+            assertEquals(listOf("Second"), controller.state.value.waitingInputs)
+            provider.channel.send(ProviderEvent.ResponseEnded(provider.input.id, "completed"))
             advanceUntilIdle()
             assertEquals(2, provider.submissions)
-            assertEquals("EVA is still working on the last request.", controller.state.value.providerMessage)
+            assertEquals("Second", provider.input.text)
+            assertEquals(emptyList<String>(), controller.state.value.waitingInputs)
+        }
+
+    @Test
+    fun `waiting input is reported when the session ends before it is sent`() =
+        runTest {
+            val provider = FakeProvider(steerable = false)
+            val controller = controller(provider)
+            advanceUntilIdle()
+            controller.connect("unused")
+            advanceUntilIdle()
+            controller.submit("First")
+            advanceUntilIdle()
+            controller.submit("Second")
+            advanceUntilIdle()
+            controller.disconnect()
+            advanceUntilIdle()
+            assertEquals(emptyList<String>(), controller.state.value.waitingInputs)
+            assertEquals("The session ended before EVA could send: \"Second\"", controller.state.value.providerMessage)
         }
 
     @Test
@@ -3153,7 +3192,7 @@ class ThreadControllerTest {
             val oldTurn = store.turns(first).single().id
             assertFalse(controller.state.value.isSubmitting)
             assertTrue(controller.state.value.foregroundWorking)
-            assertFalse(controller.state.value.acceptsTextInput)
+            assertTrue(controller.state.value.acceptsTextInput)
 
             controller.newThread()
             advanceUntilIdle()
@@ -3211,7 +3250,7 @@ class ThreadControllerTest {
             advanceUntilIdle()
             assertTrue(controller.state.value.working)
             assertTrue(controller.state.value.foregroundWorking)
-            assertFalse(controller.state.value.acceptsTextInput)
+            assertTrue(controller.state.value.acceptsTextInput)
             opened[1].channel.send(ProviderEvent.ResponseEnded(opened[1].input.id, "completed"))
             advanceUntilIdle()
             assertFalse(controller.state.value.isSubmitting)
@@ -4673,6 +4712,7 @@ class ThreadControllerTest {
         val responseGate: CompletableDeferred<Unit>? = null,
         val responseFailure: Exception? = null,
         var supportsContext: Boolean = true,
+        val steerable: Boolean = true,
     ) : ConversationProvider,
         ConversationSession {
         override val connectionEpoch = epoch
@@ -4687,6 +4727,7 @@ class ThreadControllerTest {
         val responseRequests = mutableListOf<String>()
         val contexts = mutableListOf<Pair<String, Boolean>>()
         val deliveryIds = mutableListOf<String?>()
+        val steers = mutableListOf<Pair<String, String>>()
         var submissions = 0
         var closes = 0
 
@@ -4708,6 +4749,15 @@ class ThreadControllerTest {
             responseGate?.await()
             responseFailure?.let { throw it }
             responseRequests += request.inputId
+        }
+
+        override suspend fun steer(
+            inputId: String,
+            input: ConversationInput,
+        ): Boolean {
+            if (!steerable) return false
+            steers += inputId to input.text
+            return true
         }
 
         override suspend fun submitContext(

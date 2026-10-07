@@ -14,6 +14,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.colonelpanic.eva.conversation.ConversationState
 import com.colonelpanic.eva.conversation.ProviderStatus
@@ -127,6 +128,25 @@ internal fun WorkingRow(
             modifier = Modifier.weight(1f),
         )
         TextButton(onClick = onStop) { Text("Stop") }
+    }
+}
+
+/** Typed input the running request has not taken yet; it is sent as the next request. */
+@Composable
+internal fun WaitingInputs(
+    inputs: List<String>,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+        inputs.forEach { input ->
+            Text(
+                text = "Sends next: $input",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 

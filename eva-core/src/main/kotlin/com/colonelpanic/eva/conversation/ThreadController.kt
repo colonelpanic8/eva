@@ -361,6 +361,10 @@ class ThreadController(
     private var attachedThreadId: String? = null
     private var lastTextLink: String? = null
     private var submittingInputId: String? = null
+
+    /** Typed input for the attached thread that has neither steered a running request nor started one, oldest first. */
+    private val waiting = ArrayDeque<String>()
+    private var steeringWaiting = false
     private var ending = false
     private var endingToken = 0
     private var endReason = ""
@@ -869,8 +873,10 @@ class ThreadController(
                         media = null
                         attachedThreadId = null
                         submittingInputId = null
+                        val unsent = dropWaiting()
                         mutableState.update {
                             it.copy(
+                                providerMessage = unsent ?: it.providerMessage,
                                 providerStatus = ProviderStatus.DISCONNECTED,
                                 isSubmitting = false,
                                 foregroundWorking = false,
@@ -1754,6 +1760,7 @@ class ThreadController(
         session = null
         attachedThreadId = null
         submittingInputId = null
+        val unsent = dropWaiting()
         mutableState.update {
             it.copy(
                 providerStatus = ProviderStatus.DISCONNECTED,
@@ -1763,6 +1770,7 @@ class ThreadController(
                 providerModel = null,
                 voiceMode = false,
                 mediaState = if (it.voiceMode) RealtimeMediaState.Closed else it.mediaState,
+                providerMessage = unsent ?: it.providerMessage,
             )
         }
         updateWorkCoverage()
@@ -1881,6 +1889,11 @@ class ThreadController(
         }
     }
 
+    /**
+     * Sends typed input. While a request runs on the attached thread, the input steers it: the model
+     * reads it at its next step and answers it in the same turn. Input the running response can no
+     * longer take waits, visibly, and is sent as the next request when the current one ends.
+     */
     fun submit(text: String) {
         if (state.value.voiceOnAnotherThread) return
         if (text.trim().lowercase() in setOf("stop", "cancel", "stop device task", "cancel device task") &&
@@ -1897,16 +1910,26 @@ class ThreadController(
         val current = state.value
         val opened = session ?: return
         val threadId = attachedThreadId ?: return
-        if (current.isLoading || current.errorMessage != null || current.isSubmitting || threadId != shownThreadId ||
+        if (current.isLoading || current.errorMessage != null || threadId != shownThreadId ||
             current.providerStatus != ProviderStatus.CONNECTED || current.voiceMode ||
             text.isBlank()
         ) {
             return
         }
-        if (foregroundTask(threadId) != null) {
-            mutableState.update { it.copy(providerMessage = "EVA is still working on the last request.") }
+        if (current.isSubmitting || foregroundTask(threadId) != null || waiting.isNotEmpty()) {
+            waiting.addLast(text)
+            publishWaiting()
+            deliverWaiting()
             return
         }
+        send(text, opened, threadId)
+    }
+
+    private fun send(
+        text: String,
+        opened: ConversationSession,
+        threadId: String,
+    ) {
         val input = ConversationInput(UUID.randomUUID().toString(), text)
         submittingInputId = input.id
         val thisAttempt = attempt
@@ -1927,11 +1950,51 @@ class ThreadController(
                         end("ended: the request could not be sent")
                         mutableState.update { it.copy(providerMessage = "Could not submit this request. Reconnect to try again.") }
                     }
+                    return@launch
                 }
             } finally {
                 finishSubmitting(input.id)
             }
+            deliverWaiting()
         }
+    }
+
+    /** Steers waiting input into the attached thread's running request, or sends the oldest once none runs. */
+    private fun deliverWaiting() {
+        if (steeringWaiting || waiting.isEmpty()) return
+        val opened = session ?: return
+        val threadId = attachedThreadId ?: return
+        val task = foregroundTask(threadId)
+        if (task == null) {
+            if (submittingInputId != null || state.value.providerStatus != ProviderStatus.CONNECTED) return
+            send(waiting.removeFirst(), opened, threadId)
+            publishWaiting()
+            return
+        }
+        steeringWaiting = true
+        scope.launch {
+            try {
+                while (waiting.isNotEmpty() && task.steer(waiting.first())) {
+                    waiting.removeFirst()
+                    publishWaiting()
+                }
+            } finally {
+                steeringWaiting = false
+            }
+            // The request may have ended while this ran, and its end found delivery busy.
+            if (!task.active) deliverWaiting()
+        }
+    }
+
+    private fun publishWaiting() = mutableState.update { it.copy(waitingInputs = waiting.toList()) }
+
+    /** Clears input that can no longer be sent and says so, since it was never seen by the model. */
+    private fun dropWaiting(): String? {
+        if (waiting.isEmpty()) return null
+        val unsent = waiting.joinToString(" · ") { "\"${clipped(it, 80)}\"" }
+        waiting.clear()
+        mutableState.update { it.copy(waitingInputs = emptyList()) }
+        return "The session ended before EVA could send: $unsent"
     }
 
     private fun finishSubmitting(inputId: String) {
@@ -2417,6 +2480,25 @@ class ThreadController(
             }
         }
 
+        /** Adds typed input to the response this turn is still producing; false when it no longer takes any. */
+        suspend fun steer(text: String): Boolean {
+            val current = leg
+            if (!active || delegated || rehomed || current == null) return false
+            val accepted =
+                try {
+                    current.steer(inputId, ConversationInput(UUID.randomUUID().toString(), text))
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    false
+                }
+            if (!accepted) return false
+            EvaTrace.info("turn.steered", "task" to turnId)
+            store.append(ThreadItem.UserMessage(UUID.randomUUID().toString(), threadId, turnId, nowMillis(), text, false))
+            requestRefresh()
+            return true
+        }
+
         suspend fun answer(
             text: String,
             truncated: Boolean,
@@ -2608,6 +2690,7 @@ class ThreadController(
                     foregroundWorking = shownThreadId?.let(::foregroundTask) != null,
                 )
             }
+            deliverWaiting()
             refresh()
             taskScope.cancel()
         }

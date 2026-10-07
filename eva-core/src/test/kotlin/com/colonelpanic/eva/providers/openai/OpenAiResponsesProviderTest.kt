@@ -11,6 +11,7 @@ import com.colonelpanic.eva.providers.ProviderToolDefinition
 import com.colonelpanic.eva.providers.ResponseRequest
 import com.colonelpanic.eva.providers.SessionOpenRequest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -26,6 +27,7 @@ import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import okio.Buffer
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -40,6 +42,7 @@ class OpenAiResponsesProviderTest {
         ProviderToolCatalog("rev-1", listOf(ProviderToolDefinition("eva.android.maps.search", "Search maps", "Open a map search", schema)))
     private val access = ApiKeyAccess("sk-test", "https://example.test")
     private val requests = mutableListOf<String>()
+    private var beforeReply: () -> Unit = {}
     private val modelList = """{"data":[{"id":"gpt-test"},{"id":"gpt-realtime-2.1"}]}"""
     private val replies =
         ArrayDeque(
@@ -58,7 +61,10 @@ class OpenAiResponsesProviderTest {
                         .url.encodedPath
                         .endsWith("/models")
                 val buffer = Buffer().also { chain.request().body?.writeTo(it) }
-                if (!listing) requests += buffer.readUtf8()
+                if (!listing) {
+                    requests += buffer.readUtf8()
+                    beforeReply()
+                }
                 Response
                     .Builder()
                     .request(chain.request())
@@ -251,6 +257,43 @@ class OpenAiResponsesProviderTest {
             session.close()
             advanceUntilIdle()
             assertEquals(ProviderEvent.Closed, events.last())
+            collector.cancel()
+        }
+
+    @Test
+    fun `typed input steers a running response at its next step and after its answer`() =
+        runTest {
+            replies.addLast(
+                """{"id":"resp_3","status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"The zoo opens at nine."}]}]}""",
+            )
+            val session =
+                OpenAiResponsesProvider(access, "gpt-test", client, StandardTestDispatcher(testScheduler))
+                    .open(SessionOpenRequest("You are EVA.", catalog))
+            val events = mutableListOf<ProviderEvent>()
+            val collector = launch { session.events.collect { events += it } }
+            advanceUntilIdle()
+            session.submit(ConversationInput("input-1", "Find the Ferry Building"))
+            session.requestResponse(ResponseRequest("input-1"))
+            advanceUntilIdle()
+            val call = events.filterIsInstance<ProviderEvent.ToolCallReady>().single()
+            assertTrue(session.steer("input-1", ConversationInput("steer-1", "Then find the zoo")))
+            assertFalse(session.steer("input-2", ConversationInput("steer-x", "Not this response")))
+            beforeReply = {
+                if (requests.size == 2) runBlocking { session.steer("input-1", ConversationInput("steer-2", "When does it open?")) }
+            }
+            session.submitToolResult(CorrelatedToolResult(call.call, "HANDED_OFF", "Map search opened."))
+            advanceUntilIdle()
+            assertTrue(requests[1].contains("function_call_output"))
+            assertTrue(requests[1].contains("Then find the zoo"))
+            assertTrue(requests[2].contains("When does it open?"))
+            assertEquals(
+                listOf("Opened the Ferry Building on the map.", "The zoo opens at nine."),
+                events.filterIsInstance<ProviderEvent.AssistantText>().map { it.text },
+            )
+            assertEquals(1, events.count { it is ProviderEvent.ResponseEnded })
+            assertFalse(session.steer("input-1", ConversationInput("steer-3", "Too late")))
+            session.close()
+            advanceUntilIdle()
             collector.cancel()
         }
 

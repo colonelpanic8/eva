@@ -156,6 +156,7 @@ internal fun ConversationScreen(
                 }
                 state.providerMessage?.let { ProviderMessage(it) }
                 if (state.working) WorkingRow(onStop = onStopTask, progress = state.deviceTaskProgress)
+                if (state.waitingInputs.isNotEmpty()) WaitingInputs(state.waitingInputs)
                 if (!inSession) {
                     ConnectBar(
                         state = state,

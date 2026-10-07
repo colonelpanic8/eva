@@ -89,6 +89,19 @@ indicators follow the shown thread; background work alone does not block a new
 foreground text request. Answered turns without request or response text are hidden;
 request-only turns show no synthetic answer bubble, while action evidence remains.
 
+Typed input while the shown thread's foreground request runs steers that request
+(`ConversationSession.steer`). The Responses session adds it as user input to the
+turn's next model request, after any pending tool outputs; input that arrives while
+the final answer is generating continues the same turn, so the model answers it
+before the response ends. A steered message is stored as a user message in the same
+turn and shown as its own entry, holding the answers and actions that came after it.
+Input the running response cannot take (the response already ended, a provider such
+as the paired broker that cannot steer, or a submission still starting) waits,
+listed above the composer, and is sent as the next request when the current one
+ends; anything still waiting when the attachment ends is named in the provider
+message instead of dropped silently. A running device task takes typed input as a
+correction first.
+
 Several turn tasks can be active in the same
 thread: a delegated text turn and a later foreground voice turn own their calls
 independently. Ownership follows the provider leg and input ID, never whichever

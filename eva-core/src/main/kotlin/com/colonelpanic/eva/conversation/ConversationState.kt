@@ -12,11 +12,13 @@ data class ConversationState(
     val entries: List<ConversationEntry> = emptyList(),
     /** A turn task is running on the shown thread, attached or not. */
     val working: Boolean = false,
-    /** The shown thread has a request on the live attachment, blocking another typed request. */
+    /** The shown thread has a request on the live attachment; typed input steers it. */
     val foregroundWorking: Boolean = false,
     val currentQuestion: QuestionEvidence? = null,
     val pendingQuestionCount: Int = 0,
     val voiceQuestion: String? = null,
+    /** Typed input not yet taken by the running request, sent once it can be, oldest first. */
+    val waitingInputs: List<String> = emptyList(),
     val deviceTaskActive: Boolean = false,
     /** The shown thread's running device task phase or step note; cleared when the task ends. */
     val deviceTaskProgress: String? = null,
@@ -37,7 +39,7 @@ data class ConversationState(
         !isLoading && errorMessage == null && !voiceOnAnotherThread &&
             (
                 currentQuestion != null || deviceTaskActive ||
-                    (!isSubmitting && !foregroundWorking && providerStatus == ProviderStatus.CONNECTED && !voiceMode)
+                    (providerStatus == ProviderStatus.CONNECTED && !voiceMode)
             )
 }
 

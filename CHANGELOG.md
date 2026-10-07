@@ -4,6 +4,15 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Typing while EVA works steers the running request. EVA reads the message at its next step, or right after the answer it was writing, and answers it in the same turn.
+- A message the running request can no longer take is listed above the composer and sent as the next request when the current one finishes. Messages still waiting when the session ends are named instead of dropped.
+
+### Fixed
+
+- Messages added to a running turn, including typed device-task corrections, show in the conversation instead of being hidden behind the turn's first request.
+
 ## [0.59.1] - 2026-10-05
 
 ### Fixed

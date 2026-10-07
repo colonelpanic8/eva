@@ -12,7 +12,10 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 
-/** What the screen shows for a thread: one entry per turn, actions under it, notices between. */
+/**
+ * What the screen shows for a thread: one entry per turn, actions under it, notices between. Typed
+ * input added to a running turn starts an entry of its own, holding what the turn did after it.
+ */
 fun projectEntries(
     turns: List<Turn>,
     items: List<ThreadItem>,
@@ -23,6 +26,12 @@ fun projectEntries(
     val requests = mutableMapOf<String, String>()
     val answers = mutableMapOf<String, MutableList<String>>()
     val built = mutableMapOf<String, ConversationEntry>()
+
+    /** Later input within a turn, by entry id, with the turn it belongs to. */
+    val followUps = mutableMapOf<String, Pair<String, String>>()
+
+    /** Each turn's latest entry, which later answers and actions belong to. */
+    val segments = mutableMapOf<String, String>()
 
     fun place(id: String) {
         order += id
@@ -47,18 +56,29 @@ fun projectEntries(
             }
 
             is ThreadItem.UserMessage -> {
-                if (turnId != null) {
-                    if (turnId !in requests) requests[turnId] = item.text
-                } else {
-                    place(item.id)
-                    built[item.id] = ConversationEntry(item.id, item.text, "", EntryStatus.ANSWER)
+                when {
+                    turnId == null -> {
+                        place(item.id)
+                        built[item.id] = ConversationEntry(item.id, item.text, "", EntryStatus.ANSWER)
+                    }
+
+                    turnId !in requests -> {
+                        requests[turnId] = item.text
+                    }
+
+                    // A later spoken caption repeats speech the turn already shows.
+                    !item.spoken -> {
+                        place(item.id)
+                        followUps[item.id] = turnId to item.text
+                        segments[turnId] = item.id
+                    }
                 }
             }
 
             is ThreadItem.AssistantMessage -> {
                 val text = item.text + if (item.truncated) "\n[Response was truncated]" else ""
                 if (turnId != null) {
-                    answers.getOrPut(turnId) { mutableListOf() } += text
+                    answers.getOrPut(segments[turnId] ?: turnId) { mutableListOf() } += text
                 } else {
                     place(item.id)
                     built[item.id] = ConversationEntry(item.id, "", text, EntryStatus.ANSWER)
@@ -79,7 +99,7 @@ fun projectEntries(
                         actionTitle = item.title,
                         arguments = item.arguments,
                         result = receipt?.message,
-                        parentId = item.legId ?: turnId,
+                        parentId = item.legId ?: turnId?.let { segments[it] ?: it },
                         initiator = receipt?.initiator ?: item.initiator,
                         deviceSteps =
                             receipt
@@ -115,24 +135,24 @@ fun projectEntries(
 
     return order.mapNotNull { id ->
         built[id] ?: run {
-            val turn = byTurn.getValue(id)
+            val (turnId, request) = followUps[id] ?: (id to (requests[id] ?: byTurn.getValue(id).request))
+            val turn = byTurn.getValue(turnId)
             val answer = answers[id].orEmpty().joinToString("\n")
             when {
-                turn.status == TurnStatus.ANSWERED -> {
-                    val request = requests[id] ?: turn.request
+                turn.status == TurnStatus.ANSWERED || (segments[turnId] ?: turnId) != id -> {
                     if (request.isBlank() && answer.isBlank()) null else ConversationEntry(id, request, answer, EntryStatus.ANSWER)
                 }
 
                 turn.status == TurnStatus.OPEN -> {
-                    ConversationEntry(id, requests[id] ?: turn.request, answer.ifBlank { "Working on it…" }, EntryStatus.PENDING)
+                    ConversationEntry(id, request, answer.ifBlank { "Working on it…" }, EntryStatus.PENDING)
                 }
 
                 turn.status == TurnStatus.INTERRUPTED -> {
-                    ConversationEntry(id, requests[id] ?: turn.request, answer.ifBlank { "Interrupted." }, EntryStatus.ANSWER)
+                    ConversationEntry(id, request, answer.ifBlank { "Interrupted." }, EntryStatus.ANSWER)
                 }
 
                 else -> {
-                    ConversationEntry(id, requests[id] ?: turn.request, "EVA could not finish this request.", EntryStatus.FAILED)
+                    ConversationEntry(id, request, "EVA could not finish this request.", EntryStatus.FAILED)
                 }
             }
         }

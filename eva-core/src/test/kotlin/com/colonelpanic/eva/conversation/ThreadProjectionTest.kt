@@ -112,6 +112,28 @@ class ThreadProjectionTest {
     }
 
     @Test
+    fun `input added to a running turn shows as its own entry holding what followed it`() {
+        val items =
+            listOf(
+                user("turn-1", "map Park", 1),
+                call("turn-1", "call-1", 2),
+                user("turn-1", "actually the zoo", 3),
+                call("turn-1", "call-2", 4),
+                assistant("turn-1", "Opened the zoo.", 5),
+            )
+        val open = projectEntries(listOf(Turn("turn-1", thread, "map Park", TurnStatus.OPEN, 1)), items, emptyMap())
+        assertEquals(listOf("turn-1", "call-1", "u3", "call-2"), open.map { it.id })
+        assertEquals(EntryStatus.ANSWER, open[0].status)
+        assertEquals("actually the zoo", open[2].request)
+        assertEquals(EntryStatus.PENDING, open[2].status)
+        assertEquals("u3", open[3].parentId)
+
+        val answered = projectEntries(listOf(Turn("turn-1", thread, "map Park", TurnStatus.ANSWERED, 1)), items, emptyMap())
+        assertEquals("", answered[0].response)
+        assertEquals("Opened the zoo.", answered[2].response)
+    }
+
+    @Test
     fun `answered turns without text disappear while requests and action evidence remain`() {
         val turns =
             listOf(

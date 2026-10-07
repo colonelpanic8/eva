@@ -156,8 +156,11 @@ private fun Conversation(
         val text = draft.trim()
         if (text.isEmpty() || !canSend) return
         controller.submit(text)
-        // The controller marks an accepted request at once; a refused one keeps its draft.
-        if (controller.state.value.isSubmitting) {
+        // The controller marks an accepted request or steering input at once; a refused one keeps its draft.
+        if (controller.state.value.isSubmitting ||
+            controller.state.value.waitingInputs
+                .isNotEmpty()
+        ) {
             draft = ""
             problem = null
         }

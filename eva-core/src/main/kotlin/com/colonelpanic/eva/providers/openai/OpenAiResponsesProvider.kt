@@ -105,6 +105,11 @@ private class OpenAiResponsesSession(
         }
     private val pending = mutableMapOf<String, CallIdentity>()
     private val json = Json { ignoreUnknownKeys = true }
+    private val steerLock = Any()
+
+    /** The input whose response is still being produced, and so can take steering input. */
+    private var steering: String? = null
+    private val steers = mutableListOf<ConversationInput>()
 
     override val events: Flow<ProviderEvent> =
         flow {
@@ -113,6 +118,7 @@ private class OpenAiResponsesSession(
             for (command in commands) {
                 val response = command as? Command.Respond ?: continue
                 emit(ProviderEvent.ResponseStarted(response.inputId, response.inputId))
+                synchronized(steerLock) { steering = response.inputId }
                 try {
                     val firstInput = JsonArray(storedSeed + response.input)
                     storedSeed = emptyList()
@@ -139,8 +145,13 @@ private class OpenAiResponsesSession(
                                     ),
                                 )
                             }
-                            emit(ProviderEvent.ResponseEnded(response.inputId, body.str("status") ?: "completed"))
-                            break
+                            val steered = endOrTakeSteers()
+                            if (steered.isEmpty()) {
+                                emit(ProviderEvent.ResponseEnded(response.inputId, body.str("status") ?: "completed"))
+                                break
+                            }
+                            body = post(JsonArray(steered))
+                            continue
                         }
                         for (call in calls) {
                             val callId = call.str("call_id") ?: continue
@@ -184,14 +195,31 @@ private class OpenAiResponsesSession(
                                     )
                                 }
                         }
-                        body = post(JsonArray(outputs))
+                        body = post(JsonArray(outputs + takeSteers()))
                     }
                 } catch (error: IllegalStateException) {
                     emit(ProviderEvent.Failure(error.message ?: "The provider request failed."))
                     break
+                } finally {
+                    synchronized(steerLock) {
+                        steering = null
+                        steers.clear()
+                    }
                 }
             }
             emit(ProviderEvent.Closed)
+        }
+
+    private fun takeSteers(): List<JsonObject> =
+        synchronized(steerLock) {
+            steers.map { inputMessage("user", it.text) }.also { steers.clear() }
+        }
+
+    /** Ends steering for the response, unless input arrived for it, which the response then answers. */
+    private fun endOrTakeSteers(): List<JsonObject> =
+        synchronized(steerLock) {
+            if (steers.isEmpty()) steering = null
+            takeSteers()
         }
 
     /**
@@ -270,6 +298,16 @@ private class OpenAiResponsesSession(
         check(continuationTurnId == request.inputId)
         continuationTurnId = null
         commands.send(Command.Respond(request.inputId, JsonArray(emptyList())))
+    }
+
+    override suspend fun steer(
+        inputId: String,
+        input: ConversationInput,
+    ): Boolean {
+        require(input.text.isNotBlank()) { "A request must not be empty." }
+        return synchronized(steerLock) {
+            (steering == inputId).also { if (it) steers += input }
+        }
     }
 
     override suspend fun submitToolResult(result: CorrelatedToolResult) {

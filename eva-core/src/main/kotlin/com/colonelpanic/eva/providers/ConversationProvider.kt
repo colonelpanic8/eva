@@ -227,6 +227,16 @@ interface ConversationSession {
 
     suspend fun submitToolResult(result: CorrelatedToolResult)
 
+    /**
+     * Adds [input] to the response still being produced for [inputId], so the model reads it at its
+     * next step and answers it before the response ends. False means the response had already ended
+     * or this provider cannot steer; the input was not taken.
+     */
+    suspend fun steer(
+        inputId: String,
+        input: ConversationInput,
+    ): Boolean = false
+
     /** Queues an EVA-authored note with external findings. True means accepted; [ProviderEvent.ContextDelivery] confirms delivery. */
     suspend fun submitContext(
         note: String,

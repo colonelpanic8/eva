@@ -233,6 +233,10 @@ internal fun composerHint(state: ConversationState): String {
             "Add a correction or answer, or type stop."
         }
 
+        state.foregroundWorking && !state.voiceMode -> {
+            "EVA is working. Send a message to steer it."
+        }
+
         state.isSubmitting || state.working -> {
             "Working on your last request…"
         }
