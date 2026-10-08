@@ -1580,9 +1580,12 @@ thread does: the Swing event thread in the tray app, a dedicated thread in the t
 Not yet on the desktop: following the instruction catalog, `eva.yaml` configuration,
 declarative packages, HTTP MCP servers, MCP image results, voice, a D-Bus tray menu, and
 a grant screen in the tray window. The terminal host is verified live against the subscription backend on Linux.
-The tray window is verified on an X11 desktop without a tray (window-only), and the
-StatusNotifierItem against an embedded D-Bus daemon; a real panel on Wayland and the
-X11 system tray are not yet verified, nor is macOS. The MCP client is verified live with
+The packaged tray window and StatusNotifierItem are verified on Hyprland with
+XWayland and taffybar, including desktop-session startup and repeated launcher
+invocations. That session needs `_JAVA_AWT_WM_NONREPARENTING=1` for the Java window
+to resize with its tiled frame. The window is also verified on X11 without a tray
+(window-only), and the StatusNotifierItem against an embedded D-Bus daemon. The
+X11 system tray and macOS are not yet verified. The MCP client is verified live with
 `computer-use-linux`: EVA listed its tools, ran a granted read through the dispatcher,
 and answered from the result.
 

@@ -39,6 +39,9 @@ package) builds the desktop host with nixpkgs' Gradle and no Android SDK
 an `eva.desktop` launcher that runs `eva-desktop tray`, and the EVA icon. The sandbox
 reads dependencies from `nix/eva-desktop-deps.json`; after changing a dependency of
 the desktop modules, run `just desktop-deps` and commit the refreshed lock.
+On Hyprland/XWayland, set `_JAVA_AWT_WM_NONREPARENTING=1` in the launcher and
+startup service environment so the Java window follows its tiled size. The
+personal dotfiles package wrapper supplies it for that session.
 Experiment-local commands belong in the
 [voice harness](../experiments/voice-poc/README.md) and
 [device-control probe](../experiments/device-control/README.md) READMEs.
