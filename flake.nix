@@ -7,6 +7,7 @@
   };
 
   outputs = {
+    self,
     nixpkgs,
     flake-utils,
     ...
@@ -74,7 +75,16 @@
           echo "  Run:  just check"
         '';
       };
+      evaDesktop = pkgs.callPackage ./nix/eva-desktop.nix {
+        inherit desktopLibraryPath;
+        version = "0-unstable-${self.lastModifiedDate or "19700101"}";
+      };
     in {
+      packages = {
+        eva-desktop = evaDesktop;
+        default = evaDesktop;
+      };
+      apps.eva-desktop = flake-utils.lib.mkApp {drv = evaDesktop;};
       devShells = {
         android = androidShell;
         default = androidShell;

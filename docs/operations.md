@@ -31,6 +31,14 @@ user's production install merely to run a development test.
 `just icons` regenerates Android, F-Droid, and repository icons from the canonical
 source at `assets/branding/eva-face-profile-v8-teal-hair-blue-face.svg`.
 `just fdroid-changelogs` derives fastlane changelogs from `CHANGELOG.md`.
+
+The flake's `eva-desktop` package (`nix build .#eva-desktop`, also the default
+package) builds the desktop host with nixpkgs' Gradle and no Android SDK
+(`-Peva.desktopOnly=true` leaves `:app` out of the build). It installs the
+`eva-desktop` command, wrapped with JDK 17 and the native libraries Compose needs,
+an `eva.desktop` launcher that runs `eva-desktop tray`, and the EVA icon. The sandbox
+reads dependencies from `nix/eva-desktop-deps.json`; after changing a dependency of
+the desktop modules, run `just desktop-deps` and commit the refreshed lock.
 Experiment-local commands belong in the
 [voice harness](../experiments/voice-poc/README.md) and
 [device-control probe](../experiments/device-control/README.md) READMEs.

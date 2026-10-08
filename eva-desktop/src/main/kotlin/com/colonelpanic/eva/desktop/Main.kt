@@ -21,7 +21,7 @@ import kotlin.system.exitProcess
 private const val USAGE = """Usage: eva-desktop [command]
 
 Commands:
-  tray                              Run EVA in the panel tray with a conversation window
+  tray                              Run EVA in the panel tray, or show its window if it runs
   summon                            Show the running tray app's window (for a keybinding)
   chat [--thread ID | --continue]   Talk to EVA in this terminal (default)
   threads                           List conversation threads
@@ -62,7 +62,13 @@ fun main(args: Array<String>) {
             }
 
             "tray" -> {
-                owned(paths) { lock -> tray(paths, lock) }
+                // A launcher started while the tray app runs shows its window instead.
+                val lock = paths.lock()
+                when {
+                    lock != null -> tray(paths, lock)
+                    SummonListener.summon(paths.summonSocket) -> 0
+                    else -> System.err.println(LOCKED).let { 1 }
+                }
             }
 
             "tools" -> {

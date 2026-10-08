@@ -64,6 +64,10 @@ desktop:
 desktop-run *args: desktop
     LD_LIBRARY_PATH="$EVA_DESKTOP_LIBRARY_PATH" eva-desktop/build/install/eva-desktop/bin/eva-desktop {{args}}
 
+# Refresh the Nix package's Gradle dependency lock (nix/eva-desktop-deps.json) after dependency changes.
+desktop-deps:
+    "$(nix build .#eva-desktop.mitmCache.updateScript --no-link --print-out-paths)"
+
 # Build the standalone JVM device-control CLI.
 device-host:
     ./gradlew --no-daemon :device-control-host:installDist

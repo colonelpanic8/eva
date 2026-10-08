@@ -1545,7 +1545,9 @@ thread does: the Swing event thread in the tray app, a dedicated thread in the t
   (pure Kotlin through dbus-java) where a panel runs a StatusNotifierWatcher, as on
   Wayland compositors' bars and KDE; otherwise the X11 system tray; otherwise none, and
   closing the window quits. `summon` asks the running app, through a socket in the
-  private data directory, to show its window, for a desktop keybinding.
+  private data directory, to show its window, for a desktop keybinding; `tray` does
+  the same when the app already runs, so the flake package's launcher (see
+  [Operations](operations.md#development)) can be opened repeatedly.
 - Compose's Skia renderer needs `libGL`, `libX11`, `fontconfig`, and `libstdc++` at run
   time. The dev shell exports them as `EVA_DESKTOP_LIBRARY_PATH`, kept out of the
   Android tools' environment, and `just desktop-run tray` uses it.
