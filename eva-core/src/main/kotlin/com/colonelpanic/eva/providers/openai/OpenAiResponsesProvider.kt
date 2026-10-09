@@ -14,7 +14,8 @@ import com.colonelpanic.eva.providers.ProviderEvent
 import com.colonelpanic.eva.providers.ProviderToolDefinition
 import com.colonelpanic.eva.providers.ResponseRequest
 import com.colonelpanic.eva.providers.SessionOpenRequest
-import com.colonelpanic.eva.providers.wireOutcome
+import com.colonelpanic.eva.providers.openAiOutput
+import com.colonelpanic.eva.providers.toolImages
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -191,7 +192,7 @@ private class OpenAiResponsesSession(
                                     put("call_id", result.call.callId)
                                     put(
                                         "output",
-                                        result.wireOutcome().toString(),
+                                        result.openAiOutput(),
                                     )
                                 }
                         }
@@ -227,7 +228,23 @@ private class OpenAiResponsesSession(
      * exercised with the explicit item form, so each keeps the shape it was proven against.
      */
     private fun historyMessages(item: HistoryItem): List<JsonObject> =
-        item.toOpenAiMessages().map { message -> inputMessage(message.role, message.text) }
+        item.toOpenAiMessages().map { message -> inputMessage(message.role, message.text) } +
+            if (item is HistoryItem.ActionEvidence &&
+                item.data
+                    ?.toolImages()
+                    .orEmpty()
+                    .isNotEmpty()
+            ) {
+                listOf(
+                    buildJsonObject {
+                        put("type", "message")
+                        put("role", "user")
+                        put("content", JsonArray(item.data!!.toolImages().map { it.openAiContent() }))
+                    },
+                )
+            } else {
+                emptyList()
+            }
 
     private fun inputMessage(
         role: String,

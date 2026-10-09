@@ -2,6 +2,8 @@ package com.colonelpanic.eva.desktop.mcp
 
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.extensions.Effect
+import com.colonelpanic.eva.providers.ToolResultImage
+import com.colonelpanic.eva.providers.toolImages
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -14,6 +16,32 @@ import org.junit.Test
 
 class McpToolsTest {
     private fun schema(text: String) = Json.parseToJsonElement(text).jsonObject
+
+    @Test
+    fun `MCP images survive translation separately from the text result budget`() {
+        val image =
+            ToolResultImage(
+                "image/png",
+                java.util.Base64
+                    .getEncoder()
+                    .encodeToString(ByteArray(20_000) { 1 }),
+            )
+        val outcome =
+            McpTools.outcome(
+                McpCallReply(
+                    listOf("Captured the screen."),
+                    0,
+                    buildJsonObject { put("window", JsonPrimitive(42)) },
+                    false,
+                    listOf(image),
+                ),
+            )
+        assertEquals(InvocationStatus.COMPLETED, outcome.status)
+        assertEquals(listOf(image), outcome.data!!.toolImages())
+        assertEquals(JsonPrimitive(42), outcome.data!!["window"])
+        assertTrue(!outcome.message.contains("not shown"))
+        assertTrue(!outcome.message.contains(image.data))
+    }
 
     @Test
     fun `nullable optional parameters become plain optional ones and unusable optional ones are left out`() {

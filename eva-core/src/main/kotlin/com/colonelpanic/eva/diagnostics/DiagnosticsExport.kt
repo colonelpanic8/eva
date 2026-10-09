@@ -9,6 +9,8 @@ import com.colonelpanic.eva.conversation.TaskSnapshot
 import com.colonelpanic.eva.conversation.Thread
 import com.colonelpanic.eva.conversation.ThreadItem
 import com.colonelpanic.eva.conversation.Turn
+import com.colonelpanic.eva.providers.toolImages
+import com.colonelpanic.eva.providers.withoutToolImages
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -297,7 +299,11 @@ object DiagnosticsExport {
             record.arguments?.let { arguments -> put("arguments", JsonObject(arguments.mapValues { JsonPrimitive(bounded(it.value)) })) }
             record.initiator?.let { put("initiator", it.toJson()) }
             record.provenance?.let { put("provenance", it.toJson()) }
-            record.data?.let { put("data", boundedJson(it)) }
+            record.data?.let {
+                put("data", boundedJson(it.withoutToolImages()))
+                val imageCount = it.toolImages().size
+                if (imageCount > 0) put("imagesOmitted", imageCount)
+            }
         }
 
     private fun session(record: SessionCatalogRecord): JsonObject =

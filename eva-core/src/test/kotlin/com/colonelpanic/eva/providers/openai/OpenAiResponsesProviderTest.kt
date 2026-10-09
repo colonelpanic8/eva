@@ -10,6 +10,8 @@ import com.colonelpanic.eva.providers.ProviderToolCatalog
 import com.colonelpanic.eva.providers.ProviderToolDefinition
 import com.colonelpanic.eva.providers.ResponseRequest
 import com.colonelpanic.eva.providers.SessionOpenRequest
+import com.colonelpanic.eva.providers.ToolResultImage
+import com.colonelpanic.eva.providers.withToolImages
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -74,6 +76,67 @@ class OpenAiResponsesProviderTest {
                     .body((if (listing) modelList else replies.removeFirst()).toResponseBody("application/json".toMediaType()))
                     .build()
             }.build()
+
+    @Test
+    fun `tool images reach the next request as image content alongside the attributed receipt`() =
+        runTest {
+            val image =
+                ToolResultImage("image/png", "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5V8AAAAASUVORK5CYII=")
+            val session =
+                OpenAiResponsesProvider(access, "gpt-test", client, StandardTestDispatcher(testScheduler))
+                    .open(SessionOpenRequest("You are EVA.", catalog))
+            val collector =
+                launch {
+                    session.events.collect { event ->
+                        if (event is ProviderEvent.ToolCallReady) {
+                            session.submitToolResult(
+                                CorrelatedToolResult(
+                                    event.call,
+                                    "COMPLETED",
+                                    "Captured the window.",
+                                    Json.parseToJsonElement("{\"window\":42}").jsonObject.withToolImages(listOf(image)),
+                                ),
+                            )
+                        }
+                    }
+                }
+            session.submit(ConversationInput("input-1", "Inspect the window"))
+            session.requestResponse(ResponseRequest("input-1"))
+            advanceUntilIdle()
+            val request = Json.parseToJsonElement(requests[1]).jsonObject
+            val output =
+                request
+                    .getValue("input")
+                    .jsonArray
+                    .first()
+                    .jsonObject
+                    .getValue("output")
+                    .jsonArray
+            assertEquals(
+                "input_text",
+                output[0]
+                    .jsonObject
+                    .getValue("type")
+                    .jsonPrimitive.content,
+            )
+            assertTrue(
+                output[0]
+                    .jsonObject
+                    .getValue("text")
+                    .jsonPrimitive.content
+                    .contains("Captured the window."),
+            )
+            assertEquals(
+                "data:image/png;base64,${image.data}",
+                output[1]
+                    .jsonObject
+                    .getValue("image_url")
+                    .jsonPrimitive.content,
+            )
+            assertFalse(output[0].toString().contains(image.data))
+            session.close()
+            collector.cancel()
+        }
 
     @Test
     fun `a model the account cannot use is refused before the session claims to be connected`() =

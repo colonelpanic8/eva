@@ -5,6 +5,8 @@ import com.colonelpanic.eva.capability.ExecutionOutcome
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.extensions.Descriptor
 import com.colonelpanic.eva.capability.extensions.ExtensionProtocol
+import com.colonelpanic.eva.providers.ToolResultImage
+import com.colonelpanic.eva.providers.withToolImages
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -30,6 +32,7 @@ data class McpCallReply(
     val omittedBlocks: Int,
     val structured: JsonObject?,
     val isError: Boolean,
+    val images: List<ToolResultImage> = emptyList(),
 )
 
 /**
@@ -258,7 +261,10 @@ object McpTools {
                 )
                 if (reply.omittedBlocks > 0) append("\n[${reply.omittedBlocks} non-text result blocks, such as images, are not shown.]")
             }
-        val data = reply.structured?.takeIf { it.toString().length <= ExtensionProtocol.RESULT_BYTES }
+        val data =
+            (reply.structured?.takeIf { it.toString().length <= ExtensionProtocol.RESULT_BYTES } ?: JsonObject(emptyMap()))
+                .withToolImages(reply.images)
+                .takeIf { it.isNotEmpty() }
         return ExecutionOutcome(
             if (reply.isError) InvocationStatus.FAILED else InvocationStatus.COMPLETED,
             clip(text, ExtensionProtocol.RESULT_BYTES),

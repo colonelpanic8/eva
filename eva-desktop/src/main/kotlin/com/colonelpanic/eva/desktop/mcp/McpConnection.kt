@@ -1,9 +1,11 @@
 package com.colonelpanic.eva.desktop.mcp
 
+import com.colonelpanic.eva.providers.ToolResultImage
 import io.modelcontextprotocol.kotlin.sdk.client.Client
 import io.modelcontextprotocol.kotlin.sdk.client.StdioClientTransport
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequestParams
+import io.modelcontextprotocol.kotlin.sdk.types.ImageContent
 import io.modelcontextprotocol.kotlin.sdk.types.Implementation
 import io.modelcontextprotocol.kotlin.sdk.types.ListToolsRequest
 import io.modelcontextprotocol.kotlin.sdk.types.Method
@@ -62,8 +64,25 @@ class McpConnection private constructor(
     ): McpCallReply {
         if (!process.isAlive) throw McpNotSent("the MCP server had stopped")
         val result = withTimeout(timeoutMillis) { client.callTool(CallToolRequest(CallToolRequestParams(tool, arguments))) }
-        val text = result.content.filterIsInstance<TextContent>().map { it.text }
-        return McpCallReply(text, result.content.size - text.size, result.structuredContent, result.isError == true)
+        val text =
+            result.content
+                .filterIsInstance<TextContent>()
+                .map { it.text }
+                .toMutableList()
+        val images =
+            result.content.filterIsInstance<ImageContent>().mapNotNull { content ->
+                runCatching { ToolResultImage(content.mimeType, content.data) }.getOrElse { failure ->
+                    text += "[Image unavailable: ${failure.message}]"
+                    null
+                }
+            }
+        return McpCallReply(
+            text,
+            result.content.size - result.content.count { it is TextContent || it is ImageContent },
+            result.structuredContent,
+            result.isError == true,
+            images,
+        )
     }
 
     override fun close() {

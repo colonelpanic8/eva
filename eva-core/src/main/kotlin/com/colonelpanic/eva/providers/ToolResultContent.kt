@@ -18,7 +18,7 @@ internal fun CorrelatedToolResult.wireOutcome() =
     buildJsonObject {
         put("status", status)
         put("message", boundedResultText(message))
-        data?.let {
+        data?.withoutToolImages()?.takeIf { it.isNotEmpty() }?.let {
             if (it.toString().length <= MODEL_RESULT_CHARS) {
                 put("data", it)
             } else {
