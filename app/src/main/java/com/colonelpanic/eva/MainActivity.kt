@@ -437,6 +437,8 @@ class MainActivity : ComponentActivity() {
                 onGitEnabled = eva.configuration::setGitEnabled,
                 onSaveGit = eva.configuration::configureGit,
                 onClearGitToken = eva.configuration::clearGitToken,
+                onRegenerateGitSshKey = eva.configuration::regenerateGitSshKey,
+                onForgetGitHostKey = eva.configuration::forgetGitHostKey,
                 onRepositoryRefresh = eva.pluginBrowser::refreshAll,
                 onRepositoryRefreshNew = eva.pluginBrowser::refreshNew,
                 onRepositorySync = eva.pluginBrowser::refresh,

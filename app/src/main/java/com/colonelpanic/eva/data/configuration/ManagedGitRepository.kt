@@ -14,6 +14,7 @@ import org.eclipse.jgit.transport.RefLeaseSpec
 import org.eclipse.jgit.transport.RefSpec
 import org.eclipse.jgit.transport.RemoteRefUpdate
 import org.eclipse.jgit.transport.TagOpt
+import org.eclipse.jgit.transport.Transport
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider
 import org.eclipse.jgit.treewalk.TreeWalk
 import java.io.File
@@ -52,6 +53,7 @@ class ManagedGitRepository(
     checkout: File,
     val bootstrap: GitBootstrap,
     private val token: () -> String?,
+    ssh: SshAccess? = null,
     private val allowLocalTransportForTests: Boolean = false,
     private val beforePushForTests: () -> Unit = {},
 ) : AutoCloseable {
@@ -59,9 +61,14 @@ class ManagedGitRepository(
     private val git: Git
     private val repository: Repository
     val directory = FileConfigurationDirectory(checkout, "Managed Git checkout")
+    private val sshTransport: ManagedGitSsh?
 
     init {
         validateGitBootstrap(bootstrap, allowLocalTransportForTests)
+        sshTransport =
+            SshRemote.parse(bootstrap.remoteUrl)?.let { remote ->
+                ManagedGitSsh(remote, requireNotNull(ssh) { "SSH remotes need EVA's device SSH key." })
+            }
         val metadata = File(checkout, Constants.DOT_GIT)
         git =
             if (metadata.isDirectory) {
@@ -207,7 +214,10 @@ class ManagedGitRepository(
         return aheadCount(remoteHead(), local)
     }
 
-    override fun close() = git.close()
+    override fun close() {
+        git.close()
+        sshTransport?.close()
+    }
 
     private fun reconcile(
         local: ObjectId,
@@ -299,14 +309,17 @@ class ManagedGitRepository(
         val remoteRef = remoteBranchRef()
         val expected = expectedRemote?.name ?: ObjectId.zeroId().name
         val results =
-            git
-                .push()
-                .setRemote(REMOTE)
-                .setRefSpecs(RefSpec("${localRef()}:$remoteRef"))
-                .setRefLeaseSpecs(RefLeaseSpec(remoteRef, expected))
-                .setCredentialsProvider(credentials())
-                .setForce(false)
-                .call()
+            transport {
+                git
+                    .push()
+                    .setRemote(REMOTE)
+                    .setRefSpecs(RefSpec("${localRef()}:$remoteRef"))
+                    .setRefLeaseSpecs(RefLeaseSpec(remoteRef, expected))
+                    .setCredentialsProvider(credentials())
+                    .setTransportConfigCallback(::configureTransport)
+                    .setForce(false)
+                    .call()
+            }
         val update =
             results.flatMap { it.remoteUpdates }.singleOrNull { it.remoteName == remoteRef }
                 ?: error("The Git server did not report the branch push result.")
@@ -334,14 +347,16 @@ class ManagedGitRepository(
     private fun fetch(): FetchState {
         val previouslyTracked = remoteHead() != null
         val advertised =
-            git
-                .lsRemote()
-                .setRemote(REMOTE)
-                .setHeads(true)
-                .setTags(false)
-                .setCredentialsProvider(credentials())
-                .call()
-                .any { it.name == remoteBranchRef() }
+            transport {
+                git
+                    .lsRemote()
+                    .setRemote(REMOTE)
+                    .setHeads(true)
+                    .setTags(false)
+                    .setCredentialsProvider(credentials())
+                    .setTransportConfigCallback(::configureTransport)
+                    .call()
+            }.any { it.name == remoteBranchRef() }
         if (!advertised) {
             // Keep an existing tracking ref as the durable evidence that the remote branch
             // was deleted. Otherwise a later save could mistake it for a never-created branch
@@ -349,15 +364,18 @@ class ManagedGitRepository(
             return if (previouslyTracked) FetchState.DELETED else FetchState.ABSENT
         }
         val result =
-            git
-                .fetch()
-                .setRemote(REMOTE)
-                .setRefSpecs(RefSpec("+${remoteBranchRef()}:${trackingRef()}"))
-                .setTagOpt(TagOpt.NO_TAGS)
-                .setRemoveDeletedRefs(false)
-                .setRecurseSubmodules(org.eclipse.jgit.lib.SubmoduleConfig.FetchRecurseSubmodulesMode.NO)
-                .setCredentialsProvider(credentials())
-                .call()
+            transport {
+                git
+                    .fetch()
+                    .setRemote(REMOTE)
+                    .setRefSpecs(RefSpec("+${remoteBranchRef()}:${trackingRef()}"))
+                    .setTagOpt(TagOpt.NO_TAGS)
+                    .setRemoveDeletedRefs(false)
+                    .setRecurseSubmodules(org.eclipse.jgit.lib.SubmoduleConfig.FetchRecurseSubmodulesMode.NO)
+                    .setCredentialsProvider(credentials())
+                    .setTransportConfigCallback(::configureTransport)
+                    .call()
+            }
         val fetchedRemote = result.getAdvertisedRef(remoteBranchRef())
         if (fetchedRemote == null) return if (previouslyTracked) FetchState.DELETED else FetchState.ABSENT
         require(remoteHead() == fetchedRemote.objectId) { "Remote ${bootstrap.branch} changed during fetch; retry sync." }
@@ -383,12 +401,27 @@ class ManagedGitRepository(
         File(repository.directory, DISABLED_HOOKS).mkdirs()
     }
 
+    private fun configureTransport(transport: Transport) {
+        sshTransport?.configure(transport)
+    }
+
+    private fun <T> transport(operation: () -> T): T {
+        val ssh = sshTransport ?: return operation()
+        ssh.beginOperation()
+        return try {
+            operation()
+        } catch (failure: Exception) {
+            throw ssh.explain(failure)
+        }
+    }
+
     private fun credentials(): CredentialsProvider? {
+        if (sshTransport != null) return null
         val value = token()?.takeIf { it.isNotBlank() } ?: return null
         return UsernamePasswordCredentialsProvider(bootstrap.username.ifBlank { "git" }, value)
     }
 
-    private fun requiresCredentials(): Boolean = URI(bootstrap.remoteUrl).scheme.equals("https", ignoreCase = true)
+    private fun requiresCredentials(): Boolean = sshTransport == null && URI(bootstrap.remoteUrl).scheme.equals("https", ignoreCase = true)
 
     private fun validateTree(head: ObjectId): ResolvedConfiguration? {
         val commit = parseCommit(head)
@@ -530,13 +563,18 @@ fun validateGitBootstrap(
     value: GitBootstrap,
     allowLocalTransportForTests: Boolean = false,
 ) {
-    val remote = runCatching { URI(value.remoteUrl) }.getOrElse { throw IllegalArgumentException("Enter a valid HTTPS Git remote URL.") }
-    val localTestRemote = allowLocalTransportForTests && remote.scheme.equals("file", ignoreCase = true)
-    require(localTestRemote || (remote.scheme.equals("https", ignoreCase = true) && !remote.host.isNullOrBlank())) {
-        "Git remote must use HTTPS."
-    }
-    require(remote.userInfo == null && remote.fragment == null && remote.query == null) {
-        "Git remote URL cannot contain credentials, a query, or a fragment."
+    if (SshRemote.parse(value.remoteUrl) == null) {
+        val remote =
+            runCatching { URI(value.remoteUrl) }.getOrElse {
+                throw IllegalArgumentException("Enter a valid HTTPS or SSH Git remote URL.")
+            }
+        val localTestRemote = allowLocalTransportForTests && remote.scheme.equals("file", ignoreCase = true)
+        require(localTestRemote || (remote.scheme.equals("https", ignoreCase = true) && !remote.host.isNullOrBlank())) {
+            "Git remote must use HTTPS (https://host/owner/repo.git) or SSH (git@host:owner/repo.git or ssh://git@host/owner/repo.git)."
+        }
+        require(remote.userInfo == null && remote.fragment == null && remote.query == null) {
+            "Git remote URL cannot contain credentials, a query, or a fragment."
+        }
     }
     require(value.remoteUrl.length <= 2048) { "Git remote URL is too long." }
     require(value.branch.length <= 240 && Repository.isValidRefName(Constants.R_HEADS + value.branch) && !value.branch.startsWith('-')) {

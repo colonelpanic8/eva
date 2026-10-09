@@ -4,6 +4,10 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Managed Git can use an SSH remote (`git@github.com:owner/repo.git` or `ssh://git@host/path`) instead of an HTTPS token. EVA creates an SSH key on the phone and shows its public key to copy or share; add it to the repository as a deploy key with write access. GitHub's host keys are pinned, other hosts are trusted on first use, and a changed host key stops the connection with both fingerprints.
+
 ## [0.60.0] - 2026-10-07
 
 ### Added

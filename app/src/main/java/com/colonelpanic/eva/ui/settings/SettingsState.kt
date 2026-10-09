@@ -5,6 +5,7 @@ import com.colonelpanic.eva.capability.extensions.ExtensionSettings
 import com.colonelpanic.eva.conversation.prompt.VoiceCallMode
 import com.colonelpanic.eva.data.MessagingPreferences
 import com.colonelpanic.eva.data.configuration.ConfigurationStatus
+import com.colonelpanic.eva.data.configuration.GitSshHostKeys
 import com.colonelpanic.eva.messaging.MessagingApp
 import com.colonelpanic.eva.providers.openai.OpenAiModels
 import com.colonelpanic.eva.providers.openai.SignInState
@@ -115,6 +116,8 @@ data class SettingsActions(
     val onGitEnabled: (Boolean) -> Unit = {},
     val onSaveGit: (String, String, String, String, String, String) -> String? = { _, _, _, _, _, _ -> null },
     val onClearGitToken: () -> Unit = {},
+    val onRegenerateGitSshKey: () -> Unit = {},
+    val onForgetGitHostKey: (GitSshHostKeys.Entry) -> Unit = {},
     val onMessagingEnable: (Boolean) -> Unit = {},
     val onMessagingReply: (String, Boolean) -> Unit = { _, _ -> },
     val onMessagingRefresh: () -> Unit = {},

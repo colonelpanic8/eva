@@ -1156,9 +1156,10 @@ Conversation history and transient connections are runtime data, not settings.
 
 The portable format uses a root `eva.yaml`. Folder mode selects its directory
 through Android's Storage Access Framework; synchronization and version control
-remain the responsibility of the user's tools. Managed Git mode uses JGit 6.10.1
-and an app-owned checkout under external-files storage (or internal files when
-external storage is unavailable), including real `.git` metadata. Java NIO
+remain the responsibility of the user's tools. Managed Git mode uses JGit 6.10.1,
+with its Apache MINA sshd transport for SSH remotes, and an app-owned checkout
+under external-files storage (or internal files when external storage is
+unavailable), including real `.git` metadata. Java NIO
 desugaring supplies JGit's required APIs below Android 8; host
 tests and Android packaging cover that integration, while physical-device
 verification remains separate. The implementation lives in `data/configuration/`.
@@ -1168,10 +1169,14 @@ To use a single user repository:
 1. For folder mode, make a directory available through Android's file picker,
    directly or through a directory-sync tool, then choose it under **Settings →
    User configuration**.
-2. For managed Git, enter an HTTPS remote, branch, author identity, optional Git
-   username, and device-local token, then select **Save & connect**. Remote URLs
-   with credentials, queries, fragments, non-HTTPS schemes, or invalid refs are
-   rejected. SSH is not supported.
+2. For managed Git, enter a remote, branch, and author identity, then select
+   **Save & connect**. An HTTPS remote takes an optional Git username and a
+   device-local token. An SSH remote (`git@host:owner/repo.git` or
+   `ssh://git@host[:port]/path`) uses EVA's device SSH key instead: Managed Git
+   shows its public key to copy or share, to be added to the repository with write
+   access (on GitHub, a deploy key with **Allow write access**). Remote URLs with
+   passwords or credentials, queries, fragments, other schemes, SSH remotes without
+   a user, or invalid refs are rejected.
 3. An empty folder, checkout, or remote branch gets an `eva.yaml` snapshot of the
    current settings. An existing graph is validated and restored.
 4. On another device, link or connect the same repository.
@@ -1207,6 +1212,26 @@ They and the enabled mode live in local preferences; the token lives only in
 Neither credential helpers nor repository credential configuration participate.
 EVA pins TLS certificate verification on and disables HTTP redirects in the
 managed repository.
+
+For SSH remotes EVA generates an Ed25519 key on first use (or when **Create SSH
+key** / **Regenerate key** is chosen) with the pure-Java `net.i2p.crypto:eddsa`
+implementation. SSH remotes need Android 8 or newer, because MINA sshd's
+transport uses asynchronous socket channels; older phones get a specific error
+and keep HTTPS with a token. Only the key's 32-byte
+seed is stored, in `SecretStore`; the private key never enters `eva.yaml`, logs,
+diagnostics, or tool results, and diagnostics redact it like other secrets.
+Regenerating replaces the key immediately; the old public key stops working.
+The SSH transport reads no `~/.ssh` files, uses no agent, and offers only EVA's
+key over public-key authentication. Host keys are verified, never skipped:
+`github.com` and `ssh.github.com` must present one of GitHub's published host
+keys (pinned from `api.github.com/meta`; a GitHub rotation needs an EVA update),
+and any other host is trusted on first use, with its key recorded in local
+preferences and its fingerprint shown under Managed Git. A different key later
+fails the connection with both fingerprints; **Forget host key** clears the record
+so the next connection trusts the presented key. Authentication failures name the
+deploy-key step, and a read-only deploy key is reported as such. The SSH key and
+known host records are device-local and nonportable, like the token; another
+device generates its own key, which needs its own deploy key.
 
 Connect and Sync fetch only the exact configured branch without tags or
 submodules. Before checkout, EVA bounds the tree to 4,096 entries and 64 MiB of
