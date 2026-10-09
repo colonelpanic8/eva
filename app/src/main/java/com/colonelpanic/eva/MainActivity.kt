@@ -625,7 +625,6 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             val state by controller.state.collectAsStateWithLifecycle()
-            val threads by controller.threads.collectAsStateWithLifecycle()
             val dynamicColor by eva.appearance.dynamicColorFlow.collectAsStateWithLifecycle()
             EvaTheme(dynamicColor = dynamicColor) {
                 if (surface.locked) {
@@ -645,14 +644,12 @@ class MainActivity : ComponentActivity() {
                     prompt = promptUiState(),
                     promptActions = promptActions(),
                     about = aboutInfo(),
-                    threads = threads,
                     tasks = controller.taskSnapshots,
                     runningWorkRequest = runningWorkRequest,
                     onStopWork = controller::stopTask,
                     onForceStopWork = controller::forceStopTask,
                     onStopAllWork = controller::stopAllTasks,
                     onShareDiagnostics = ::shareThreadDiagnostics,
-                    onNewThread = controller::newThread,
                     onShowThread = controller::showThread,
                     onStopTask = controller::stopTask,
                     onSubmit = controller::submit,

@@ -36,10 +36,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.colonelpanic.eva.conversation.ProviderStatus
-import com.colonelpanic.eva.conversation.Thread
 import com.colonelpanic.eva.providers.openai.OpenAiModels
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -65,13 +63,8 @@ internal fun DesktopApp(
     val state by host.controller.state.collectAsState()
     val configuration by host.configuration.state.collectAsState()
     var destination by remember { mutableStateOf(Destination.CONVERSATION) }
-    var threads by remember { mutableStateOf(emptyList<Thread>()) }
     var problem by remember { mutableStateOf<String?>(null) }
     val idle = !state.isLoading && !state.isSubmitting && !state.working && state.providerStatus != ProviderStatus.CONNECTING
-    LaunchedEffect(host) {
-        threads = withContext(Dispatchers.IO) { host.store.threads() }
-        host.store.changes.collect { threads = withContext(Dispatchers.IO) { host.store.threads() } }
-    }
     LaunchedEffect(host) {
         try {
             host.controller.state.first { !it.isLoading }
@@ -105,36 +98,6 @@ internal fun DesktopApp(
                     item { Text("EVA", Modifier.padding(16.dp), style = MaterialTheme.typography.headlineMedium) }
                     items(Destination.entries) { page ->
                         NavigationDrawerItem(label = { Text(page.label) }, selected = destination == page, onClick = { navigate(page) })
-                    }
-                    item {
-                        HorizontalDivider(Modifier.padding(vertical = 12.dp))
-                        Text("Conversations", Modifier.padding(12.dp), style = MaterialTheme.typography.titleSmall)
-                        TextButton(enabled = idle, onClick = {
-                            scope.launch {
-                                try {
-                                    reconnectToNewThread(host.controller, Dispatchers.Main)
-                                    navigate(Destination.CONVERSATION)
-                                } catch (
-                                    cancelled: CancellationException,
-                                ) {
-                                    throw cancelled
-                                } catch (failure: Exception) {
-                                    problem = failure.message
-                                }
-                            }
-                        }) { Text("New conversation") }
-                    }
-                    items(threads, key = { it.id }) { thread ->
-                        NavigationDrawerItem(
-                            selected = destination == Destination.CONVERSATION && state.threadId == thread.id,
-                            label = { Text(thread.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                            onClick = {
-                                if (idle) {
-                                    host.controller.showThread(thread.id)
-                                    navigate(Destination.CONVERSATION)
-                                }
-                            },
-                        )
                     }
                     item {
                         HorizontalDivider(Modifier.padding(vertical = 12.dp))

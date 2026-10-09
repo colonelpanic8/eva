@@ -1577,7 +1577,8 @@ thread does: the Swing event thread in the tray app, a dedicated thread in the t
   platform and the phone prompt names Android. Tool wording is shared
   `eva-wording.yaml`.
 
-The window's hamburger menu opens conversation history, Tools, and Settings.
+The window's hamburger menu opens Conversation, Tools, and Settings, with Quit EVA.
+Desktop and Android drawers omit conversation creation and history selection.
 Tools controls existing MCP grants, including individual tools; Apply to conversation
 reconnects with the new catalog. Revoked grants take effect at dispatch immediately.
 Settings edits the text model and reasoning effort, and offers a validated YAML editor
