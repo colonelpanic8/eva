@@ -1589,7 +1589,7 @@ periods affect desktop execution; phone permissions, voice, and declarative pack
 are preserved but not executed. Skills load from the same installed and repository
 folder model as Android. Credentials remain device-local.
 
-MCP image blocks are stored with the invocation's structured result and passed to
+MCP image blocks and JSON screenshot data URLs are stored with the invocation's structured result and passed to
 OpenAI Responses as image content alongside the attributed text receipt. They survive
 conversation reloads and are kept out of plain text receipt serialization. Unsupported
 image formats produce a visible omission note. Other non-text blocks are still omitted.

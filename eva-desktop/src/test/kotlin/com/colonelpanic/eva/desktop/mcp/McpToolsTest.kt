@@ -18,6 +18,34 @@ class McpToolsTest {
     private fun schema(text: String) = Json.parseToJsonElement(text).jsonObject
 
     @Test
+    fun `computer use JSON screenshots become model images and leave readable metadata`() {
+        val image =
+            ToolResultImage(
+                "image/png",
+                java.util.Base64
+                    .getEncoder()
+                    .encodeToString(ByteArray(20_000) { 1 }),
+            )
+        val structured =
+            buildJsonObject {
+                put(
+                    "screenshot",
+                    buildJsonObject {
+                        put("data_url", JsonPrimitive("data:image/png;base64,${image.data}"))
+                        put("coordinate_width", JsonPrimitive(3440))
+                    },
+                )
+                put("message", JsonPrimitive("Screenshot captured."))
+            }
+        val outcome = McpTools.outcome(McpCallReply(listOf(structured.toString()), 0, structured, false))
+        assertEquals(listOf(image), outcome.data!!.toolImages())
+        assertTrue(outcome.message.contains("coordinate_width"))
+        assertTrue(outcome.message.contains("Screenshot captured."))
+        assertTrue(!outcome.message.contains(image.data))
+        assertTrue(!outcome.message.contains("data_url"))
+    }
+
+    @Test
     fun `MCP images survive translation separately from the text result budget`() {
         val image =
             ToolResultImage(
