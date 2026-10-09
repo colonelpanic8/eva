@@ -3,12 +3,14 @@ package com.colonelpanic.eva.desktop
 import com.colonelpanic.eva.capability.CapabilityDispatcher
 import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.capability.MemoryCapabilities
+import com.colonelpanic.eva.capability.SkillCapabilities
 import com.colonelpanic.eva.capability.extensions.ExtensionGrantPersistence
 import com.colonelpanic.eva.capability.extensions.ExtensionGrants
 import com.colonelpanic.eva.capability.extensions.ExtensionRuntime
 import com.colonelpanic.eva.conversation.ThreadController
 import com.colonelpanic.eva.conversation.prompt.PromptConfig
 import com.colonelpanic.eva.conversation.prompt.PromptYaml
+import com.colonelpanic.eva.conversation.prompt.Wording
 import com.colonelpanic.eva.data.MemoryStore
 import com.colonelpanic.eva.desktop.mcp.McpAdapter
 import com.colonelpanic.eva.desktop.mcp.McpServerConfig
@@ -33,13 +35,14 @@ import java.nio.channels.FileLock
  * controller call, as the phone's main thread does.
  */
 class DesktopHost(
-    paths: DesktopPaths,
+    val paths: DesktopPaths,
     private val ui: CoroutineDispatcher,
     /** From [DesktopPaths.lock]: startup recovery assumes no other process is using the journal. */
     private val ownership: FileLock,
     opener: UrlOpener = UrlOpener.system(),
     provider: ((OpenAiAccess) -> ConversationProvider)? = null,
 ) : AutoCloseable {
+    val configuration = DesktopConfiguration(paths.configuration)
     private val journal = JdbcJournal(paths.journal)
     val tokens = ChatGptTokenFile(paths.chatGptTokens)
     val memory = MemoryStore(DirectoryMemoryFiles(paths.memory))
@@ -47,8 +50,9 @@ class DesktopHost(
     val store = JdbcConversationStore(journal)
     private val registry =
         CapabilityRegistry(
-            MemoryCapabilities.backends(memory) + DesktopCapabilities.backends(opener),
-            MemoryCapabilities.definitions + DesktopCapabilities.definitions,
+            MemoryCapabilities.backends(memory) + DesktopCapabilities.backends(opener) +
+                (SkillCapabilities.USE to SkillCapabilities.backend(configuration::enabledSkills) { Wording.bundled }),
+            MemoryCapabilities.definitions + DesktopCapabilities.definitions + SkillCapabilities.definition,
         )
     private val scope = CoroutineScope(SupervisorJob() + ui)
     private val access = SubscriptionAccess(tokens, CLIENT_VERSION)
@@ -75,8 +79,16 @@ class DesktopHost(
             repository = repository,
             store = store,
             scope = scope,
-            providerFactory = { provider?.invoke(access) ?: OpenAiResponsesProvider(access) },
-            prompt = { prompt },
+            providerFactory = {
+                provider?.invoke(access) ?: OpenAiResponsesProvider(
+                    access,
+                    model = configuration.state.value.configuration.models.text,
+                    reasoningEffort = configuration.state.value.configuration.models.reasoningEffort,
+                )
+            },
+            prompt = { PromptConfig(configuration.state.value.configuration.prompt.components) },
+            skills = configuration::enabledSkills,
+            stallPeriodMillis = { configuration.state.value.configuration.capabilities.stallPeriodSeconds * 1000L },
             // A connection never opens with tools silently missing; it reports why instead.
             awaitCapabilities = {
                 withTimeoutOrNull(CAPABILITY_WAIT_MILLIS) { extensions.awaitReady() }

@@ -14,7 +14,7 @@ data class ContentProviderAccess(
     val canRequest: Boolean = false,
 ) {
     companion object {
-        const val MOVA_READ_TODOS = "com.colonelpanic.mova.permission.READ_TODOS"
+        const val MOVA_READ_TODOS = com.colonelpanic.eva.data.configuration.EvaConfigurationCodec.MOVA_READ_TODOS
         val supportedPermissions = EvaPermissions.REQUIRED.toSet() + MOVA_READ_TODOS
 
         fun requiredPermission(

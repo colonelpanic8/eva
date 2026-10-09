@@ -369,6 +369,7 @@ fun interface ConfigurationReader {
 
 object EvaConfigurationCodec {
     const val FILE_NAME = "eva.yaml"
+    const val MOVA_READ_TODOS = "com.colonelpanic.mova.permission.READ_TODOS"
     const val MAX_FILE_BYTES = 4_194_304
 
     /** Where skill folders live in a configuration repository: Codex's repository location, then a plain one. */
@@ -432,6 +433,7 @@ object EvaConfigurationCodec {
     fun resolve(
         rootPath: String = FILE_NAME,
         reader: ConfigurationReader,
+        defaults: EvaConfigurationDocument? = null,
     ): ResolvedConfiguration {
         val visited = linkedSetOf<String>()
         val paths = linkedSetOf(rootPath)
@@ -496,7 +498,7 @@ object EvaConfigurationCodec {
                 }
             }
         val merged = merge(included, root.copy(include = emptyList()))
-        val resolved = merged.materialize().validated().withRepositorySkills(skillFolders)
+        val resolved = (defaults?.let { merge(it, merged) } ?: merged).materialize().validated().withRepositorySkills(skillFolders)
         return ResolvedConfiguration(
             resolved,
             root,
@@ -1152,7 +1154,7 @@ object EvaConfigurationCodec {
             "android.role.ASSISTANT",
             "android.notification-listener",
             "shizuku",
-            com.colonelpanic.eva.adapters.android.ContentProviderAccess.MOVA_READ_TODOS,
+            MOVA_READ_TODOS,
         )
 
     fun packageSecretId(instance: String) = "package/$instance/basic"
