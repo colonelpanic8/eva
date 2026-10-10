@@ -5,10 +5,14 @@ import net.i2p.crypto.eddsa.EdDSAPublicKey
 import net.i2p.crypto.eddsa.spec.EdDSANamedCurveTable
 import net.i2p.crypto.eddsa.spec.EdDSAPrivateKeySpec
 import net.i2p.crypto.eddsa.spec.EdDSAPublicKeySpec
+import org.apache.sshd.common.NamedResource
+import org.apache.sshd.common.config.keys.FilePasswordProvider
 import org.apache.sshd.common.config.keys.PublicKeyEntry
 import org.apache.sshd.common.config.keys.PublicKeyEntryResolver
+import org.apache.sshd.common.config.keys.writer.openssh.OpenSSHKeyPairResourceWriter
 import org.apache.sshd.common.util.OsUtils
 import org.apache.sshd.common.util.io.PathUtils
+import org.apache.sshd.common.util.security.SecurityUtils
 import org.eclipse.jgit.errors.TransportException
 import org.eclipse.jgit.transport.CredentialsProvider
 import org.eclipse.jgit.transport.SshTransport
@@ -19,9 +23,10 @@ import org.eclipse.jgit.transport.sshd.SshdSessionFactory
 import org.eclipse.jgit.transport.sshd.SshdSessionFactoryBuilder
 import org.eclipse.jgit.util.Base64
 import java.io.ByteArrayOutputStream
-import java.io.DataOutputStream
 import java.io.File
+import java.io.IOException
 import java.net.InetSocketAddress
+import java.security.GeneralSecurityException
 import java.security.KeyPair
 import java.security.MessageDigest
 import java.security.PublicKey
@@ -68,34 +73,86 @@ data class SshRemote(
     }
 }
 
-/** EVA's device-local Ed25519 client key; only the 32-byte seed is stored, in SecretStore. */
+/**
+ * EVA's device-local SSH client key, kept in SecretStore: an Ed25519 key EVA generated (stored as
+ * its 32-byte seed) or a key the user imported (stored as unencrypted OpenSSH text).
+ */
 class GitSshKey private constructor(
-    private val seed: ByteArray,
+    val keyPair: KeyPair,
+    private val stored: String,
 ) {
-    private val privateKey = EdDSAPrivateKey(EdDSAPrivateKeySpec(seed, ED25519))
-    private val publicKeyValue = EdDSAPublicKey(EdDSAPublicKeySpec(privateKey.a, ED25519))
-
-    val keyPair: KeyPair get() = KeyPair(publicKeyValue, privateKey)
-
-    private val blob: ByteArray = sshString("ssh-ed25519".toByteArray()) + sshString(publicKeyValue.abyte)
+    private val entry: String = PublicKeyEntry.toString(keyPair.public)
 
     /** OpenSSH `authorized_keys` line, suitable for a deploy key. */
-    val publicKey: String = "ssh-ed25519 ${Base64.encodeBytes(blob)} $COMMENT"
+    val publicKey: String = "$entry $COMMENT"
 
-    val fingerprint: String = sha256Fingerprint(blob)
+    val fingerprint: String = GitSshHostKeys.fingerprintOf(entry)
 
-    fun encoded(): String = Base64.encodeBytes(seed)
+    val imported: Boolean get() = stored.startsWith(PRIVATE_KEY_HEADER)
+
+    fun encoded(): String = stored
 
     companion object {
         const val COMMENT = "eva-android"
+        private const val PRIVATE_KEY_HEADER = "-----BEGIN"
         private val ED25519 = EdDSANamedCurveTable.getByName(EdDSANamedCurveTable.ED_25519)
 
-        fun generate(random: SecureRandom = SecureRandom()): GitSshKey = GitSshKey(ByteArray(32).also(random::nextBytes))
+        fun generate(random: SecureRandom = SecureRandom()): GitSshKey = fromSeed(ByteArray(32).also(random::nextBytes))
 
         fun decode(value: String): GitSshKey {
+            if (value.startsWith(PRIVATE_KEY_HEADER)) return GitSshKey(read(value, null), value)
             val seed = Base64.decode(value)
             require(seed.size == 32) { "The stored SSH key is invalid; regenerate it in Managed Git settings." }
-            return GitSshKey(seed)
+            return fromSeed(seed)
+        }
+
+        /** Reads an OpenSSH, PKCS#8, or PEM private key, decrypting it with [passphrase] when it is protected. */
+        fun import(
+            text: String,
+            passphrase: String?,
+        ): GitSshKey {
+            val pair = read(text, passphrase?.takeIf { it.isNotEmpty() })
+            val stored =
+                ByteArrayOutputStream()
+                    .also { OpenSSHKeyPairResourceWriter.INSTANCE.writePrivateKey(pair, COMMENT, null, it) }
+                    .toString(Charsets.UTF_8.name())
+            return GitSshKey(pair, stored)
+        }
+
+        private fun fromSeed(seed: ByteArray): GitSshKey {
+            val private = EdDSAPrivateKey(EdDSAPrivateKeySpec(seed, ED25519))
+            return GitSshKey(KeyPair(EdDSAPublicKey(EdDSAPublicKeySpec(private.a, ED25519)), private), Base64.encodeBytes(seed))
+        }
+
+        private fun read(
+            text: String,
+            passphrase: String?,
+        ): KeyPair {
+            require(text.contains(PRIVATE_KEY_HEADER) && text.contains("PRIVATE KEY")) {
+                "That file is not an SSH private key. Choose the private key file (for example id_ed25519), not the .pub file."
+            }
+            val password =
+                FilePasswordProvider { _, _, _ ->
+                    passphrase
+                        ?: throw IllegalArgumentException("This SSH key is protected by a passphrase. Enter it and import the key again.")
+                }
+            val pairs =
+                try {
+                    SecurityUtils.loadKeyPairIdentities(null, NamedResource.ofName("imported SSH key"), text.byteInputStream(), password)
+                } catch (failure: Exception) {
+                    if (failure !is GeneralSecurityException && failure !is IOException) throw failure
+                    throw IllegalArgumentException(
+                        if (passphrase != null) {
+                            "Could not decrypt the SSH key. Check the passphrase and import it again."
+                        } else {
+                            "Could not read the SSH key: ${failure.message}"
+                        },
+                        failure,
+                    )
+                }
+            return pairs?.singleOrNull() ?: throw IllegalArgumentException(
+                "The file must hold exactly one SSH private key that EVA can read (Ed25519, ECDSA, or RSA).",
+            )
         }
     }
 }
@@ -326,15 +383,6 @@ class ManagedGitSsh(
         }
     }
 }
-
-private fun sshString(value: ByteArray): ByteArray =
-    ByteArrayOutputStream()
-        .also { bytes ->
-            DataOutputStream(bytes).use {
-                it.writeInt(value.size)
-                it.write(value)
-            }
-        }.toByteArray()
 
 private fun sha256Fingerprint(blob: ByteArray): String =
     "SHA256:" + Base64.encodeBytes(MessageDigest.getInstance("SHA-256").digest(blob)).trimEnd('=')

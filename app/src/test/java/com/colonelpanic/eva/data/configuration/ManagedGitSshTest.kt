@@ -2,6 +2,8 @@ package com.colonelpanic.eva.data.configuration
 
 import com.colonelpanic.eva.conversation.prompt.PromptComponent
 import org.apache.sshd.common.config.keys.PublicKeyEntry
+import org.apache.sshd.common.config.keys.writer.openssh.OpenSSHKeyEncryptionContext
+import org.apache.sshd.common.config.keys.writer.openssh.OpenSSHKeyPairResourceWriter
 import org.apache.sshd.server.subsystem.SubsystemFactory
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.junit.ssh.SshTestGitServer
@@ -13,6 +15,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.file.Files
 import java.security.KeyPair
@@ -51,6 +54,22 @@ class ManagedGitSshTest {
         assertEquals(PublicKeyEntry.toString(restored.keyPair.public), key.publicKey.substringBeforeLast(' '))
         assertFalse(key.publicKey.contains(key.encoded()))
         assertTrue(runCatching { GitSshKey.decode("c2hvcnQ=") }.isFailure)
+    }
+
+    @Test
+    fun `an imported passphrase-protected key restores the same key and explains passphrase problems`() {
+        val original = GitSshKey.generate()
+        val file = privateKeyFile(original.keyPair, passphrase = "correct horse")
+
+        val imported = GitSshKey.import(file, "correct horse")
+
+        assertEquals(original.publicKey, imported.publicKey)
+        assertTrue(imported.imported)
+        assertFalse(imported.encoded().contains("ENCRYPTED"))
+        assertEquals(imported.publicKey, GitSshKey.decode(imported.encoded()).publicKey)
+        assertTrue(importFailure(file, "").contains("protected by a passphrase"))
+        assertTrue(importFailure(file, "wrong").contains("Check the passphrase"))
+        assertTrue(importFailure(original.publicKey, "").contains("not the .pub file"))
     }
 
     @Test
@@ -105,6 +124,18 @@ class ManagedGitSshTest {
     }
 
     @Test
+    fun `an imported ecdsa key pushes over ssh`() {
+        val key = GitSshKey.import(privateKeyFile(hostKey(), passphrase = null), "")
+        val fixture = fixture(key)
+
+        fixture.repository("first").use { repository ->
+            assertEquals(GitCondition.READY, repository.connect().condition)
+            repository.directory.replaceRoot(encoded("imported"), null)
+            assertEquals(GitCondition.PUSHED, repository.commitAndPush().condition)
+        }
+    }
+
+    @Test
     fun `a changed host key refuses the connection with both fingerprints`() {
         val fixture = fixture()
         fixture.repository("first").use { it.connect() }
@@ -132,7 +163,7 @@ class ManagedGitSshTest {
         assertTrue(message, message.contains("deploy key with write access"))
     }
 
-    private fun fixture(): Fixture {
+    private fun fixture(key: GitSshKey = GitSshKey.generate()): Fixture {
         val root = Files.createTempDirectory("eva-managed-git-ssh").toFile()
         val remote = File(root, "remote.git")
         val repository =
@@ -143,7 +174,6 @@ class ManagedGitSshTest {
                 .setInitialBranch("main")
                 .call()
                 .repository
-        val key = GitSshKey.generate()
         val server =
             object : SshTestGitServer("git", key.keyPair.public, repository, hostKey()) {
                 override fun configureSubsystems(): List<SubsystemFactory> = emptyList()
@@ -152,6 +182,29 @@ class ManagedGitSshTest {
         val port = server.start()
         return Fixture(root, remote, key, server, port)
     }
+
+    private fun privateKeyFile(
+        pair: KeyPair,
+        passphrase: String?,
+    ): String {
+        val encryption =
+            passphrase?.let {
+                OpenSSHKeyEncryptionContext().apply {
+                    password = it
+                    cipherName = "AES"
+                    cipherMode = "CTR"
+                    cipherType = "256"
+                }
+            }
+        return ByteArrayOutputStream()
+            .also { OpenSSHKeyPairResourceWriter.INSTANCE.writePrivateKey(pair, "test", encryption, it) }
+            .toString(Charsets.UTF_8.name())
+    }
+
+    private fun importFailure(
+        text: String,
+        passphrase: String,
+    ) = requireNotNull(runCatching { GitSshKey.import(text, passphrase) }.exceptionOrNull()?.message)
 
     private fun hostKey(): KeyPair = KeyPairGenerator.getInstance("EC").apply { initialize(256) }.generateKeyPair()
 

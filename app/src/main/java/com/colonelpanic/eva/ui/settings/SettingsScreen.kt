@@ -305,15 +305,27 @@ private fun GitSshKeySettings(
     val publicKey = configuration.sshPublicKey
     var copied by remember(publicKey) { mutableStateOf(false) }
     var confirmRegenerate by remember(publicKey) { mutableStateOf(false) }
+    var passphrase by remember { mutableStateOf("") }
     if (publicKey == null) {
-        SettingsNote("EVA signs in to ${remote.host} with an SSH key it creates and keeps on this phone. No token is needed.")
-        OutlinedButton(enabled = !configuration.busy, onClick = actions.onRegenerateGitSshKey) { Text("Create SSH key") }
+        SettingsNote(
+            "EVA signs in to ${remote.host} with an SSH key it keeps on this phone. Create a new key, or import an existing " +
+                "private key file. No token is needed.",
+        )
     } else {
         SettingsNote(
-            if (remote.host == "github.com") {
-                "Add this public key to the repository on GitHub: Settings → Deploy keys → Add deploy key, and check Allow write access."
-            } else {
-                "Add this public key to ${remote.host} with write access to the repository, for example as a deploy key."
+            when {
+                configuration.sshKeyImported -> {
+                    "EVA signs in with the key you imported. If ${remote.host} already accepts it, nothing else is needed; " +
+                        "otherwise add this public key with write access to the repository."
+                }
+
+                remote.host == "github.com" -> {
+                    "Add this public key to the repository on GitHub: Settings → Deploy keys → Add deploy key, and check Allow write access."
+                }
+
+                else -> {
+                    "Add this public key to ${remote.host} with write access to the repository, for example as a deploy key."
+                }
             },
         )
         SelectionContainer {
@@ -335,6 +347,23 @@ private fun GitSshKeySettings(
                 TextButton(onClick = { confirmRegenerate = false }) { Text("Cancel") }
             }
         }
+    }
+    OutlinedTextField(
+        value = passphrase,
+        onValueChange = { passphrase = it },
+        label = { Text("Key passphrase (if the file has one)") },
+        visualTransformation = PasswordVisualTransformation(),
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (publicKey == null) {
+            OutlinedButton(enabled = !configuration.busy, onClick = actions.onRegenerateGitSshKey) { Text("Create SSH key") }
+        }
+        OutlinedButton(enabled = !configuration.busy, onClick = {
+            actions.onImportGitSshKey(passphrase)
+            passphrase = ""
+        }) { Text("Import key file") }
     }
     configuration.sshHostKeys
         .filter { it.host == remote.host && it.port == remote.port }

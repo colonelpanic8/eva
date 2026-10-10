@@ -100,6 +100,13 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+    private var sshKeyPassphrase = ""
+    private val sshKeyFile =
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            val passphrase = sshKeyPassphrase.also { sshKeyPassphrase = "" }
+            uri?.let { eva.configuration.importGitSshKey(it, passphrase) }
+        }
+
     private val configurationFolder =
         registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
             uri?.let(eva.configuration::select)
@@ -438,6 +445,10 @@ class MainActivity : ComponentActivity() {
                 onSaveGit = eva.configuration::configureGit,
                 onClearGitToken = eva.configuration::clearGitToken,
                 onRegenerateGitSshKey = eva.configuration::regenerateGitSshKey,
+                onImportGitSshKey = { passphrase ->
+                    sshKeyPassphrase = passphrase
+                    sshKeyFile.launch(arrayOf("*/*"))
+                },
                 onForgetGitHostKey = eva.configuration::forgetGitHostKey,
                 onRepositoryRefresh = eva.pluginBrowser::refreshAll,
                 onRepositoryRefreshNew = eva.pluginBrowser::refreshNew,

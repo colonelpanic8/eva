@@ -1221,6 +1221,11 @@ and keep HTTPS with a token. Only the key's 32-byte
 seed is stored, in `SecretStore`; the private key never enters `eva.yaml`, logs,
 diagnostics, or tool results, and diagnostics redact it like other secrets.
 Regenerating replaces the key immediately; the old public key stops working.
+**Import key file** instead uses an existing private key the user picks with the
+document picker (OpenSSH, PKCS#8, or PEM; Ed25519, ECDSA, or RSA), decrypted with
+the passphrase typed beside it. EVA stores it re-encoded as unencrypted OpenSSH
+text in `SecretStore` and keeps neither the passphrase nor the file grant, so a
+key the server already accepts needs no deploy key.
 The SSH transport reads no `~/.ssh` files, uses no agent, and offers only EVA's
 key over public-key authentication. Host keys are verified, never skipped:
 `github.com` and `ssh.github.com` must present one of GitHub's published host

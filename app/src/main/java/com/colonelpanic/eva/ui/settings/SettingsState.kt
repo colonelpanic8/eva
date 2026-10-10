@@ -117,6 +117,7 @@ data class SettingsActions(
     val onSaveGit: (String, String, String, String, String, String) -> String? = { _, _, _, _, _, _ -> null },
     val onClearGitToken: () -> Unit = {},
     val onRegenerateGitSshKey: () -> Unit = {},
+    val onImportGitSshKey: (String) -> Unit = {},
     val onForgetGitHostKey: (GitSshHostKeys.Entry) -> Unit = {},
     val onMessagingEnable: (Boolean) -> Unit = {},
     val onMessagingReply: (String, Boolean) -> Unit = { _, _ -> },
