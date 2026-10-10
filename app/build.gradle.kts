@@ -89,7 +89,8 @@ android {
     }
 
     packaging {
-        resources.excludes += setOf("/META-INF/{AL2.0,LGPL2.1}")
+        resources.excludes +=
+            setOf("/META-INF/{AL2.0,LGPL2.1}", "/META-INF/DEPENDENCIES", "/about.html", "/OSGI-INF/l10n/plugin.properties")
     }
 }
 
@@ -122,6 +123,10 @@ dependencies {
     implementation(libs.androidx.media3.session)
     implementation(libs.kaml)
     implementation(libs.jgit)
+    implementation(libs.jgit.ssh.apache) {
+        // SFTP is unused, and its FileSystemProvider service builds an SSH client wherever java.nio.file loads providers.
+        exclude(group = "org.apache.sshd", module = "sshd-sftp")
+    }
     implementation(libs.slf4j.nop)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
@@ -136,6 +141,9 @@ dependencies {
     testImplementation(testFixtures(project(":eva-core")))
     testImplementation(libs.robolectric)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.jgit.junit.ssh) {
+        exclude(group = "org.apache.sshd", module = "sshd-sftp")
+    }
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.junit)
     androidTestImplementation(libs.androidx.test.uiautomator)

@@ -3,6 +3,7 @@ package com.colonelpanic.eva.ui.settings
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -43,12 +45,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.colonelpanic.eva.adapters.android.DeviceControlHost
 import com.colonelpanic.eva.conversation.prompt.VoiceCallMode
+import com.colonelpanic.eva.data.configuration.ConfigurationStatus
 import com.colonelpanic.eva.data.configuration.EvaConfigurationCodec
+import com.colonelpanic.eva.data.configuration.SshRemote
 import com.colonelpanic.eva.providers.openai.OpenAiModels
 import com.colonelpanic.eva.providers.openai.SignInState
 import com.colonelpanic.eva.providers.spotify.SpotifyConnectState
@@ -169,6 +174,7 @@ private fun ConfigurationSection(
     var inputError by remember { mutableStateOf<String?>(null) }
     val configuration = state.configuration
     var gitExpanded by rememberSaveable { mutableStateOf(false) }
+    val sshRemote = remember(remote) { runCatching { SshRemote.parse(remote.trim()) }.getOrNull() }
     SettingsSection("Your configuration") {
         SettingsBlock {
             SettingsNote(
@@ -196,7 +202,7 @@ private fun ConfigurationSection(
                 if (configuration.gitEnabled) {
                     "${git.remoteUrl.removePrefix("https://")} · ${configuration.gitCondition.name.lowercase().replace('_', ' ')}"
                 } else {
-                    "EVA keeps its own checkout, over HTTPS"
+                    "EVA keeps its own checkout, over HTTPS or SSH"
                 },
             expanded = gitExpanded,
             onExpandedChange = { gitExpanded = it },
@@ -215,7 +221,7 @@ private fun ConfigurationSection(
                 OutlinedTextField(
                     value = remote,
                     onValueChange = { remote = it },
-                    label = { Text("HTTPS remote URL") },
+                    label = { Text("Remote URL (HTTPS or SSH)") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -240,24 +246,34 @@ private fun ConfigurationSection(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                OutlinedTextField(
-                    value = username,
-                    onValueChange = { username = it },
-                    label = { Text("Git username") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = token,
-                    onValueChange = { token = it },
-                    label = { Text(if (git.tokenPresent) "New Git token (optional)" else "Git token") },
-                    supportingText = {
-                        Text(if (git.tokenPresent) "A token is saved on this phone." else "Needed to push. Stored encrypted on this phone.")
-                    },
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                if (sshRemote == null) {
+                    OutlinedTextField(
+                        value = username,
+                        onValueChange = { username = it },
+                        label = { Text("Git username") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = token,
+                        onValueChange = { token = it },
+                        label = { Text(if (git.tokenPresent) "New Git token (optional)" else "Git token") },
+                        supportingText = {
+                            Text(
+                                if (git.tokenPresent) {
+                                    "A token is saved on this phone."
+                                } else {
+                                    "Needed to push. Stored encrypted on this phone."
+                                },
+                            )
+                        },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                } else {
+                    GitSshKeySettings(sshRemote, configuration, actions)
+                }
                 inputError?.let { SettingsNote(it, error = true) }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
@@ -270,13 +286,91 @@ private fun ConfigurationSection(
                     if (configuration.gitEnabled && configuration.linkedFolder != null) {
                         OutlinedButton(enabled = !configuration.busy, onClick = actions.onReloadConfiguration) { Text("Sync") }
                     }
-                    if (git.tokenPresent) {
+                    if (git.tokenPresent && sshRemote == null) {
                         TextButton(onClick = actions.onClearGitToken) { Text("Remove token") }
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun GitSshKeySettings(
+    remote: SshRemote,
+    configuration: ConfigurationStatus,
+    actions: SettingsActions,
+) {
+    val context = LocalContext.current
+    val publicKey = configuration.sshPublicKey
+    var copied by remember(publicKey) { mutableStateOf(false) }
+    var confirmRegenerate by remember(publicKey) { mutableStateOf(false) }
+    var passphrase by remember { mutableStateOf("") }
+    if (publicKey == null) {
+        SettingsNote(
+            "EVA signs in to ${remote.host} with an SSH key it keeps on this phone. Create a new key, or import an existing " +
+                "private key file. No token is needed.",
+        )
+    } else {
+        SettingsNote(
+            when {
+                configuration.sshKeyImported -> {
+                    "EVA signs in with the key you imported. If ${remote.host} already accepts it, nothing else is needed; " +
+                        "otherwise add this public key with write access to the repository."
+                }
+
+                remote.host == "github.com" -> {
+                    "Add this public key to the repository on GitHub: Settings → Deploy keys → Add deploy key, and check Allow write access."
+                }
+
+                else -> {
+                    "Add this public key to ${remote.host} with write access to the repository, for example as a deploy key."
+                }
+            },
+        )
+        SelectionContainer {
+            Text(publicKey, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+        }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { copied = copyToClipboard(context, publicKey, "EVA SSH public key") }) {
+                Text(if (copied) "Copied" else "Copy key")
+            }
+            OutlinedButton(onClick = { shareText(context, publicKey, "EVA SSH public key") }) { Text("Share") }
+            if (!confirmRegenerate) {
+                TextButton(enabled = !configuration.busy, onClick = { confirmRegenerate = true }) { Text("Regenerate key") }
+            }
+        }
+        if (confirmRegenerate) {
+            SettingsNote("A new key replaces this one; the current key stops working wherever it was added.", error = true)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(enabled = !configuration.busy, onClick = actions.onRegenerateGitSshKey) { Text("Replace key") }
+                TextButton(onClick = { confirmRegenerate = false }) { Text("Cancel") }
+            }
+        }
+    }
+    OutlinedTextField(
+        value = passphrase,
+        onValueChange = { passphrase = it },
+        label = { Text("Key passphrase (if the file has one)") },
+        visualTransformation = PasswordVisualTransformation(),
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (publicKey == null) {
+            OutlinedButton(enabled = !configuration.busy, onClick = actions.onRegenerateGitSshKey) { Text("Create SSH key") }
+        }
+        OutlinedButton(enabled = !configuration.busy, onClick = {
+            actions.onImportGitSshKey(passphrase)
+            passphrase = ""
+        }) { Text("Import key file") }
+    }
+    configuration.sshHostKeys
+        .filter { it.host == remote.host && it.port == remote.port }
+        .forEach { entry ->
+            SettingsNote("Trusted host key for ${entry.label}: ${entry.fingerprint}")
+            TextButton(enabled = !configuration.busy, onClick = { actions.onForgetGitHostKey(entry) }) { Text("Forget host key") }
+        }
 }
 
 @Composable
@@ -679,11 +773,25 @@ private fun ChatGptSignIn(
  */
 private fun copyToClipboard(
     context: Context,
-    code: String,
+    text: String,
+    label: String = "EVA sign-in code",
 ): Boolean {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return false
-    clipboard.setPrimaryClip(ClipData.newPlainText("EVA sign-in code", code))
+    clipboard.setPrimaryClip(ClipData.newPlainText(label, text))
     return true
+}
+
+private fun shareText(
+    context: Context,
+    text: String,
+    title: String,
+) {
+    val send =
+        Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+    context.startActivity(Intent.createChooser(send, title).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
 }
 
 @Preview(name = "Settings signed out", showBackground = true)

@@ -41,8 +41,9 @@ class LinkedConfiguration(
                 val text = EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(current))
                 selected.replaceRoot(text, expectedRootFingerprint = null)
                 val saved = EvaConfigurationCodec.resolve(reader = selected)
-                require(saved.configuration.withoutFolderSkills() == current.withoutFolderSkills()) {
-                    "Saved configuration did not resolve to the current settings."
+                val differing = differingGroups(saved.configuration.withoutFolderSkills(), current.withoutFolderSkills())
+                require(differing.isEmpty()) {
+                    "Saved configuration did not resolve to the current settings; these groups differ: ${differing.joinToString()}."
                 }
                 directory = selected
                 resolved = saved
@@ -178,3 +179,25 @@ class LinkedConfiguration(
 }
 
 private fun EvaConfiguration.withoutFolderSkills() = copy(skills = skills.copy(repository = emptyList(), problems = emptyList()))
+
+private fun differingGroups(
+    a: EvaConfiguration,
+    b: EvaConfiguration,
+): List<String> =
+    listOf(
+        "models" to (a.models == b.models),
+        "voice" to (a.voice == b.voice),
+        "appearance" to (a.appearance == b.appearance),
+        "capabilities" to (a.capabilities == b.capabilities),
+        "messaging" to (a.messaging == b.messaging),
+        "prompt" to (a.prompt == b.prompt),
+        "packages" to (a.packages == b.packages),
+        "services" to (a.services == b.services),
+        "extensions" to (a.extensions == b.extensions),
+        "spotify" to (a.spotify == b.spotify),
+        "credentials" to (a.credentials == b.credentials),
+        "remembered" to (a.remembered == b.remembered),
+        "device" to (a.device == b.device),
+        "diagnostics" to (a.diagnostics == b.diagnostics),
+        "skills" to (a.skills == b.skills),
+    ).filterNot { it.second }.map { it.first }

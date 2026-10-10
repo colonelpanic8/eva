@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import com.colonelpanic.eva.EvaApplication
@@ -45,6 +46,9 @@ data class ConfigurationStatus(
     val gitCondition: GitCondition = GitCondition.DISABLED,
     val pendingCommits: Int = 0,
     val busy: Boolean = false,
+    val sshPublicKey: String? = null,
+    val sshKeyImported: Boolean = false,
+    val sshHostKeys: List<GitSshHostKeys.Entry> = emptyList(),
 )
 
 class EvaConfigurationManager(
@@ -61,6 +65,11 @@ class EvaConfigurationManager(
 ) {
     private val prefs = app.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
     private val secrets = SecretStore(app)
+    private val sshHostKeys =
+        GitSshHostKeys(
+            load = { prefs.getString(GIT_SSH_KNOWN_HOSTS, "").orEmpty() },
+            save = ::saveSshHostKeys,
+        )
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutableStatus = MutableStateFlow(bootstrapStatus())
     val status = mutableStatus.asStateFlow()
@@ -184,7 +193,7 @@ class EvaConfigurationManager(
                             if (previousToken == null) secrets.clear(GIT_TOKEN) else secrets.write(GIT_TOKEN, previousToken)
                             managedGit?.close()
                             managedGit =
-                                ManagedGitRepository(managedCheckout(), previousBootstrap, token = { previousToken })
+                                openManagedGit(previousBootstrap, previousToken)
                         }
                     } catch (failure: Exception) {
                         publishGitError(failure)
@@ -240,6 +249,81 @@ class EvaConfigurationManager(
                         gitCondition = GitCondition.MISSING_CREDENTIALS,
                         message = "Git token removed from this device.",
                     )
+            }
+        }
+    }
+
+    /** Replaces the device SSH key; the old public key stops working wherever it was added. */
+    fun regenerateGitSshKey() {
+        scope.launch {
+            operations.withLock {
+                try {
+                    secrets.write(GIT_SSH_KEY, GitSshKey.generate().encoded())
+                    mutableStatus.value =
+                        mutableStatus.value.copy(
+                            sshPublicKey = sshPublicKey(),
+                            sshKeyImported = runCatching { storedSshKey()?.imported == true }.getOrDefault(false),
+                            message = "New SSH key created. Add it to the repository as a deploy key with write access.",
+                            isError = false,
+                        )
+                } catch (failure: Exception) {
+                    publishGitError(failure)
+                }
+            }
+        }
+    }
+
+    /** Replaces the device SSH key with the private key in [uri]; the user picks the file and types any passphrase. */
+    fun importGitSshKey(
+        uri: Uri,
+        passphrase: String,
+    ) {
+        scope.launch {
+            operations.withLock {
+                try {
+                    ManagedGitSsh.prepareAndroid(sshHome())
+                    val text =
+                        checkNotNull(app.contentResolver.openInputStream(uri)) { "Could not open the selected key file." }.use { input ->
+                            val bytes = ByteArray(MAX_SSH_KEY_BYTES + 1)
+                            var size = 0
+                            while (size < bytes.size) {
+                                val read = input.read(bytes, size, bytes.size - size)
+                                if (read < 0) break
+                                size += read
+                            }
+                            require(size <= MAX_SSH_KEY_BYTES) { "That file is too large to be an SSH private key." }
+                            String(bytes, 0, size, Charsets.UTF_8)
+                        }
+                    val key = GitSshKey.import(text, passphrase)
+                    secrets.write(GIT_SSH_KEY, key.encoded())
+                    mutableStatus.value =
+                        mutableStatus.value.copy(
+                            sshPublicKey = key.publicKey,
+                            sshKeyImported = true,
+                            message = "Imported SSH key ${key.fingerprint}. EVA now signs in with it; select Save & connect or Sync.",
+                            isError = false,
+                        )
+                } catch (failure: Exception) {
+                    publishGitError(failure)
+                }
+            }
+        }
+    }
+
+    fun forgetGitHostKey(entry: GitSshHostKeys.Entry) {
+        scope.launch {
+            operations.withLock {
+                try {
+                    sshHostKeys.forget(entry.host, entry.port)
+                    mutableStatus.value =
+                        mutableStatus.value.copy(
+                            sshHostKeys = sshHostKeys.entries(),
+                            message = "Forgot the SSH host key for ${entry.label}; the next connection trusts the key it presents.",
+                            isError = false,
+                        )
+                } catch (failure: Exception) {
+                    publishGitError(failure)
+                }
             }
         }
     }
@@ -329,7 +413,7 @@ class EvaConfigurationManager(
         var usable = false
         try {
             managedGit?.close()
-            val repository = ManagedGitRepository(managedCheckout(), gitBootstrap(), token = { token })
+            val repository = openManagedGit(gitBootstrap(), token)
             managedGit = repository
             var localAttachment: LinkedConfigurationResult? = null
             if (previouslyEnabled && repository.directory.read(EvaConfigurationCodec.FILE_NAME) != null) {
@@ -398,7 +482,7 @@ class EvaConfigurationManager(
             val token = secrets.read(GIT_TOKEN)
             try {
                 val repository =
-                    managedGit ?: ManagedGitRepository(managedCheckout(), gitBootstrap(), token = { token }).also { managedGit = it }
+                    managedGit ?: openManagedGit(gitBootstrap(), token).also { managedGit = it }
                 val gitResult = repository.synchronize()
                 if (gitResult.condition == GitCondition.CONFLICT) {
                     showGit(gitResult, mutableStatus.value.setupRequired)
@@ -509,6 +593,36 @@ class EvaConfigurationManager(
 
     private fun gitEnabled(): Boolean = prefs.getBoolean(GIT_ENABLED, false)
 
+    private fun openManagedGit(
+        bootstrap: GitBootstrap,
+        token: String?,
+    ): ManagedGitRepository {
+        val ssh =
+            SshRemote.parse(bootstrap.remoteUrl)?.let {
+                check(Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    "SSH remotes need Android 8 or newer. Use an HTTPS remote with a token on this phone."
+                }
+                val home = sshHome()
+                ManagedGitSsh.prepareAndroid(home)
+                ensureSshKey()
+                SshAccess(key = ::storedSshKey, hostKeys = sshHostKeys, home = home)
+            }
+        return ManagedGitRepository(managedCheckout(), bootstrap, token = { token }, ssh = ssh)
+    }
+
+    @SuppressLint("UseKtx")
+    private fun saveSshHostKeys(value: String) {
+        check(prefs.edit().putString(GIT_SSH_KNOWN_HOSTS, value).commit()) { "Could not record the SSH host key." }
+    }
+
+    private fun sshHome() = java.io.File(app.noBackupFilesDir, SSH_HOME).apply { mkdirs() }
+
+    private fun storedSshKey(): GitSshKey? = secrets.read(GIT_SSH_KEY)?.let(GitSshKey::decode)
+
+    private fun ensureSshKey(): GitSshKey = storedSshKey() ?: GitSshKey.generate().also { secrets.write(GIT_SSH_KEY, it.encoded()) }
+
+    private fun sshPublicKey(): String? = runCatching { storedSshKey()?.publicKey }.getOrNull()
+
     private fun gitBootstrap(): GitBootstrap =
         GitBootstrap(
             remoteUrl = prefs.getString(GIT_REMOTE, "").orEmpty(),
@@ -551,6 +665,8 @@ class EvaConfigurationManager(
         gitCondition = gitCondition,
         pendingCommits = pendingCommits,
         busy = busy,
+        sshPublicKey = sshPublicKey(),
+        sshHostKeys = sshHostKeys.entries(),
     )
 
     private fun managedCheckout(): java.io.File {
@@ -1008,6 +1124,10 @@ class EvaConfigurationManager(
         const val GIT_AUTHOR_EMAIL = "git.author.email"
         const val GIT_USERNAME = "git.username"
         const val GIT_TOKEN = "configuration/git/token"
+        const val GIT_SSH_KEY = "configuration/git/ssh-key"
+        const val GIT_SSH_KNOWN_HOSTS = "git.ssh.knownHosts"
+        const val SSH_HOME = "git-ssh"
+        const val MAX_SSH_KEY_BYTES = 1 shl 20
         const val MANAGED_CHECKOUT = "configuration-git"
         const val OPENAI_REF = "provider/openai-api"
         const val CHATGPT_REF = "provider/chatgpt"
