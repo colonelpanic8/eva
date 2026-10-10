@@ -13,6 +13,8 @@ import com.colonelpanic.eva.conversation.OfferedTool
 import com.colonelpanic.eva.conversation.SessionCatalogRecord
 import com.colonelpanic.eva.conversation.SessionKind
 import com.colonelpanic.eva.conversation.ThreadItem
+import com.colonelpanic.eva.providers.ToolResultImage
+import com.colonelpanic.eva.providers.withToolImages
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -83,7 +85,7 @@ class DiagnosticsExportTest {
                     ReceiptProvenance(CapabilitySource("home", "Home"), "binding"),
                     thread.id,
                     turn.id,
-                    buildJsonObject { put("brightness", 80) },
+                    buildJsonObject { put("brightness", 80) }.withToolImages(listOf(ToolResultImage("image/png", "c2NyZWVuc2hvdA=="))),
                     initiator,
                 ),
             )
@@ -125,6 +127,8 @@ class DiagnosticsExportTest {
             val receipt = action.getValue("receipt").jsonObject
             assertEquals("COMPLETED", receipt.getValue("status").jsonPrimitive.content)
             assertEquals("Lights on", receipt.getValue("message").jsonPrimitive.content)
+            assertEquals(1, receipt.getValue("imagesOmitted").jsonPrimitive.int)
+            assertTrue(!receipt.toString().contains("c2NyZWVuc2hvdA=="))
             assertEquals(
                 80,
                 receipt

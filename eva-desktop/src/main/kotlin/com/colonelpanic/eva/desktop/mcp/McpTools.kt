@@ -5,6 +5,9 @@ import com.colonelpanic.eva.capability.ExecutionOutcome
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.extensions.Descriptor
 import com.colonelpanic.eva.capability.extensions.ExtensionProtocol
+import com.colonelpanic.eva.providers.ToolResultImage
+import com.colonelpanic.eva.providers.withToolImages
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -30,6 +33,7 @@ data class McpCallReply(
     val omittedBlocks: Int,
     val structured: JsonObject?,
     val isError: Boolean,
+    val images: List<ToolResultImage> = emptyList(),
 )
 
 /**
@@ -247,7 +251,8 @@ object McpTools {
      * A reply's error flag means the tool ran and reported failure. The text is the server's own,
      * bounded and quoted as external content by the dispatcher.
      */
-    fun outcome(reply: McpCallReply): ExecutionOutcome {
+    fun outcome(original: McpCallReply): ExecutionOutcome {
+        val reply = extractScreenshots(original)
         val text =
             buildString {
                 append(
@@ -258,12 +263,46 @@ object McpTools {
                 )
                 if (reply.omittedBlocks > 0) append("\n[${reply.omittedBlocks} non-text result blocks, such as images, are not shown.]")
             }
-        val data = reply.structured?.takeIf { it.toString().length <= ExtensionProtocol.RESULT_BYTES }
+        val data =
+            (reply.structured?.takeIf { it.toString().length <= ExtensionProtocol.RESULT_BYTES } ?: JsonObject(emptyMap()))
+                .withToolImages(reply.images)
+                .takeIf { it.isNotEmpty() }
         return ExecutionOutcome(
             if (reply.isError) InvocationStatus.FAILED else InvocationStatus.COMPLETED,
             clip(text, ExtensionProtocol.RESULT_BYTES),
             data,
         )
+    }
+
+    /** Some servers return screenshots as JSON data URLs instead of MCP image blocks. */
+    private fun extractScreenshots(reply: McpCallReply): McpCallReply {
+        val images = reply.images.toMutableSet()
+
+        fun extract(value: JsonObject): JsonObject {
+            val fields = value.toMutableMap()
+            (fields["screenshot"] as? JsonObject)?.let { fields["screenshot"] = extract(it) }
+            val url = (fields["data_url"] as? JsonPrimitive)?.contentOrNull
+            if (url?.startsWith("data:image/") == true) {
+                fields.remove("data_url")
+                try {
+                    val header = url.substringBefore(',')
+                    require(header.endsWith(";base64")) { "The screenshot does not use base64 encoding." }
+                    val mime = header.removePrefix("data:").removeSuffix(";base64")
+                    images += ToolResultImage(mime, url.substringAfter(',', ""))
+                    fields["imageIncluded"] = JsonPrimitive(true)
+                } catch (failure: IllegalArgumentException) {
+                    fields["imageOmitted"] = JsonPrimitive(failure.message ?: "The screenshot could not be decoded.")
+                }
+            }
+            return JsonObject(fields)
+        }
+        val structured = reply.structured?.let(::extract)
+        val text =
+            reply.text.map { block ->
+                val json = runCatching { Json.parseToJsonElement(block) }.getOrNull() as? JsonObject
+                if (json != null) extract(json).toString() else block
+            }
+        return reply.copy(text = text, structured = structured, images = images.toList())
     }
 
     private fun source(tool: McpToolListing) =

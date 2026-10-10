@@ -30,6 +30,7 @@ class DesktopPaths(
     val config: File,
     val data: File,
 ) {
+    val configuration get() = File(config, "eva.yaml")
     val journal get() = File(data, "eva-actions.db")
     val memory get() = File(data, "memory")
     val chatGptTokens get() = File(config, "chatgpt.json")

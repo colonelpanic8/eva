@@ -31,6 +31,38 @@ user's production install merely to run a development test.
 `just icons` regenerates Android, F-Droid, and repository icons from the canonical
 source at `assets/branding/eva-face-profile-v8-teal-hair-blue-face.svg`.
 `just fdroid-changelogs` derives fastlane changelogs from `CHANGELOG.md`.
+
+The desktop window's hamburger menu opens conversation history, Tools, and Settings.
+Settings writes the text model and reasoning effort to `~/.config/eva/eva.yaml`
+(or `$XDG_CONFIG_HOME/eva/eva.yaml`), and can validate/edit the complete document.
+Link that file to `eva.yaml` in your own configuration repository to share settings;
+relative includes and skill folders resolve beside the repository file. Reload applies
+external edits, and Save reconnects the current conversation without starting a new one.
+
+Linux computer control uses a stdio MCP server:
+
+```json
+{"mcpServers":{"computer-use-linux":{"command":"computer-use-linux","args":["mcp"]}}}
+```
+
+Put that in `~/.config/eva/mcp-servers.json` and restart EVA. Package the server in
+your system configuration so the service can find its executable. The Tools page
+shows discovery errors and lets you enable all or individual actions, then Apply to
+conversation. `computer-use-linux doctor` reports whether accessibility, window
+control, and input are ready. MCP screenshots are sent to EVA's configured text
+model. A `computer-use-linux` skill can live at `skills/computer-use-linux/SKILL.md`
+beside `eva.yaml`; it supplies procedure, while MCP supplies the actual tools.
+
+The flake's `eva-desktop` package (`nix build .#eva-desktop`, also the default
+package) builds the desktop host with nixpkgs' Gradle and no Android SDK
+(`-Peva.desktopOnly=true` leaves `:app` out of the build). It installs the
+`eva-desktop` command, wrapped with JDK 17 and the native libraries Compose needs,
+an `eva.desktop` launcher that runs `eva-desktop tray`, and the EVA icon. The sandbox
+reads dependencies from `nix/eva-desktop-deps.json`; after changing a dependency of
+the desktop modules, run `just desktop-deps` and commit the refreshed lock.
+On Hyprland/XWayland, set `_JAVA_AWT_WM_NONREPARENTING=1` in the launcher and
+startup service environment so the Java window follows its tiled size. The
+personal dotfiles package wrapper supplies it for that session.
 Experiment-local commands belong in the
 [voice harness](../experiments/voice-poc/README.md) and
 [device-control probe](../experiments/device-control/README.md) READMEs.

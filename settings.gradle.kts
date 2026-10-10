@@ -15,7 +15,10 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "EVA"
-include(":app")
+// The Nix desktop package builds without the Android SDK.
+if (providers.gradleProperty("eva.desktopOnly").orNull != "true") {
+    include(":app")
+}
 
 include(":eva-core")
 include(":eva-desktop")

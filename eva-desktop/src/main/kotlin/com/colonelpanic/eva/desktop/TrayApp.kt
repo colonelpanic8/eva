@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -38,6 +39,8 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
@@ -51,7 +54,6 @@ import com.colonelpanic.eva.conversation.ThreadController
 import com.colonelpanic.eva.conversation.groups
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -77,7 +79,7 @@ fun runTray(
     application(exitProcessOnExit = false) {
         var shown by remember { mutableStateOf(true) }
         var raises by remember { mutableStateOf(0) }
-        val windowState = rememberWindowState(width = 440.dp, height = 640.dp)
+        val windowState = rememberWindowState(width = 600.dp, height = 760.dp)
         LaunchedEffect(Unit) {
             for (request in requests) {
                 if (request == WindowRequest.TOGGLE && shown && !windowState.isMinimized) {
@@ -102,7 +104,7 @@ fun runTray(
                 window.requestFocus()
             }
             MaterialTheme(if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
-                Surface(Modifier.fillMaxSize()) { Conversation(host.controller, onQuit = ::exitApplication) }
+                Surface(Modifier.fillMaxSize()) { DesktopApp(host, onQuit = ::exitApplication) }
             }
         }
     }
@@ -113,9 +115,9 @@ fun runTray(
 }
 
 @Composable
-private fun Conversation(
+internal fun Conversation(
     controller: ThreadController,
-    onQuit: () -> Unit,
+    onMenu: () -> Unit,
 ) {
     val state by controller.state.collectAsState()
     val scope = rememberCoroutineScope()
@@ -133,18 +135,15 @@ private fun Conversation(
             problem = null
             try {
                 if (change() == null) problem = connectionProblem(controller.state.value)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                problem = failure.message ?: "Could not change conversations."
             } finally {
                 changing = false
             }
         }
 
-    LaunchedEffect(Unit) {
-        changeSession {
-            controller.state.first { !it.isLoading }
-            if (controller.state.value.threadId == null) startThread(controller, Dispatchers.Main)
-            connect(controller, Dispatchers.Main)
-        }
-    }
     LaunchedEffect(state.entries.size, state.entries.lastOrNull()?.response) {
         if (shownGroups.isNotEmpty()) list.animateScrollToItem(shownGroups.lastIndex)
     }
@@ -168,6 +167,13 @@ private fun Conversation(
 
     Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(
+                onClick = onMenu,
+                modifier =
+                    Modifier.semantics {
+                        contentDescription = "Open navigation menu"
+                    },
+            ) { Text("☰", style = MaterialTheme.typography.headlineSmall) }
             Text(
                 problem ?: status(state.providerStatus, state.providerLabel, state.working || changing),
                 Modifier.weight(1f),
@@ -179,7 +185,6 @@ private fun Conversation(
                 onClick = { scope.launch { changeSession { reconnectToNewThread(controller, Dispatchers.Main) } } },
                 enabled = idle,
             ) { Text("New") }
-            TextButton(onClick = onQuit) { Text("Quit") }
         }
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = list, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(shownGroups, key = { it.entry.id }) { Group(it) }
@@ -260,9 +265,9 @@ private fun Bubble(
 ) {
     Box(Modifier.fillMaxWidth(), contentAlignment = if (mine) Alignment.CenterEnd else Alignment.CenterStart) {
         Surface(
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(16.dp),
             color = if (mine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-            modifier = Modifier.widthIn(max = 340.dp),
+            modifier = Modifier.widthIn(max = 720.dp),
         ) {
             Text(text, Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
         }

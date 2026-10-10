@@ -3,6 +3,7 @@ package com.colonelpanic.eva.providers.openai
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.providers.HistoryItem
 import com.colonelpanic.eva.providers.ProviderToolDefinition
+import com.colonelpanic.eva.providers.withoutToolImages
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -90,7 +91,7 @@ internal fun HistoryItem.toOpenAiMessages(): List<OpenAiHistoryMessage> =
                         "arguments" to JsonObject(arguments.toSortedMap().mapValues { JsonPrimitive(it.value) }),
                         "reportedStatus" to JsonPrimitive(status),
                         "message" to JsonPrimitive(message),
-                        "data" to (data ?: JsonNull),
+                        "data" to (data?.withoutToolImages() ?: JsonNull),
                         "provenance" to (provenance?.toJson() ?: JsonNull),
                     ),
                 )

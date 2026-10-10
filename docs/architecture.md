@@ -1575,7 +1575,9 @@ thread does: the Swing event thread in the tray app, a dedicated thread in the t
   (pure Kotlin through dbus-java) where a panel runs a StatusNotifierWatcher, as on
   Wayland compositors' bars and KDE; otherwise the X11 system tray; otherwise none, and
   closing the window quits. `summon` asks the running app, through a socket in the
-  private data directory, to show its window, for a desktop keybinding.
+  private data directory, to show its window, for a desktop keybinding; `tray` does
+  the same when the app already runs, so the flake package's launcher (see
+  [Operations](operations.md#development)) can be opened repeatedly.
 - Compose's Skia renderer needs `libGL`, `libX11`, `fontconfig`, and `libstdc++` at run
   time. The dev shell exports them as `EVA_DESKTOP_LIBRARY_PATH`, kept out of the
   Android tools' environment, and `just desktop-run tray` uses it.
@@ -1605,12 +1607,32 @@ thread does: the Swing event thread in the tray app, a dedicated thread in the t
   platform and the phone prompt names Android. Tool wording is shared
   `eva-wording.yaml`.
 
-Not yet on the desktop: following the instruction catalog, `eva.yaml` configuration,
-declarative packages, HTTP MCP servers, MCP image results, voice, a D-Bus tray menu, and
-a grant screen in the tray window. The terminal host is verified live against the subscription backend on Linux.
-The tray window is verified on an X11 desktop without a tray (window-only), and the
-StatusNotifierItem against an embedded D-Bus daemon; a real panel on Wayland and the
-X11 system tray are not yet verified, nor is macOS. The MCP client is verified live with
+The window's hamburger menu opens Conversation, Tools, and Settings, with Quit EVA.
+Desktop and Android drawers omit conversation creation and history selection.
+Tools controls existing MCP grants, including individual tools; Apply to conversation
+reconnects with the new catalog. Revoked grants take effect at dispatch immediately.
+Settings edits the text model and reasoning effort, and offers a validated YAML editor
+and Reload. Both edit `$XDG_CONFIG_HOME/eva/eva.yaml` through the shared configuration
+codec in `:eva-core`. Root overrides preserve includes and phone settings; included
+files are read without rewriting, and a symlink keeps edits in the user's repository.
+Desktop defaults fill omitted fields. Only text models, prompts, skills, and stall
+periods affect desktop execution; phone permissions, voice, and declarative packages
+are preserved but not executed. Skills load from the same installed and repository
+folder model as Android. Credentials remain device-local.
+
+MCP image blocks and JSON screenshot data URLs are stored with the invocation's structured result and passed to
+OpenAI Responses as image content alongside the attributed text receipt. They survive
+conversation reloads and are kept out of plain text receipt serialization. Unsupported
+image formats produce a visible omission note. Other non-text blocks are still omitted.
+
+Not yet on the desktop: following the instruction catalog, managed Git sync,
+declarative packages, HTTP MCP servers, voice, and a D-Bus tray menu. The terminal host is verified live against the subscription backend on Linux.
+The packaged tray window and StatusNotifierItem are verified on Hyprland with
+XWayland and taffybar, including desktop-session startup and repeated launcher
+invocations. That session needs `_JAVA_AWT_WM_NONREPARENTING=1` for the Java window
+to resize with its tiled frame. The window is also verified on X11 without a tray
+(window-only), and the StatusNotifierItem against an embedded D-Bus daemon. The
+X11 system tray and macOS are not yet verified. The MCP client is verified live with
 `computer-use-linux`: EVA listed its tools, ran a granted read through the dispatcher,
 and answered from the result.
 

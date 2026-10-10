@@ -20,7 +20,6 @@ import com.colonelpanic.eva.conversation.ConversationEntry
 import com.colonelpanic.eva.conversation.ConversationState
 import com.colonelpanic.eva.conversation.EntryStatus
 import com.colonelpanic.eva.conversation.ProviderStatus
-import com.colonelpanic.eva.conversation.ThreadSummary
 import com.colonelpanic.eva.providers.openai.OpenAiModels
 import com.colonelpanic.eva.ui.about.AboutInfo
 import com.colonelpanic.eva.ui.about.AboutScreen
@@ -51,8 +50,6 @@ fun EvaApp(
     prompt: PromptUiState = PromptUiState(),
     promptActions: PromptActions = PromptActions(),
     about: AboutInfo = AboutInfo(),
-    threads: List<ThreadSummary> = emptyList(),
-    onNewThread: () -> Unit = {},
     onShowThread: (String) -> Unit = {},
     onStopTask: () -> Unit = {},
     tasks: kotlinx.coroutines.flow.StateFlow<List<com.colonelpanic.eva.conversation.TaskSnapshot>> =
@@ -104,20 +101,8 @@ fun EvaApp(
             EvaDrawerSheet(
                 providerLabel = state.providerLabel,
                 current = destination,
-                threads = threads,
-                shownThreadId = state.threadId,
                 onSelect = { selected ->
                     destination = selected
-                    scope.launch { drawer.close() }
-                },
-                onNewThread = {
-                    onNewThread()
-                    destination = EvaDestination.CONVERSATION
-                    scope.launch { drawer.close() }
-                },
-                onShowThread = { id ->
-                    onShowThread(id)
-                    destination = EvaDestination.CONVERSATION
                     scope.launch { drawer.close() }
                 },
             )

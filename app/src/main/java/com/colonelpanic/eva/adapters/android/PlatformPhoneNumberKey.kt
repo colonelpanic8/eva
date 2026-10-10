@@ -5,15 +5,6 @@ import android.telephony.PhoneNumberUtils
 import android.telephony.TelephonyManager
 import java.util.Locale
 
-/** One comparable form of a phone number, so the same line written two ways compares equal. */
-fun interface PhoneNumberKey {
-    fun of(number: String): String
-
-    companion object {
-        val E164 = Regex("\\+[1-9][0-9]{6,14}")
-    }
-}
-
 /**
  * E.164, reading a number without a country code as one from the SIM's country: "(202) 555-0100"
  * and "+1 202 555 0100" agree, while numbers that share only trailing digits do not. What is not a
