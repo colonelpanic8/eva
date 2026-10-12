@@ -4,6 +4,12 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.61.1] - 2026-10-11
+
+### Fixed
+
+- Linking a configuration repository no longer fails with "Saved configuration did not resolve to the current settings" when EVA holds lists (device authorizations, installed packages, grants, credentials, skills) in a different order than `eva.yaml` writes them. Saving a later settings change no longer reports a conflict for the same reason.
+
 ## [0.61.0] - 2026-10-09
 
 ### Added

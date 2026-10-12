@@ -1,0 +1,1 @@
+* Fixed: Linking a configuration repository no longer fails with "Saved configuration did not resolve to the current settings" when EVA holds lists (device authorizations, installed packages, grants, credentials, skills) in a different order than `eva.yaml` writes them. Saving a later settings change no longer reports a conflict for the same reason.
