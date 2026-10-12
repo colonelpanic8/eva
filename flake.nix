@@ -44,11 +44,11 @@
         freetype
         libGL
         stdenv.cc.cc.lib
-        xorg.libX11
-        xorg.libXext
-        xorg.libXi
-        xorg.libXrender
-        xorg.libXtst
+        libx11
+        libxext
+        libxi
+        libxrender
+        libxtst
       ]);
       androidShell = pkgs.mkShell {
         packages = with pkgs; [
