@@ -536,6 +536,10 @@ object EvaConfigurationCodec {
 
     fun complete(configuration: EvaConfiguration): EvaConfigurationDocument = diff(configuration, null)
 
+    /** [configuration] as it reads back once written: collections in file order and values validated. */
+    fun normalized(configuration: EvaConfiguration): EvaConfiguration =
+        merge(EvaConfigurationDocument(), canonical(complete(configuration))).materialize().validated()
+
     fun overrides(
         configuration: EvaConfiguration,
         included: EvaConfigurationDocument,

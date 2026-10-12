@@ -41,14 +41,18 @@ class LinkedConfiguration(
                 val text = EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(current))
                 selected.replaceRoot(text, expectedRootFingerprint = null)
                 val saved = EvaConfigurationCodec.resolve(reader = selected)
-                val differing = differingGroups(saved.configuration.withoutFolderSkills(), current.withoutFolderSkills())
+                val differing =
+                    differingGroups(
+                        saved.configuration.withoutFolderSkills(),
+                        EvaConfigurationCodec.normalized(current).withoutFolderSkills(),
+                    )
                 require(differing.isEmpty()) {
                     "Saved configuration did not resolve to the current settings; these groups differ: ${differing.joinToString()}."
                 }
                 directory = selected
                 resolved = saved
                 // Skill folders already in the repository, or left from a previous one, are the folder's to decide.
-                if (saved.configuration != current) setupRequired = applyTransactionally(saved).setupRequired
+                if (saved.configuration != current.asWritten()) setupRequired = applyTransactionally(saved).setupRequired
                 LinkedConfigurationResult.Saved(setupRequired)
             } else {
                 val disk = EvaConfigurationCodec.resolve(reader = selected)
@@ -115,7 +119,7 @@ class LinkedConfiguration(
                 return@withLock LinkedConfigurationResult.Conflict(outcome.setupRequired)
             }
             resolved = saved
-            if (saved.configuration == current) {
+            if (saved.configuration == current || saved.configuration == current.asWritten()) {
                 setupRequired = (setupRequired - ready.notices.toSet() + saved.notices).distinct()
                 LinkedConfigurationResult.Saved(setupRequired)
             } else {
@@ -177,6 +181,13 @@ class LinkedConfiguration(
         }
     }
 }
+
+/** Folder skills are read from the repository, not written, so they carry over as they are. */
+private fun EvaConfiguration.asWritten() =
+    EvaConfigurationCodec
+        .normalized(
+            this,
+        ).let { it.copy(skills = it.skills.copy(repository = skills.repository, problems = skills.problems)) }
 
 private fun EvaConfiguration.withoutFolderSkills() = copy(skills = skills.copy(repository = emptyList(), problems = emptyList()))
 

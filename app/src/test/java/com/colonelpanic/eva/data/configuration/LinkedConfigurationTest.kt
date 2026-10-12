@@ -39,6 +39,20 @@ class LinkedConfigurationTest {
         }
 
     @Test
+    fun `settings held in a different order than the file writes them link and save without a conflict`() =
+        runTest {
+            var local = configuration(authorizations = listOf("android.permission.RECORD_AUDIO", "android.permission.READ_CONTACTS"))
+            val linked = linked(snapshot = { local }, apply = { local = it })
+            val empty = FakeDirectory("empty", mutableMapOf())
+
+            assertTrue(linked.attach(empty) is LinkedConfigurationResult.Saved)
+
+            local = local.copy(models = local.models.copy(text = "edited"))
+            assertTrue(linked.localChange() is LinkedConfigurationResult.Saved)
+            assertTrue(empty.files.getValue("eva.yaml").contains("edited"))
+        }
+
+    @Test
     fun `skill folders in a repository load with it, follow its edits, and never enter eva yaml`() =
         runTest {
             var local = configuration()
