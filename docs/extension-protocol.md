@@ -1060,6 +1060,7 @@ by package name and production signing certificate SHA-256:
 - Mova `com.colonelpanic.mova`: `905afc87…ad22`
 - Paseo assembly `sh.paseo.assembly`: `8d229a78…b8ee`
 - Upstream Paseo `sh.paseo` releases: `421698bd…c647`
+- Soundcore Actions `com.oceanwing.soundcore` (the modified Soundcore app; the official app has another signer and no extension): `6286a277…0640`
 
 A matching provider is enabled with every action when it is discovered, and again
 under each new contract, such as a Mova account switch or an app update. Actions the

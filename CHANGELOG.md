@@ -4,6 +4,10 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Soundcore Actions, the modified Soundcore app, starts enabled as a default extension, so EVA can check wind reduction on Liberty 5 Pro earbuds and turn it on, off, or toggle it without a settings visit. It is pinned to its release signer like Mova and Paseo.
+
 ## [0.61.1] - 2026-10-11
 
 ### Fixed
