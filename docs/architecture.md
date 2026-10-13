@@ -387,7 +387,7 @@ revocation blocks new execution immediately even if the model still sees an olde
 refreshed from a followed repository, newly named actions are granted when that
 package's auto-enable switch is on; explicitly disabled actions remain disabled.
 Manual imports do not gain new grants this way. Installed Android providers do not
-either, except the pinned default providers (Mova and Paseo): they start enabled
+either, except the pinned default providers (Mova, Paseo, and Soundcore Actions): they start enabled
 with every action unless the user turned them off. See
 [default providers](extension-protocol.md#7-identity-grants-and-untrusted-text).
 An app's own installed extension takes over same-named actions from declarative
