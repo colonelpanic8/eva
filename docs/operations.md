@@ -56,8 +56,20 @@ local debug keystore signs both debug modules. Production `:wear:assembleRelease
 uses the same four environment signing inputs and version inputs as `:app`; use
 absolute keystore paths and verify both certificates with `apksigner verify
 --print-certs`. Never replace a production install with debug or uninstall/clear
-an app to bypass a signer mismatch. The existing release/F-Droid pipeline still
-publishes the **phone** APK only; watch publication was not added or performed.
+an app to bypass a signer mismatch. Each GitHub release publishes `eva.apk` for
+the phone and `eva-wear.apk` for the watch, signed with the same production key.
+The F-Droid repository contains only the phone APK.
+
+For production installation, install or update EVA on the paired phone from its
+[GitHub release](https://github.com/colonelpanic8/eva/releases/latest) or F-Droid.
+On the Pixel Watch 3, install/update
+[Wear Updater](https://github.com/colonelpanic8/wear-updater/releases/latest),
+then choose **EVA** in its app list and install/update it. Wear Updater selects
+`eva-wear.apk` and verifies EVA’s pinned production certificate. Follow phone and
+watch setup steps 2–5 below to enable sensing. To sideload the production watch
+APK instead, use `adb -s WATCH_SERIAL install -r eva-wear.apk`.
+
+For development builds:
 
 1. Pair the Pixel Watch 3 with the Android phone using its normal companion setup.
    Enable watch Developer options by tapping **Settings → System → About →
@@ -203,8 +215,12 @@ export ANDROID_KEY_PASSWORD=...
 just release 0.1.0
 ```
 
-The script runs formatting checks, release lint, JVM tests, the optimized APK
-build, and `apksigner verify`. Its output is `dist/eva.apk`. It refuses to
+The script runs formatting checks, phone/watch release lint, JVM tests, both APK
+builds, and `apksigner verify`. Outputs are `dist/eva.apk` and
+`dist/eva-wear.apk`. Both must have application ID `com.colonelpanic.eva`, the
+requested version name/code, and exactly the certificate exported from the
+configured keystore alias. This proves the Data Layer signing/package match;
+it does not prove device gesture or lock-screen behavior. The script refuses to
 build when any signing value is absent, and Gradle rejects partially configured
 signing even outside the script.
 
@@ -216,8 +232,11 @@ With the signing secrets and Pages configured as described below:
 2. Run `just check` and, ideally, a local signed build.
 3. Commit the release state and create a `vMAJOR.MINOR.PATCH` tag.
 4. Push the tag. `.github/workflows/release.yml` builds from the tag and uploads
-   `eva.apk`; it fails if any signing secret is missing or invalid.
-5. Confirm the APK certificate and install/upgrade behavior before promoting
+   `eva.apk` and `eva-wear.apk`, both as workflow artifacts and release assets,
+   and reports each file’s SHA-256 in the step summary. It fails if any signing
+   secret is missing or invalid.
+5. Download both assets and confirm their shared APK certificate. Verify
+   install/upgrade behavior on the respective devices before promoting
    the release widely.
 6. The successful release workflow triggers the Pages/F-Droid workflow.
 
@@ -252,7 +271,10 @@ in F-Droid's official catalog.
 `.github/workflows/fdroid-repo.yml` runs after a successful **Release** workflow.
 It installs `fdroidserver`, downloads `eva.apk` from recent non-draft GitHub
 releases, copies the APK bytes without re-signing, builds a signed repository
-index, and deploys the generated site to Pages.
+index, and deploys the generated site to Pages. The collector requests the exact
+`eva.apk` asset, never a release asset glob. Metadata generation also rejects
+APKs declaring `android.hardware.type.watch`, including manually supplied APKs;
+`eva-wear.apk` must never enter the phone repository.
 
 The collector verifies every APK signature and processes releases newest first.
 If it encounters a different signing certificate, it stops at that boundary so

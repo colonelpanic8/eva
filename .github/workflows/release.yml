@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   release:
-    name: Build signed release APK
+    name: Build signed phone and watch APKs
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -69,18 +69,24 @@ jobs:
         run: ./scripts/build-release.sh "$RELEASE_VERSION"
       - name: Report artifact
         run: |
-          ls -lh dist/eva.apk
-          echo "APK SHA-256: $(sha256sum dist/eva.apk | cut -d' ' -f1)" >> "$GITHUB_STEP_SUMMARY"
+          ls -lh dist/eva.apk dist/eva-wear.apk
+          for apk in dist/eva.apk dist/eva-wear.apk; do
+            echo "$(basename "$apk") SHA-256: $(sha256sum "$apk" | cut -d' ' -f1)" >> "$GITHUB_STEP_SUMMARY"
+          done
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: eva-${{ env.RELEASE_VERSION }}
-          path: dist/eva.apk
+          path: |
+            dist/eva.apk
+            dist/eva-wear.apk
           if-no-files-found: error
           retention-days: 30
-      - name: Publish GitHub release asset
+      - name: Publish GitHub release assets
         uses: softprops/action-gh-release@v3.0.3
         with:
           tag_name: v${{ env.RELEASE_VERSION }}
           name: EVA v${{ env.RELEASE_VERSION }}
-          files: dist/eva.apk
+          files: |
+            dist/eva.apk
+            dist/eva-wear.apk
           generate_release_notes: true

@@ -4,6 +4,15 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Wrist gestures now require two complete out-and-back twists by default, preventing a single twist-and-return from starting voice. Portable `wearGesture.requiredPulses` selects an even pulse count (minimum 2); the whole-gesture default is now 1100 ms. Near-miss diagnostics retain the accepted pulse count and every pulse's features.
+
+### Added
+
+- Signed watch APK (`eva-wear.apk`) published beside the phone APK in each GitHub release, with matching package, version, and release certificate verification. The phone F-Droid repository excludes watch APKs; Wear Updater provides watch installation and updates.
+- Wear OS companion for two quick full wrist twists (out, back, out, back; four alternating pulses) to request EVA voice on the paired phone through its system assistant role, with screen-off sensing, an ongoing activity, haptic detection/error feedback, and phone-owned portable detector settings. Gesture candidates and likely false-positive calls join the existing diagnostics export. Synthetic gesture and configuration tests cover the initial conservative defaults; Pixel Watch 3 battery, lock-screen startup, and real walking/cycling reliability remain unverified.
+
 ## [0.63.0] - 2026-10-14
 
 ### Added
@@ -13,14 +22,6 @@ All notable changes to EVA will be documented here.
 ### Changed
 
 - Tapping a Portal status that is not ready tries harder before giving up. If Portal stays silent after its accessibility service is turned back on, or answers but cannot read the screen, EVA restarts the service through Shizuku. If that does not fix it, the tap opens Portal and says what to check, instead of only showing a message.
-
-### Fixed
-
-- Wrist gestures now require two complete out-and-back twists by default, preventing a single twist-and-return from starting voice. Portable `wearGesture.requiredPulses` selects an even pulse count (minimum 2); the whole-gesture default is now 1100 ms. Near-miss diagnostics retain the accepted pulse count and every pulse's features.
-
-### Added
-
-- Wear OS companion for two quick full wrist twists (out, back, out, back; four alternating pulses) to request EVA voice on the paired phone through its system assistant role, with screen-off sensing, an ongoing activity, haptic detection/error feedback, and phone-owned portable detector settings. Gesture candidates and likely false-positive calls join the existing diagnostics export. Synthetic gesture and configuration tests cover the initial conservative defaults; Pixel Watch 3 battery, lock-screen startup, and real walking/cycling reliability remain unverified.
 
 ## [0.62.0] - 2026-10-13
 
