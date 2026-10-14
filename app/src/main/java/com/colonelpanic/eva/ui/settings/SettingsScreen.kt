@@ -836,7 +836,9 @@ private fun WatchGestureSection(
     SettingsSection("Wrist gesture") {
         SettingsRow(
             title = "Start voice from a Wear OS watch",
-            supporting = "Two sharp opposite wrist twists. Requires EVA as default assistant. Continuous sensing drains watch battery.",
+            supporting =
+                "Full wrist twists required: ${state.wearGesture.requiredPulses / 2} (out and back each). " +
+                    "Requires EVA as default assistant. Continuous sensing drains watch battery.",
         ) {
             Switch(checked = state.wearGesture.enabled, onCheckedChange = actions.onWearGestureEnabled)
         }

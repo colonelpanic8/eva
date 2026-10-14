@@ -19,10 +19,11 @@ class WatchRuntimeTest {
     @Test fun `older snapshots cannot reenable sensing after newer disable`() {
         val context = RuntimeEnvironment.getApplication()
         val runtime = WatchRuntime(context)
-        val disabled = WearGestureConfiguration(peakRate = 7.0)
+        val disabled = WearGestureConfiguration(requiredPulses = 6, maxGestureMillis = 1600, peakRate = 7.0)
         runtime.apply(WearProtocol.encode(WatchConfiguration(20, disabled)), "phone")
         runtime.apply(WearProtocol.encode(WatchConfiguration(10, disabled.copy(enabled = true))), "phone")
         assertEquals(disabled, runtime.config)
+        assertEquals(6, runtime.state.value.requiredPulses)
         assertFalse(runtime.state.value.enabled)
         assertNull(shadowOf(context).nextStartedService)
     }
@@ -31,7 +32,7 @@ class WatchRuntimeTest {
         val context = RuntimeEnvironment.getApplication()
         val runtime = WatchRuntime(context)
         runtime.pause()
-        val enabled = WearGestureConfiguration(enabled = true)
+        val enabled = WearGestureConfiguration(enabled = true, requiredPulses = 6, maxGestureMillis = 1600)
         runtime.apply(WearProtocol.encode(WatchConfiguration(20, enabled)), "phone")
         val restored = WatchRuntime(context)
         assertEquals(enabled, restored.config)

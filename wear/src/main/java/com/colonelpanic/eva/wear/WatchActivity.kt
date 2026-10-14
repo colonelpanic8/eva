@@ -24,6 +24,7 @@ class WatchActivity : Activity() {
     private var ticker: Job? = null
     private lateinit var toggle: Switch
     private lateinit var status: TextView
+    private lateinit var instructions: TextView
     private var rendering = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -50,7 +51,8 @@ class WatchActivity : Activity() {
             }
         status = TextView(this)
         layout.addView(toggle)
-        layout.addView(TextView(this).apply { setText(R.string.instructions) })
+        instructions = TextView(this)
+        layout.addView(instructions)
         layout.addView(status)
         layout.addView(
             Button(this).apply {
@@ -78,6 +80,13 @@ class WatchActivity : Activity() {
                     rendering = true
                     toggle.isChecked = state.enabled
                     rendering = false
+                    instructions.text =
+                        resources.getQuantityString(
+                            R.plurals.instructions,
+                            state.requiredPulses / 2,
+                            state.requiredPulses / 2,
+                            state.requiredPulses,
+                        )
                     status.text = getString(R.string.status, state.status, state.lastDetection, runtime.recentNearMisses())
                 }
             }

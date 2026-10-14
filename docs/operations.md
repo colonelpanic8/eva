@@ -85,17 +85,19 @@ publishes the **phone** APK only; watch publication was not added or performed.
    enabling, and select **Sync phone settings**. If Android refused background
    service startup, opening the watch app resumes it. The screen must say
    **Listening** and the ongoing notification/watch-face indicator must be present.
-4. Wear the strap snugly. Twist sharply out then back about the forearm, once each,
-   within about half a second. A short haptic means detection; the status must then
-   reach **EVA voice connected**. Three longer haptics mean failure: read the
-   specific setup/connection message. The test indicator shows last detection time;
+4. Wear the strap snugly. Make two quick full twists about the forearm: **out,
+   back, out, back**, four alternating rotation pulses within 1.1 seconds. One
+   out-and-back pair does not trigger with the defaults. A short haptic means
+   detection; the status must then reach **EVA voice connected**. Three longer
+   haptics mean failure: read the specific setup/connection message. The test indicator shows last detection time;
    near misses count only the last five minutes since process start. It does not
    provide a button that bypasses the detector, so test the actual gesture.
 5. The watch toggle requests the phone's portable flag. Turning it off also pauses
    locally immediately, even offline. Notification **Pause** stops only this watch.
    That local pause survives reboot; a confirmed enable resumes it. Thresholds
-   are editable under `wearGesture` in the phone's `eva.yaml`; Reload/Sync applies
-   them and sends the effective configuration to the watch.
+   (including `requiredPulses`, default 4) are editable under `wearGesture` in the
+   phone's `eva.yaml`; Reload/Sync applies them and sends the effective
+   configuration to the watch.
 
 Physical-device acceptance remains open. Use a safe stationary test first, then
 walking, before relying on it on a bike. Test with phone PIN/keyguard showing,

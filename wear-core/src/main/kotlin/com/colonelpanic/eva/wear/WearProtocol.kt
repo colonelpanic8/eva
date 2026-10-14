@@ -39,13 +39,13 @@ data class WatchGestureEvent(
     val reason: String,
     val sensorMillis: Long,
     val axis: Int,
-    val first: TwistFeatures?,
-    val second: TwistFeatures?,
-    val intervalMillis: Long?,
+    val pulses: List<RotationPulseFeatures>,
+    val candidate: RotationPulseFeatures?,
+    val requiredPulses: Int,
 )
 
 @Serializable
-data class TwistFeatures(
+data class RotationPulseFeatures(
     val startMillis: Long,
     val durationMillis: Long,
     val direction: Int,
@@ -75,9 +75,17 @@ fun traceGesture(
             "sensorMillis" to e.sensorMillis,
             "axis" to e.axis,
             "reason" to e.reason,
-            "intervalMillis" to e.intervalMillis,
+            "validPulseCount" to e.pulses.size,
+            "requiredPulses" to e.requiredPulses,
         )
-    listOf("first" to e.first, "second" to e.second).forEach { (name, f) ->
+    val features = e.pulses.mapIndexed { index, pulse -> "pulse${index + 1}" to pulse } + listOf("candidate" to e.candidate)
+    e.pulses.zipWithNext().forEachIndexed { index, (a, b) ->
+        fields += "interval${index + 1}Millis" to b.startMillis - a.startMillis
+    }
+    if (e.candidate != null && e.pulses.isNotEmpty()) {
+        fields += "candidate.intervalMillis" to e.candidate.startMillis - e.pulses.last().startMillis
+    }
+    features.forEach { (name, f) ->
         if (f != null) {
             fields +=
                 listOf(

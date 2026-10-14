@@ -43,7 +43,7 @@ class WatchRuntime(
     init {
         try {
             config = prefs.getString("config", null)?.let { WearProtocol.decode<WatchConfiguration>(it.toByteArray()).value } ?: config
-            mutable.value = state.value.copy(enabled = config.enabled && !paused)
+            mutable.value = state.value.copy(enabled = config.enabled && !paused, requiredPulses = config.requiredPulses)
         } catch (error: Exception) {
             error("Saved watch configuration is invalid. Sync phone settings to repair it.")
         }
@@ -90,7 +90,7 @@ class WatchRuntime(
             config = value
             configRevision = payload.revision
             phone = node
-            mutable.value = state.value.copy(enabled = value.enabled && !paused)
+            mutable.value = state.value.copy(enabled = value.enabled && !paused, requiredPulses = value.requiredPulses)
             reconcile()
         } catch (
             error: Exception,
@@ -291,6 +291,7 @@ class WatchRuntime(
 
 data class WatchUi(
     val enabled: Boolean = false,
+    val requiredPulses: Int = 4,
     val status: String = "Open EVA on the phone, then sync settings.",
     val lastDetection: String = "—",
     val nearMisses: Int = 0,

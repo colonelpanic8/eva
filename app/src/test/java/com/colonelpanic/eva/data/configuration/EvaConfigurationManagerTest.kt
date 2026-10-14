@@ -46,13 +46,13 @@ class EvaConfigurationManagerTest {
         runBlocking {
             val value =
                 com.colonelpanic.eva.wear
-                    .WearGestureConfiguration(enabled = true, peakRate = 8.0)
+                    .WearGestureConfiguration(enabled = true, requiredPulses = 6, maxGestureMillis = 1600, peakRate = 8.0)
             val baseline = app.configuration.snapshotForTest().copy(wearGesture = value)
             val folder = MemoryDirectory(EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(baseline)))
             val manager = EvaConfigurationManager(app)
             assertTrue(manager.attachForTest(folder) is LinkedConfigurationResult.Loaded)
             assertEquals(value, app.wearGestureSettings.value)
-            val edited = value.copy(enabled = false, refractoryMillis = 4500)
+            val edited = value.copy(enabled = false, requiredPulses = 2, refractoryMillis = 4500)
             app.wearGestureSettings.save(edited)
             manager.localChangeForTest()
             assertEquals(edited, EvaConfigurationCodec.resolve(folder).configuration.wearGesture)

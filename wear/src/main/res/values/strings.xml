@@ -2,9 +2,12 @@
     <string name="app_name">EVA wrist gesture</string>
     <string name="enable">Enable wrist gesture</string>
     <string name="refresh">Sync phone settings</string>
-    <string name="instructions">Twist sharply out, then back. Keep the strap snug. Continuous sensing uses extra battery.</string>
+    <plurals name="instructions">
+        <item quantity="one">Make %1$d full wrist twist (%2$d alternating pulses): out and back. Keep the strap snug. Continuous sensing uses extra battery.</item>
+        <item quantity="other">Make %1$d full wrist twists (%2$d alternating pulses): out and back each time. Keep the strap snug. Continuous sensing uses extra battery.</item>
+    </plurals>
     <string name="status">%1$s\n\nLast detection: %2$s\nNear misses (last 5 min): %3$d</string>
     <string name="channel">Wrist gesture listener</string>
-    <string name="notification">Listening for two opposite wrist twists</string>
+    <string name="notification">Alternating rotation pulses required: %1$d</string>
     <string name="stop">Pause</string>
 </resources>

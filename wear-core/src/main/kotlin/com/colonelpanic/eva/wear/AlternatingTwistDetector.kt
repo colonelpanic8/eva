@@ -6,8 +6,8 @@ import kotlin.math.min
 import kotlin.math.sign
 import kotlin.math.sqrt
 
-/** Two opposite, sustained rotations about one configured strap axis, timed by the sensor clock. */
-class DoubleTwistDetector(
+/** A configured even number of alternating strap-axis pulses, timed by the sensor clock. */
+class AlternatingTwistDetector(
     private val config: WearGestureConfiguration,
 ) {
     private data class Pulse(
@@ -23,7 +23,7 @@ class DoubleTwistDetector(
     private var previousRate = 0.0
     private var pulse: Pulse? = null
     private var blockedDirection: Int? = null
-    private var first: TwistFeatures? = null
+    private val accepted = mutableListOf<RotationPulseFeatures>()
     private var refractoryUntil = Long.MIN_VALUE
 
     fun sample(
@@ -37,19 +37,18 @@ class DoubleTwistDetector(
 
         fun emit(
             reason: String,
-            a: TwistFeatures?,
-            b: TwistFeatures? = null,
+            candidate: RotationPulseFeatures? = null,
             detected: Boolean = false,
         ) {
             events +=
                 WatchGestureEvent(
-                    detected,
-                    reason,
-                    millis,
-                    config.axis,
-                    a,
-                    b,
-                    b?.let { it.startMillis - (a?.startMillis ?: it.startMillis) },
+                    detected = detected,
+                    reason = if (detected) reason else "$reason (${accepted.size}/${config.requiredPulses} valid pulses)",
+                    sensorMillis = millis,
+                    axis = config.axis,
+                    pulses = accepted.toList(),
+                    candidate = candidate,
+                    requiredPulses = config.requiredPulses,
                 )
         }
         val previous = previousMillis
@@ -58,9 +57,9 @@ class DoubleTwistDetector(
         if (listOf(x, y, z, accelerationDeviation).any { !it.isFinite() } ||
             (previous != null && (dt <= 0 || dt > config.maxSampleGapMillis))
         ) {
-            if (pulse != null || first != null) emit("sample_gap", first, pulse?.features(previous ?: millis))
+            if (pulse != null || accepted.isNotEmpty()) emit("sample_gap", pulse?.features(previous ?: millis))
             pulse = null
-            first = null
+            accepted.clear()
             blockedDirection = null
             previousRate = 0.0
             return events
@@ -69,6 +68,20 @@ class DoubleTwistDetector(
         val rate = doubleArrayOf(x, y, z)[config.axis]
         val magnitude = sqrt(x * x + y * y + z * z)
         if (abs(rate) < config.releaseRate || rate.sign.toInt() != blockedDirection) blockedDirection = null
+        if (accepted.isNotEmpty()) {
+            val expired =
+                when {
+                    millis - accepted.first().startMillis > config.maxGestureMillis -> "gesture_duration"
+                    pulse == null && millis - accepted.last().startMillis > config.maxIntervalMillis -> "next_pulse_missing"
+                    else -> null
+                }
+            if (expired != null) {
+                emit(expired, pulse?.features(millis))
+                if (pulse != null && abs(rate) >= config.releaseRate) blockedDirection = rate.sign.toInt()
+                pulse = null
+                accepted.clear()
+            }
+        }
         val current = pulse
         if (current != null &&
             (abs(rate) < config.releaseRate || rate.sign.toInt() != current.direction || millis - current.start > config.maxPulseMillis)
@@ -89,33 +102,36 @@ class DoubleTwistDetector(
                     features.accelerationDeviation > config.maxAccelerationDeviation -> "linear_vibration"
                     else -> null
                 }
-            if (invalid != null) {
-                emit(invalid, first, features)
-                first = null
-            } else {
-                val a = first
-                if (a == null) {
-                    first = features
-                } else {
-                    val interval = features.startMillis - a.startMillis
-                    val reason =
-                        when {
-                            features.direction == a.direction -> "same_direction"
-                            interval !in config.minIntervalMillis..config.maxIntervalMillis -> "twist_interval"
-                            millis - a.startMillis > config.maxGestureMillis -> "gesture_duration"
-                            else -> "double_twist"
-                        }
-                    val detected = reason == "double_twist"
-                    emit(reason, a, features, detected)
-                    first = null
-                    if (detected) refractoryUntil = millis + config.refractoryMillis
+            val previousPulse = accepted.lastOrNull()
+            val sequenceFailure =
+                when {
+                    previousPulse == null -> {
+                        null
+                    }
+
+                    features.direction == previousPulse.direction -> {
+                        "same_direction"
+                    }
+
+                    features.startMillis - previousPulse.startMillis !in config.minIntervalMillis..config.maxIntervalMillis -> {
+                        "pulse_interval"
+                    }
+
+                    else -> {
+                        null
+                    }
                 }
-            }
-        }
-        first?.let {
-            if (pulse == null && millis - it.startMillis > config.maxIntervalMillis) {
-                emit("second_twist_missing", it)
-                first = null
+            val failure = invalid ?: sequenceFailure
+            if (failure != null) {
+                emit(failure, features)
+                accepted.clear()
+            } else {
+                accepted += features
+                if (accepted.size == config.requiredPulses) {
+                    emit("alternating_pulses", detected = true)
+                    accepted.clear()
+                    refractoryUntil = millis + config.refractoryMillis
+                }
             }
         }
         if (millis >= refractoryUntil) {
@@ -131,5 +147,5 @@ class DoubleTwistDetector(
         return events
     }
 
-    private fun Pulse.features(end: Long) = TwistFeatures(start, end - start, direction, peak, angle, dominance, acceleration)
+    private fun Pulse.features(end: Long) = RotationPulseFeatures(start, end - start, direction, peak, angle, dominance, acceleration)
 }

@@ -27,7 +27,7 @@ class GestureService :
     private val runtime get() = (application as WatchApplication).runtime
     private lateinit var sensors: SensorManager
     private var wakeLock: PowerManager.WakeLock? = null
-    private var detector: DoubleTwistDetector? = null
+    private var detector: AlternatingTwistDetector? = null
     private var applied: WearGestureConfiguration? = null
     private var acceleration = Double.POSITIVE_INFINITY
     private var accelerationAt = Long.MIN_VALUE
@@ -72,7 +72,7 @@ class GestureService :
             promote()
             if (applied != runtime.config) {
                 sensors.unregisterListener(this)
-                detector = DoubleTwistDetector(runtime.config)
+                detector = AlternatingTwistDetector(runtime.config)
                 applied = runtime.config
                 val gyro = sensors.getDefaultSensor(Sensor.TYPE_GYROSCOPE, true) ?: sensors.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
                 val accel = sensors.getDefaultSensor(Sensor.TYPE_ACCELEROMETER, true) ?: sensors.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
@@ -92,7 +92,9 @@ class GestureService :
                         PowerManager::class.java,
                     ).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "eva:WristGesture").apply { acquire() }
             }
-            runtime.status("Listening, including with the screen off. Twist sharply out and back.")
+            val twists = runtime.config.requiredPulses / 2
+            val gesture = if (twists == 1) "Twist sharply out and back once." else "Twist sharply out and back $twists times."
+            runtime.status("Listening, including with the screen off. $gesture")
             lastGyroAt = SystemClock.elapsedRealtime()
             lastAccelAt = lastGyroAt
             handler.removeCallbacks(watchdog)
@@ -133,7 +135,7 @@ class GestureService :
                 ).setContentTitle(
                     getString(R.string.app_name),
                 ).setContentText(
-                    getString(R.string.notification),
+                    getString(R.string.notification, runtime.config.requiredPulses),
                 ).setContentIntent(touch)
                 .setOngoing(true)
                 .addAction(0, getString(R.string.stop), pause)
@@ -145,7 +147,7 @@ class GestureService :
             ).setStaticIcon(
                 R.drawable.ic_watch,
             ).setTouchIntent(touch)
-            .setStatus(Status.Builder().addTemplate(getString(R.string.notification)).build())
+            .setStatus(Status.Builder().addTemplate(getString(R.string.notification, runtime.config.requiredPulses)).build())
             .build()
             .apply(this)
         startForeground(NOTIFICATION, builder.build(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)

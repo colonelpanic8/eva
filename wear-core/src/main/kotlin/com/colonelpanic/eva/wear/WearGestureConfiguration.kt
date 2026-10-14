@@ -6,6 +6,7 @@ import kotlinx.serialization.Serializable
 data class WearGestureConfiguration(
     val enabled: Boolean = false,
     val axis: Int = 1,
+    val requiredPulses: Int = 4,
     val candidateRate: Double = 2.5,
     val peakRate: Double = 5.5,
     val releaseRate: Double = 1.5,
@@ -15,12 +16,15 @@ data class WearGestureConfiguration(
     val minAxisDominance: Double = 0.85,
     val minIntervalMillis: Long = 120,
     val maxIntervalMillis: Long = 400,
-    val maxGestureMillis: Long = 550,
+    val maxGestureMillis: Long = 1100,
     val refractoryMillis: Long = 2500,
     val maxSampleGapMillis: Long = 60,
     val maxAccelerationDeviation: Double = 8.0,
 ) {
     init {
+        require(requiredPulses >= 2 && requiredPulses % 2 == 0) {
+            "wearGesture.requiredPulses must be an even number of at least 2 (out + back per twist)."
+        }
         require(axis in 0..2) { "wearGesture.axis must be 0 (X), 1 (Y), or 2 (Z)." }
         require(
             listOf(candidateRate, peakRate, releaseRate, minAngleRadians, minAxisDominance, maxAccelerationDeviation).all {
@@ -35,6 +39,11 @@ data class WearGestureConfiguration(
         require(minIntervalMillis > 0 && maxIntervalMillis >= minIntervalMillis && maxGestureMillis >= maxIntervalMillis) {
             "Invalid wear gesture timing window."
         }
+        require(
+            maxGestureMillis >= minPulseMillis && (requiredPulses - 1).toLong() <= (maxGestureMillis - minPulseMillis) / minIntervalMillis,
+        ) {
+            "wearGesture.maxGestureMillis is too short for requiredPulses at minIntervalMillis and minPulseMillis."
+        }
         require(minAxisDominance <= 1 && refractoryMillis >= maxGestureMillis && maxSampleGapMillis > 0) {
             "Invalid wear gesture dominance, refractory period or sample gap."
         }
@@ -46,6 +55,7 @@ data class WearGestureConfiguration(
 data class WearGesturePatch(
     val enabled: Boolean? = null,
     val axis: Int? = null,
+    val requiredPulses: Int? = null,
     val candidateRate: Double? = null,
     val peakRate: Double? = null,
     val releaseRate: Double? = null,
@@ -65,6 +75,7 @@ data class WearGesturePatch(
         return WearGestureConfiguration(
             enabled = enabled ?: defaults.enabled,
             axis = axis ?: defaults.axis,
+            requiredPulses = requiredPulses ?: defaults.requiredPulses,
             candidateRate = candidateRate ?: defaults.candidateRate,
             peakRate = peakRate ?: defaults.peakRate,
             releaseRate = releaseRate ?: defaults.releaseRate,
@@ -85,6 +96,7 @@ data class WearGesturePatch(
         WearGesturePatch(
             enabled = enabled ?: base?.enabled,
             axis = axis ?: base?.axis,
+            requiredPulses = requiredPulses ?: base?.requiredPulses,
             candidateRate = candidateRate ?: base?.candidateRate,
             peakRate = peakRate ?: base?.peakRate,
             releaseRate = releaseRate ?: base?.releaseRate,
@@ -108,6 +120,7 @@ data class WearGesturePatch(
             WearGesturePatch(
                 enabled = value.enabled.takeIf { it != base?.enabled },
                 axis = value.axis.takeIf { it != base?.axis },
+                requiredPulses = value.requiredPulses.takeIf { it != base?.requiredPulses },
                 candidateRate = value.candidateRate.takeIf { it != base?.candidateRate },
                 peakRate = value.peakRate.takeIf { it != base?.peakRate },
                 releaseRate = value.releaseRate.takeIf { it != base?.releaseRate },

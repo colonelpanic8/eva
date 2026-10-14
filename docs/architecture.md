@@ -913,10 +913,10 @@ The provider-aware watch-origin session trace remains in `:eva-core`. `app/wear/
 owns watch sensing, its UI and Ongoing Activity. No wake word or watch microphone
 is used. Starting a call is the only gesture action; ending it is unchanged.
 
-**Gesture:** two sharp **opposite** rotations, out then back (either sign first),
-about the watch's strap/forearm axis. This is one out-and-back pair, not two
-out-and-back pairs. The default is sensor Y (`axis: 1`), along the strap on a
-normally worn watch; a snug strap matters. Handedness and a 180-degree watch
+**Gesture:** two quick full wrist twists: **out, back, out, back** about the
+watch's strap/forearm axis (either sign first). Each twist consists of an outward
+pulse and a return pulse; the default requires all four alternating pulses.
+The default is sensor Y (`axis: 1`), along the strap on a normally worn watch; a snug strap matters. Handedness and a 180-degree watch
 orientation reverse signs and do not change acceptance. Axis alignment and comfort
 with hands on handlebars still need Pixel Watch 3 measurements.
 
@@ -926,6 +926,7 @@ Every knob is under portable `wearGesture`; these are the shipped defaults:
 wearGesture:
   enabled: false
   axis: 1
+  requiredPulses: 4
   candidateRate: 2.5
   peakRate: 5.5
   releaseRate: 1.5
@@ -935,7 +936,7 @@ wearGesture:
   minAxisDominance: 0.85
   minIntervalMillis: 120
   maxIntervalMillis: 400
-  maxGestureMillis: 550
+  maxGestureMillis: 1100
   refractoryMillis: 2500
   maxSampleGapMillis: 60
   maxAccelerationDeviation: 8.0
@@ -947,7 +948,14 @@ must attain `peakRate`, last 45–180 ms and integrate at least the minimum angl
 Axis dominance is absolute axis rate divided by the three-axis magnitude, with a
 minimum of 0.85 throughout the pulse. Peak acceleration-magnitude deviation from
 gravity must stay at or below 8 m/s², using a fresh accelerometer sample. Start-to-start
-pulse spacing is 120–400 ms; first start to second completion is at most 550 ms.
+spacing between every consecutive pair of pulses is 120–400 ms; first start to
+fourth completion is at most 1100 ms. `requiredPulses` must be even and at least 2:
+2 permits one out-and-back twist, 4 requires two, and 6 requires three. A direction
+repeat or bad interval resets the sequence. `maxGestureMillis` remains an explicit
+whole-sequence budget and must allow the requested count at the minimum interval
+and pulse duration. Its default doubled from 550 to 1100 ms to accommodate two full
+twists; all other detector defaults are unchanged. Larger counts may need an
+explicitly larger whole-sequence budget and refractory period.
 Long lobes are rejected whole; their tails cannot start a fresh candidate. Gaps over
 60 ms, invalid samples and nonmonotonic sensor time reset partial gestures. After
 a hit, 2500 ms of refractory time prevents another hit. Sustained high-frequency
@@ -957,7 +965,9 @@ heuristics, not measured false-positive or detection rates.
 
 The phone's `WearGestureSettings` participates in snapshot, field-by-field include
 composition, overrides, restore and rollback. Missing fields in older configurations
-take defaults; adding this optional group requires no schema bump. Phone Settings →
+take defaults; a missing `requiredPulses` now means 4. Existing explicit tuning,
+including an old 550 ms whole-sequence budget, is preserved; set that budget to
+1100 ms to use the new default timing. No schema bump is needed. Phone Settings →
 **Wrist gesture** edits the enable flag; thresholds can be edited in `eva.yaml`.
 `DataClient` sends the effective complete configuration at `/eva/wrist/config`.
 The watch caches that exact configuration for offline/boot use. A monotonic phone
@@ -1029,8 +1039,12 @@ delivery, so a detection haptic alone never proves that voice started.
 Every completed candidate is traced as `wear.gesture.detected` or
 `wear.gesture.near_miss`, including reason, watch wall/sensor timestamps, axis,
 peak rates, durations, integrated angles, dominance, acceleration deviations and
-inter-twist interval when available. Candidates below the admission rate are not
-near misses. Valid first pulses expire into a missing-second near miss. The watch
+every consecutive inter-pulse interval when available. Traces retain all accepted
+pulse features and a separate rejected candidate. Near-miss reasons include the
+valid count before failure (for example `next_pulse_missing (3/4 valid pulses)`),
+and trace fields include `validPulseCount` and `requiredPulses`. Candidates below
+the admission rate are not near misses. An incomplete sequence expires when the
+next pulse's start interval or the whole-gesture budget runs out. The watch
 uses EVA's existing `EvaTrace`/`TraceLog` ring, and Data Layer DataItems act as the
 offline telemetry outbox (2000 rotating slots). The phone imports them into its same
 trace and deletes delivered items; its standard thread/recent-log exports include
@@ -1047,7 +1061,8 @@ including `endedImmediately`. Failed startup is distinct and is not a false-posi
 label. This is a tuning hint, not ground truth: VAD can mistake noise for speech,
 and someone can intentionally open and close a call without talking.
 
-Synthetic JVM streams cover clean gestures, single/late/same-sign twists, road buzz,
+Synthetic JVM streams cover four-pulse gestures, incomplete/late/same-sign sequences,
+configurable two- and six-pulse sequences, whole-gesture expiry, road buzz,
 walking swings, off-axis motion, long rotations, sample gaps, threshold changes and
 refractory behavior. Configuration composition/restore and phone admission/failure
 paths have JVM coverage. These do not establish real-world walking/cycling rejection,
