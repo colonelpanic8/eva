@@ -14,6 +14,46 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConfigurationCompositionTest {
+    @Test fun `watch thresholds compose independently preserve explicit disable and migrate absent fields`() {
+        val value =
+            com.colonelpanic.eva.wear
+                .WearGestureConfiguration(enabled = true, peakRate = 7.0, refractoryMillis = 4000)
+        val base = fullConfiguration().copy(wearGesture = value)
+        val baseDoc = EvaConfigurationCodec.complete(base)
+        val baseYaml = EvaConfigurationCodec.encode(baseDoc)
+        assertEquals(base, EvaConfigurationCodec.resolve(reader(mapOf("eva.yaml" to baseYaml))).configuration)
+        val legacy = EvaConfigurationCodec.encode(baseDoc.copy(wearGesture = null))
+        assertEquals(
+            com.colonelpanic.eva.wear
+                .WearGestureConfiguration(),
+            EvaConfigurationCodec.resolve(reader(mapOf("eva.yaml" to legacy))).configuration.wearGesture,
+        )
+        val root =
+            EvaConfigurationDocument(
+                include = listOf("base.yaml"),
+                wearGesture =
+                    com.colonelpanic.eva.wear
+                        .WearGesturePatch(enabled = false, minAngleRadians = 0.6),
+            )
+        val resolved =
+            EvaConfigurationCodec.resolve(
+                reader(mapOf("eva.yaml" to EvaConfigurationCodec.encode(root), "base.yaml" to baseYaml)),
+            )
+        assertEquals(value.copy(enabled = false, minAngleRadians = 0.6), resolved.configuration.wearGesture)
+        val overrides = EvaConfigurationCodec.overrides(resolved.configuration, baseDoc, listOf("base.yaml"))
+        assertEquals(root.wearGesture, overrides.wearGesture)
+        assertNull(EvaConfigurationCodec.overrides(base, baseDoc, listOf("base.yaml")).wearGesture)
+        val invalid =
+            root.copy(
+                wearGesture =
+                    com.colonelpanic.eva.wear
+                        .WearGesturePatch(releaseRate = 10.0),
+            )
+        assertThrows(IllegalArgumentException::class.java) {
+            EvaConfigurationCodec.resolve(reader(mapOf("eva.yaml" to EvaConfigurationCodec.encode(invalid), "base.yaml" to baseYaml)))
+        }
+    }
+
     @Test
     fun `web research settings round trip compose and default for older configurations`() {
         val defaults =

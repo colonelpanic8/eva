@@ -5,7 +5,7 @@
 Run project commands through `direnv exec . <command>` or
 `nix develop .#android --command <command>`. The supported baseline is JDK 17,
 Android SDK 37, Gradle 9.8.1, AGP 9.4.1, and Kotlin 2.4.21. AGP supplies built-in
-Kotlin; do not add `kotlin-android`. Minimum Android SDK is 23.
+Kotlin; do not add `kotlin-android`. Minimum phone SDK is 23; the Wear OS companion requires API 34 (Wear OS 5).
 
 ```sh
 direnv exec . just --list
@@ -34,6 +34,96 @@ source at `assets/branding/eva-face-profile-v8-teal-hair-blue-face.svg`.
 Experiment-local commands belong in the
 [voice harness](../experiments/voice-poc/README.md) and
 [device-control probe](../experiments/device-control/README.md) READMEs.
+
+## Wear OS watch companion
+
+The `:wear` companion targets Pixel Watch 3-era Wear OS 5/6 with Google Play
+services. `just check` includes its Kotlin formatting, fatal debug lint, JVM test
+task and debug assembly. The existing Nix SDK 37 shell builds it without another
+SDK or flake change. Focused development commands:
+
+```sh
+direnv exec . ./gradlew :wear-core:test --tests 'com.colonelpanic.eva.wear.*'
+direnv exec . ./gradlew :app:testDebugUnitTest --tests 'com.colonelpanic.eva.wear.*' \
+  --tests 'com.colonelpanic.eva.data.configuration.*'
+direnv exec . ./gradlew :wear:lintDebug :wear:assembleDebug :app:assembleDebug
+```
+
+Install **both** APKs from this checkout. Wearable Data Layer requires the same
+application ID and certificate on both devices: debug is
+`com.colonelpanic.eva.debug`, release is `com.colonelpanic.eva`. Android's shared
+local debug keystore signs both debug modules. Production `:wear:assembleRelease`
+uses the same four environment signing inputs and version inputs as `:app`; use
+absolute keystore paths and verify both certificates with `apksigner verify
+--print-certs`. Never replace a production install with debug or uninstall/clear
+an app to bypass a signer mismatch. The existing release/F-Droid pipeline still
+publishes the **phone** APK only; watch publication was not added or performed.
+
+1. Pair the Pixel Watch 3 with the Android phone using its normal companion setup.
+   Enable watch Developer options by tapping **Settings → System → About →
+   Versions → Build number** repeatedly, then enable **ADB debugging** and
+   **Wireless debugging**. With the watch on the same network as this machine,
+   choose **Pair new device**. Pair using the displayed temporary port/code;
+   connect using the separate debugging address/port. Menu names vary by OS:
+
+   ```sh
+   direnv exec . adb pair WATCH_IP:PAIRING_PORT
+   direnv exec . adb connect WATCH_IP:DEBUG_PORT
+   direnv exec . adb devices
+   direnv exec . adb -s PHONE_SERIAL install -r app/build/outputs/apk/debug/app-debug.apk
+   direnv exec . just wear-install WATCH_SERIAL
+   ```
+
+   `wear-install` uses `adb install -r wear/build/outputs/apk/debug/wear-debug.apk`;
+   it preserves data. Select each serial explicitly. No watch was reachable
+   during implementation; these installation steps have not been exercised here.
+2. On the phone, open this EVA variant, grant microphone access, configure a voice
+   provider, select it under Android **Default apps → Digital assistant app**,
+   and make a normal voice call once. Allow notifications to see actionable errors.
+3. In phone **Settings → Wrist gesture**, enable the feature and select **Sync
+   watch**. On the watch, open **EVA wrist gesture**, allow notifications when
+   enabling, and select **Sync phone settings**. If Android refused background
+   service startup, opening the watch app resumes it. The screen must say
+   **Listening** and the ongoing notification/watch-face indicator must be present.
+4. Wear the strap snugly. Twist sharply out then back about the forearm, once each,
+   within about half a second. A short haptic means detection; the status must then
+   reach **EVA voice connected**. Three longer haptics mean failure: read the
+   specific setup/connection message. The test indicator shows last detection time;
+   near misses count only the last five minutes since process start. It does not
+   provide a button that bypasses the detector, so test the actual gesture.
+5. The watch toggle requests the phone's portable flag. Turning it off also pauses
+   locally immediately, even offline. Notification **Pause** stops only this watch.
+   That local pause survives reboot; a confirmed enable resumes it. Thresholds
+   are editable under `wearGesture` in the phone's `eva.yaml`; Reload/Sync applies
+   them and sends the effective configuration to the watch.
+
+Physical-device acceptance remains open. Use a safe stationary test first, then
+walking, before relying on it on a bike. Test with phone PIN/keyguard showing,
+watch display off (AOD on and off), phone/watch idle, earbuds connected, and phone
+EVA warm/cold while selected as assistant. A genuinely force-stopped app must be
+opened again. Test after first unlock following reboot and after installing an
+update. Check airplane mode/disconnection, missing assistant role, microphone
+revocation, existing calls and provider startup failure: each must show an error
+or an honest unknown outcome, never a false success or a replayed start.
+
+For sensor evidence, collect `adb -s WATCH_SERIAL logcat -s EvaTrace`, and on the
+phone use **Settings → Diagnostics → Export recent logs** or the conversation's
+**Share diagnostics**. Wait for watch telemetry to reach the phone. Compare
+`wear.gesture.*`, `wear.start.*`, and `wear.session.*` by UUID. Watch Data Layer
+telemetry has 2000 rotating offline slots; phone exports include the normal bounded
+trace ring, so export promptly during a noisy trial. Deliberately close a triggered
+call within five seconds and open one without speaking; verify the likely-false-positive
+labels, then confirm a normal spoken call is not labeled. These are heuristic labels.
+
+Measure screen-off battery drain for a known enabled interval and an otherwise
+similar disabled interval on the same watch/OS; record display, radios, sensor
+wake-up variants and charging state. The enabled service holds a partial wake lock
+and runs two sensors at a requested 100 Hz without batching. Expect significant
+extra drain; no percentage/hour or all-day battery claim is supported. Check watch
+battery/background restrictions if delivery stops. Doze can ignore wake locks;
+foreground service plus Ongoing Activity is not an exemption from every power rule.
+See the [architecture contract](architecture.md#watch-wrist-gesture) for thresholds,
+service-type rationale and remaining limits.
 
 ## Configuration verification
 

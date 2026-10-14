@@ -14,6 +14,10 @@ All notable changes to EVA will be documented here.
 
 - Tapping a Portal status that is not ready tries harder before giving up. If Portal stays silent after its accessibility service is turned back on, or answers but cannot read the screen, EVA restarts the service through Shizuku. If that does not fix it, the tap opens Portal and says what to check, instead of only showing a message.
 
+### Added
+
+- Wear OS companion for a two-direction wrist twist to request EVA voice on the paired phone through its system assistant role, with screen-off sensing, an ongoing activity, haptic detection/error feedback, and phone-owned portable detector settings. Gesture candidates and likely false-positive calls join the existing diagnostics export. Synthetic gesture and configuration tests cover the initial conservative defaults; Pixel Watch 3 battery, lock-screen startup, and real walking/cycling reliability remain unverified.
+
 ## [0.62.0] - 2026-10-13
 
 ### Added

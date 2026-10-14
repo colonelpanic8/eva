@@ -10,7 +10,7 @@ icons:
 
 # Run formatting checks, Android lint, unit tests, and a debug build.
 check:
-    ./gradlew --no-daemon ktlintCheck :app:lintDebug :diagnostics-core:test :wear-core:test :eva-core:test :eva-desktop:test :device-control-core:test :device-control-portal:test :device-control-host:test :app:testDebugUnitTest :app:assembleDebug
+    ./gradlew --no-daemon ktlintCheck :app:lintDebug :wear:lintDebug :diagnostics-core:test :wear-core:test :eva-core:test :eva-desktop:test :device-control-core:test :device-control-portal:test :device-control-host:test :app:testDebugUnitTest :wear:testDebugUnitTest :app:assembleDebug :wear:assembleDebug
 
 # Apply Kotlin formatting.
 format:
@@ -22,15 +22,15 @@ format-check:
 
 # Run Android lint with warnings treated as errors.
 lint:
-    ./gradlew --no-daemon :app:lintDebug
+    ./gradlew --no-daemon :app:lintDebug :wear:lintDebug
 
 # Run local JVM tests.
 test:
-    ./gradlew --no-daemon :diagnostics-core:test :wear-core:test :eva-core:test :eva-desktop:test :device-control-core:test :device-control-portal:test :device-control-host:test :app:testDebugUnitTest
+    ./gradlew --no-daemon :diagnostics-core:test :wear-core:test :eva-core:test :eva-desktop:test :device-control-core:test :device-control-portal:test :device-control-host:test :app:testDebugUnitTest :wear:testDebugUnitTest
 
 # Build the debug APK.
 build:
-    ./gradlew --no-daemon :app:assembleDebug
+    ./gradlew --no-daemon :app:assembleDebug :wear:assembleDebug
 
 # Install the debug APK on the selected adb device.
 install:
@@ -67,3 +67,7 @@ desktop-run *args: desktop
 # Build the standalone JVM device-control CLI.
 device-host:
     ./gradlew --no-daemon :device-control-host:installDist
+
+# Install the watch debug app without removing data.
+wear-install device:
+    adb -s {{device}} install -r wear/build/outputs/apk/debug/wear-debug.apk

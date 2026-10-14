@@ -15,6 +15,8 @@ import com.colonelpanic.eva.conversation.prompt.PromptDefaults
 import com.colonelpanic.eva.conversation.prompt.VoiceCallMode
 import com.colonelpanic.eva.providers.openai.OpenAiModels
 import com.colonelpanic.eva.skills.Skill
+import com.colonelpanic.eva.wear.WearGestureConfiguration
+import com.colonelpanic.eva.wear.WearGesturePatch
 import com.colonelpanic.eva.web.WebResearchConfiguration
 import kotlinx.serialization.Required
 import kotlinx.serialization.SerialName
@@ -43,6 +45,7 @@ data class EvaConfigurationDocument(
     val device: DevicePatch? = null,
     val diagnostics: DiagnosticsPatch? = null,
     val skills: SkillsPatch? = null,
+    val wearGesture: WearGesturePatch? = null,
 ) {
     companion object {
         const val FORMAT = "eva"
@@ -254,6 +257,7 @@ data class EvaConfiguration(
     val device: Device,
     val diagnostics: Diagnostics = Diagnostics(),
     val skills: Skills = Skills(),
+    val wearGesture: WearGestureConfiguration = WearGestureConfiguration(),
 ) {
     data class Models(
         val text: String,
@@ -550,6 +554,7 @@ object EvaConfigurationCodec {
         current: EvaConfiguration,
         base: EvaConfigurationDocument?,
     ) = EvaConfigurationDocument(
+        wearGesture = WearGesturePatch.diff(current.wearGesture, base?.wearGesture),
         models =
             ModelsPatch(
                 current.models.text.takeIf { it != base?.models?.text },
@@ -628,6 +633,7 @@ object EvaConfigurationCodec {
 
     private fun EvaConfigurationDocument.materialize(): EvaConfiguration =
         EvaConfiguration(
+            wearGesture = wearGesture?.materialize() ?: WearGestureConfiguration(),
             models =
                 EvaConfiguration.Models(
                     requireNotNull(models?.text) { "models.text is missing." },
@@ -966,6 +972,7 @@ object EvaConfigurationCodec {
         base: EvaConfigurationDocument,
         override: EvaConfigurationDocument,
     ) = EvaConfigurationDocument(
+        wearGesture = override.wearGesture?.over(base.wearGesture) ?: base.wearGesture,
         models =
             ModelsPatch(
                 override.models?.text ?: base.models?.text,

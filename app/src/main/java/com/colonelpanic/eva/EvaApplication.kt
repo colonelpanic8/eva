@@ -133,6 +133,14 @@ class EvaApplication :
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val settings by lazy { OpenAiSettings(this, configuration::onLocalChange, configuration::onCredentialChange) }
     val appearance by lazy { AppearanceSettings(this, configuration::onLocalChange) }
+    val wearGestureSettings by lazy {
+        com.colonelpanic.eva.wear
+            .WearGestureSettings(this, configuration::onLocalChange)
+    }
+    val wearCompanion by lazy {
+        com.colonelpanic.eva.wear
+            .PhoneWearCompanion(this, scope)
+    }
     val diagnostics by lazy { DiagnosticsSettings(this, configuration::onLocalChange) }
     val capabilities by lazy { CapabilitySettings(this, configuration::onLocalChange, configuration::onCredentialChange) }
     val prompts by lazy { PromptStore(this, onChanged = configuration::onLocalChange) }
@@ -842,6 +850,7 @@ class EvaApplication :
             observeExtensionPackages(this, extensions::packageChanged)
             extensions.refresh()
             configuration.start()
+            wearCompanion.observeConfiguration()
         } catch (failure: Throwable) {
             com.colonelpanic.eva.capability.extensions
                 .rethrowFatalExtensionFailure(failure)

@@ -30,6 +30,16 @@ class EvaVoiceInteractionService : VoiceInteractionService() {
         )
     }
 
+    override fun onShowSessionFailed(args: Bundle) {
+        super.onShowSessionFailed(args)
+        args.getString(EXTRA_WATCH_TRIGGER)?.let {
+            (application as com.colonelpanic.eva.EvaApplication).wearCompanion.fail(
+                it,
+                "Android could not show EVA’s assistant session. Open EVA on the phone and check the default assistant setting.",
+            )
+        }
+    }
+
     override fun onReady() {
         super.onReady()
         active = WeakReference(this)
@@ -43,12 +53,22 @@ class EvaVoiceInteractionService : VoiceInteractionService() {
     companion object {
         private var active = WeakReference<EvaVoiceInteractionService>(null)
 
-        fun showAssistant(oneShot: Boolean = false): Boolean {
+        fun showAssistant(
+            oneShot: Boolean = false,
+            watchTriggerId: String? = null,
+        ): Boolean {
             val service = active.get() ?: return false
-            service.showSession(Bundle().apply { putBoolean(EXTRA_ONE_SHOT, oneShot) }, 0)
+            service.showSession(
+                Bundle().apply {
+                    putBoolean(EXTRA_ONE_SHOT, oneShot)
+                    putString(EXTRA_WATCH_TRIGGER, watchTriggerId)
+                },
+                0,
+            )
             return true
         }
 
+        internal const val EXTRA_WATCH_TRIGGER = "com.colonelpanic.eva.extra.WATCH_TRIGGER"
         internal const val EXTRA_ONE_SHOT = "com.colonelpanic.eva.extra.ONE_SHOT"
     }
 }

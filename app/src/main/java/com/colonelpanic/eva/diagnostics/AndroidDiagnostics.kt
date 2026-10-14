@@ -38,6 +38,7 @@ class AndroidDiagnostics(
         EvaTrace.sink =
             TraceSink { event ->
                 log.record(event)
+                app.wearCompanion.onTrace(event)
                 Log.i(TAG, event.line())
             }
         scope.launch { verbose.collect { EvaTrace.verbose = it } }

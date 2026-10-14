@@ -107,6 +107,10 @@ ktlint {
 
 dependencies {
     implementation(project(":eva-core"))
+    implementation(libs.play.services.wearable)
+    // Play services brings Fragment 1.0; keep its lifecycle bridge compatible with Activity Result.
+    implementation(libs.androidx.fragment)
+    implementation(libs.kotlinx.coroutines.play.services)
     implementation(project(":device-control-core"))
     implementation(project(":device-control-portal"))
     coreLibraryDesugaring(libs.desugar.jdk.libs.nio)

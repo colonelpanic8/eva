@@ -41,6 +41,7 @@ class EvaVoiceInteractionSession(
     private var locked by mutableStateOf(false)
     private var needsMicrophone by mutableStateOf(false)
     private var forceOneShot = false
+    private var watchTriggerId: String? = null
 
     private val assistantLauncher =
         AssistantLauncher { intent ->
@@ -89,6 +90,7 @@ class EvaVoiceInteractionSession(
         showFlags: Int,
     ) {
         super.onShow(args, showFlags)
+        watchTriggerId = args?.getString(EvaVoiceInteractionService.EXTRA_WATCH_TRIGGER)
         forceOneShot = args?.getBoolean(EvaVoiceInteractionService.EXTRA_ONE_SHOT) == true
         locked = context.getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
         owners.show()
@@ -138,12 +140,28 @@ class EvaVoiceInteractionSession(
                 val loaded = eva.controller.state.first { !it.isLoading }
                 val next = assistantStart(MicrophonePermission.isGranted(context), loaded.voiceMode, loaded.providerStatus)
                 needsMicrophone = next == AssistantStart.NEEDS_MICROPHONE
+                val trigger = watchTriggerId
+                if (trigger != null && (next != AssistantStart.CONNECT || loaded.errorMessage != null)) {
+                    eva.wearCompanion.fail(
+                        trigger,
+                        loaded.errorMessage
+                            ?: if (needsMicrophone) {
+                                "Open EVA on the phone and grant microphone access."
+                            } else {
+                                "An EVA voice session is already running."
+                            },
+                    )
+                    watchTriggerId = null
+                    return@launch
+                }
                 if (next == AssistantStart.CONNECT) {
                     eva.controller.connectVoice(
                         eva.settings.hostLink(),
                         newThread = true,
                         callMode = VoiceCallMode.ONE_REQUEST.takeIf { forceOneShot },
+                        watchTriggerId = trigger,
                     )
+                    watchTriggerId = null
                 }
             }
     }

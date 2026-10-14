@@ -24,5 +24,6 @@ include(":device-control-portal")
 include(":keyword-core")
 include(":device-control-host")
 
+include(":wear")
 include(":wear-core")
 include(":diagnostics-core")

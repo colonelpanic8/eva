@@ -322,10 +322,12 @@ class MainActivity : ComponentActivity() {
                 voiceHidden = hidden(true),
             )
         val stallPeriod by eva.capabilities.stallPeriodFlow.collectAsStateWithLifecycle()
+        val wearGesture by eva.wearGestureSettings.state.collectAsStateWithLifecycle()
         val verboseLogging by eva.diagnostics.verboseLoggingFlow.collectAsStateWithLifecycle()
         val shownThread by eva.controller.state.collectAsStateWithLifecycle()
         return SettingsUiState(
             verboseLogging = verboseLogging,
+            wearGesture = wearGesture,
             hasCurrentThread = shownThread.threadId != null,
             stallPeriodSeconds = stallPeriod,
             configuration = configuration,
@@ -557,6 +559,8 @@ class MainActivity : ComponentActivity() {
                     eva.spotify.clear()
                 },
                 onDynamicColorChange = eva.appearance::saveDynamicColor,
+                onWearGestureEnabled = { eva.wearGestureSettings.save(eva.wearGestureSettings.value.copy(enabled = it)) },
+                onSyncWatch = { lifecycleScope.launch { eva.wearCompanion.sync() } },
                 onVerboseLogging = eva.diagnostics::saveVerboseLogging,
                 onExportLogs = { shareDiagnostics { logsExport() } },
                 onShareThreadDiagnostics = {

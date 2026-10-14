@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">EVA wrist gesture</string>
+    <string name="enable">Enable wrist gesture</string>
+    <string name="refresh">Sync phone settings</string>
+    <string name="instructions">Twist sharply out, then back. Keep the strap snug. Continuous sensing uses extra battery.</string>
+    <string name="status">%1$s\n\nLast detection: %2$s\nNear misses (last 5 min): %3$d</string>
+    <string name="channel">Wrist gesture listener</string>
+    <string name="notification">Listening for two opposite wrist twists</string>
+    <string name="stop">Pause</string>
+</resources>
