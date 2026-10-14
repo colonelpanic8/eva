@@ -1,0 +1,2 @@
+* Added: **Instructions → Preapprove requested actions** lets you opt into standing authorization for checkout, orders, bookings, messages, account changes, and password entry within your requested tasks. It is off by default, supports editable limits, survives configuration restore, and applies to new conversations and screen-control tasks. Provider restrictions and Android permissions still apply.
+* ...see CHANGELOG.md for the rest.

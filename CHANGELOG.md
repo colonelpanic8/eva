@@ -4,6 +4,12 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.63.0] - 2026-10-14
+
+### Added
+
+- **Instructions → Preapprove requested actions** lets you opt into standing authorization for checkout, orders, bookings, messages, account changes, and password entry within your requested tasks. It is off by default, supports editable limits, survives configuration restore, and applies to new conversations and screen-control tasks. Provider restrictions and Android permissions still apply.
+
 ### Changed
 
 - Tapping a Portal status that is not ready tries harder before giving up. If Portal stays silent after its accessibility service is turned back on, or answers but cannot read the screen, EVA restarts the service through Shizuku. If that does not fix it, the tap opens Portal and says what to check, instead of only showing a message.
