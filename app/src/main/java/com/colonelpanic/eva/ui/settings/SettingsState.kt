@@ -97,6 +97,9 @@ data class SettingsUiState(
     val spotifyConnect: SpotifyConnectState = SpotifyConnectState.Idle,
     val dynamicColor: Boolean = false,
     val verboseLogging: Boolean = false,
+    val wearGesture: com.colonelpanic.eva.wear.WearGestureConfiguration =
+        com.colonelpanic.eva.wear
+            .WearGestureConfiguration(),
     /** Whether a conversation is shown, so its diagnostics can be shared. */
     val hasCurrentThread: Boolean = false,
 ) {
@@ -180,6 +183,8 @@ data class SettingsActions(
     val onCancelSpotifyConnect: () -> Unit = {},
     val onDisconnectSpotify: () -> Unit = {},
     val onDynamicColorChange: (Boolean) -> Unit = {},
+    val onWearGestureEnabled: (Boolean) -> Unit = {},
+    val onSyncWatch: () -> Unit = {},
     val onVerboseLogging: (Boolean) -> Unit = {},
     val onExportLogs: () -> Unit = {},
     val onShareThreadDiagnostics: () -> Unit = {},

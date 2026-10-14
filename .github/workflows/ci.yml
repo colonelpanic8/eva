@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   verify:
-    name: Validate and build debug APK
+    name: Validate and build debug APKs
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -25,11 +25,18 @@ jobs:
         with:
           packages: ""
       - name: Formatting, lint, tests, and debug build
-        run: ./gradlew --no-daemon ktlintCheck :app:lintDebug :eva-core:test :eva-desktop:test :app:testDebugUnitTest :app:assembleDebug
+        run: ./gradlew --no-daemon ktlintCheck :app:lintDebug :wear:lintDebug :diagnostics-core:test :wear-core:test :eva-core:test :eva-desktop:test :device-control-core:test :device-control-portal:test :device-control-host:test :app:testDebugUnitTest :wear:testDebugUnitTest :app:assembleDebug :wear:assembleDebug
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: eva-debug-${{ github.sha }}
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload watch debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: eva-wear-debug-${{ github.sha }}
+          path: wear/build/outputs/apk/debug/wear-debug.apk
           if-no-files-found: error
           retention-days: 14

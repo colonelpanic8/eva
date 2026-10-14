@@ -14,6 +14,77 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConfigurationCompositionTest {
+    @Test fun `watch thresholds compose independently preserve explicit disable and migrate absent fields`() {
+        val value =
+            com.colonelpanic.eva.wear
+                .WearGestureConfiguration(
+                    enabled = true,
+                    requiredPulses = 6,
+                    peakRate = 7.0,
+                    maxGestureMillis = 1600,
+                    refractoryMillis = 4000,
+                )
+        val base = fullConfiguration().copy(wearGesture = value)
+        val baseDoc = EvaConfigurationCodec.complete(base)
+        val baseYaml = EvaConfigurationCodec.encode(baseDoc)
+        assertEquals(base, EvaConfigurationCodec.resolve(reader(mapOf("eva.yaml" to baseYaml))).configuration)
+        val legacy = EvaConfigurationCodec.encode(baseDoc.copy(wearGesture = null))
+        assertEquals(
+            com.colonelpanic.eva.wear
+                .WearGestureConfiguration(),
+            EvaConfigurationCodec.resolve(reader(mapOf("eva.yaml" to legacy))).configuration.wearGesture,
+        )
+        val root =
+            EvaConfigurationDocument(
+                include = listOf("base.yaml"),
+                wearGesture =
+                    com.colonelpanic.eva.wear
+                        .WearGesturePatch(enabled = false, requiredPulses = 2, minAngleRadians = 0.6),
+            )
+        val resolved =
+            EvaConfigurationCodec.resolve(
+                reader(mapOf("eva.yaml" to EvaConfigurationCodec.encode(root), "base.yaml" to baseYaml)),
+            )
+        assertEquals(value.copy(enabled = false, requiredPulses = 2, minAngleRadians = 0.6), resolved.configuration.wearGesture)
+        val overrides = EvaConfigurationCodec.overrides(resolved.configuration, baseDoc, listOf("base.yaml"))
+        assertEquals(root.wearGesture, overrides.wearGesture)
+        assertNull(EvaConfigurationCodec.overrides(base, baseDoc, listOf("base.yaml")).wearGesture)
+        val invalid =
+            root.copy(
+                wearGesture =
+                    com.colonelpanic.eva.wear
+                        .WearGesturePatch(releaseRate = 10.0),
+            )
+        assertThrows(IllegalArgumentException::class.java) {
+            EvaConfigurationCodec.resolve(reader(mapOf("eva.yaml" to EvaConfigurationCodec.encode(invalid), "base.yaml" to baseYaml)))
+        }
+    }
+
+    @Test fun `older gesture documents default to four pulses while preserving explicit tuning`() {
+        val document = EvaConfigurationCodec.complete(fullConfiguration())
+        val older =
+            document.copy(
+                wearGesture =
+                    com.colonelpanic.eva.wear
+                        .WearGesturePatch(peakRate = 7.0, maxGestureMillis = 550),
+            )
+        val migrated = EvaConfigurationCodec.resolve(reader(mapOf("eva.yaml" to EvaConfigurationCodec.encode(older)))).configuration
+        assertEquals(4, migrated.wearGesture.requiredPulses)
+        assertEquals(550L, migrated.wearGesture.maxGestureMillis)
+        assertEquals(7.0, migrated.wearGesture.peakRate, 0.0)
+        for (count in listOf(1, 3)) {
+            val invalid =
+                document.copy(
+                    wearGesture =
+                        com.colonelpanic.eva.wear
+                            .WearGesturePatch(requiredPulses = count),
+                )
+            assertThrows(IllegalArgumentException::class.java) {
+                EvaConfigurationCodec.resolve(reader(mapOf("eva.yaml" to EvaConfigurationCodec.encode(invalid))))
+            }
+        }
+    }
+
     @Test
     fun `web research settings round trip compose and default for older configurations`() {
         val defaults =

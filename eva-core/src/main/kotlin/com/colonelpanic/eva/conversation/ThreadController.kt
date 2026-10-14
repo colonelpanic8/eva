@@ -722,7 +722,8 @@ class ThreadController(
         link: String,
         newThread: Boolean = false,
         callMode: VoiceCallMode? = null,
-    ) = connectSession(link, voice = true, newThread = newThread, callMode = callMode)
+        watchTriggerId: String? = null,
+    ) = connectSession(link, voice = true, newThread = newThread, callMode = callMode, watchTriggerId = watchTriggerId)
 
     fun toggleMicrophone() {
         media?.let { it.setMicrophoneMuted(!it.controls.value.microphoneMuted) }
@@ -738,6 +739,7 @@ class ThreadController(
         newThread: Boolean = false,
         callMode: VoiceCallMode? = null,
         endReason: String = ENDED_FOR_NEW_SESSION,
+        watchTriggerId: String? = null,
     ) {
         if (state.value.isLoading || state.value.errorMessage != null) return
         end(endReason)
@@ -746,6 +748,11 @@ class ThreadController(
         mutableState.update { it.copy(providerStatus = ProviderStatus.CONNECTING, providerMessage = null, voiceMode = voice) }
         connectionJob =
             scope.launch {
+                val watchTrace =
+                    watchTriggerId?.let {
+                        com.colonelpanic.eva.wear
+                            .WatchSessionTrace(it, nowMillis())
+                    }
                 var openedSession: ConversationSession? = null
                 var threadId: String? = null
                 try {
@@ -843,6 +850,7 @@ class ThreadController(
                     session = opened
                     opened.events.takeWhile { it != ProviderEvent.Closed }.collect { event ->
                         if (thisAttempt != attempt) return@collect
+                        watchTrace?.event(event, nowMillis())
                         onAttachedEvent(event, opened, threadId, voice)
                     }
                 } catch (error: CancellationException) {
@@ -856,6 +864,7 @@ class ThreadController(
                 } finally {
                     currentCoroutineContext().cancelChildren()
                     val reason = endReasons.remove(thisAttempt) ?: "ended: the provider closed the connection"
+                    watchTrace?.closed(nowMillis(), threadId, reason)
                     EvaTrace.info(
                         "session.closed",
                         "thread" to threadId,

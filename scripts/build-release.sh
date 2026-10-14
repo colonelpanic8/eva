@@ -30,27 +30,35 @@ fi
 
 export EVA_VERSION_NAME="$version"
 export EVA_VERSION_CODE="$version_code"
-./gradlew --no-daemon ktlintCheck :app:lintRelease :eva-core:test :app:test :app:assembleRelease
+./gradlew --no-daemon ktlintCheck :app:lintRelease :wear:lintRelease \
+  :diagnostics-core:test :wear-core:test :eva-core:test :app:test :wear:test \
+  :app:assembleRelease :wear:assembleRelease
 
 apk="app/build/outputs/apk/release/app-release.apk"
-if [[ ! -f "$apk" ]]; then
-  echo "Signed release APK was not produced: $apk" >&2
-  exit 1
-fi
+wear_apk="wear/build/outputs/apk/release/wear-release.apk"
 
-if command -v apksigner >/dev/null 2>&1; then
-  apksigner_bin="$(command -v apksigner)"
-else
-  shopt -s nullglob
-  candidates=("${ANDROID_HOME:-/nonexistent}"/build-tools/*/apksigner)
-  shopt -u nullglob
-  if ((${#candidates[@]} == 0)); then
-    echo "apksigner is required to verify the release" >&2
-    exit 1
+sdk_tool() {
+  local tool="$1"
+  if command -v "$tool" >/dev/null 2>&1; then
+    command -v "$tool"
+  else
+    local candidates
+    shopt -s nullglob
+    candidates=("${ANDROID_HOME:-/nonexistent}"/build-tools/*/"$tool")
+    shopt -u nullglob
+    if ((${#candidates[@]} == 0)); then
+      echo "$tool is required to verify the release" >&2
+      return 1
+    fi
+    printf '%s\n' "${candidates[-1]}"
   fi
-  apksigner_bin="${candidates[-1]}"
-fi
-"$apksigner_bin" verify --verbose --print-certs "$apk"
+}
+apksigner_bin="$(sdk_tool apksigner)"
+aapt_bin="$(sdk_tool aapt)"
+expected_certificate="$(keytool -exportcert -keystore "$ANDROID_KEYSTORE_FILE" \
+  -alias "$ANDROID_KEY_ALIAS" -storepass:env ANDROID_KEYSTORE_PASSWORD | sha256sum | cut -d' ' -f1)"
+python3 scripts/verify-release-apks.py "$apksigner_bin" "$aapt_bin" \
+  "$version" "$version_code" "$expected_certificate" "$apk" "$wear_apk"
 
 # WebRTC's native library resolves these Java classes by name through JNI. Their
 # absence only fails at runtime, when a voice call starts, so check the shipped
@@ -66,4 +74,5 @@ done
 
 mkdir -p dist
 cp "$apk" dist/eva.apk
-echo "Built dist/eva.apk ($version, versionCode $version_code)"
+cp "$wear_apk" dist/eva-wear.apk
+echo "Built dist/eva.apk and dist/eva-wear.apk ($version, versionCode $version_code)"

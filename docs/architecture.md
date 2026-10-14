@@ -902,6 +902,173 @@ The assistant launch fallback, locked execution, foreground eligibility, and aud
 handover require physical-device verification; JVM checks cannot establish OEM
 behavior. See the [verification checklist](operations.md#background-work-and-task-manager).
 
+### Watch wrist gesture
+
+`:wear` is a Wear OS companion (minimum API 34, Wear OS 5; compile/target API 37)
+for Pixel Watch 3-era watches with Google Play services. It shares the phone's
+application ID and signing identity, including `.debug` for debug builds.
+`:wear-core` holds the Android-free detector, wire types and configuration;
+`:diagnostics-core` holds the existing shared redactor and trace primitives.
+The provider-aware watch-origin session trace remains in `:eva-core`. `app/wear/` owns phone admission and sync; `wear/`
+owns watch sensing, its UI and Ongoing Activity. No wake word or watch microphone
+is used. Starting a call is the only gesture action; ending it is unchanged.
+
+**Gesture:** two quick full wrist twists: **out, back, out, back** about the
+watch's strap/forearm axis (either sign first). Each twist consists of an outward
+pulse and a return pulse; the default requires all four alternating pulses.
+The default is sensor Y (`axis: 1`), along the strap on a normally worn watch; a snug strap matters. Handedness and a 180-degree watch
+orientation reverse signs and do not change acceptance. Axis alignment and comfort
+with hands on handlebars still need Pixel Watch 3 measurements.
+
+Every knob is under portable `wearGesture`; these are the shipped defaults:
+
+```yaml
+wearGesture:
+  enabled: false
+  axis: 1
+  requiredPulses: 4
+  candidateRate: 2.5
+  peakRate: 5.5
+  releaseRate: 1.5
+  minPulseMillis: 45
+  maxPulseMillis: 180
+  minAngleRadians: 0.45
+  minAxisDominance: 0.85
+  minIntervalMillis: 120
+  maxIntervalMillis: 400
+  maxGestureMillis: 1100
+  refractoryMillis: 2500
+  maxSampleGapMillis: 60
+  maxAccelerationDeviation: 8.0
+```
+
+Rates are rad/s; angle is radians (0.45 is about 26 degrees per pulse). A candidate
+starts above `candidateRate`, ends below `releaseRate` or on sign reversal, and
+must attain `peakRate`, last 45–180 ms and integrate at least the minimum angle.
+Axis dominance is absolute axis rate divided by the three-axis magnitude, with a
+minimum of 0.85 throughout the pulse. Peak acceleration-magnitude deviation from
+gravity must stay at or below 8 m/s², using a fresh accelerometer sample. Start-to-start
+spacing between every consecutive pair of pulses is 120–400 ms; first start to
+fourth completion is at most 1100 ms. `requiredPulses` must be even and at least 2:
+2 permits one out-and-back twist, 4 requires two, and 6 requires three. A direction
+repeat or bad interval resets the sequence. `maxGestureMillis` remains an explicit
+whole-sequence budget and must allow the requested count at the minimum interval
+and pulse duration. Its default doubled from 550 to 1100 ms to accommodate two full
+twists; all other detector defaults are unchanged. Larger counts may need an
+explicitly larger whole-sequence budget and refractory period.
+Long lobes are rejected whole; their tails cannot start a fresh candidate. Gaps over
+60 ms, invalid samples and nonmonotonic sensor time reset partial gestures. After
+a hit, 2500 ms of refractory time prevents another hit. Sustained high-frequency
+angular buzz fails pulse duration/angle, broadband/off-axis motion fails dominance,
+and linear buzz fails the acceleration bound. These are conservative initial
+heuristics, not measured false-positive or detection rates.
+
+The phone's `WearGestureSettings` participates in snapshot, field-by-field include
+composition, overrides, restore and rollback. Missing fields in older configurations
+take defaults; a missing `requiredPulses` now means 4. Existing explicit tuning,
+including an old 550 ms whole-sequence budget, is preserved; set that budget to
+1100 ms to use the new default timing. No schema bump is needed. Phone Settings →
+**Wrist gesture** edits the enable flag; thresholds can be edited in `eva.yaml`.
+`DataClient` sends the effective complete configuration at `/eva/wrist/config`.
+The watch caches that exact configuration for offline/boot use. A monotonic phone
+revision rejects out-of-order snapshots. Its toggle requests a phone edit over
+`MessageClient`; the correlated reply carries that same effective snapshot so a
+stale local DataItem cannot undo a confirmed edit. Only the latest toggle's reply
+can clear a local pause. An offline watch can **pause** locally immediately;
+that device-local suspension survives reboot, does not rewrite phone configuration,
+and is cleared by a confirmed enable request. The ongoing notification's Pause
+has the same local effect. **Enable** resumes with phone-confirmed settings.
+
+`GestureService` is a foreground service with a Wear `OngoingActivity`, gyroscope
+and accelerometer registration requesting 100 Hz and zero batching latency. It
+prefers wake-up sensor variants and holds a `PARTIAL_WAKE_LOCK` for its entire
+enabled lifetime, releasing it and unregistering sensors on stop. It deliberately
+keeps the CPU awake, not the display. The [SensorManager contract](https://developer.android.com/reference/android/hardware/SensorManager)
+requires that wake lock for prompt non-wake-up sensor delivery with the screen off;
+a foreground notification alone is insufficient. A sensor-delivery watchdog stops
+with an error if either stream stops for three seconds. Partial gestures never
+bridge a screen-off delivery gap. Android can still terminate the process, suppress
+sensors under battery restrictions, or ignore wake locks during Doze; wake-up sensors
+help, but screen-off and deep-idle behavior require physical-watch verification.
+
+The service uses Android 14+ `specialUse`, declares
+`FOREGROUND_SERVICE_SPECIAL_USE` and a descriptive subtype, matching EVA's existing
+assistant-work service. This is a deliberate choice over `health`: Android's
+[service-type contract](https://developer.android.com/develop/background-work/services/fgs/service-types)
+describes health for fitness apps, and EVA is a general assistant. Health's
+`HIGH_SAMPLING_RATE_SENSORS` prerequisite would not by itself make EVA a fitness
+app. EVA needs no body/health permissions and samples below 200 Hz. Publishing this
+service through a store would require that store's special-use review; none was
+performed here. Boot-completed and own-package-replaced receivers restore an enabled,
+unpaused listener after first unlock. Sticky service recovery rechecks the cached
+flag. Android force-stop prevents automatic recovery until the app is opened.
+A phone-side enable arriving while the watch app is backgrounded can be refused by
+Android's foreground-start rules; the watch reports that it must be opened to resume.
+
+**Battery:** continuous CPU wakefulness plus two unbatched 100 Hz sensors and
+Data Layer diagnostics will cost substantially more than passive watch sensing.
+No battery percentage/hour or all-day lifetime is established. The wake lock has
+no arbitrary expiry: silent sensing failure after a timeout would break the feature.
+Disable or pause when unneeded; measure screen-off battery consumption on the actual
+watch before leaving it enabled all day. Health Services' passive fitness metrics
+cannot supply the raw low-latency rotation stream this gesture needs.
+
+A detection gives one 35 ms haptic immediately, then sends a fresh UUID and wall
+time at `/eva/wrist/start` to the uniquely reachable EVA phone capability. Messages
+are not queued or retried as session starts. The phone reserves the UUID durably
+before asking the active `EvaVoiceInteractionService.showSession` to show a system
+assistant window. That window opens voice using the existing `AssistantStart` and
+`ThreadController.connectVoice` path, including over the keyguard where Android
+permits it, with the configured call mode. There is no background Activity fallback.
+Before first unlock after reboot, EVA's credential storage is unavailable.
+
+Admission checks the effective enable flag, assistant role, microphone grant,
+existing voice call and pending watch startup. Stale messages (over 60 seconds or
+clock mismatch) fail rather than launching later. Duplicate UUIDs return the stored
+outcome; process recovery never retries a reserved start. `requested` means only
+showSession was requested; `connected` is sent only on the provider's actual
+Connected event. Session-show rejection, unready assistant service, loading/setup
+failure and provider startup failure produce specific phone notification/trace
+errors and a watch reply. Notification denial can hide the phone notification;
+the watch and trace still carry the failure. Triple 100 ms haptics distinguish errors
+from detection. After 30 seconds without a connected/failure reply, both sides label
+the outcome unknown, with no automatic retry or cancellation of a possibly live call;
+a later receipt may still update it. Service/process termination can also lose result
+delivery, so a detection haptic alone never proves that voice started.
+
+Every completed candidate is traced as `wear.gesture.detected` or
+`wear.gesture.near_miss`, including reason, watch wall/sensor timestamps, axis,
+peak rates, durations, integrated angles, dominance, acceleration deviations and
+every consecutive inter-pulse interval when available. Traces retain all accepted
+pulse features and a separate rejected candidate. Near-miss reasons include the
+valid count before failure (for example `next_pulse_missing (3/4 valid pulses)`),
+and trace fields include `validPulseCount` and `requiredPulses`. Candidates below
+the admission rate are not near misses. An incomplete sequence expires when the
+next pulse's start interval or the whole-gesture budget runs out. The watch
+uses EVA's existing `EvaTrace`/`TraceLog` ring, and Data Layer DataItems act as the
+offline telemetry outbox (2000 rotating slots). The phone imports them into its same
+trace and deletes delivered items; its standard thread/recent-log exports include
+them. These are bounded recent logs, not a complete long-term sensor recording;
+offline overflow overwrites older entries. Raw samples are not stored. The watch
+shows the last detection time and the rolling five-minute near-miss count since
+process start. No user transcript or audio is put into gesture telemetry.
+
+A watch UUID follows its own voice attachment. `wear.session.connected` confirms
+provider connection; `wear.session.closed` retains the thread, startup/call durations,
+reason, user-speech and nonempty-transcript flags. A connected call ending within
+five seconds or with no observed user speech is marked `likelyFalsePositive`,
+including `endedImmediately`. Failed startup is distinct and is not a false-positive
+label. This is a tuning hint, not ground truth: VAD can mistake noise for speech,
+and someone can intentionally open and close a call without talking.
+
+Synthetic JVM streams cover four-pulse gestures, incomplete/late/same-sign sequences,
+configurable two- and six-pulse sequences, whole-gesture expiry, road buzz,
+walking swings, off-axis motion, long rotations, sample gaps, threshold changes and
+refractory behavior. Configuration composition/restore and phone admission/failure
+paths have JVM coverage. These do not establish real-world walking/cycling rejection,
+watch-to-phone latency, Bluetooth/audio routing, keyguard startup or screen-off
+reliability. See [watch setup and verification](operations.md#wear-os-watch-companion).
+
 ## Memory
 
 EVA exposes bundled `eva.memory.search`, `eva.memory.save`, `eva.memory.learn`, and
@@ -1279,6 +1446,7 @@ The schema separates these groups:
 | `credentials` | Required scoped secret references and endpoints, never credential values |
 | `remembered` | Saved number-choice preferences |
 | `device` | Desired device authorizations to check on the destination |
+| `wearGesture` | Watch enablement, axis, rates, timing, angular excursion, dominance and acceleration rejection thresholds |
 | `skills` | `installed`: exact `SKILL.md` and `openai.yaml` text with the address it came from; `disabled`: names switched off. Skill folders in the repository are read in place, not listed here |
 
 An `include` list composes relative files under the selected folder. Includes are

@@ -114,6 +114,8 @@ fun SettingsScreen(
             SettingsDivider()
             WebResearchSection(state, actions)
             SettingsDivider()
+            WatchGestureSection(state, actions)
+            SettingsDivider()
             AssistantSection(state, actions)
             SettingsDivider()
             MediaSection(state, actions)
@@ -823,5 +825,28 @@ private fun SettingsSignedInPreview() {
             actions = SettingsActions(),
             onOpenDrawer = {},
         )
+    }
+}
+
+@Composable
+private fun WatchGestureSection(
+    state: SettingsUiState,
+    actions: SettingsActions,
+) {
+    SettingsSection("Wrist gesture") {
+        SettingsRow(
+            title = "Start voice from a Wear OS watch",
+            supporting =
+                "Full wrist twists required: ${state.wearGesture.requiredPulses / 2} (out and back each). " +
+                    "Requires EVA as default assistant. Continuous sensing drains watch battery.",
+        ) {
+            Switch(checked = state.wearGesture.enabled, onCheckedChange = actions.onWearGestureEnabled)
+        }
+        SettingsBlock {
+            SettingsNote(
+                "Detector thresholds are saved under wearGesture in your user configuration. Test fit and false triggers before relying on this while riding.",
+            )
+            TextButton(onClick = actions.onSyncWatch) { Text("Sync watch") }
+        }
     }
 }

@@ -26,6 +26,10 @@ dbusJava = "5.2.2"
 mcpSdk = "0.15.0"
 
 [libraries]
+androidx-fragment = { module = "androidx.fragment:fragment", version = "1.9.1" }
+play-services-wearable = { module = "com.google.android.gms:play-services-wearable", version = "20.0.1" }
+wear-ongoing = { module = "androidx.wear:wear-ongoing", version = "1.1.0" }
+kotlinx-coroutines-play-services = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-play-services", version.ref = "coroutines" }
 mcp-client = { module = "io.modelcontextprotocol:kotlin-sdk-client", version.ref = "mcpSdk" }
 dbus-java-core = { module = "com.github.hypfvieh:dbus-java-core", version.ref = "dbusJava" }
 dbus-java-unixsocket = { module = "com.github.hypfvieh:dbus-java-transport-native-unixsocket", version.ref = "dbusJava" }

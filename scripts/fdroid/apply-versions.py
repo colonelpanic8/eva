@@ -20,6 +20,8 @@ def read_versions(repo_dir: Path, app_id: str) -> list[tuple[int, str]]:
         package = apk.get_package()
         if package != app_id:
             raise ValueError(f"{apk_path.name} has package {package!r}, expected {app_id!r}")
+        if "android.hardware.type.watch" in apk.get_features():
+            raise ValueError(f"{apk_path.name} is a watch APK; the phone repository accepts eva.apk only")
         code = apk.get_androidversion_code()
         name = apk.get_androidversion_name() or ""
         if code is None:

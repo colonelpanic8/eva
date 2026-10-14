@@ -1,0 +1,5 @@
+<resources>
+    <string-array name="android_wear_capabilities">
+        <item>eva_phone_voice</item>
+    </string-array>
+</resources>

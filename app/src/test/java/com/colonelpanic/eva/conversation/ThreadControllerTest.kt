@@ -156,6 +156,36 @@ class ThreadControllerTest {
     )
 
     @Test
+    fun `watch origin follows the voice attachment through provider connection and hangup`() =
+        runTest {
+            val events = mutableListOf<com.colonelpanic.eva.diagnostics.TraceEvent>()
+            val before = com.colonelpanic.eva.diagnostics.EvaTrace.sink
+            com.colonelpanic.eva.diagnostics.EvaTrace.sink =
+                com.colonelpanic.eva.diagnostics
+                    .TraceSink(events::add)
+            try {
+                var now = 1000L
+                val voice = FakeProvider()
+                val controller = controller(voice, media = { VoiceMedia() }, now = { now })
+                advanceUntilIdle()
+                controller.connectVoice("test", watchTriggerId = "watch-request")
+                advanceUntilIdle()
+                now += 12_000
+                controller.disconnect()
+                advanceUntilIdle()
+                assertEquals(1, events.count { it.name == "wear.session.connected" && it.fields["request"] == "watch-request" })
+                val closed = events.single { it.name == "wear.session.closed" }
+                assertEquals("watch-request", closed.fields["request"])
+                assertEquals("true", closed.fields["likelyFalsePositive"])
+                assertEquals("false", closed.fields["userSpeech"])
+                assertEquals("12000", closed.fields["durationMillis"])
+                assertEquals(controller.state.value.threadId, closed.fields["thread"])
+            } finally {
+                com.colonelpanic.eva.diagnostics.EvaTrace.sink = before
+            }
+        }
+
+    @Test
     fun `handoff rechecks coverage while voice remains attached before accepting background work`() =
         runTest {
             var admissions = 0
