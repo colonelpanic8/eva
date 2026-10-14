@@ -1,13 +1,26 @@
 package com.colonelpanic.eva.devicecontrol
 
+import com.colonelpanic.eva.conversation.prompt.PromptConfig
+import com.colonelpanic.eva.conversation.prompt.PromptContext
+import com.colonelpanic.eva.conversation.prompt.PromptDefaults
 import com.colonelpanic.eva.conversation.prompt.Wording
 import com.colonelpanic.eva.devicecontrol.worker.WorkerSchemas
 import com.colonelpanic.eva.devicecontrol.worker.WorkerTool
 import com.colonelpanic.eva.devicecontrol.worker.WorkerWording
 
-fun workerWording(wording: Wording): WorkerWording =
+fun workerWording(
+    wording: Wording,
+    prompt: PromptConfig = PromptConfig(),
+    variables: Map<String, String> = emptyMap(),
+): WorkerWording =
     WorkerWording(
-        wording.message("device-worker.system"),
+        listOf(
+            wording.message("device-worker.system"),
+            prompt
+                .copy(components = prompt.components.filter { it.id == PromptDefaults.PREAPPROVE_ACTIONS_ID })
+                .assemble(PromptContext(voice = false, variables))
+                .instructions,
+        ).filter(String::isNotBlank).joinToString("\n\n"),
         (Wording.bundled.messages + wording.messages)
             .filterKeys {
                 it.startsWith("device-worker.")

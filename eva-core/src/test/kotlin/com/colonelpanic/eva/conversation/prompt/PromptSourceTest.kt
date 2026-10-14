@@ -9,6 +9,22 @@ class PromptSourceTest {
     private fun config(vararg components: PromptComponent) = PromptConfig(components.toList())
 
     @Test
+    fun `preapproval arrives disabled and following updates preserves opt in and revocation`() {
+        val stock = PromptDefaults.config
+        val id = PromptDefaults.PREAPPROVE_ACTIONS_ID
+        val old = stock.remove(id)
+        val arrived = followSource(old, old, stock)
+        assertFalse(arrived.components.single { it.id == id }.enabled)
+        val remote = stock.upsert(stock.components.single { it.id == id }.copy(instruction = "Updated authorization."))
+        val optedIn = followSource(arrived.toggle(id, true), stock, remote)
+        assertTrue(optedIn.components.single { it.id == id }.enabled)
+        assertEquals("Updated authorization.", optedIn.components.single { it.id == id }.instruction)
+        val revoked = followSource(optedIn.toggle(id, false), remote, stock)
+        assertFalse(revoked.components.single { it.id == id }.enabled)
+        assertFalse(followSource(optedIn.remove(id), remote, stock).components.any { it.id == id })
+    }
+
+    @Test
     fun `following a source updates untouched wording and keeps what the user made their own`() {
         val baseline =
             config(

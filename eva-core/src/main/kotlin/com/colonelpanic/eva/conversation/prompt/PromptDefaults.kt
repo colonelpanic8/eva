@@ -7,6 +7,7 @@ package com.colonelpanic.eva.conversation.prompt
  * it is the baseline an installation follows its source from until the first refresh.
  */
 object PromptDefaults {
+    const val PREAPPROVE_ACTIONS_ID = "preapprove-actions"
     const val END_CONVERSATION_ID = "eva.session.end"
     const val ONE_REQUEST_ID = "one-request"
     const val OPEN_CONVERSATION_ID = "open-conversation"

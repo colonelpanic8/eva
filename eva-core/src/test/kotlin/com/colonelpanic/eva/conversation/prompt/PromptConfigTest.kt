@@ -37,6 +37,23 @@ class PromptConfigTest {
     }
 
     @Test
+    fun `standing authorization is opt in for both voice and text and can be revoked`() {
+        val stock = PromptDefaults.config
+        val component = stock.components.single { it.id == PromptDefaults.PREAPPROVE_ACTIONS_ID }
+        assertFalse(component.enabled)
+        val onlyAuthorization = PromptConfig(listOf(component.copy(enabled = true)))
+        val enabled = stock.toggle(component.id, true)
+        for (voice in listOf(false, true)) {
+            val context = PromptContext(voice, variables)
+            val authorization = onlyAuthorization.assemble(context).instructions
+            assertTrue(authorization.isNotBlank())
+            assertFalse(stock.assemble(context).instructions.contains(authorization))
+            assertTrue(enabled.assemble(context).instructions.contains(authorization))
+            assertEquals(stock.assemble(context), enabled.toggle(component.id, false).assemble(context))
+        }
+    }
+
+    @Test
     fun `variables are substituted and wrapped lines become one paragraph`() {
         val config =
             PromptConfig(

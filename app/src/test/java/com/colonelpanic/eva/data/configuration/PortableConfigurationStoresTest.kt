@@ -8,6 +8,7 @@ import com.colonelpanic.eva.adapters.declarative.PackageCodec
 import com.colonelpanic.eva.adapters.declarative.httpBindings
 import com.colonelpanic.eva.conversation.prompt.PromptComponent
 import com.colonelpanic.eva.conversation.prompt.PromptConfig
+import com.colonelpanic.eva.conversation.prompt.PromptDefaults
 import com.colonelpanic.eva.data.PackageSettings
 import com.colonelpanic.eva.data.PortablePackageSettings
 import com.colonelpanic.eva.data.PromptStore
@@ -380,6 +381,40 @@ class PortableConfigurationStoresTest {
             portable.serviceBindings,
         )
     }
+
+    @Test
+    fun `preapproval choice and edited scope survive portable configuration and restart`() =
+        runTest {
+            val id = PromptDefaults.PREAPPROVE_ACTIONS_ID
+            val store = PromptStore(context)
+            val original = PromptDefaults.config
+            store.restorePortable("https://instructions.example.test/eva.yaml", original)
+            store.update { config ->
+                config.upsert(config.components.single { it.id == id }.copy(enabled = true, instruction = "Order lunch up to $30."))
+            }
+            val snapshot = store.portableSnapshot()
+            val document = EvaConfigurationDocument(prompt = PromptPatch(source = snapshot.source, components = snapshot.config.components))
+            val restored = EvaConfigurationCodec.decode(EvaConfigurationCodec.encode(document)).prompt!!
+            val elsewhere = PromptStore(context)
+            elsewhere.restorePortable(restored.source!!, PromptConfig(restored.components!!))
+            val restarted = PromptStore(context)
+            assertEquals(snapshot.config, restarted.load())
+            assertTrue(
+                restarted
+                    .load()
+                    .components
+                    .single { it.id == id }
+                    .enabled,
+            )
+            restarted.update { it.toggle(id, false) }
+            assertFalse(
+                PromptStore(context)
+                    .load()
+                    .components
+                    .single { it.id == id }
+                    .enabled,
+            )
+        }
 
     @Test
     fun `portable prompt restore leaves a previously selected standalone document untouched`() =

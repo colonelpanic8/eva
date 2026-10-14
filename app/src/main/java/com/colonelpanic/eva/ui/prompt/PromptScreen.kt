@@ -251,7 +251,14 @@ private fun ComponentsSection(
                         )
                     }
                 }
-                SettingsBlock { OutlinedButton(onClick = { onEdit(NEW_COMPONENT) }) { Text("Add a component") } }
+                SettingsBlock {
+                    if (prompt.config.components.none { it.id == PromptDefaults.PREAPPROVE_ACTIONS_ID }) {
+                        OutlinedButton(onClick = {
+                            actions.onSave(PromptDefaults.config.components.first { it.id == PromptDefaults.PREAPPROVE_ACTIONS_ID })
+                        }) { Text("Add preapproval option") }
+                    }
+                    OutlinedButton(onClick = { onEdit(NEW_COMPONENT) }) { Text("Add a component") }
+                }
             }
         }
     }

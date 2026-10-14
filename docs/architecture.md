@@ -1441,6 +1441,26 @@ components:
 
 `{{clock}}` and `{{lookup_retries}}` are the supported variables. Unknown keys,
 variables, duplicate IDs, and incompatible enabled slots are errors.
+**Instructions → Preapprove requested actions** enables the optional
+`preapprove-actions` component, off by default. It supplies standing authorization
+for steps within a requested task, including final checkout, orders, bookings,
+messages, account changes, and password or verification-code entry from an
+authorized source. It respects the user's scope, spending limits, corrections,
+and unresolved material choices. It asks the model to avoid redundant approval
+questions; it cannot override provider restrictions or Android access requirements,
+create capabilities, or grant extensions.
+
+The component and its on/off choice live in `prompt.components` in portable
+configuration, so export, restore, and source following preserve the choice and
+custom wording. Older or custom prompts without it show **Add preapproval option**
+in Instructions, which adds the disabled stock component without resetting other
+instructions. Conversation sessions include it through normal prompt composition.
+New device tasks also receive that component's enabled text instructions directly,
+using the loaded prompt's current choice; unrelated conversation and hang-up
+instructions are not sent to the worker. Changes take effect on the next session
+or device task, not a task already running. This wiring has JVM coverage; actual
+provider compliance and checkout/login flows require live verification.
+
 The stock call instructions offer one-request and open-conversation alternatives in
 the `call` slot; the Settings switch "End calls after one request" edits that slot,
 and every voice launch follows it. A retired `voice.oneShotExternal: false` is

@@ -93,6 +93,16 @@ Paseo and general MCP adapters remain planned integrations. See
 [[file:docs/architecture.md][Architecture]] for boundaries and current limitations and
 [[file:docs/operations.md][Operations]] for checks and recorded device evidence.
 
+* Standing authorization
+
+Under *Instructions*, enable *Preapprove requested actions* to let EVA complete
+requested tasks without asking again for checkout, orders, bookings, messages,
+account changes, or password entry. It is off by default. If your prompt predates
+the option, choose *Add preapproval option* first. You can edit its scope and
+limits, and its choice travels with your configuration. It applies to new sessions
+and device tasks; model-provider restrictions and Android access requirements
+still apply.
+
 * Your configuration repository
 
 *Settings → User configuration* offers two modes. Folder mode links a Storage

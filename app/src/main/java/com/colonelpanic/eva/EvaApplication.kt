@@ -489,7 +489,19 @@ class EvaApplication :
                 ),
             ),
             com.colonelpanic.eva.devicecontrol
-                .workerWording(prompts.wording.value),
+                .workerWording(
+                    prompts.wording.value,
+                    (prompts.state.value as? com.colonelpanic.eva.data.PromptState.Loaded)?.config
+                        ?: com.colonelpanic.eva.conversation.prompt
+                            .PromptConfig(),
+                    mapOf(
+                        "clock" to
+                            java.time.ZonedDateTime
+                                .now()
+                                .toString(),
+                        "lookup_retries" to settings.voiceLookupRetries.toString(),
+                    ),
+                ),
             com.colonelpanic.eva.devicecontrol.worker
                 .WorkerSettings(
                     options.maxSteps,

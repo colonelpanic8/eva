@@ -49,8 +49,8 @@ fdroid-changelogs *args:
     ./scripts/fdroid/changelogs.py "$@"
 
 # Replace the shipped prompt and tool wording with the instruction catalog's current files.
-prompt-sync:
-    for file in eva-prompt.yaml eva-wording.yaml; do curl -fsSL "https://raw.githubusercontent.com/colonelpanic8/eva-instructions/main/$file" -o "eva-core/src/main/resources/$file"; done
+prompt-sync catalog="":
+    for file in eva-prompt.yaml eva-wording.yaml; do if [ -n "$1" ]; then cp "$1/$file" "eva-core/src/main/resources/$file"; else curl -fsSL "https://raw.githubusercontent.com/colonelpanic8/eva-instructions/main/$file" -o "eva-core/src/main/resources/$file"; fi; done
 
 # Build the self-hosted F-Droid repository; see docs/operations.md.
 fdroid-repo:
