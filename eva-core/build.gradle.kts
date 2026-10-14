@@ -9,6 +9,7 @@ kotlin { jvmToolchain(17) }
 ktlint { version.set("1.8.0") }
 
 dependencies {
+    api(project(":wear-core"))
     api(project(":device-control-core"))
     api(project(":device-control-portal"))
     api(libs.kotlinx.serialization.json)
