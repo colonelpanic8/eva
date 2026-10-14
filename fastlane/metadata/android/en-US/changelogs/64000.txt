@@ -1,0 +1,2 @@
+* Fixed: Wrist gestures now require two complete out-and-back twists by default, preventing a single twist-and-return from starting voice. Portable `wearGesture.requiredPulses` selects an even pulse count (minimum 2); the whole-gesture default is now 1100 ms. Near-miss diagnostics retain the accepted pulse count and every pulse's features.
+* ...see CHANGELOG.md for the rest.

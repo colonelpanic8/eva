@@ -4,6 +4,8 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.64.0] - 2026-10-14
+
 ### Fixed
 
 - Wrist gestures now require two complete out-and-back twists by default, preventing a single twist-and-return from starting voice. Portable `wearGesture.requiredPulses` selects an even pulse count (minimum 2); the whole-gesture default is now 1100 ms. Near-miss diagnostics retain the accepted pulse count and every pulse's features.
