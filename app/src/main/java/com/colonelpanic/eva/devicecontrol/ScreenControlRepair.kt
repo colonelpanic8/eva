@@ -104,43 +104,59 @@ class ScreenControlRepair(
             while (portalHealth() != PortalHealth.READY) delay(POLL_MILLIS)
         } != null
 
+    /**
+     * Turns Portal's service on, then off and on again if it stays silent, and confirms with a
+     * screen read. When that cannot fix it, opens Portal (or Accessibility settings) with what to do.
+     */
     private suspend fun repairPortal(): RepairOutcome {
-        when (portalHealth()) {
-            null -> return RepairOutcome.OpenSettings("Save Portal's bearer token in Screen control settings.")
-            PortalHealth.UNAUTHORIZED -> return RepairOutcome.OpenSettings("Portal rejected EVA's token. Save Portal's current token.")
-            PortalHealth.READY -> return confirm("portal", "Portal is answering")
-            PortalHealth.UNREACHABLE -> Unit
-        }
+        val answering =
+            when (portalHealth()) {
+                null -> return RepairOutcome.OpenSettings("Save Portal's bearer token in Screen control settings.")
+                PortalHealth.UNAUTHORIZED -> return RepairOutcome.OpenSettings("Portal rejected EVA's token. Save Portal's current token.")
+                PortalHealth.READY -> true
+                PortalHealth.UNREACHABLE -> false
+            }
+        val unread = if (answering) verify("portal") ?: return RepairOutcome.Fixed("Portal is answering. It read the screen.") else null
         val service =
             portalService()
                 ?: return RepairOutcome.Failed("Portal is not installed, so EVA cannot start it. Install Portal or use Shizuku.")
         val settings = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+        val portalApp = context.packageManager.getLaunchIntentForPackage(service.component.packageName) ?: settings
         val shizuku = helper()?.takeIf { it.accessStatus() == DeviceControlHost.ALLOWED }
         if (shizuku == null) {
-            return RepairOutcome.Open(
-                settings,
-                "Turn on Portal's accessibility service, then come back to EVA. With Shizuku running and EVA allowed, EVA does this itself.",
-            )
+            val todo =
+                if (unread ==
+                    null
+                ) {
+                    "Turn on Portal's accessibility service"
+                } else {
+                    "Portal is answering, but $unread Turn its accessibility service off and on"
+                }
+            return RepairOutcome.Open(settings, "$todo, then come back to EVA. With Shizuku running and EVA allowed, EVA does this itself.")
         }
-        try {
-            shizuku.enableAccessibilityService(service.component, restart = service.enabled)
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            return RepairOutcome.Open(
-                settings,
-                "EVA could not turn on Portal's accessibility service through Shizuku: ${reason(error)}. Turn it on here, then come back.",
+        val restarted =
+            listOf(service.enabled, true).distinct().firstOrNull { restart ->
+                try {
+                    shizuku.enableAccessibilityService(service.component, restart)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    return RepairOutcome.Open(
+                        settings,
+                        "EVA could not turn on Portal's accessibility service through Shizuku: ${reason(
+                            error,
+                        )}. Turn it on here, then come back.",
+                    )
+                }
+                awaitPortal()
+            } ?: return RepairOutcome.Open(
+                portalApp,
+                "Restarted Portal's accessibility service, but Portal is still not answering on port ${portalPort()}. " +
+                    "Turn on Portal's local server here, then come back to EVA.",
             )
-        }
-        val did = if (service.enabled) "Restarted Portal's accessibility service" else "Turned Portal's accessibility service back on"
-        if (!awaitPortal()) {
-            val portal = context.packageManager.getLaunchIntentForPackage(service.component.packageName)
-            return RepairOutcome.Open(
-                portal ?: settings,
-                "$did, but Portal is still not answering on port ${portalPort()}. Check that Portal's local server is on.",
-            )
-        }
-        return confirm("portal", did)
+        val did = if (restarted) "Restarted Portal's accessibility service" else "Turned Portal's accessibility service back on"
+        val problem = verify("portal") ?: return RepairOutcome.Fixed("$did. It read the screen.")
+        return RepairOutcome.Open(portalApp, "$did, but $problem Check Portal here, then come back to EVA.")
     }
 
     private suspend fun repairShizuku(): RepairOutcome {

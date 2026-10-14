@@ -662,10 +662,12 @@ real failure. A backend that was never checked reads "Not checked yet."
 
 Tapping a route that is not ready repairs it (`ScreenControlRepair`); Settings has a
 matching Reconnect button. Missing or rejected Portal tokens open Screen control
-settings. If Portal is unreachable, EVA's Shizuku helper turns Portal's accessibility
-service on. If the service was already listed, the helper turns it off and on again.
-Then EVA waits for Portal's probe. Without Shizuku access, EVA opens Accessibility
-settings instead. If Shizuku is allowed, the repair replaces the helper process, which
+settings. If Portal is unreachable, or answers but cannot read the screen, EVA's
+Shizuku helper turns Portal's accessibility service on. If the service was already
+listed, or Portal stays silent after it is turned on, the helper turns it off and on
+again. Then EVA waits for Portal's probe and a screen read. When neither fixes it, the
+tap opens Portal with what to check, never just a message. Without Shizuku access, EVA
+opens Accessibility settings instead. If Shizuku is allowed, the repair replaces the helper process, which
 also drops a wedged UiAutomation connection. It does not do this while a device task
 is running. Missing access prompts for it. A stopped server opens Shizuku. Shizuku
 resends its binder only on EVA's process or UID transitions (its process and UID

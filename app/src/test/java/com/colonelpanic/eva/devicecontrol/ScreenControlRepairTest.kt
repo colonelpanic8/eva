@@ -88,13 +88,36 @@ class ScreenControlRepairTest {
         }
 
     @Test
-    fun `a Portal that stays silent after its service is turned on is not reported fixed`() =
+    fun `a Portal that stays silent after its service is turned on is restarted, then opened for the user`() =
         runTest {
             val outcome = repair({ PortalHealth.UNREACHABLE }).repair("portal")
 
-            assertEquals(listOf(portal to false), shizuku.enabled)
+            assertEquals(listOf(portal to false, portal to true), shizuku.enabled)
             assertTrue(verified.isEmpty())
+            assertTrue(outcome is RepairOutcome.Open)
             assertTrue(outcome.message, outcome.message.contains("still not answering on port 8080"))
+        }
+
+    @Test
+    fun `a Portal that answers but cannot read the screen is restarted, then opened for the user`() =
+        runTest {
+            val repair =
+                ScreenControlRepair(
+                    context = RuntimeEnvironment.getApplication(),
+                    helper = { shizuku },
+                    portalHealth = { PortalHealth.READY },
+                    portalPort = { 8080 },
+                    verify = { "it did not read the screen within 10 seconds." },
+                    taskRunning = { false },
+                    portalService = { PortalService(portal, enabled = true) },
+                    portalStartMillis = 2_000,
+                )
+
+            val outcome = repair.repair("portal")
+
+            assertEquals(listOf(portal to true), shizuku.enabled)
+            assertTrue(outcome is RepairOutcome.Open)
+            assertTrue(outcome.message, outcome.message.startsWith("Restarted Portal's accessibility service, but it did not read"))
         }
 
     @Test
