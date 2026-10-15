@@ -4,9 +4,15 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.68.0] - 2026-10-15
+
 ### Added
 
 - **Settings → Phone call agent → Check phone calls** checks the call agent and every call route, says why any is unavailable, and opens a test call to the NIST time announcement over each ready route for you to send.
+
+### Changed
+
+- EVA's tool descriptions now tell it when to hand a call to the call agent (anything to be said, done or found out on the call) and when to just dial a call you talk on yourself, and what to give the call agent. Installations following the instruction catalog already have this wording.
 
 ### Fixed
 
