@@ -1,0 +1,2 @@
+* Added: Choose GPT-Live-1 or Grok Voice 3 for assistant conversations, alongside the existing OpenAI Realtime default. Both require their provider’s funded API key.
+* ...see CHANGELOG.md for the rest.

@@ -4,8 +4,14 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.67.0] - 2026-10-15
+
 ### Added
 
+- Choose GPT-Live-1 or Grok Voice 3 for assistant conversations, alongside the existing OpenAI Realtime default. Both require their provider’s funded API key.
+- GPT-Live-1 assistant voice with client delegation to EVA's configured text worker. Tasks retain their identity and keep running after voice disconnects; questions, cancellation, and results use the existing capability dispatcher and journal. Select it under Models with a funded OpenAI API key. Realtime remains the default, and delegated phone calls retain their Realtime model.
+- Grok Voice 3 assistant provider with native PCM audio, interruption handling, playback-aware delivery, portable model/voice/reasoning settings, and encrypted xAI credential provisioning. Select Grok under Models and add its key under Account. Protocol and JVM checks pass; live xAI/device audio remains unverified because no xAI key was available.
+- GPT-Live protocol and controller regression tests plus an opt-in Android synthetic-speech test. Live WebRTC audio, delegation, and spoken-result output passed on a Pixel. Automatic after-reply hangup and typed input during a Live call remain unavailable; end the call by asking or tapping Hang up.
 - Delegate phone calls to a realtime voice agent over cellular (Shizuku) or Twilio Voice, with a shared provider interface, live call cards and captions, private instructions, takeover, optional listen-in, and transcript-backed outcomes. Twilio also runs on an emulator without a physical phone.
 - Send keypad sequences with waits and encrypted saved-credential references. Call tuning, provider settings, credential references and listen-in preferences participate in configuration restore.
 - Experimental WhatsApp calling uses the same engine and is disabled by default, visibly marked unverified. Reusable phone/emulator test tools collect transcripts, far-end verification and recorded demos.

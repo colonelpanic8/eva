@@ -12,9 +12,9 @@ import com.colonelpanic.eva.adapters.declarative.DefaultPackages
 import com.colonelpanic.eva.audio.AndroidAudioRoute
 import com.colonelpanic.eva.audio.MicrophonePermission
 import com.colonelpanic.eva.audio.PeerLinkFactory
-import com.colonelpanic.eva.audio.RealtimeMediaSession
 import com.colonelpanic.eva.audio.RealtimeMediaConfig
 import com.colonelpanic.eva.audio.RealtimeMediaController
+import com.colonelpanic.eva.audio.RealtimeMediaSession
 import com.colonelpanic.eva.audio.RealtimeMediaState
 import com.colonelpanic.eva.audio.VoiceSessionService
 import com.colonelpanic.eva.audio.webrtc.WebRtcPeerLink

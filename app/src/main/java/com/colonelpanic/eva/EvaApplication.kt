@@ -973,19 +973,21 @@ class EvaApplication :
                     val rtc = requireNotNull(audio as? RealtimeMediaSession) { "OpenAI voice requires WebRTC media." }
                     val model = settings.realtimeModel
                     if (OpenAiModels.isLive(model)) {
-                        val key = settings.apiKey() ?: error(
-                            "GPT-Live requires a funded OpenAI API key. Add one in Settings; ChatGPT sign-in does not provide access through this integration.",
-                        )
+                        val key =
+                            settings.apiKey() ?: error(
+                                "GPT-Live requires a funded OpenAI API key. Add one in Settings; ChatGPT sign-in does not provide access through this integration.",
+                            )
                         OpenAiLiveProvider(
-                            ApiKeyAccess(key), rtc,
+                            ApiKeyAccess(key),
+                            rtc,
                             prompts.wording.value.message(com.colonelpanic.eva.conversation.prompt.Wording.LIVE_FRONTEND),
-                            model = model, backendModel = settings.textModel,
+                            model = model,
+                            backendModel = settings.textModel,
                         )
                     } else {
                         val access = access() ?: error("Sign in with ChatGPT, add an API key, or paste a paired host link.")
                         OpenAiRealtimeProvider(access, rtc, model, settings.voiceReasoningEffort)
                     }
-
                 } else {
                     val endpoint = BrokerEndpoint.parse(link)
                     val rtc = requireNotNull(audio as? RealtimeMediaSession) { "Paired-host voice requires WebRTC media." }
