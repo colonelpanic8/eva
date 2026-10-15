@@ -620,15 +620,21 @@ private fun legLabel(
         }
 
         is LegState.Ended -> {
-            "Call ended: " +
-                when (leg.cause) {
-                    EndCause.LOCAL_HANGUP -> "hung up from this phone"
-                    EndCause.REMOTE_HANGUP -> "they hung up"
-                    EndCause.BUSY -> "busy"
-                    EndCause.NO_ANSWER -> "no answer"
-                    EndCause.FAILED -> "the call failed"
-                    EndCause.DROPPED -> "the call dropped"
-                } + leg.detail?.let { " ($it)" }.orEmpty()
+            (
+                if (!leg.endConfirmed) {
+                    "Call state unknown; the line may still be active"
+                } else {
+                    "Call ended: " +
+                        when (leg.cause) {
+                            EndCause.LOCAL_HANGUP -> "hung up from this phone"
+                            EndCause.REMOTE_HANGUP -> "they hung up"
+                            EndCause.BUSY -> "busy"
+                            EndCause.NO_ANSWER -> "no answer"
+                            EndCause.FAILED -> "the call failed"
+                            EndCause.DROPPED -> "the call dropped"
+                        }
+                }
+            ) + leg.detail?.let { " ($it)" }.orEmpty()
         }
     }
 

@@ -10,6 +10,7 @@ import com.colonelpanic.eva.capability.MemoryInvocationRepository
 import com.colonelpanic.eva.capability.ToolProposal
 import com.colonelpanic.eva.conversation.prompt.Wording
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -18,6 +19,7 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
@@ -144,6 +146,8 @@ class CallTaskCoordinatorTest {
         val detectsSpeech: Boolean = true,
         val briefCredentials: List<String> = listOf("phone/pin"),
         val listenInByDefault: Boolean = false,
+        val brainGate: CompletableDeferred<Unit>? = null,
+        val brainFailureAfterGate: Boolean = false,
     ) {
         val saved = mutableMapOf("phone/pin" to PIN)
         val media = Media()
@@ -204,7 +208,11 @@ class CallTaskCoordinatorTest {
                 CallProviderRegistry(listOf(provider)),
                 brains = { request ->
                     opened += request
-                    Brain().also { brains += it }
+                    Brain().also { brains += it }.also {
+                        // Simulate a factory that finishes setup after its opening job is cancelled.
+                        brainGate?.let { gate -> withContext(NonCancellable) { gate.await() } }
+                        if (brainFailureAfterGate) error("Late factory failure")
+                    }
                 },
                 journal = journal,
                 invocations = invocations,
@@ -320,6 +328,68 @@ class CallTaskCoordinatorTest {
             h.control(CallCapabilities.FLOOR, "floor" to "AGENT")
             assertEquals(CallFloor.AGENT, h.state().floor)
             assertFalse(h.leg.ownerMicrophone)
+        }
+
+    @Test fun ownerControlsProceedDuringBrainStartupAndAStaleBrainIsClosed() =
+        runTest {
+            val takeoverGate = CompletableDeferred<Unit>()
+            val takeover = Harness(this, brainGate = takeoverGate)
+            takeover.start()
+            runCurrent()
+            takeover.connect()
+            assertEquals(BrainState.DETACHED, takeover.state().brain)
+
+            val floor = takeover.control(CallCapabilities.FLOOR, "floor" to "OWNER")
+            assertEquals(InvocationStatus.COMPLETED, floor.status)
+            assertTrue(takeover.leg.ownerMicrophone)
+            takeover.control(CallCapabilities.INSTRUCT, "text" to "Ask for the confirmation number")
+            takeoverGate.complete(Unit)
+            runCurrent()
+            assertEquals(BrainState.ATTACHED, takeover.state().brain)
+            assertEquals(CallFloor.OWNER, takeover.brain().currentFloor)
+            assertEquals(
+                "Ask for the confirmation number",
+                takeover
+                    .brain()
+                    .context
+                    .single()
+                    .text,
+            )
+            assertFalse(takeover.brain().closed)
+
+            val cancelGate = CompletableDeferred<Unit>()
+            val cancelled = Harness(this, brainGate = cancelGate)
+            cancelled.start()
+            runCurrent()
+            cancelled.connect()
+            val cancel = cancelled.control(CallCapabilities.CANCEL)
+            assertEquals(InvocationStatus.COMPLETED, cancel.status)
+            assertEquals(1, cancelled.leg.hangups)
+            cancelGate.complete(Unit)
+            runCurrent()
+            assertTrue(cancelled.brain().closed)
+            assertEquals(BrainState.DETACHED, cancelled.state().brain)
+            assertEquals(CallFloor.MUTED, cancelled.state().floor)
+        }
+
+    @Test fun aLateFailedBrainFactoryCannotReplaceTheCancelledCallOutcome() =
+        runTest {
+            val gate = CompletableDeferred<Unit>()
+            val h = Harness(this, brainGate = gate, brainFailureAfterGate = true)
+            val result = h.start()
+            runCurrent()
+            h.connect()
+            h.control(CallCapabilities.CANCEL)
+            h.leg.state.value = LegState.Ended(EndCause.LOCAL_HANGUP)
+            runCurrent()
+            val ended = h.state().state
+            assertTrue(ended is CallTaskState.Interrupted)
+            assertEquals(InvocationStatus.FAILED, result.await().status)
+
+            gate.complete(Unit)
+            runCurrent()
+            assertEquals(ended, h.state().state)
+            assertEquals(1, h.leg.hangups)
         }
 
     @Test fun listeningInByDefaultStartsTheMonitorWhenTheCallConnectsAndTheCardCanStopIt() =
@@ -479,6 +549,35 @@ class CallTaskCoordinatorTest {
             assertTrue(h.state().state is CallTaskState.Accomplished)
             assertEquals(InvocationStatus.COMPLETED, result.await().status)
             assertEquals(0, h.leg.hangups)
+        }
+
+    @Test fun unconfirmedProviderLossDoesNotPromoteAnEarlierAccomplishmentClaim() =
+        runTest {
+            val h = Harness(this)
+            val result = h.start()
+            runCurrent()
+            h.connect()
+            h.transcript("reference", CallSpeaker.REMOTE, "Your reference number is 1234")
+            h.tool(
+                "finish",
+                CallAgentTools.FINISH,
+                "outcome" to "accomplished",
+                "summary" to "Received reference 1234",
+                "evidence" to "[\"reference\"]",
+            )
+            val proposed = h.state().proposedOutcome
+            assertTrue(proposed is CallTaskState.Accomplished)
+
+            h.leg.state.value = LegState.Ended(EndCause.FAILED, "Lost the call-audio helper.", endConfirmed = false)
+            runCurrent()
+
+            val final = h.state()
+            val outcome = final.state as CallTaskState.Uncertain
+            assertTrue(outcome.unknown.contains("may still be active"))
+            assertTrue(outcome.unknown.contains("Lost the call-audio helper."))
+            assertEquals(proposed, final.proposedOutcome)
+            assertEquals(InvocationStatus.UNKNOWN, result.await().status)
+            assertTrue(h.brain().context.none { it.text.contains("call ended", ignoreCase = true) })
         }
 
     @Test fun anAgentThatNeverFinishesAfterTheEndLeavesTheTaskNotAccomplished() =

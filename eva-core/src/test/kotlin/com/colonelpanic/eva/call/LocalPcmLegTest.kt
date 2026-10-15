@@ -46,17 +46,18 @@ class LocalPcmLegTest {
         assertEquals(EndCause.DROPPED, ended(answered = true, cause = null))
     }
 
-    @Test fun losingTheCallIsAFailureUnlessHangUpWasRequestedAndEndingIsFinal() {
+    @Test fun losingObservationNeverConfirmsTheCallEndedEvenAfterHangUpWasRequested() {
         val lost = tracker()
         lost.lost("the helper", "Check the phone.")
-        assertEquals(LegState.Ended(EndCause.FAILED, "Lost the helper. Check the phone."), lost.state.value)
+        assertEquals(LegState.Ended(EndCause.FAILED, "Lost the helper. Check the phone.", endConfirmed = false), lost.state.value)
         lost.observe(LegObservation.Live(AnsweredEvidence.PROVIDER_ASSERTION))
         assertTrue(lost.state.value is LegState.Ended)
 
         val hungUp = tracker()
         hungUp.hangUpRequested = true
         hungUp.lost("the helper", "Check the phone.")
-        assertEquals(EndCause.LOCAL_HANGUP, (hungUp.state.value as LegState.Ended).cause)
+        assertEquals(EndCause.FAILED, (hungUp.state.value as LegState.Ended).cause)
+        assertEquals(false, (hungUp.state.value as LegState.Ended).endConfirmed)
     }
 
     @Test fun uplinkResamplesQueuesInOrderAndPadsWithSilence() {

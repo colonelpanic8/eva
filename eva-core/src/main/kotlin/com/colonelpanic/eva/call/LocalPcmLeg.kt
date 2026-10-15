@@ -76,12 +76,9 @@ class LegStateTracker(
         check: String,
     ) {
         if (ended) return
-        mutable.value =
-            if (hangUpRequested) {
-                LegState.Ended(EndCause.LOCAL_HANGUP, "Hang-up requested; then lost $what.")
-            } else {
-                LegState.Ended(EndCause.FAILED, "Lost $what. $check")
-            }
+        // A hang-up request is not an acknowledgement. In particular, a dead helper can lose
+        // observation before Android acts on the request, so neither success nor a freed line is known.
+        mutable.value = LegState.Ended(EndCause.FAILED, "Lost $what. $check", endConfirmed = false)
     }
 
     private fun endCause(cause: EndCause?) =

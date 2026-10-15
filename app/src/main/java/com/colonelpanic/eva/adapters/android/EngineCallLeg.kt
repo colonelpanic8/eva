@@ -37,6 +37,9 @@ internal interface CallRoute {
     /** Polled throughout the call; throwing means the provider lost sight of it. */
     suspend fun observe(): LegObservation
 
+    /** Recovery after losing observation may use a fresh idle snapshot after acknowledged hang-up. */
+    suspend fun confirmEnded(): Boolean = observe() is LegObservation.Gone
+
     /** What observation goes through, such as EVA's call-audio helper, named when it fails. */
     val observer: String
 
@@ -106,7 +109,8 @@ internal interface CallAudioPath {
  *
  * Verification: the helper path is device-verified for cellular calls on the owner's Pixel; the
  * in-app path is JVM-tested (state, remote frames, agent uplink, owner-microphone mixing, hang-up)
- * and has run on an emulator only up to Twilio refusing the call, never with a connected call.
+ * and verified in connected emulator calls against the Twilio test hotline. WhatsApp redirection
+ * still needs a registered far-end account for device verification.
  */
 internal class EngineCallLeg(
     override val id: String,
@@ -116,6 +120,7 @@ internal class EngineCallLeg(
     playbackDevice: (() -> AudioDeviceInfo?)? = null,
     // Debug-only demo recorder (see CallAudioCapture); null unless a demo asked for it.
     private val capture: CallAudioCapture? = null,
+    private val admission: CallAdmission.Lease,
 ) : CallLeg,
     CallMedia.LocalPcm {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -184,7 +189,7 @@ internal class EngineCallLeg(
 
     /**
      * The leg's lifetime: poll until the call ends or the route throws (EVA lost sight of it, which ends
-     * the leg FAILED with the route's check for the owner, or LOCAL_HANGUP after a hang-up request), then
+     * the leg FAILED with an explicitly unconfirmed end and the route's check for the owner), then
      * release audio and playback whatever happened.
      */
     private suspend fun track() {
@@ -193,7 +198,19 @@ internal class EngineCallLeg(
                 try {
                     route.observe().also { if (it is LegObservation.Live && !opened.value) openAudio() }
                 } catch (error: Exception) {
-                    tracker.lost("${route.observer} (${error.message ?: error::class.simpleName})", route.lostCheck)
+                    // The model cannot supervise a call whose media/control disappeared. Ask its
+                    // route to disconnect (Telecom can survive a dead audio helper), but never turn
+                    // that request into a claim that the call ended. Keep admission reserved until
+                    // a later observation confirms Gone, even after this leg releases its media.
+                    val hangUp = runCatching { route.hangUp() }
+                    val detail =
+                        if (hangUp.isSuccess) {
+                            "Hang-up requested; its completion is unconfirmed."
+                        } else {
+                            "Hang-up also failed: ${hangUp.exceptionOrNull()?.message}."
+                        }
+                    admission.observationLost(route)
+                    tracker.lost("${route.observer} (${error.message ?: error::class.simpleName})", "$detail ${route.lostCheck}")
                     break
                 }
             tracker.observe(observation)
@@ -203,6 +220,7 @@ internal class EngineCallLeg(
         monitor.release()
         remote?.release()
         capture?.close()
+        if ((state.value as? LegState.Ended)?.endConfirmed == true) admission.release()
         scope.cancel()
     }
 

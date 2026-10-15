@@ -1243,20 +1243,25 @@ Telecom call (state, disconnect cause, removed) and the time since dialing, so o
 are pure and JVM-tested. `CallEngine.telecomObservation` maps a Telecom call to leg
 observations for any transport that is followed through Telecom.
 
-The engine does the rest. For both families: refusing emergency numbers and placing while
-another call is live (the audio mode is IN_CALL, Telecom shows a live call, or an in-app
-transport is busy); and one leg, `EngineCallLeg`. `LegStateTracker` (`:eva-core`) folds the
-route's polled observations (every 300 ms) into Placing → Ringing → Connected (with answer
-evidence) → Ended with cause; losing sight of the call ends the leg FAILED with the
-transport's check, or LOCAL_HANGUP after a hang-up request, and an explicit FAILED cause stays
-FAILED rather than reading as no answer. The leg opens a `CallAudioPath` when the call is
+The engine does the rest. Both families share a process-wide admission reservation acquired
+before dialing, including while an SDK's connect is suspended. This excludes cellular calls
+while an EVA SDK call is active even though Telecom cannot see that SDK call. External calls
+are also checked through IN_CALL audio mode, Telecom and the transport's busy state.
+One leg, `EngineCallLeg`, folds polled observations (every 300 ms) through `LegStateTracker`
+into Placing → Ringing → Connected (with answer evidence) → Ended with cause. Losing the
+observer requests hang-up and releases media, but records FAILED with `endConfirmed=false`:
+a request is not proof that Android ended the call. The task becomes Uncertain, preserving
+any earlier outcome claim separately. Admission remains reserved until the route can again
+positively observe the old call is gone. Restore its observer and check the line before retrying.
+An explicit FAILED cause stays FAILED rather than reading as no answer. The leg opens a `CallAudioPath` when the call is
 first live, delivers the other party's frames, paces queued agent audio and in-band tones
 into the uplink at real time (`PacedUplink`, `:eva-core`), applies the floor's microphone
 routing, plays the other party locally when the owner would not otherwise hear them, runs
 listen-in (gating the agent's input while it plays when capture can hear EVA's playback; see
 the call card below), records the agent's input and the uplink for demos in debuggable
 builds when the phone tool asks (`CallAudioCapture`), and on the end releases audio and
-playback.
+playback. Brain connection setup runs outside the task lock, so takeover and cancellation
+remain available while the realtime connection is stalled; late sessions are discarded.
 
 For helper transports the engine also checks availability (Android 13, then the transport,
 then Shizuku and the helper, and PSTN interception for `PSTN`); allows `MANAGE_ONGOING_CALLS`
@@ -1369,6 +1374,15 @@ hold music heard and sat through with `keep_listening`; the main agent choosing 
 from a typed request; listen-in playing both sides on the emulator's speaker; and both a remote
 hang-up and the agent's own hang-up ending the leg. Not yet verified: busy and no-answer through
 `dial.js`, owner takeover with the microphone mixed in, locked use, and a physical phone.
+
+The consolidated build's fictional membership role-play answered an unavailable ZIP-code
+question, read back confirmation 2234, recorded an evidenced accomplishment and hung up.
+The far-end Gather receipts independently confirm the ZIP answer and read-back. Dialogue
+polish remains: the model can repeat a request or skip a spoken goodbye even with explicit
+instructions. A quote using “canceled” when the transcript says “cancelled” is intentionally
+not accepted as verbatim; the rejection provides the actual item ID, and the tested retry
+succeeded. These are model behavior/quote-matching limits, not proof that every conversation
+or every evidence claim succeeds on its first attempt.
 
 ### WhatsApp provider
 

@@ -16,6 +16,7 @@ import com.colonelpanic.eva.call.EndCause
 import com.colonelpanic.eva.call.LegObservation
 import com.colonelpanic.eva.call.PlaceCallRequest
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -112,6 +113,12 @@ internal interface InAppAudioTransport : CallTransport {
      */
     suspend fun dial(number: String): InAppCall
 
+    /** Reports the SDK handle before a cancelled dial can lose its return value. */
+    suspend fun dial(
+        number: String,
+        onStarted: (InAppCall) -> Unit,
+    ): InAppCall
+
     /** Whether this transport has a call in progress in EVA's process. */
     fun busy(): Boolean
 }
@@ -161,6 +168,7 @@ internal class CallEngine(
     private val isEmergency: (String) -> Boolean = { PhoneCallBackend.emergency(context, it) },
     // Opened only while the owner holds the floor of an in-app call; injectable so JVM tests need no AudioRecord.
     private val microphone: () -> OwnerMicrophone = { AndroidOwnerMicrophone(EngineCallLeg.SAMPLE_RATE) },
+    private val admission: CallAdmission = deviceAdmission,
 ) : CallProvider {
     init {
         require(transport !is HelperAudioTransport || host != null) { "${transport.id} reaches call audio through the Shizuku helper." }
@@ -197,10 +205,34 @@ internal class CallEngine(
 
     override suspend fun place(request: PlaceCallRequest): CallLeg {
         if (isEmergency(request.number)) throw CallNotPlaced("EVA does not place emergency calls on the owner's behalf.")
-        return when (transport) {
-            is HelperAudioTransport -> placeWithHelper(transport, request)
-            is InAppAudioTransport -> placeInApp(transport, request)
+        val lease = admission.acquire()
+        val attempt = PlacementAttempt()
+        try {
+            return when (transport) {
+                is HelperAudioTransport -> placeWithHelper(transport, request, lease, attempt)
+                is InAppAudioTransport -> placeInApp(transport, request, lease, attempt)
+            }
+        } catch (error: Throwable) {
+            if (!attempt.started || error is CallNotPlaced) {
+                // This exception is the transport's explicit guarantee that no remote call was
+                // placed (permission rejection or a confirmed pre-dial SDK refusal). Do not leave
+                // a permanent reservation after a definite refusal; every uncertain throw retains it.
+                lease.release()
+            } else {
+                // The platform may have dialed before a cancelled dispatcher delivers the result.
+                // Keep the reservation until the route confirms Gone, even when no leg was built.
+                attempt.route?.let { route ->
+                    lease.observationLost(route)
+                    withContext(NonCancellable) { runCatching { route.hangUp() } }
+                }
+            }
+            throw error
         }
+    }
+
+    private class PlacementAttempt {
+        var started = false
+        var route: CallRoute? = null
     }
 
     /**
@@ -213,13 +245,19 @@ internal class CallEngine(
     private suspend fun placeInApp(
         transport: InAppAudioTransport,
         request: PlaceCallRequest,
+        lease: CallAdmission.Lease,
+        attempt: PlacementAttempt,
     ): CallLeg {
         val audioMode = checkNotNull(context.getSystemService(AudioManager::class.java)).mode
         if (audioMode == AudioManager.MODE_IN_CALL || transport.busy() || liveTelecomCalls().isNotEmpty()) {
             throw CallNotPlaced(ANOTHER_CALL)
         }
         transport.unavailableReason()?.let { throw CallNotPlaced(it) }
-        val call = transport.dial(request.number)
+        val call =
+            transport.dial(request.number) {
+                attempt.started = true
+                attempt.route = it
+            }
         // The other party plays locally on the earpiece, like any call: the owner has no other way to hear them.
         return EngineCallLeg(
             request.legId,
@@ -228,12 +266,15 @@ internal class CallEngine(
             InAppAudioPath(call.audio, microphone),
             ::earpiece,
             CallAudioCapture.open(context, request.legId, EngineCallLeg.SAMPLE_RATE),
+            lease,
         )
     }
 
     private suspend fun placeWithHelper(
         transport: HelperAudioTransport,
         request: PlaceCallRequest,
+        lease: CallAdmission.Lease,
+        attempt: PlacementAttempt,
     ): CallLeg {
         if (Build.VERSION.SDK_INT < 33) throw CallNotPlaced("$name needs Android 13 or newer.")
         val helper = checkNotNull(host).helper()
@@ -245,8 +286,12 @@ internal class CallEngine(
             throw CallNotPlaced("EVA cannot follow a ${transport.id} call without call control: ${control.note}.")
         }
         val before = CallControlService.calls.value.toSet()
+        val route = EngineRoute(transport, helper, request.number, before, control)
+        attempt.route = route
+        attempt.started = true
         transport.dial(request.number, helper)
-        return helperLeg(request.legId, helper, placing = true, EngineRoute(transport, helper, request.number, before, control))
+        route.dialFinished = true
+        return helperLeg(request.legId, helper, placing = true, route, lease)
     }
 
     /**
@@ -257,12 +302,21 @@ internal class CallEngine(
     override suspend fun reattach(legId: String): CallLeg? {
         val transport = transport as? HelperAudioTransport ?: return null
         if (Build.VERSION.SDK_INT < 33) return null
-        val helper = checkNotNull(host).helper()
-        val route = EngineRoute(transport, helper, number = null, before = emptySet(), CallControlService.existing(context))
-        val signals = route.signals()
-        transport.recoveryDoubt(signals)?.let { error(it) }
-        if (transport.observer().observe(signals) !is LegObservation.Live) return null
-        return helperLeg(legId, helper, placing = false, route)
+        val lease = admission.acquire()
+        try {
+            val helper = checkNotNull(host).helper()
+            val route = EngineRoute(transport, helper, number = null, before = emptySet(), CallControlService.existing(context))
+            val signals = route.signals()
+            transport.recoveryDoubt(signals)?.let { error(it) }
+            if (transport.observer().observe(signals) !is LegObservation.Live) {
+                lease.release()
+                return null
+            }
+            return helperLeg(legId, helper, placing = false, route, lease)
+        } catch (error: Throwable) {
+            lease.release()
+            throw error
+        }
     }
 
     @RequiresApi(33)
@@ -271,6 +325,7 @@ internal class CallEngine(
         helper: ICallAudio,
         placing: Boolean,
         route: EngineRoute,
+        lease: CallAdmission.Lease,
     ): CallLeg {
         val redirect = route.transport.redirect
         // Unpinned voice-communication playback would loop back into a VoIP redirection.
@@ -282,6 +337,7 @@ internal class CallEngine(
             HelperAudioPath(helper, redirect),
             device,
             CallAudioCapture.open(context, legId, EngineCallLeg.SAMPLE_RATE),
+            lease,
         )
     }
 
@@ -320,11 +376,25 @@ internal class CallEngine(
         private val reading = transport.observer()
         private val dialedNanos = System.nanoTime()
 
+        @Volatile var dialFinished = false
+
+        @Volatile private var hangUpReturned = false
+
         @Volatile private var call: Call? = null
         override val observer = "EVA's call-audio helper"
         override val lostCheck get() = transport.lostCheck
 
         override suspend fun observe(): LegObservation = reading.observe(signals())
+
+        override suspend fun confirmEnded(): Boolean {
+            val snapshot = signals()
+            val telecom = snapshot.telecom
+            if (telecom?.state == Call.STATE_DISCONNECTED) return true
+            // The cellular observer can return Pending forever if its first poll failed before it
+            // saw IN_CALL. An idle raw reading proves end only after dialing and hang-up both returned.
+            return transport.redirect == CallRedirect.PSTN && dialFinished && hangUpReturned &&
+                snapshot.audioMode != AudioManager.MODE_IN_CALL && snapshot.precise.none { it.foreground > 0 }
+        }
 
         suspend fun signals() = signals(helper, telecomCall(), (System.nanoTime() - dialedNanos) / 1_000_000)
 
@@ -372,10 +442,12 @@ internal class CallEngine(
             } else {
                 withContext(Dispatchers.IO) { helper.endCall() }
             }
+            hangUpReturned = true
         }
     }
 
     companion object {
+        private val deviceAdmission = CallAdmission()
         private const val ANOTHER_CALL = "Another call is already in progress. End it before EVA places a new one."
         private const val TONE_MILLIS = 250L
         private const val GAP_MILLIS = 150L

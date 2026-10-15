@@ -127,6 +127,7 @@ class CallTaskCoordinator(
         var leg: CallLeg? = null
         var brain: CallAgentBrain? = null
         var brainEvents: Job? = null
+        var brainOpening: Job? = null
 
         // Increments on every brain swap, so a late tool result from a replaced brain is not delivered to its successor.
         var brainEpoch = 0L
@@ -319,10 +320,10 @@ class CallTaskCoordinator(
                                 // WrappingUp means the agent already claimed an outcome; reconnect evidence must not reopen the call.
                                 if (!running.snapshot.state.terminal && running.snapshot.state != CallTaskState.WrappingUp) {
                                     running.save(running.snapshot.copy(state = CallTaskState.InCall))
-                                    if (running.brain == null &&
+                                    if (running.brain == null && running.brainOpening == null &&
                                         !(running.snapshot.phase == CallPhase.HOLD && running.gatesHold)
                                     ) {
-                                        openBrain(running)
+                                        startBrain(running)
                                     }
                                 }
                             }
@@ -399,8 +400,15 @@ class CallTaskCoordinator(
     private suspend fun failCall(
         running: Running,
         reason: String,
+        expectedBrainEpoch: Long? = null,
     ) = withContext(NonCancellable) {
+        var failed = false
         running.lock.withLock {
+            if (expectedBrainEpoch != null &&
+                (running.brainEpoch != expectedBrainEpoch || running.snapshot.state.terminal)
+            ) {
+                return@withLock
+            }
             cutOffLiveCaptions(running)
             val next = running.snapshot.copy(state = CallTaskState.Uncertain(reason), brain = BrainState.DETACHED)
             try {
@@ -416,8 +424,9 @@ class CallTaskCoordinator(
                 mutableTasks.update { it + (next.id to running.snapshot) }
             }
             running.done.complete(receipt(running.snapshot))
+            failed = true
         }
-        runCatching { running.leg?.hangUp() }
+        if (failed) runCatching { running.leg?.hangUp() }
         Unit
     }
 
@@ -468,6 +477,24 @@ class CallTaskCoordinator(
         val task = running.snapshot
         if (task.state.terminal) return
         cutOffLiveCaptions(running)
+        if (!ended.endConfirmed) {
+            // Observation failed, so the leg's Ended state closes EVA's media ownership but does not
+            // prove the remote line closed. Do not give the brain the confirmed-end follow-up window
+            // or promote its earlier attributed finish claim into the task's final outcome.
+            val detail = ended.detail?.let { " $it" }.orEmpty()
+            running.save(
+                task.copy(
+                    state =
+                        CallTaskState.Uncertain(
+                            "EVA lost sight of the call and attempted hang-up, but cannot confirm it ended. " +
+                                "The call may still be active; check ${task.providerId} before calling again.$detail",
+                        ),
+                    brain = BrainState.DETACHED,
+                ),
+            )
+            running.done.complete(receipt(running.snapshot))
+            return
+        }
         val brain = running.brain
         if (!running.cancelled && task.proposedOutcome == null && brain != null && !running.wrappingUpAfterEnd &&
             claimWindowMillis > 0 && task.floor in setOf(CallFloor.AGENT, CallFloor.AGENT_STALLING)
@@ -539,28 +566,79 @@ class CallTaskCoordinator(
      * briefly and honestly and carries on. Rewording in the catalog must keep both halves
      * when revising the catalog.
      */
-    private suspend fun openBrain(running: Running) {
+    private fun startBrain(running: Running) {
         val leg = checkNotNull(running.leg)
         val text = wording()
         val catalog =
             CallAgentTools.definitions.map {
                 text.describe(ProviderToolDefinition(it.id, it.title, it.description, it.inputSchema))
             }
-        val brain =
-            brains.open(
-                CallBrainRequest(
-                    text.message(Wording.CALL_AGENT_INSTRUCTIONS),
-                    running.snapshot.brief,
-                    running.snapshot.transcript.toList(),
-                    catalog,
-                    running.snapshot.traits,
-                    leg.media,
-                ),
+        val request =
+            CallBrainRequest(
+                text.message(Wording.CALL_AGENT_INSTRUCTIONS),
+                running.snapshot.brief,
+                running.snapshot.transcript.toList(),
+                catalog,
+                running.snapshot.traits,
+                leg.media,
             )
-        running.brain = brain
         val epoch = ++running.brainEpoch
-        brain.setFloor(running.snapshot.floor)
-        running.save(running.snapshot.copy(brain = BrainState.ATTACHED))
+        // Connection and seed acknowledgements can wait on the network. The owner must retain the
+        // task lock for floor changes and hang-up while that happens. The epoch prevents a late open
+        // from attaching after a replacement, detach, or ended call.
+        running.brainOpening =
+            running.work.launch {
+                var opened: CallAgentBrain? = null
+                try {
+                    opened = brains.open(request)
+                    running.lock.withLock {
+                        if (running.brainEpoch == epoch && !running.snapshot.state.terminal &&
+                            running.snapshot.legState !is LegState.Ended && !running.cancelled
+                        ) {
+                            val brain = opened
+                            checkNotNull(brain)
+                            brain.setFloor(running.snapshot.floor)
+                            running.save(running.snapshot.copy(brain = BrainState.ATTACHED))
+                            running.brain = brain
+                            running.brainOpening = null
+                            opened = null
+                            collectBrain(running, leg, brain, epoch)
+                            // Controls and owner speech can now arrive during setup. The request was
+                            // seeded from an earlier snapshot, so deliver only the later journaled items.
+                            val seeded = request.transcript.mapTo(mutableSetOf()) { it.id }
+                            running.snapshot.transcript
+                                .filterNot { it.id in seeded }
+                                .forEach { brain.appendContext(it) }
+                            running.preRoll.drain().forEach { brain.pushRemotePcm(it) }
+                        }
+                    }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    failCall(
+                        running,
+                        "Call brain setup failed. Remote call and commitment outcomes are unknown. Check before calling again.",
+                        expectedBrainEpoch = epoch,
+                    )
+                } finally {
+                    // A factory can return after its caller was cancelled. It owns cleanup only until
+                    // it returns; once we have a brain, close it if this epoch did not take ownership.
+                    opened?.let { withContext(NonCancellable) { it.close() } }
+                    withContext(NonCancellable) {
+                        running.lock.withLock {
+                            if (running.brainEpoch == epoch) running.brainOpening = null
+                        }
+                    }
+                }
+            }
+    }
+
+    private fun collectBrain(
+        running: Running,
+        leg: CallLeg,
+        brain: CallAgentBrain,
+        epoch: Long,
+    ) {
         running.brainEvents =
             running.work.launch {
                 try {
@@ -686,6 +764,8 @@ class CallTaskCoordinator(
 
     private suspend fun detachBrain(running: Running) {
         cutOffLiveCaptions(running)
+        running.brainOpening?.cancel()
+        running.brainOpening = null
         val old = running.brain
         running.brain = null
         running.brainEvents?.cancel()
@@ -709,10 +789,12 @@ class CallTaskCoordinator(
         running.brainEvents = null
         val old = running.brain
         running.brain = null
+        running.brainOpening?.cancel()
+        running.brainOpening = null
         old?.cancelOutput()
         (running.leg?.media as? CallMedia.LocalPcm)?.cancelAgentAudio()
         old?.close()
-        openBrain(running)
+        startBrain(running)
         oldEvents?.cancel()
     }
 
@@ -733,10 +815,10 @@ class CallTaskCoordinator(
             running.preRoll.add(frame)
             if (!detector.speechDetected(frame)) return@withLock
             running.save(running.snapshot.copy(phase = CallPhase.UNKNOWN))
-            if (running.brain == null) openBrain(running)
-            running.preRoll.drain().forEach { running.brain?.pushRemotePcm(it) }
+            if (running.brain == null && running.brainOpening == null) startBrain(running)
+            if (running.brain != null) running.preRoll.drain().forEach { running.brain?.pushRemotePcm(it) }
         } else {
-            running.brain?.pushRemotePcm(frame)
+            if (running.brainOpening != null) running.preRoll.add(frame) else running.brain?.pushRemotePcm(frame)
         }
     }
 

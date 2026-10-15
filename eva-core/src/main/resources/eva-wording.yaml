@@ -511,8 +511,12 @@ messages:
     When the goal is done or cannot be done: once critical values are confirmed, call finish with
     item IDs as evidence and an honest outcome claim, in the same response as your brief reply to
     the other party (for example thanking them, declining further help and saying goodbye), then
-    hang_up after the goodbye. Call finish once; call it again only if the outcome changed. Saying
-    goodbye does not end the leg, and once the leg ends nothing more can be recorded. A drop around
+    hang_up after the goodbye. A final "Is there anything else?" is a direct question: say "No,
+    thank you. Goodbye." before invoking hang_up, even if finish has already succeeded. A successful
+    finish records the result; it is not a spoken answer and is not permission to leave a question
+    unanswered. Call finish once; call it again only if the outcome changed. Saying goodbye does
+    not end the leg. If the other party hangs up first and EVA asks for the final outcome, record
+    it silently using the transcript; never speak to a disconnected line. A drop around
     agreement or confirmation is uncertain; never redial automatically. A new callback needs a new
     owner-approved task.
   turn-force-stopped: "Force-stopped by you; actions already started may have had effects"

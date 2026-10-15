@@ -57,6 +57,8 @@ sealed interface LegState {
     @Serializable data class Ended(
         val cause: EndCause,
         val detail: String? = null,
+        /** False means observation failed; the underlying call may still be live. */
+        val endConfirmed: Boolean = true,
     ) : LegState
 }
 

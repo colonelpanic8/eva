@@ -15,6 +15,8 @@ import com.colonelpanic.eva.call.LegObservation
 import com.colonelpanic.eva.call.LegState
 import com.colonelpanic.eva.call.PcmFrame
 import com.colonelpanic.eva.call.PlaceCallRequest
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -114,11 +116,12 @@ class CallEngineTest {
         override fun recoveryDoubt(signals: CallSignals) = doubt
     }
 
+    private val admission = CallAdmission()
     private val helper = Helper()
     private val access = Access(helper)
     private val transport = Transport()
     private val engine =
-        CallEngine(ApplicationProvider.getApplicationContext(), access, transport, isEmergency = { it == "911" })
+        CallEngine(ApplicationProvider.getApplicationContext(), access, transport, isEmergency = { it == "911" }, admission = admission)
 
     private fun refusal(number: String = "+15592493930") =
         runBlocking { runCatching { engine.place(PlaceCallRequest("leg", number)) }.exceptionOrNull() }
@@ -133,6 +136,8 @@ class CallEngineTest {
         assertTrue(refused is CallNotPlaced)
         assertEquals("No saved contact has that number.", refused!!.message)
         assertTrue(transport.dialed.isEmpty())
+        // A definitive refusal leaves no live call to reserve, including repeated permission errors.
+        assertEquals("No saved contact has that number.", refusal()!!.message)
     }
 
     @Test fun availabilityNamesTheTransportThenShizuku() =
@@ -155,14 +160,22 @@ class CallEngineTest {
             assertEquals(1, helper.endCalls)
             helper.broken = true
             val ended = withTimeout(5_000) { leg.state.first { it is LegState.Ended } } as LegState.Ended
-            assertEquals(EndCause.LOCAL_HANGUP, ended.cause)
-            assertEquals(false, helper.muted.last())
+            assertEquals(EndCause.FAILED, ended.cause)
+            assertEquals(false, ended.endConfirmed)
+            assertEquals(2, helper.endCalls)
+            withTimeout(5_000) { while (helper.muted.lastOrNull() != false) delay(20) }
         }
 
     @Test fun aKeypadlessTransportRefusesKeysInsteadOfPlayingTones() =
         runBlocking<Unit> {
             val keypadless =
-                CallEngine(ApplicationProvider.getApplicationContext(), access, Transport(keypad = false), isEmergency = { false })
+                CallEngine(
+                    ApplicationProvider.getApplicationContext(),
+                    access,
+                    Transport(keypad = false),
+                    isEmergency = { false },
+                    admission = admission,
+                )
             val leg = keypadless.place(PlaceCallRequest("leg", "+15592493930"))
             assertEquals("fake calls have no keypad.", runCatching { leg.sendDtmf("1") }.exceptionOrNull()!!.message)
             helper.broken = true
@@ -183,6 +196,9 @@ class CallEngineTest {
             val ended = withTimeout(5_000) { leg.state.first { it is LegState.Ended } } as LegState.Ended
             assertEquals(EndCause.FAILED, ended.cause)
             assertTrue(ended.detail!!.endsWith("Check the fake line."))
+            assertEquals(false, ended.endConfirmed)
+            assertEquals(1, helper.endCalls)
+            assertTrue(refusal()!!.message!!.contains("could not confirm the previous call ended"))
         }
 
     /** An SDK that renders a constant other party once rendering starts, and records every uplink sample. */
@@ -245,12 +261,26 @@ class CallEngineTest {
         override val lostCheck = "Check the fake SDK."
         var unavailable: String? = null
         var call: SdkCall? = null
+        var dialing: CompletableDeferred<Unit>? = null
+        var proceed: CompletableDeferred<Unit>? = null
 
         override suspend fun unavailableReason() = unavailable
 
         override fun busy() = call?.observation?.let { it !is LegObservation.Gone } ?: false
 
-        override suspend fun dial(number: String) = SdkCall(port).also { call = it }
+        override suspend fun dial(number: String): SdkCall = dial(number) {}
+
+        override suspend fun dial(
+            number: String,
+            onStarted: (InAppCall) -> Unit,
+        ): SdkCall {
+            dialing?.complete(Unit)
+            proceed?.await()
+            return SdkCall(port).also {
+                onStarted(it)
+                call = it
+            }
+        }
     }
 
     @Test fun anInAppCallCarriesItsSdksAudioAndMixesTheOwnersMicrophoneIntoTheUplinkOnTheirFloor() =
@@ -259,7 +289,9 @@ class CallEngineTest {
             val sdk = InApp(port)
             val microphone = Microphone()
             val engine =
-                CallEngine(ApplicationProvider.getApplicationContext(), null, sdk, isEmergency = { false }, microphone = { microphone })
+                CallEngine(ApplicationProvider.getApplicationContext(), null, sdk, isEmergency = {
+                    false
+                }, microphone = { microphone }, admission = admission)
             assertNull(engine.unavailableReason())
             val leg = engine.place(PlaceCallRequest("leg", "+15592493930"))
             val call = sdk.call!!
@@ -295,7 +327,7 @@ class CallEngineTest {
     @Test fun anInAppTransportThatIsNotReadyDialsNothingAndNeedsNoShizuku() =
         runBlocking<Unit> {
             val sdk = InApp(Port())
-            val engine = CallEngine(ApplicationProvider.getApplicationContext(), null, sdk, isEmergency = { false })
+            val engine = CallEngine(ApplicationProvider.getApplicationContext(), null, sdk, isEmergency = { false }, admission = admission)
             sdk.unavailable = "Twilio calling is not set up."
             assertEquals("Twilio calling is not set up.", engine.unavailableReason())
             val refused = runCatching { engine.place(PlaceCallRequest("leg", "+15592493930")) }.exceptionOrNull()
@@ -303,6 +335,68 @@ class CallEngineTest {
             assertEquals("Twilio calling is not set up.", refused!!.message)
             assertNull(sdk.call)
             assertNull(engine.reattach("leg"))
+        }
+
+    @Test fun admissionPreventsConcurrentSdkDialAndCellularDialUntilTheFirstCallReleasesAudio() =
+        runBlocking<Unit> {
+            val sdk =
+                InApp(Port()).apply {
+                    dialing = CompletableDeferred()
+                    proceed = CompletableDeferred()
+                }
+            val sdkEngine =
+                CallEngine(ApplicationProvider.getApplicationContext(), null, sdk, isEmergency = { false }, admission = admission)
+            val placing = async { sdkEngine.place(PlaceCallRequest("first", "+15592493930")) }
+            sdk.dialing!!.await()
+            assertNull(sdk.call) // Busy is still false inside the SDK's suspending connect.
+            assertTrue(runCatching { sdkEngine.place(PlaceCallRequest("second", "+15592493930")) }.exceptionOrNull() is CallNotPlaced)
+            assertTrue(refusal() is CallNotPlaced) // The same reservation covers a different transport.
+            assertTrue(transport.dialed.isEmpty())
+            sdk.proceed!!.complete(Unit)
+            val leg = placing.await()
+            leg.hangUp()
+            withTimeout(5_000) { leg.state.first { it is LegState.Ended } }
+            // Observation announces the end before media teardown. Retry admission only after cleanup;
+            // refusal has no mutation, and this test never retries an uncertain dial.
+            val next =
+                withTimeout(5_000) {
+                    var acquired: CallAdmission.Lease? = null
+                    while (acquired == null) {
+                        acquired = runCatching { admission.acquire() }.getOrNull()
+                        if (acquired == null) delay(20)
+                    }
+                    acquired
+                }
+            next.release()
+        }
+
+    @Test fun aHelperLostBeforeTheFirstObservationCanRecoverOnceHangUpReturnsAndTheLineIsIdle() =
+        runBlocking<Unit> {
+            val leg = engine.place(PlaceCallRequest("first", "+15592493930"))
+            helper.broken = true
+            val ended = withTimeout(5_000) { leg.state.first { it is LegState.Ended } } as LegState.Ended
+            assertEquals(false, ended.endConfirmed)
+            assertEquals(1, helper.endCalls)
+            assertTrue(refusal() is CallNotPlaced)
+            helper.broken = false
+            helper.mode = AudioManager.MODE_NORMAL
+            // The old observer only ever saw Pending; fresh idle evidence after hang-up must suffice.
+            val second = engine.place(PlaceCallRequest("second", "+15592493930"))
+            assertEquals(2, transport.dialed.size)
+            helper.broken = true
+            withTimeout(5_000) { second.state.first { it is LegState.Ended } }
+        }
+
+    @Test fun uncertainReservationClearsOnlyWhenTheRoutePositivelyObservesItsEnd() =
+        runBlocking<Unit> {
+            val call = SdkCall(Port())
+            val lease = admission.acquire()
+            lease.observationLost(call)
+            assertTrue(runCatching { admission.acquire() }.exceptionOrNull() is CallNotPlaced)
+            call.observation = LegObservation.Live(AnsweredEvidence.PROVIDER_ASSERTION)
+            assertTrue(runCatching { admission.acquire() }.exceptionOrNull() is CallNotPlaced)
+            call.hangUp()
+            admission.acquire().release()
         }
 
     private companion object {

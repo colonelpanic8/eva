@@ -24,7 +24,10 @@ import com.twilio.voice.ConnectOptions
 import com.twilio.voice.LogLevel
 import com.twilio.voice.Voice
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -188,7 +191,12 @@ internal class TwilioTransport(
             }
         }
 
-    override suspend fun dial(number: String): InAppCall {
+    override suspend fun dial(number: String): InAppCall = dial(number) {}
+
+    override suspend fun dial(
+        number: String,
+        onStarted: (InAppCall) -> Unit,
+    ): InAppCall {
         unavailableReason()?.let { throw CallNotPlaced(it) }
         // The TwiML dials only E.164; a number written for a person ("(559) 249-3930") is read in the
         // phone's country. What cannot become E.164 (short codes, extensions) is refused before dialing.
@@ -205,16 +213,23 @@ internal class TwilioTransport(
                 nowSeconds(),
             )
         val call = TwilioCall(sdk.audio, main)
-        val handle =
+        currentCoroutineContext().ensureActive()
+        // The SDK mutation, handle attachment and admission callback are one uncancellable step.
+        // Otherwise cancellation on the return hop from Main can hide a successfully created call.
+        withContext(NonCancellable) {
+            onStarted(call)
             withContext(main) {
-                try {
-                    sdk.connect(token, mapOf("To" to destination), call)
-                } catch (error: SecurityException) {
-                    throw CallNotPlaced("The Twilio Voice SDK refused to start the call: ${error.message}.")
-                }
+                val handle =
+                    try {
+                        sdk.connect(token, mapOf("To" to destination), call)
+                    } catch (error: SecurityException) {
+                        throw CallNotPlaced("The Twilio Voice SDK refused to start the call: ${error.message}.")
+                    }
+                call.attach(handle)
+                active = call
             }
-        call.attach(handle)
-        active = call
+        }
+        currentCoroutineContext().ensureActive()
         // Waiting for the first event lets a bad key, token or app SID end as "no call was placed" instead
         // of a leg that ends a moment later. It is not a timeout on the call: if nothing arrives, the leg is
         // returned anyway and follows the call as usual.

@@ -12,6 +12,7 @@ All notable changes to EVA will be documented here.
 
 ### Fixed
 
+- Call cancellation remains responsive while the voice session connects. Shared admission prevents overlapping provider calls, and lost call observation attempts hang-up while preserving an explicit uncertain outcome.
 - Call agents answer direct questions instead of silently waiting, avoid narrating internal steps, read back critical values, and preserve outcomes when the other party hangs up. Listen-in defaults off to preserve interruption; cellular listen-in temporarily suppresses incoming audio while the agent speaks to prevent echo.
 
 ## [0.66.0] - 2026-10-14
