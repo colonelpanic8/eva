@@ -2,10 +2,15 @@ package com.colonelpanic.eva.data.configuration
 
 import com.colonelpanic.eva.EvaApplication
 import kotlinx.coroutines.runBlocking
+import org.eclipse.jgit.storage.file.FileBasedConfig
+import org.eclipse.jgit.util.FS
+import org.eclipse.jgit.util.SystemReader
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -16,6 +21,36 @@ import java.io.File
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], application = EvaApplication::class)
 class PinnedConfigurationLiveTest {
+    private val systemReader = SystemReader.getInstance()
+
+    @Before
+    fun isolateGitConfiguration() {
+        val folder = File(RuntimeEnvironment.getApplication().cacheDir, "isolated-git-config")
+        SystemReader.setInstance(
+            object : SystemReader.Delegate(systemReader) {
+                override fun openUserConfig(
+                    parent: org.eclipse.jgit.lib.Config?,
+                    fs: FS,
+                ) = FileBasedConfig(parent, File(folder, "user"), fs)
+
+                override fun openSystemConfig(
+                    parent: org.eclipse.jgit.lib.Config?,
+                    fs: FS,
+                ) = FileBasedConfig(parent, File(folder, "system"), fs)
+
+                override fun openJGitConfig(
+                    parent: org.eclipse.jgit.lib.Config?,
+                    fs: FS,
+                ) = FileBasedConfig(parent, File(folder, "jgit"), fs)
+            },
+        )
+    }
+
+    @After
+    fun restoreGitConfiguration() {
+        SystemReader.setInstance(systemReader)
+    }
+
     @Test
     fun `pinned configuration restores from real catalogs and remains compact after a settings edit`() =
         runBlocking {

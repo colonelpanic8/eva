@@ -2,12 +2,14 @@ package com.colonelpanic.eva.data.configuration
 
 import android.app.Application
 import android.content.Context
+import com.colonelpanic.eva.adapters.declarative.DefaultPackages
 import com.colonelpanic.eva.adapters.declarative.PackageCodec
 import com.colonelpanic.eva.adapters.declarative.PluginRepository
 import com.colonelpanic.eva.data.PackageSettings
 import com.colonelpanic.eva.data.PortablePackageSettings
 import org.eclipse.jgit.api.Git
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -22,6 +24,34 @@ import java.nio.file.Files
 @Config(sdk = [28], application = Application::class, manifest = Config.NONE)
 class PinnedPackagesTest {
     private val context: Context get() = RuntimeEnvironment.getApplication()
+
+    @Test
+    fun `fresh restore uses the exact shipped revision without a catalog checkout`() {
+        val cache = File(context.cacheDir, "unused-catalog-cache")
+        val assets =
+            generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }
+                .map { File(it, "app/src/main/assets") }
+                .first { it.isDirectory }
+        val settings =
+            PackageSettings(
+                context,
+                readAsset = { File(assets, it).readText() },
+                repository = PluginRepository(cache, { _, _ -> error("No network expected") }),
+            )
+        val target =
+            PortablePackageSettings(
+                DefaultPackages.all.map { it.source }.distinct(),
+                DefaultPackages.all.map {
+                    PortablePackage(it.identity.id, it.source, it.path, revision = DefaultPackages.revisions.getValue(it.path), id = it.id)
+                },
+                emptyMap(),
+                emptyList(),
+            )
+        settings.restore(target)
+        assertEquals(target, settings.portable())
+        assertEquals(DefaultPackages.all.size, settings.imported().size)
+        assertFalse(cache.exists())
+    }
 
     @Test
     fun `restore fetches referenced definitions exports only pins and preserves installed state on a bad reference`() {

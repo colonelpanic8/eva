@@ -132,6 +132,24 @@ class ConfigurationCompositionTest {
         }
         val override = target.copy(packages = target.packages.copy(installed = listOf(reference.copy(revision = "b".repeat(40)))))
         assertEquals(override, resolve(override))
+        val included = EvaConfigurationCodec.complete(target)
+        val moved = target.copy(packages = target.packages.copy(revisions = mapOf(source to "c".repeat(40))))
+        val root = EvaConfigurationCodec.overrides(moved, included, listOf("base.yaml"))
+        assertNull(root.packages?.installed)
+        assertEquals(moved.packages.revisions, root.packages?.revisions)
+        assertEquals(
+            moved,
+            EvaConfigurationCodec
+                .resolve(
+                    reader(
+                        mapOf(
+                            "eva.yaml" to EvaConfigurationCodec.encode(root),
+                            "base.yaml" to EvaConfigurationCodec.encode(included),
+                        ),
+                    ),
+                ).configuration,
+        )
+        assertNull(EvaConfigurationCodec.overrides(target, included, listOf("base.yaml")).packages)
     }
 
     @Test
