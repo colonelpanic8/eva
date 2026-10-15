@@ -1565,8 +1565,9 @@ A response starts on the committed segment, usually before its caption (and ID)
 exists, so `finish.evidence` takes item IDs or quotes. An entry equal to an item ID
 cites that item. Any other entry is a quote: it cites every spoken or keyed item (not
 SYSTEM_IVR records, whose tool receipts echo the agent's own arguments) containing it
-on word boundaries, ignoring case, punctuation, spacing and where word breaks fall inside
-the quote, since the model quotes what it heard rather than the caption's formatting (on
+on word boundaries, ignoring case, punctuation and numeric separators. Ordinary word
+boundaries remain significant ("now here" cannot match "nowhere"). Numeric formatting can
+differ because the model quotes what it heard rather than the caption's formatting (on
 a Twilio call it cited the caption "It's 22:34." as "it's 2234"). A quote no single item
 holds may span a run of consecutive items by one speaker (a caption split mid-sentence),
 citing each item it touches; a leading speaker label is ignored. A paraphrase, words from
