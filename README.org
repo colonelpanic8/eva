@@ -80,7 +80,8 @@ should disable the operations that need them, not the entire assistant.
 
 * Current implementation
 
-The native Kotlin/Compose app includes typed conversation, WebRTC voice,
+The native Kotlin/Compose app includes typed conversation, OpenAI WebRTC voice,
+selectable Grok WebSocket voice,
 on-phone ChatGPT sign-in and an API-key alternative, an Android assistant
 surface, persistent threads, Android action adapters, and importable extension
 packages. Messaging has a shared SMS/MMS and notification-reply interface; direct

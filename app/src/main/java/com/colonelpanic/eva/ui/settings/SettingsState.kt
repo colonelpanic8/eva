@@ -64,6 +64,10 @@ data class SettingsUiState(
     val account: String? = null,
     val signIn: SignInState = SignInState.Idle,
     val hasApiKey: Boolean = false,
+    val hasXaiApiKey: Boolean = false,
+    val voiceSelection: com.colonelpanic.eva.data.VoiceProviderSettings.Selection =
+        com.colonelpanic.eva.data.VoiceProviderSettings
+            .Selection(),
     val hasHostLink: Boolean = false,
     val hasPortalToken: Boolean = false,
     val textModel: String = "",
@@ -113,6 +117,7 @@ data class SettingsUiState(
     val hasCurrentThread: Boolean = false,
 ) {
     /** Whether any of the three ways to reach a provider is configured. */
+    val hasVoiceCredential: Boolean get() = if (voiceSelection.provider == "grok") hasXaiApiKey else hasCredential
     val hasCredential: Boolean get() = account != null || hasApiKey || hasHostLink
 }
 
@@ -170,6 +175,10 @@ data class SettingsActions(
     val onSignIn: () -> Unit = {},
     val onCancelSignIn: () -> Unit = {},
     val onSignOut: () -> Unit = {},
+    val onSaveXaiApiKey: (String) -> String? = { null },
+    val onClearXaiApiKey: () -> Unit = {},
+    val onGrokConfiguration: (String, String, String) -> String? = { _, _, _ -> null },
+    val onVoiceSelection: (com.colonelpanic.eva.data.VoiceProviderSettings.Selection) -> Unit = {},
     val onSaveApiKey: (String) -> String? = { null },
     val onClearApiKey: () -> Unit = {},
     val onSaveHostLink: (String) -> String? = { null },

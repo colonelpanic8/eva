@@ -77,6 +77,7 @@ import com.colonelpanic.eva.devicecontrol.ScreenControlStatus
 internal fun ConversationScreen(
     state: ConversationState,
     hasCredential: Boolean,
+    hasVoiceCredential: Boolean = hasCredential,
     onSubmit: (String) -> Unit,
     onAnswer: (String, String) -> Unit = { _, answer -> onSubmit(answer) },
     onStopTask: () -> Unit = {},
@@ -200,6 +201,7 @@ internal fun ConversationScreen(
                     ConnectBar(
                         state = state,
                         hasCredential = hasCredential,
+                        hasVoiceCredential = hasVoiceCredential,
                         onConnect = onConnect,
                         onVoice = onVoice,
                         onAssistant = onAssistant,

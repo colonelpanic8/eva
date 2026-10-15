@@ -12,6 +12,7 @@ import com.colonelpanic.eva.adapters.declarative.DefaultPackages
 import com.colonelpanic.eva.audio.AndroidAudioRoute
 import com.colonelpanic.eva.audio.MicrophonePermission
 import com.colonelpanic.eva.audio.PeerLinkFactory
+import com.colonelpanic.eva.audio.RealtimeMediaSession
 import com.colonelpanic.eva.audio.RealtimeMediaConfig
 import com.colonelpanic.eva.audio.RealtimeMediaController
 import com.colonelpanic.eva.audio.RealtimeMediaState
@@ -116,10 +117,11 @@ class NativeVoiceActionLiveTest {
                             )
                         },
                         voiceProviderFactory = { brokerLink, audio ->
+                            val rtc = audio as RealtimeMediaSession
                             BrokerConversationProvider(
                                 BrokerEndpoint.parse(brokerLink),
-                                offerSdp = audio.createOffer(),
-                                onAnswer = audio::acceptAnswer,
+                                offerSdp = rtc.createOffer(),
+                                onAnswer = rtc::acceptAnswer,
                             )
                         },
                     )

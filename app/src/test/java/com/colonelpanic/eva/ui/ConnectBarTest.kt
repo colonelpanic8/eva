@@ -10,6 +10,28 @@ import org.junit.Test
 class ConnectBarTest {
     private val ready = ConversationState(isLoading = false)
 
+    @Test fun `Grok-only credentials enable voice without enabling OpenAI text`() {
+        val grok =
+            com.colonelpanic.eva.ui.settings.SettingsUiState(
+                hasXaiApiKey = true,
+                voiceSelection =
+                    com.colonelpanic.eva.data.VoiceProviderSettings
+                        .Selection(provider = "grok"),
+            )
+        assertTrue(grok.hasVoiceCredential)
+        assertFalse(grok.hasCredential)
+        assertFalse(grok.copy(hasXaiApiKey = false, hasApiKey = true).hasVoiceCredential)
+        assertTrue(
+            grok
+                .copy(
+                    voiceSelection =
+                        com.colonelpanic.eva.data.VoiceProviderSettings
+                            .Selection(),
+                    hasApiKey = true,
+                ).hasVoiceCredential,
+        )
+    }
+
     @Test
     fun `credentials are required before either way in is offered`() {
         assertTrue(connectPrompt(ready, hasCredential = true).canConnect)

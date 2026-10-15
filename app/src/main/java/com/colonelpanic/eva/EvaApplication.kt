@@ -35,7 +35,9 @@ import com.colonelpanic.eva.adapters.android.SmsSendBackend
 import com.colonelpanic.eva.adapters.android.SpotifyQueueProvider
 import com.colonelpanic.eva.adapters.android.WhatsAppCallProvider
 import com.colonelpanic.eva.adapters.android.observeExtensionPackages
+import com.colonelpanic.eva.audio.AndroidPcmVoiceMedia
 import com.colonelpanic.eva.audio.RealtimeMediaConfig
+import com.colonelpanic.eva.audio.RealtimeMediaSession
 import com.colonelpanic.eva.audio.VoiceSessionHost
 import com.colonelpanic.eva.audio.VoiceSessionService
 import com.colonelpanic.eva.audio.VoiceSessionStatus
@@ -67,6 +69,7 @@ import com.colonelpanic.eva.data.PromptStore
 import com.colonelpanic.eva.data.SpotifyAccountStore
 import com.colonelpanic.eva.data.SqliteConversationStore
 import com.colonelpanic.eva.data.SqliteInvocationRepository
+import com.colonelpanic.eva.data.VoiceProviderSettings
 import com.colonelpanic.eva.data.configuration.EvaConfigurationManager
 import com.colonelpanic.eva.devicecontrol.ScreenActions
 import com.colonelpanic.eva.diagnostics.EvaTrace
@@ -74,6 +77,7 @@ import com.colonelpanic.eva.messaging.MessagingBackend
 import com.colonelpanic.eva.messaging.NotificationMessages
 import com.colonelpanic.eva.providers.BrokerConversationProvider
 import com.colonelpanic.eva.providers.BrokerEndpoint
+import com.colonelpanic.eva.providers.grok.GrokVoiceProvider
 import com.colonelpanic.eva.providers.openai.ApiKeyAccess
 import com.colonelpanic.eva.providers.openai.ChatGptSignIn
 import com.colonelpanic.eva.providers.openai.ModelKind
@@ -139,6 +143,7 @@ class EvaApplication :
 
     private val mediaFactory by lazy { WebRtcMediaSessionFactory(this) }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    val voiceProviders by lazy { VoiceProviderSettings(this, configuration::onLocalChange, configuration::onCredentialChange) }
     val settings by lazy { OpenAiSettings(this, configuration::onLocalChange, configuration::onCredentialChange) }
     val appearance by lazy { AppearanceSettings(this, configuration::onLocalChange) }
     val wearGestureSettings by lazy {
@@ -953,30 +958,38 @@ class EvaApplication :
                     BrokerConversationProvider(BrokerEndpoint.parse(link))
                 }
             },
-            mediaFactory = { mediaFactory.create(RealtimeMediaConfig()) },
+            mediaFactory = {
+                val selection = voiceProviders.state.value
+                if (selection.provider == "grok") {
+                    AndroidPcmVoiceMedia(this, selection.grok)
+                } else {
+                    mediaFactory.create(RealtimeMediaConfig())
+                }
+            },
             voiceProviderFactory = { link, audio ->
-                if (link.isBlank()) {
+                if (audio is AndroidPcmVoiceMedia) {
+                    GrokVoiceProvider(voiceProviders.requireApiKey(), audio, audio.configuration)
+                } else if (link.isBlank()) {
+                    val rtc = requireNotNull(audio as? RealtimeMediaSession) { "OpenAI voice requires WebRTC media." }
                     val model = settings.realtimeModel
                     if (OpenAiModels.isLive(model)) {
-                        val key =
-                            settings.apiKey()
-                                ?: error(
-                                    "GPT-Live requires a funded OpenAI API key. Add one in Settings; ChatGPT sign-in does not provide access through this integration.",
-                                )
+                        val key = settings.apiKey() ?: error(
+                            "GPT-Live requires a funded OpenAI API key. Add one in Settings; ChatGPT sign-in does not provide access through this integration.",
+                        )
                         OpenAiLiveProvider(
-                            ApiKeyAccess(key),
-                            audio,
+                            ApiKeyAccess(key), rtc,
                             prompts.wording.value.message(com.colonelpanic.eva.conversation.prompt.Wording.LIVE_FRONTEND),
-                            model = model,
-                            backendModel = settings.textModel,
+                            model = model, backendModel = settings.textModel,
                         )
                     } else {
                         val access = access() ?: error("Sign in with ChatGPT, add an API key, or paste a paired host link.")
-                        OpenAiRealtimeProvider(access, audio, model, settings.voiceReasoningEffort)
+                        OpenAiRealtimeProvider(access, rtc, model, settings.voiceReasoningEffort)
                     }
+
                 } else {
                     val endpoint = BrokerEndpoint.parse(link)
-                    BrokerConversationProvider(endpoint, offerSdp = audio.createOffer(), onAnswer = audio::acceptAnswer)
+                    val rtc = requireNotNull(audio as? RealtimeMediaSession) { "Paired-host voice requires WebRTC media." }
+                    BrokerConversationProvider(endpoint, offerSdp = rtc.createOffer(), onAnswer = rtc::acceptAnswer)
                 }
             },
             repository = repository,

@@ -59,6 +59,7 @@ internal fun ConnectBar(
     onRetryMicrophone: () -> Unit,
     onDismissDenial: () -> Unit,
     modifier: Modifier = Modifier,
+    hasVoiceCredential: Boolean = hasCredential,
 ) {
     Column(
         modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -71,12 +72,23 @@ internal fun ConnectBar(
 
             state.providerStatus == ProviderStatus.DISCONNECTED -> {
                 val prompt = connectPrompt(state, hasCredential)
+                val voicePrompt = connectPrompt(state, hasVoiceCredential)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = onVoice, enabled = prompt.canConnect) { Text("Start voice") }
-                    OutlinedButton(onClick = onAssistant, enabled = prompt.canConnect && assistantEnabled) { Text("Ask once") }
+                    Button(onClick = onVoice, enabled = voicePrompt.canConnect) { Text("Start voice") }
+                    OutlinedButton(onClick = onAssistant, enabled = voicePrompt.canConnect && assistantEnabled) { Text("Ask once") }
                     OutlinedButton(onClick = onConnect, enabled = prompt.canConnect) { Text("Connect for text") }
                 }
-                prompt.supporting?.let {
+                (
+                    if (!hasCredential &&
+                        !hasVoiceCredential
+                    ) {
+                        prompt.supporting
+                    } else if (!hasVoiceCredential) {
+                        "Add credentials for the selected voice provider in Settings."
+                    } else {
+                        null
+                    }
+                )?.let {
                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (prompt.canConnect && !assistantEnabled) {

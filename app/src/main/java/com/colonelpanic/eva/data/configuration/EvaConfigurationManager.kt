@@ -19,7 +19,9 @@ import com.colonelpanic.eva.data.MessagingPreferences
 import com.colonelpanic.eva.data.PortablePackageSettings
 import com.colonelpanic.eva.data.PromptPersistenceSnapshot
 import com.colonelpanic.eva.data.SecretStore
+import com.colonelpanic.eva.data.VoiceProviderSettings
 import com.colonelpanic.eva.providers.BrokerEndpoint
+import com.colonelpanic.eva.providers.grok.GrokVoiceConfiguration
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -702,6 +704,11 @@ class EvaConfigurationManager(
                     add(SecretReference("device/portal", "portal-bearer", "http://127.0.0.1:${app.capabilities.deviceTask.portalPort}"))
                 }
                 if (app.settings.apiKey() != null) add(SecretReference(OPENAI_REF, "openai-api-key"))
+                if (app.voiceProviders.apiKey() != null ||
+                    app.voiceProviders.state.value.provider == "grok"
+                ) {
+                    add(SecretReference(VoiceProviderSettings.CREDENTIAL, "xai-api-key"))
+                }
                 if (app.chatGpt.signedIn) add(SecretReference(CHATGPT_REF, "chatgpt-account"))
                 app.settings.hostLink().takeIf { it.isNotBlank() }?.let { link ->
                     add(SecretReference(BROKER_REF, "broker-link", BrokerEndpoint.parse(link).socketUrl))
@@ -764,6 +771,10 @@ class EvaConfigurationManager(
                     app.settings.quietHangUpSeconds,
                     app.settings.callEndings.value
                         .mapValues { it.value.wire },
+                    app.voiceProviders.state.value.provider,
+                    app.voiceProviders.state.value.grok.model,
+                    app.voiceProviders.state.value.grok.voice,
+                    app.voiceProviders.state.value.grok.reasoningEffort,
                 ),
             appearance = EvaConfiguration.Appearance(app.appearance.dynamicColor),
             capabilities =
@@ -926,6 +937,7 @@ class EvaConfigurationManager(
     ): List<String> {
         app.settings.saveTextModel(configuration.models.text)
         app.settings.saveRealtimeModel(configuration.models.realtime)
+        app.voiceProviders.save(configuration.voice.selection())
         app.settings.saveReasoningEffort(configuration.models.reasoningEffort)
         app.settings.saveVoiceReasoningEffort(configuration.models.voiceReasoningEffort)
         app.settings.saveVoiceLookupRetries(configuration.voice.lookupRetries)
@@ -964,6 +976,11 @@ class EvaConfigurationManager(
         missingMessagingReplies: Set<String>,
     ): List<String> =
         buildList {
+            if (configuration.voice.provider == "grok" &&
+                app.voiceProviders.apiKey() == null
+            ) {
+                add("Add an xAI API key under Settings > Account to use Grok voice.")
+            }
             val missingCallValues = app.callCredentials.missingValues()
             configuration.credentials.required.forEach { reference ->
                 if (reference.kind == EvaConfigurationCodec.CALL_CREDENTIAL_KIND) {
@@ -983,6 +1000,10 @@ class EvaConfigurationManager(
                     when (reference.id) {
                         "device/portal" -> {
                             app.capabilities.portalToken() != null
+                        }
+
+                        VoiceProviderSettings.CREDENTIAL -> {
+                            app.voiceProviders.apiKey() != null
                         }
 
                         OPENAI_REF -> {
@@ -1123,6 +1144,7 @@ class EvaConfigurationManager(
 
         attempt("text model") { app.settings.saveTextModel(before.models.text) }
         attempt("realtime model") { app.settings.saveRealtimeModel(before.models.realtime) }
+        attempt("voice provider") { app.voiceProviders.save(before.voice.selection()) }
         attempt("text reasoning effort") { app.settings.saveReasoningEffort(before.models.reasoningEffort) }
         attempt("voice reasoning effort") { app.settings.saveVoiceReasoningEffort(before.models.voiceReasoningEffort) }
         attempt("voice lookup retries") { app.settings.saveVoiceLookupRetries(before.voice.lookupRetries) }
@@ -1185,3 +1207,6 @@ class EvaConfigurationManager(
 }
 
 private fun EvaConfiguration.Voice.callEndings() = endCallAfter.mapValues { CallEnding.of(it.value) ?: CallEnding.NEVER }
+
+private fun EvaConfiguration.Voice.selection() =
+    VoiceProviderSettings.Selection(provider, GrokVoiceConfiguration(grokModel, grokVoice, grokReasoningEffort))

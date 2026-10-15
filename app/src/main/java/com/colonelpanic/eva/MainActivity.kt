@@ -261,6 +261,8 @@ class MainActivity : ComponentActivity() {
     private fun settingsUiState(dynamicColor: Boolean): SettingsUiState {
         val settings = eva.settings
         val hasApiKey by settings.hasApiKey.collectAsStateWithLifecycle()
+        val hasXaiApiKey by eva.voiceProviders.hasApiKey.collectAsStateWithLifecycle()
+        val voiceSelection by eva.voiceProviders.state.collectAsStateWithLifecycle()
         val hasHostLink by settings.hasHostLink.collectAsStateWithLifecycle()
         val hasPortalToken by eva.capabilities.hasPortalToken.collectAsStateWithLifecycle()
         val textModel by settings.textModelFlow.collectAsStateWithLifecycle()
@@ -370,6 +372,8 @@ class MainActivity : ComponentActivity() {
             account = account?.description,
             signIn = signIn,
             hasApiKey = hasApiKey,
+            hasXaiApiKey = hasXaiApiKey,
+            voiceSelection = voiceSelection,
             hasHostLink = hasHostLink,
             hasPortalToken = hasPortalToken,
             textModel = textModel,
@@ -504,6 +508,20 @@ class MainActivity : ComponentActivity() {
                 onSaveHostLink = { link -> save { settings.saveHostLink(link) } },
                 onClearHostLink = settings::clearHostLink,
                 onSelectTextModel = { model -> save { settings.saveTextModel(model) } },
+                onSaveXaiApiKey = { key -> save { eva.voiceProviders.saveApiKey(key) } },
+                onClearXaiApiKey = { save { eva.voiceProviders.clearApiKey() } },
+                onGrokConfiguration = { model, voice, effort ->
+                    save {
+                        eva.voiceProviders.save(
+                            eva.voiceProviders.state.value.copy(
+                                grok =
+                                    com.colonelpanic.eva.providers.grok
+                                        .GrokVoiceConfiguration(model, voice, effort),
+                            ),
+                        )
+                    }
+                },
+                onVoiceSelection = { selection -> save { eva.voiceProviders.save(selection) } },
                 onSelectRealtimeModel = { model -> save { settings.saveRealtimeModel(model) } },
                 onSelectReasoningEffort = { effort -> save { settings.saveReasoningEffort(effort) } },
                 onSelectVoiceReasoningEffort = { effort -> save { settings.saveVoiceReasoningEffort(effort) } },

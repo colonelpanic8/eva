@@ -399,6 +399,14 @@ private fun AccountSection(
             onClear = actions.onClearApiKey,
         )
         SecretField(
+            title = "xAI API key",
+            helper = "Paid Grok voice access; separate from OpenAI and ChatGPT",
+            label = "xAI API key",
+            saved = state.hasXaiApiKey,
+            onSave = actions.onSaveXaiApiKey,
+            onClear = actions.onClearXaiApiKey,
+        )
+        SecretField(
             title = "Paired host",
             helper = "Route conversations through a host you paired",
             label = "Paired host link",
@@ -418,8 +426,37 @@ private fun ModelsSection(
     SettingsSection("Models") {
         SettingsBlock {
             ModelPicker("Text model", state.textModel, state.availableTextModels, OpenAiModels.TEXT, actions.onSelectTextModel)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for ((id, label) in listOf("openai" to "OpenAI / paired host", "grok" to "Grok voice")) {
+                    OutlinedButton(
+                        onClick = { actions.onVoiceSelection(state.voiceSelection.copy(provider = id)) },
+                        enabled =
+                            state.voiceSelection.provider != id,
+                    ) { Text(label) }
+                }
+            }
+            if (state.voiceSelection.provider == "grok") {
+                val grok = state.voiceSelection.grok
+                var grokError by remember { mutableStateOf<String?>(null) }
+                ModelPicker("Grok voice model", grok.model, listOf("grok-voice-3.0", "grok-voice-latest"), "grok-voice-3.0") {
+                    grokError = actions.onGrokConfiguration(it.ifBlank { "grok-voice-3.0" }, grok.voice, grok.reasoningEffort)
+                }
+                ModelPicker("Grok voice ID", grok.voice, listOf("eve", "ara", "rex", "sal", "leo"), "eve") {
+                    grokError = actions.onGrokConfiguration(grok.model, it.ifBlank { "eve" }, grok.reasoningEffort)
+                }
+                ReasoningEffortPicker("Grok reasoning", grok.reasoningEffort, listOf("high", "none")) {
+                    grokError = actions.onGrokConfiguration(grok.model, grok.voice, it)
+                }
+                grokError?.let { SettingsNote(it, error = true) }
+                SettingsNote(
+                    "Automatic listening costs $0.08 per connected minute, including silence. History and text messages cost $0.004 each; tool results are exempt. Disconnect when finished. Prices may change.",
+                )
+                SettingsNote(
+                    "Typed and background tasks still use your OpenAI or paired-host connection. Phone call agents keep their OpenAI settings.",
+                )
+            }
             ModelPicker(
-                "Voice model",
+                "OpenAI voice / phone call model",
                 state.realtimeModel,
                 (state.availableRealtimeModels + OpenAiModels.LIVE).distinct(),
                 OpenAiModels.REALTIME,

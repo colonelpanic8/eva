@@ -15,6 +15,7 @@ import com.colonelpanic.eva.conversation.prompt.PromptComponent
 import com.colonelpanic.eva.conversation.prompt.PromptConfig
 import com.colonelpanic.eva.conversation.prompt.PromptDefaults
 import com.colonelpanic.eva.conversation.prompt.VoiceCallMode
+import com.colonelpanic.eva.providers.grok.GrokVoiceConfiguration
 import com.colonelpanic.eva.providers.openai.OpenAiModels
 import com.colonelpanic.eva.skills.Skill
 import com.colonelpanic.eva.wear.WearGestureConfiguration
@@ -70,6 +71,10 @@ data class EvaConfigurationDocument(
     val oneShotExternal: Boolean? = null,
     /** Action id to `never`, `after_reply`, or `immediately`, overriding what the action declares. */
     val endCallAfter: Map<String, String>? = null,
+    val provider: String? = null,
+    val grokModel: String? = null,
+    val grokVoice: String? = null,
+    val grokReasoningEffort: String? = null,
 )
 
 @Serializable data class AppearancePatch(
@@ -310,7 +315,16 @@ data class EvaConfiguration(
         val quietHangUpSeconds: Int = DEFAULT_QUIET_HANG_UP_SECONDS,
         /** Per-action overrides of whether a successful action ends the voice call. */
         val endCallAfter: Map<String, String> = emptyMap(),
+        val provider: String = "openai",
+        val grokModel: String = "grok-voice-3.0",
+        val grokVoice: String = "eve",
+        val grokReasoningEffort: String = "high",
     ) {
+        init {
+            require(provider in listOf("openai", "grok")) { "Unknown assistant voice provider: $provider" }
+            GrokVoiceConfiguration(grokModel, grokVoice, grokReasoningEffort)
+        }
+
         companion object {
             const val DEFAULT_QUIET_HANG_UP_SECONDS = 5
         }
@@ -608,6 +622,10 @@ object EvaConfigurationCodec {
                 current.voice.lookupRetries.takeIf { it != base?.voice?.lookupRetries },
                 current.voice.quietHangUpSeconds.takeIf { it != base?.voice?.quietHangUpSeconds },
                 endCallAfter = current.voice.endCallAfter.takeIf { it != base?.voice?.endCallAfter.orEmpty() },
+                provider = current.voice.provider.takeIf { it != base?.voice?.provider },
+                grokModel = current.voice.grokModel.takeIf { it != base?.voice?.grokModel },
+                grokVoice = current.voice.grokVoice.takeIf { it != base?.voice?.grokVoice },
+                grokReasoningEffort = current.voice.grokReasoningEffort.takeIf { it != base?.voice?.grokReasoningEffort },
             ).nonEmpty(),
         appearance = AppearancePatch(current.appearance.dynamicColor.takeIf { it != base?.appearance?.dynamicColor }).nonEmpty(),
         capabilities =
@@ -703,6 +721,10 @@ object EvaConfigurationCodec {
                     // Documents written before the quiet-line backstop was configurable still load.
                     voice.quietHangUpSeconds ?: EvaConfiguration.Voice.DEFAULT_QUIET_HANG_UP_SECONDS,
                     voice.endCallAfter.orEmpty(),
+                    voice.provider ?: "openai",
+                    voice.grokModel ?: "grok-voice-3.0",
+                    voice.grokVoice ?: "eve",
+                    voice.grokReasoningEffort ?: "high",
                 ),
             appearance = EvaConfiguration.Appearance(requireNotNull(appearance?.dynamicColor) { "appearance.dynamicColor is missing." }),
             capabilities =
@@ -1080,6 +1102,10 @@ object EvaConfigurationCodec {
                 override.voice?.lookupRetries ?: base.voice?.lookupRetries,
                 override.voice?.quietHangUpSeconds ?: base.voice?.quietHangUpSeconds,
                 endCallAfter = override.voice?.endCallAfter ?: base.voice?.endCallAfter,
+                provider = override.voice?.provider ?: base.voice?.provider,
+                grokModel = override.voice?.grokModel ?: base.voice?.grokModel,
+                grokVoice = override.voice?.grokVoice ?: base.voice?.grokVoice,
+                grokReasoningEffort = override.voice?.grokReasoningEffort ?: base.voice?.grokReasoningEffort,
             ).nonEmpty(),
         appearance = AppearancePatch(override.appearance?.dynamicColor ?: base.appearance?.dynamicColor).nonEmpty(),
         capabilities =
@@ -1165,7 +1191,14 @@ object EvaConfigurationCodec {
     private fun ModelsPatch.nonEmpty() =
         takeIf { text != null || realtime != null || reasoningEffort != null || voiceReasoningEffort != null }
 
-    private fun VoicePatch.nonEmpty() = takeIf { lookupRetries != null || quietHangUpSeconds != null || endCallAfter != null }
+    private fun VoicePatch.nonEmpty() =
+        takeIf {
+            lookupRetries != null || quietHangUpSeconds != null || endCallAfter != null ||
+                provider != null ||
+                grokModel != null ||
+                grokVoice != null ||
+                grokReasoningEffort != null
+        }
 
     private fun AppearancePatch.nonEmpty() = takeIf { dynamicColor != null }
 
@@ -1255,6 +1288,7 @@ object EvaConfigurationCodec {
     private val PROVIDER_SECRETS =
         mapOf(
             "provider/openai-api" to "openai-api-key",
+            "provider/xai-api" to "xai-api-key",
             "provider/chatgpt" to "chatgpt-account",
             "provider/broker" to "broker-link",
             "provider/spotify-account" to "spotify-account",

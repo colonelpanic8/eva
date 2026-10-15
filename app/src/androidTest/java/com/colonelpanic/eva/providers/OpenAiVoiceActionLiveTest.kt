@@ -12,6 +12,7 @@ import com.colonelpanic.eva.adapters.declarative.DefaultPackages
 import com.colonelpanic.eva.audio.AndroidAudioRoute
 import com.colonelpanic.eva.audio.MicrophonePermission
 import com.colonelpanic.eva.audio.PeerLinkFactory
+import com.colonelpanic.eva.audio.RealtimeMediaSession
 import com.colonelpanic.eva.audio.RealtimeMediaConfig
 import com.colonelpanic.eva.audio.RealtimeMediaController
 import com.colonelpanic.eva.audio.RealtimeMediaState
@@ -127,7 +128,7 @@ class OpenAiVoiceActionLiveTest {
                                 this,
                             )
                         },
-                        voiceProviderFactory = { _, audio -> OpenAiRealtimeProvider(access, audio) },
+                        voiceProviderFactory = { _, audio -> OpenAiRealtimeProvider(access, audio as RealtimeMediaSession) },
                     )
                 VoiceSessionService.start(context)
                 try {

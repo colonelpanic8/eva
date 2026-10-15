@@ -1122,3 +1122,21 @@ The Chrome closing-time case with one scripted URL action and a supplied answer
 passed. These establish host/reset/checker plumbing, not worker parity. Media
 helpers/checkers were JVM-tested; media tasks were not run on this AVD. The
 emulator was stopped after verification.
+
+## Grok voice verification
+
+Grok assistant voice is available through Settings → Models → Grok voice, with a
+separate xAI API key under Account. No xAI credential was available during initial
+implementation, so no live xAI call, credit purchase, or physical-device voice
+verification was performed. JVM protocol tests exercise configuration/history,
+PCM messages, transcript ownership, parallel tool results, interruption, ambiguous
+response ownership, and playback-dependent announcement delivery. These tests do
+not establish microphone quality, hardware echo cancellation, Bluetooth routing,
+service-side protocol acceptance, or latency.
+
+Before claiming device support, use existing funded xAI access for a bounded
+session: verify microphone and playback mute, late captions, a read-only tool,
+one explicitly authorized action, barge-in, background-task completion after
+hang-up, and audio focus transfer. Check the receipt and actual device outcome
+separately from the spoken response. Automatic listening bills connected time;
+end the session when finished. Provision keys at runtime; never put them in fixtures or portable configuration.

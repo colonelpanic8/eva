@@ -48,7 +48,7 @@ sealed interface RealtimeMediaState {
 
     data object Connecting : RealtimeMediaState
 
-    /** Transport connected; [remoteAudio] is true once a remote audio track has arrived. */
+    /** Transport connected; [remoteAudio] is true once remote audio data or a WebRTC audio track has arrived. */
     data class Connected(
         val remoteAudio: Boolean,
     ) : RealtimeMediaState
@@ -69,7 +69,7 @@ data class MediaControls(
     val focus: AudioFocusState = AudioFocusState.NONE,
 )
 
-/** Elapsed milliseconds since [createOffer] for the media milestones observed so far. */
+/** Elapsed milliseconds since media setup for the milestones observed so far; absent when unobserved. */
 data class MediaTimeline(
     val offerReadyMillis: Long? = null,
     val connectedMillis: Long? = null,
@@ -80,15 +80,22 @@ class MediaException(
     val failure: MediaFailure,
 ) : IllegalStateException(failure.message)
 
-/**
- * One realtime audio leg between this device and a provider. Signaling (offer and answer
- * transport) is owned by the caller; this session never opens network control connections.
- */
-interface RealtimeMediaSession : AutoCloseable {
+/** Device audio ownership shared by WebRTC and streamed PCM voice attachments. */
+interface VoiceMediaSession : AutoCloseable {
     val state: StateFlow<RealtimeMediaState>
     val controls: StateFlow<MediaControls>
     val timeline: StateFlow<MediaTimeline>
 
+    fun setMicrophoneMuted(muted: Boolean)
+
+    fun setPlaybackMuted(muted: Boolean)
+
+    /** Releases capture, playback, and audio focus. Safe to call repeatedly. */
+    override fun close()
+}
+
+/** WebRTC signaling and provider events over its data channel. */
+interface RealtimeMediaSession : VoiceMediaSession {
     /** Provider event messages received on the negotiated data channel. Completes when the session ends. */
     val events: Flow<String>
 
@@ -103,11 +110,4 @@ interface RealtimeMediaSession : AutoCloseable {
 
     /** OfferReady → Connecting; later events move to Connected or Failed. */
     suspend fun acceptAnswer(sdp: String)
-
-    fun setMicrophoneMuted(muted: Boolean)
-
-    fun setPlaybackMuted(muted: Boolean)
-
-    /** Releases capture, focus, and the peer connection. Safe to call repeatedly. */
-    override fun close()
 }

@@ -117,6 +117,7 @@ fun EvaApp(
                 ConversationScreen(
                     state = state,
                     hasCredential = settings.hasCredential,
+                    hasVoiceCredential = settings.hasVoiceCredential,
                     onSubmit = onSubmit,
                     onAnswer = onAnswer,
                     onStopTask = onStopTask,

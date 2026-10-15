@@ -14,6 +14,38 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConfigurationCompositionTest {
+    @Test fun `Grok settings compose and round trip without changing OpenAI choices`() {
+        val original = fullConfiguration()
+        val base = EvaConfigurationCodec.complete(original)
+        val root =
+            EvaConfigurationDocument(
+                include = listOf("base.yaml"),
+                voice = VoicePatch(provider = "grok", grokModel = "grok-voice-latest", grokVoice = "ara", grokReasoningEffort = "none"),
+                credentials =
+                    CredentialsPatch(original.credentials.required + SecretReference("provider/xai-api", "xai-api-key")),
+            )
+        val resolved =
+            EvaConfigurationCodec
+                .resolve(
+                    reader(
+                        mapOf(
+                            "eva.yaml" to EvaConfigurationCodec.encode(root),
+                            "base.yaml" to EvaConfigurationCodec.encode(base),
+                        ),
+                    ),
+                ).configuration
+        assertEquals(original.models, resolved.models)
+        assertEquals("grok", resolved.voice.provider)
+        assertEquals("ara", resolved.voice.grokVoice)
+        assertEquals(root.voice, EvaConfigurationCodec.overrides(resolved, base, listOf("base.yaml")).voice)
+        val encoded = EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(resolved))
+        assertEquals(resolved, EvaConfigurationCodec.resolve(reader(mapOf("eva.yaml" to encoded))).configuration)
+        assertEquals("openai", original.voice.provider)
+        assertTrue(resolved.credentials.required.any { it.id == "provider/xai-api" })
+        assertThrows(IllegalArgumentException::class.java) { resolved.voice.copy(provider = "unknown") }
+        assertThrows(IllegalArgumentException::class.java) { resolved.voice.copy(grokReasoningEffort = "low") }
+    }
+
     @Test fun `watch thresholds compose independently preserve explicit disable and migrate absent fields`() {
         val value =
             com.colonelpanic.eva.wear

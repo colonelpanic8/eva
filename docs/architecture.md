@@ -398,6 +398,61 @@ Action details show a small
 that an operation completed. Interrupting speech, ending a call, canceling local
 work, and undoing a remote action are distinct operations.
 
+### Grok assistant voice
+
+Android can select **Grok voice** under Settings → Models. It opens a direct xAI
+WebSocket at `wss://api.x.ai/v1/realtime?model=…`, with PCM16 little-endian mono at
+24 kHz in base64 JSON messages. `grok-voice-3.0` is pinned by default;
+`grok-voice-latest` follows xAI's recommended model. Voice ID and reasoning
+(`high` or `none`) are separate from OpenAI's choices. OpenAI remains the default
+for existing installations. Selecting Grok overrides the paired-host route for
+assistant voice only; typed/background legs and delegated phone-call agents keep
+their existing provider choices and credentials.
+
+`VoiceMediaSession` owns state, controls, timeline, and teardown. Its
+`RealtimeMediaSession` subtype retains SDP and data-channel signaling.
+`PcmVoiceMedia` adds capture, queued playback, interruption and observed playback
+completion. Android snapshots Grok settings in the selected media attachment,
+so changing settings during connection cannot select a mismatched provider.
+PCM does not report an SDP offer or pretend it has received a WebRTC remote track.
+Android uses communication audio focus/routing, AudioRecord/AudioTrack, and
+available hardware echo cancellation/noise suppression. Focus loss ends voice
+through the existing controller. Microphone and playback mute remain separate.
+
+`GrokVoiceSession` uses xAI's session schema and automatic server VAD. It seeds
+history before opening the microphone, retains committed speech IDs for late
+captions, and associates each response with its pending origin. The API does not
+document an echoed client response ID: if user speech races an unacknowledged
+client response request, EVA reports ambiguous ownership and disconnects rather
+than giving an action the wrong authority. Accepted work remains thread-owned.
+Interrupted, incomplete, malformed and unowned calls are rejected through the
+normal controller/dispatcher. Calls are deduplicated and wait for response
+completion; all results from a response are submitted before requesting its
+continuation. Local playback also drains before that continuation starts.
+
+Speech-start flushes local audio and sends cancellation/truncation using observed
+playback position. A queued audio chunk or `response.done` is not evidence of
+playback: context delivery requires the Android playback head to pass the full
+response, with no mute or interruption. Disconnect reports pending announcements
+as undelivered; it does not retry their actions. Audio-device and live xAI behavior
+still need device verification; local tests cover protocol and ownership behavior.
+
+The xAI key is encrypted in device-local `SecretStore`, provisioned under
+Settings → Account. Portable configuration holds `provider/xai-api` with kind
+`xai-api-key`, never the key. Selection and tuning compose through `voice.provider`
+(`openai` or `grok`), `voice.grokModel`, `voice.grokVoice`, and
+`voice.grokReasoningEffort`; old configurations supply the existing OpenAI default.
+Restore reports missing xAI provisioning even if the imported document omitted
+the credential reference.
+
+As documented by xAI on October 15, 2026, automatic server-VAD sessions cost
+$0.08 per connected minute, including silence. Each text `conversation.item.create`
+costs $0.004; function-call outputs are exempt. Reconnecting with history can
+therefore incur text-input charges. xAI also offers audio-duration billing for
+push-to-talk; EVA's current Grok path uses automatic listening, not that mode.
+See the [xAI voice guide](https://docs.x.ai/developers/model-capabilities/audio/speech-to-speech)
+and [pricing](https://docs.x.ai/developers/models/speech-to-speech).
+
 ## Capability execution
 
 Adapters contribute capabilities to a registry snapshot. Settings switches and the

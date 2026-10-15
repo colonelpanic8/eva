@@ -1,8 +1,8 @@
 package com.colonelpanic.eva.conversation
 
 import com.colonelpanic.eva.audio.AudioFocusState
-import com.colonelpanic.eva.audio.RealtimeMediaSession
 import com.colonelpanic.eva.audio.RealtimeMediaState
+import com.colonelpanic.eva.audio.VoiceMediaSession
 import com.colonelpanic.eva.call.terminal
 import com.colonelpanic.eva.capability.ActionInitiator
 import com.colonelpanic.eva.capability.CallEnding
@@ -97,8 +97,8 @@ class ThreadController(
     private val store: ConversationStore,
     private val scope: CoroutineScope,
     private val providerFactory: (String) -> ConversationProvider,
-    private val mediaFactory: (() -> RealtimeMediaSession)? = null,
-    private val voiceProviderFactory: (suspend (String, RealtimeMediaSession) -> ConversationProvider)? = null,
+    private val mediaFactory: (() -> VoiceMediaSession)? = null,
+    private val voiceProviderFactory: (suspend (String, VoiceMediaSession) -> ConversationProvider)? = null,
     /** The leg a turn continues on once its call has ended; a text provider on the phone's own account. */
     private val backgroundProviderFactory: () -> ConversationProvider = { providerFactory("") },
     private val awaitCapabilities: suspend () -> Unit = {},
@@ -412,7 +412,7 @@ class ThreadController(
     private val refreshLock = Mutex()
     private val refreshRequests = Channel<Unit>(Channel.CONFLATED)
 
-    private var media: RealtimeMediaSession? = null
+    private var media: VoiceMediaSession? = null
     private var connectionJob: Job? = null
     private var session: ConversationSession? = null
     private var attempt = 0
@@ -846,7 +846,7 @@ class ThreadController(
                             .WatchSessionTrace(it, nowMillis())
                     }
                 var openedSession: ConversationSession? = null
-                var openedMedia: RealtimeMediaSession? = null
+                var openedMedia: VoiceMediaSession? = null
                 var threadId: String? = null
                 try {
                     threadId = if (newThread) store.createThread(UNTITLED).id.also { shownThreadId = it } else shownOrNewThread()
