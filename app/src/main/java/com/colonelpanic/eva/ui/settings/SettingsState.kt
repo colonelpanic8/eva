@@ -104,6 +104,9 @@ data class SettingsUiState(
             .CallAgentTuning(),
     val twilioCalls: com.colonelpanic.eva.data.configuration.TwilioCallsConfiguration? = null,
     val twilioCallsKeySaved: Boolean = false,
+    /** The last phone call check; null until one runs. */
+    val callReadiness: com.colonelpanic.eva.call.CallReadiness? = null,
+    val callReadinessChecking: Boolean = false,
     val spotifyClientId: String? = null,
     val spotifyAccount: String? = null,
     val spotifyPremium: Boolean? = null,
@@ -206,6 +209,9 @@ data class SettingsActions(
     /** Account SID, TwiML app SID, caller ID, API key SID and secret; returns why it was not saved. */
     val onSaveTwilioCalls: (String, String, String, String, String) -> String? = { _, _, _, _, _ -> null },
     val onRemoveTwilioCalls: () -> Unit = {},
+    val onCheckCalls: () -> Unit = {},
+    /** Opens a new conversation with a test call over the route ready to send. */
+    val onPlaceTestCall: (route: String) -> Unit = {},
     val onPortalToken: (String) -> Unit = {},
     val onAllowShizuku: () -> Unit = {},
     /** Repairs a backend; the callback opens Screen control settings when the fix is there. */

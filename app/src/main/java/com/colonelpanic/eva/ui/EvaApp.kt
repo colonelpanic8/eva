@@ -34,6 +34,7 @@ import com.colonelpanic.eva.ui.settings.SettingsActions
 import com.colonelpanic.eva.ui.settings.SettingsScreen
 import com.colonelpanic.eva.ui.settings.SettingsUiState
 import com.colonelpanic.eva.ui.settings.SkillsScreen
+import com.colonelpanic.eva.ui.settings.testCallRequest
 import com.colonelpanic.eva.ui.theme.EvaTheme
 import kotlinx.coroutines.launch
 
@@ -83,6 +84,7 @@ fun EvaApp(
         if (runningWorkRequest > 0) destination = EvaDestination.RUNNING_WORK
     }
     var showScreenControl by rememberSaveable { mutableStateOf(false) }
+    var draftRequest by rememberSaveable { mutableStateOf<String?>(null) }
 
     fun openScreenControl() {
         showScreenControl = true
@@ -143,6 +145,8 @@ fun EvaApp(
                     },
                     onOpenExtensions = { destination = EvaDestination.EXTENSIONS },
                     onCallControl = onCallControl,
+                    draftRequest = draftRequest,
+                    onDraftRequestTaken = { draftRequest = null },
                 )
             }
 
@@ -193,7 +197,13 @@ fun EvaApp(
                 val runningTasks by tasks.collectAsStateWithLifecycle()
                 SettingsScreen(
                     state = settings,
-                    actions = settingsActions,
+                    actions =
+                        settingsActions.copy(onPlaceTestCall = { route ->
+                            if (state.voiceMode) onDisconnect()
+                            onNewThread()
+                            draftRequest = testCallRequest(route)
+                            destination = EvaDestination.CONVERSATION
+                        }),
                     onOpenDrawer = { openDrawer() },
                     activeTaskCount = runningTasks.size,
                     onRunningWork = { destination = EvaDestination.RUNNING_WORK },

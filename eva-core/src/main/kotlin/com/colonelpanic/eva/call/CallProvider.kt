@@ -168,3 +168,17 @@ class CallProviderRegistry(
             providers.map { "${it.id}: ${it.unavailableReason()}" }.joinToString("; ")
         }
 }
+
+/** A null [problem] means the route can place a call now. */
+data class CallRouteReadiness(
+    val id: String,
+    val problem: String?,
+)
+
+data class CallReadiness(
+    val agentProblem: String?,
+    val routes: List<CallRouteReadiness>,
+) {
+    /** The route a call uses when none is named. */
+    val defaultRoute: String? get() = routes.firstOrNull { it.problem == null }?.id
+}

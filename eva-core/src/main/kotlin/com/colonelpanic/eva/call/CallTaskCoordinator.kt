@@ -205,6 +205,22 @@ class CallTaskCoordinator(
 
     override suspend fun unavailableReason(): String? = agentUnavailableReason() ?: providers.unavailableReason()
 
+    /** What would stop a call right now: the call agent, then each route in the order a call tries them. */
+    suspend fun readiness(): CallReadiness {
+        suspend fun problem(check: suspend () -> String?) =
+            try {
+                check()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                "The check itself failed: ${error.message ?: error::class.simpleName}."
+            }
+        return CallReadiness(
+            problem { agentUnavailableReason() },
+            providers.providers.map { CallRouteReadiness(it.id, problem { it.unavailableReason() }) },
+        )
+    }
+
     override suspend fun execute(arguments: Map<String, String>) =
         ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "A call task needs an owning conversation turn.")
 

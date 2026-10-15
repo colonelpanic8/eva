@@ -1178,7 +1178,12 @@ it the first available route places the call. An unknown or unavailable route is
 rejected naming the routes the phone has or why the chosen one cannot call, and nothing
 is journaled or dialed. Start is also rejected before anything is journaled or dialed when the call
 agent cannot open (no OpenAI sign-in or API key), so no call connects to an agent that
-cannot speak. With more than one route, the start tool's description lists
+cannot speak. **Settings → Phone call agent → Check phone calls** runs the same checks
+(`CallTaskCoordinator.readiness`): the agent, then each route in order, with the reason
+any is unavailable. For each ready route except WhatsApp it can open a new conversation
+with a test request (call the NIST time announcement, report the time, hang up) in the
+composer for the owner to send, which exercises the main agent's delegation, the call
+card and the outcome. With more than one route, the start tool's description lists
 them (the `call-providers` wording note). A provider that is certain it dialed nothing
 throws `CallNotPlaced`; the task ends NotAccomplished with that reason and the leg
 Ended FAILED, instead of an uncertain setup failure. Live cellular calls are

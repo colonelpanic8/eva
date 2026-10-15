@@ -10,6 +10,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -29,6 +30,7 @@ internal fun CallAgentSection(
 ) {
     val tuning = state.callAgent
     SettingsSection("Phone call agent") {
+        CallReadinessCheck(state, actions)
         SettingsSwitchRow(
             title = "WhatsApp calling (unverified)",
             supporting =
@@ -75,6 +77,80 @@ internal fun CallAgentSection(
             )
         }
         TwilioCallsEditor(state, actions)
+    }
+}
+
+/** The NIST time announcement: always answers, needs no input, and states something the agent can report. */
+private const val TEST_LINE = "+1 303-499-7111"
+
+/** What a test call asks EVA, in the user's own words, so the whole path from request to call card is exercised. */
+internal fun testCallRequest(route: String) =
+    "Phone call test over the $route call route: call $TEST_LINE, the NIST time announcement. " +
+        "The call agent should only listen, tell me the time it announces, and hang up."
+
+private fun routeName(id: String) =
+    when (id) {
+        "cellular" -> "Cellular"
+        "whatsapp" -> "WhatsApp"
+        "twilio" -> "Twilio"
+        else -> id
+    }
+
+/** Checks the call agent and every route, and offers a real test call over each route that can dial a number. */
+@Composable
+private fun CallReadinessCheck(
+    state: SettingsUiState,
+    actions: SettingsActions,
+) {
+    val readiness = state.callReadiness
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(expanded) { if (expanded) actions.onCheckCalls() }
+    val defaultRoute = readiness?.defaultRoute
+    val blocked = readiness != null && (readiness.agentProblem != null || defaultRoute == null)
+    ExpandableSettingsRow(
+        title = "Check phone calls",
+        supporting =
+            when {
+                state.callReadinessChecking -> "Checking…"
+                readiness == null -> "Check the call agent and each route, then place a test call"
+                readiness.agentProblem != null -> "The call agent cannot start"
+                defaultRoute == null -> "No route can place a call"
+                else -> "Ready · calls use ${routeName(defaultRoute)} unless you ask for another route"
+            },
+        supportingIsError = blocked && !state.callReadinessChecking,
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+    ) {
+        SettingsBlock {
+            if (readiness == null) {
+                SettingsNote("Checking…")
+                return@SettingsBlock
+            }
+            SettingsNote("Call agent: ${readiness.agentProblem ?: "ready"}", error = readiness.agentProblem != null)
+            readiness.routes.forEach { route ->
+                SettingsNote("${routeName(route.id)}: ${route.problem ?: "ready"}", error = route.problem != null)
+            }
+            val testable = readiness.routes.filter { it.problem == null && it.id != "whatsapp" }
+            if (testable.isNotEmpty()) {
+                Text(
+                    "A test call opens a new conversation with a request to call the NIST time announcement " +
+                        "($TEST_LINE); review and send it. The agent listens, reports the announced time from the " +
+                        "transcript, and hangs up. Twilio bills the call.",
+                )
+            }
+            if (readiness.routes.any { it.id == "whatsapp" && it.problem == null }) {
+                Text("WhatsApp calls reach only saved contacts with WhatsApp; test it by asking EVA to call one.")
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                testable.forEach { route ->
+                    Button(
+                        enabled = readiness.agentProblem == null,
+                        onClick = { actions.onPlaceTestCall(route.id) },
+                    ) { Text("Test ${routeName(route.id)}") }
+                }
+                TextButton(enabled = !state.callReadinessChecking, onClick = actions.onCheckCalls) { Text("Check again") }
+            }
+        }
     }
 }
 

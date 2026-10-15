@@ -4,6 +4,10 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **Settings → Phone call agent → Check phone calls** checks the call agent and every call route, says why any is unavailable, and opens a test call to the NIST time announcement over each ready route for you to send.
+
 ### Fixed
 
 - A delegated phone call is refused before dialing when the call agent has no OpenAI access, instead of connecting a call the agent cannot speak on.

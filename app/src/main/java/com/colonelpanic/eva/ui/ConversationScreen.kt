@@ -100,6 +100,9 @@ internal fun ConversationScreen(
     onClearContext: () -> Unit = {},
     onOpenExtensions: () -> Unit = {},
     onCallControl: (String, String, Map<String, String>) -> Unit = { _, _, _ -> },
+    /** Text placed in the composer for the user to review and send. */
+    draftRequest: String? = null,
+    onDraftRequestTaken: () -> Unit = {},
 ) {
     var draft by rememberSaveable { mutableStateOf("") }
     var draftQuestionId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -110,6 +113,14 @@ internal fun ConversationScreen(
             whisperTaskId?.let { id -> state.entries.firstNotNullOfOrNull { entry -> entry.callTask?.takeIf { it.id == id && it.live } } }
         }
     val composerFocus = remember { FocusRequester() }
+    LaunchedEffect(draftRequest) {
+        draftRequest?.let {
+            draft = it
+            draftQuestionId = null
+            draftQuestionText = null
+            onDraftRequestTaken()
+        }
+    }
     val storageFailed = state.errorMessage != null
     val whispering = whisperTarget != null && draftQuestionId == null
     val canSend =

@@ -1400,6 +1400,8 @@ class CallTaskCoordinatorTest {
             assertEquals("Sign in to OpenAI.", result.message)
             assertTrue(h.journal.records.isEmpty())
             assertEquals(0, h.placements)
+            assertEquals("Sign in to OpenAI.", h.coordinator.readiness().agentProblem)
+            assertEquals("fake", h.coordinator.readiness().defaultRoute)
         }
 
     @Test fun aProviderThatCertainlyDialedNothingEndsTheTaskWithItsReason() =

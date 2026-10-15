@@ -66,6 +66,8 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     private val voice: VoiceAccessModel by viewModels()
     private val shizukuAccess = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    private val callReadiness = kotlinx.coroutines.flow.MutableStateFlow<com.colonelpanic.eva.call.CallReadiness?>(null)
+    private val callReadinessChecking = kotlinx.coroutines.flow.MutableStateFlow(false)
     private val screenControlRepairing = kotlinx.coroutines.flow.MutableStateFlow<Set<String>>(emptySet())
     private var surface: Launch
         get() = voice.surface
@@ -294,6 +296,8 @@ class MainActivity : ComponentActivity() {
         val twilioKeyRevision by eva.twilioCalls.keyRevision.collectAsStateWithLifecycle()
         val screenControl by eva.capabilities.screenControlFlow.collectAsStateWithLifecycle()
         val shizuku by shizukuAccess.collectAsStateWithLifecycle()
+        val callCheck by callReadiness.collectAsStateWithLifecycle()
+        val callChecking by callReadinessChecking.collectAsStateWithLifecycle()
         val screenControlStatus by eva.screenControl.status.collectAsStateWithLifecycle()
         LaunchedEffect(screenControlStatus) { eva.deviceControlHost?.let { shizukuAccess.value = it.accessStatus() } }
         val repairing by screenControlRepairing.collectAsStateWithLifecycle()
@@ -399,6 +403,8 @@ class MainActivity : ComponentActivity() {
             callAgent = callAgent,
             twilioCalls = twilioCalls,
             twilioCallsKeySaved = remember(twilioKeyRevision) { eva.twilioCalls.apiKey() != null },
+            callReadiness = callCheck,
+            callReadinessChecking = callChecking,
             screenControlStatus = screenControlStatus,
             screenControlRepairing = repairing,
             deviceTask = deviceTask,
@@ -583,6 +589,18 @@ class MainActivity : ComponentActivity() {
                     }
                 },
                 onRemoveTwilioCalls = eva.twilioCalls::remove,
+                onCheckCalls = {
+                    if (!callReadinessChecking.value) {
+                        callReadinessChecking.value = true
+                        lifecycleScope.launch {
+                            try {
+                                callReadiness.value = eva.callTasks.readiness()
+                            } finally {
+                                callReadinessChecking.value = false
+                            }
+                        }
+                    }
+                },
                 onPortalToken = { token ->
                     eva.capabilities.savePortalToken(token)
                     lifecycleScope.launch { eva.screenControl.refresh() }
