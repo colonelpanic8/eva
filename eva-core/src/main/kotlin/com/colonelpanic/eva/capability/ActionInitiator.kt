@@ -13,8 +13,10 @@ enum class InitiatorKind(
     USER_SPEECH("user_speech", "user speech"),
     USER_TYPED("user_typed", "typed request"),
     TEXT_AGENT("text_agent", "text agent"),
+    CALL_AGENT("call_agent", "call agent"),
     DEVICE_TASK_WORKER("device_task_worker", "device task worker"),
     LIFECYCLE_NOTE_REPLY("lifecycle_note_reply", "background announcement"),
+    OWNER_CONTROL("owner_control", "your call controls"),
     UNKNOWN("unknown", "unknown origin"),
 }
 

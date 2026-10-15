@@ -11,7 +11,7 @@ class WordingTest {
     fun `the shipped wording names only real tools and parameters and covers every note`() {
         val tools =
             (
-                BundledCapabilities.definitions.map { it.id to it.inputSchema } +
+                (BundledCapabilities.definitions + com.colonelpanic.eva.call.CallAgentTools.definitions).map { it.id to it.inputSchema } +
                     com.colonelpanic.eva.devicecontrol.worker.WorkerSchemas.schemas.map { (name, schema) ->
                         "device-worker.$name" to schema
                     } +
@@ -69,7 +69,7 @@ class WordingTest {
                 ThreadController.DEVICE_TASK_STOP,
             )
         val tools =
-            BundledCapabilities.definitions.map {
+            (BundledCapabilities.definitions + com.colonelpanic.eva.call.CallAgentTools.definitions).map {
                 com.colonelpanic.eva.providers
                     .ProviderToolDefinition(it.id, it.title, it.description, it.inputSchema)
             } + controls

@@ -114,6 +114,8 @@ fun SettingsScreen(
             SettingsDivider()
             WebResearchSection(state, actions)
             SettingsDivider()
+            CallAgentSection(state, actions)
+            SettingsDivider()
             WatchGestureSection(state, actions)
             SettingsDivider()
             AssistantSection(state, actions)

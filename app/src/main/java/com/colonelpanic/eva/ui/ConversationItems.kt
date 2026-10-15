@@ -145,8 +145,12 @@ internal fun ConversationEntryItem(
         QuestionExchange(it)
         return
     }
+    entry.callTask?.let {
+        CallCard(it, children.mapNotNull { child -> child.entry.question })
+        return
+    }
     entry.textLeg?.let {
-        TextLegBlock(entry, it, children.map(EntryGroup::entry))
+        TextLegBlock(entry, it, children)
         return
     }
     if (entry.capabilityId != null && entry.request.isBlank()) {
@@ -179,16 +183,7 @@ internal fun ConversationEntryItem(
         if (children.isNotEmpty()) {
             ActionBranch {
                 children.forEach { child ->
-                    key(child.entry.id) {
-                        val leg = child.entry.textLeg
-                        if (child.entry.question != null) {
-                            QuestionExchange(checkNotNull(child.entry.question))
-                        } else if (leg == null) {
-                            ActionRow(child.entry)
-                        } else {
-                            TextLegBlock(child.entry, leg, child.actions)
-                        }
-                    }
+                    key(child.entry.id) { BranchItem(child) }
                 }
             }
         }
@@ -215,6 +210,20 @@ private fun ResponseBubble(entry: ConversationEntry) {
     }
 }
 
+@Composable
+private fun BranchItem(child: EntryGroup) {
+    val entry = child.entry
+    val question = entry.question
+    val call = entry.callTask
+    val leg = entry.textLeg
+    when {
+        question != null -> QuestionExchange(question)
+        call != null -> CallCard(call, child.children.mapNotNull { it.entry.question })
+        leg != null -> TextLegBlock(entry, leg, child.children)
+        else -> ActionRow(entry)
+    }
+}
+
 /** Actions hang off a rail under the request, so what the model did reads as a branch of the turn. */
 @Composable
 private fun ActionBranch(content: @Composable () -> Unit) {
@@ -235,8 +244,9 @@ private fun ActionBranch(content: @Composable () -> Unit) {
 private fun TextLegBlock(
     entry: ConversationEntry,
     leg: TextLegDetails,
-    actions: List<ConversationEntry>,
+    children: List<EntryGroup>,
 ) {
+    val actions = children.map(EntryGroup::entry)
     var toggled by rememberSaveable(entry.id) { mutableStateOf<Boolean?>(null) }
     val expanded = toggled ?: (leg.status == TurnStatus.OPEN)
     var showPrompt by rememberSaveable(entry.id + ":prompt") { mutableStateOf(false) }
@@ -296,11 +306,7 @@ private fun TextLegBlock(
                 if (actions.isNotEmpty()) {
                     Box(modifier = Modifier.padding(end = 12.dp)) {
                         ActionBranch {
-                            actions.forEach { action ->
-                                key(action.id) {
-                                    action.question?.let { QuestionExchange(it) } ?: ActionRow(action)
-                                }
-                            }
+                            children.forEach { child -> key(child.entry.id) { BranchItem(child) } }
                         }
                     }
                 }

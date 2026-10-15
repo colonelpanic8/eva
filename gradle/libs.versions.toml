@@ -37,6 +37,8 @@ sqlite-jdbc = { module = "org.xerial:sqlite-jdbc", version.ref = "sqliteJdbc" }
 kotlinx-cli = { module = "org.jetbrains.kotlinx:kotlinx-cli", version.ref = "kotlinxCli" }
 robolectric = { module = "org.robolectric:robolectric", version = "4.17" }
 webrtc = { module = "io.github.webrtc-sdk:android", version = "150.7871.01" }
+# Proprietary binary (Twilio Terms of Service); see docs/operations.md before publishing.
+twilio-voice = { module = "com.twilio:voice-android", version = "6.10.4" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
 androidx-compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
 androidx-compose-foundation = { module = "androidx.compose.foundation:foundation" }

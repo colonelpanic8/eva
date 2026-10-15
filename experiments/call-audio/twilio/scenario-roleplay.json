@@ -1,0 +1,65 @@
+{
+  "name": "Iron Temple Fitness test",
+  "start": "request",
+  "answer_prompt": "Connecting your test call.",
+  "greeting": "Welcome to Iron Temple Fitness, the fictional membership test line.",
+  "recording_notice": "This is a recorded test line.",
+  "recording_failure": "Call recording is unavailable. Your menu and speech responses will still be saved for this test.",
+  "empty_reply": "I did not receive a response.",
+  "voice": "alice",
+  "language": "en-US",
+  "hold_segment_seconds": 12,
+  "nodes": {
+    "request": {
+      "type": "gather",
+      "input": "speech",
+      "timeout": 20,
+      "speechTimeout": 3,
+      "prompt": "How can I help with your membership today?",
+      "next": "zipcode",
+      "empty": "end"
+    },
+    "zipcode": {
+      "type": "gather",
+      "input": "speech",
+      "timeout": 20,
+      "speechTimeout": 3,
+      "prompt": "What about the zip code on the account?",
+      "next": "agreement",
+      "empty": "end"
+    },
+    "agreement": {
+      "type": "gather",
+      "input": "speech",
+      "timeout": 20,
+      "speechTimeout": 3,
+      "prompt": "That is fine. I can cancel the membership immediately with no fee. Would you like the confirmation number?",
+      "next": "confirmation",
+      "empty": "end"
+    },
+    "confirmation": {
+      "type": "gather",
+      "input": "speech",
+      "timeout": 20,
+      "speechTimeout": 3,
+      "prompt": "Your cancellation confirmation number is two two three four. Please read that back to me.",
+      "next": "anything_else",
+      "empty": "end",
+      "reply": "Yes, that is correct. The membership is cancelled, and no further charges will be made."
+    },
+    "anything_else": {
+      "type": "gather",
+      "input": "speech",
+      "timeout": 20,
+      "speechTimeout": 3,
+      "prompt": "Is there anything else?",
+      "next": "anything_else",
+      "empty": "end",
+      "end_pattern": "\\b(no|nope|nothing|all set|that is all|that\\x27s all|goodbye)\\b"
+    },
+    "end": {
+      "type": "end",
+      "prompt": "Thank you for calling this test line. Goodbye."
+    }
+  }
+}

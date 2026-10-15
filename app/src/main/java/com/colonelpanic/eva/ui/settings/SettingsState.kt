@@ -36,6 +36,10 @@ data class SettingsUiState(
     val messagingBridgeChecks: Map<String, String> = emptyMap(),
     /** Bridges whose token is missing on this device or was saved for another origin. */
     val messagingBridgesNeedingToken: Set<String> = emptySet(),
+    /** Saved call keypad credentials, reference to label; never their values. */
+    val callCredentials: Map<String, String> = emptyMap(),
+    /** Call credentials whose value this phone does not hold. */
+    val callCredentialsNeedingValue: Set<String> = emptySet(),
     val rememberedNumbers: Int = 0,
     val skills: com.colonelpanic.eva.data.SkillLibrary =
         com.colonelpanic.eva.data
@@ -91,6 +95,11 @@ data class SettingsUiState(
         com.colonelpanic.eva.web
             .WebResearchConfiguration(),
     val webResearchNotice: String? = null,
+    val callAgent: com.colonelpanic.eva.call.CallAgentTuning =
+        com.colonelpanic.eva.call
+            .CallAgentTuning(),
+    val twilioCalls: com.colonelpanic.eva.data.configuration.TwilioCallsConfiguration? = null,
+    val twilioCallsKeySaved: Boolean = false,
     val spotifyClientId: String? = null,
     val spotifyAccount: String? = null,
     val spotifyPremium: Boolean? = null,
@@ -128,6 +137,9 @@ data class SettingsActions(
     val onSaveMessagingBridge: (String, String, String, String) -> String? = { _, _, _, _ -> null },
     val onRemoveMessagingBridge: (String) -> Unit = {},
     val onCheckMessagingBridge: (String) -> Unit = {},
+    /** Reference, label, value; a blank value keeps the saved one. */
+    val onSaveCallCredential: (String, String, String) -> String? = { _, _, _ -> null },
+    val onRemoveCallCredential: (String) -> Unit = {},
     val onForgetRememberedNumbers: () -> Unit = {},
     val onKeepMemory: (String) -> Unit = {},
     val onForgetMemory: (String) -> Unit = {},
@@ -174,6 +186,10 @@ data class SettingsActions(
     val onScreenControlChange: (Boolean) -> Unit = {},
     val onDeviceTaskChange: (com.colonelpanic.eva.data.configuration.DeviceTaskConfiguration) -> Unit = {},
     val onWebResearchChange: (com.colonelpanic.eva.web.WebResearchConfiguration) -> Unit = {},
+    val onCallAgentChange: (com.colonelpanic.eva.call.CallAgentTuning) -> Unit = {},
+    /** Account SID, TwiML app SID, caller ID, API key SID and secret; returns why it was not saved. */
+    val onSaveTwilioCalls: (String, String, String, String, String) -> String? = { _, _, _, _, _ -> null },
+    val onRemoveTwilioCalls: () -> Unit = {},
     val onPortalToken: (String) -> Unit = {},
     val onAllowShizuku: () -> Unit = {},
     /** Repairs a backend; the callback opens Screen control settings when the fix is there. */

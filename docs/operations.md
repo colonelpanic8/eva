@@ -333,6 +333,26 @@ adb install -r eva.apk
 Because both channels serve the exact same signed APK, they can upgrade one
 another. Debug builds use `com.colonelpanic.eva.debug` and are separate.
 
+### Twilio Voice SDK
+
+The normal APK distributed through Obtainium includes Twilio; no separate build flavor is required.
+
+The Twilio call route depends on `com.twilio:voice-android` from Maven Central, a
+proprietary binary (Java classes plus `libtwilio_voice_android_so.so` built on Twilio's own
+WebRTC fork) whose license is Twilio's terms of service, with third-party notices in its
+published acknowledgements. Consequences for distribution:
+
+- The self-hosted repository serves the same signed APK as GitHub releases; nothing about
+  the dependency blocks that, but the APK now ships non-free code. If the repository
+  metadata declares anti-features, `NonFreeDep` (and `NonFreeNet`, since the route needs
+  Twilio's service) applies.
+- F-Droid's official catalog builds from source with free dependencies only, so official
+  inclusion would need a flavor without the Twilio route (its transport, settings and the
+  dependency), not just metadata.
+- The SDK's native libraries add about 42 MB to the universal APK (11.7 MB on arm64), stored
+  uncompressed like EVA's other native libraries.
+- It sends call-quality insights to Twilio during calls, as Twilio's SDKs do by default.
+
 ### Official catalog distinction
 
 This machinery does not submit EVA to, or build EVA inside, F-Droid's official
@@ -961,6 +981,16 @@ Skip the reverse command if this session already owns that exact forwarding.
 The test prints bounded evidence and sample counts; it does not print transcripts
 or credentials. It closes its provider and media resources on success or failure.
 
+
+### Phone call tasks on an emulator
+
+[`experiments/call-audio/emulator`](../experiments/call-audio/emulator/README.md) boots a
+persistent EVA-under-test emulator, installs EVA Debug, configures the Twilio call route,
+starts call tasks to the Twilio fake hotline (typed to the main agent or directly through
+`CallTaskLiveTest`), collects EVA's call records with the hotline's `verify` evidence, and
+records demos. `just emulator-tools` builds its tools and `just eva-emulator <command>` runs
+it. The model sign-in and the Twilio account resources are owner steps it prepares but does
+not perform.
 
 ### Voice action test
 

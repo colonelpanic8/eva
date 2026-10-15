@@ -48,6 +48,7 @@ fun RunningWorkScreen(
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(task.threadTitle, style = MaterialTheme.typography.titleMedium)
                         Text(task.request.ifBlank { "Voice request" })
+                        task.call?.let { CallSummary(it) }
                         Text(
                             "${task.kind.name.label()} · ${if (task.state == com.colonelpanic.eva.conversation.TaskState.RELEASING_DEVICE) {
                                 "Releasing device…"
@@ -71,7 +72,17 @@ fun RunningWorkScreen(
                         FlowRow {
                             TextButton(onClick = { onStop(task.taskId) }) { Text("Stop") }
                             TextButton(onClick = { onForceStop(task.taskId) }) { Text("Force stop") }
-                            TextButton(onClick = { onOpenThread(task.threadId) }) { Text("Open thread") }
+                            TextButton(onClick = { onOpenThread(task.threadId) }) {
+                                Text(
+                                    if (task.call !=
+                                        null
+                                    ) {
+                                        "Open call"
+                                    } else {
+                                        "Open thread"
+                                    },
+                                )
+                            }
                             TextButton(onClick = { onShareDiagnostics(task.threadId) }) { Text("Share diagnostics") }
                         }
                         Text(

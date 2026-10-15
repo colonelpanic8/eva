@@ -18,11 +18,13 @@ data class TaskSnapshot(
     /** The task's oldest pending question, also used by notifications. */
     val question: String? = null,
     val questions: List<QuestionEvidence> = emptyList(),
+    /** The live call task this turn owns. */
+    val call: com.colonelpanic.eva.call.CallTaskSnapshot? = null,
 )
 
-enum class TaskKind { VOICE_TURN, TYPED_TURN, DELEGATED_TEXT_AGENT, REHOMED_CONTINUATION, DEVICE_TASK }
+enum class TaskKind { VOICE_TURN, TYPED_TURN, DELEGATED_TEXT_AGENT, REHOMED_CONTINUATION, DEVICE_TASK, PHONE_CALL }
 
-enum class TaskState { CONNECTING, WORKING, WAITING_FOR_DEVICE, WAITING_FOR_EXTENSION, NEEDS_INPUT, RELEASING_DEVICE, STOPPING }
+enum class TaskState { CONNECTING, WORKING, WAITING_FOR_DEVICE, WAITING_FOR_EXTENSION, NEEDS_INPUT, ON_HOLD, RELEASING_DEVICE, STOPPING }
 
 enum class WorkCoverage { NONE, LONG_RUNNING, SHORT_SERVICE }
 

@@ -2,6 +2,8 @@ package com.colonelpanic.eva.data
 
 import android.annotation.SuppressLint
 import android.content.Context
+import com.colonelpanic.eva.call.CallAgentTuning
+import com.colonelpanic.eva.data.configuration.CallAgentPatch
 import com.colonelpanic.eva.data.configuration.WebResearchPatch
 import com.colonelpanic.eva.web.WebResearchConfiguration
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -93,6 +95,29 @@ class CapabilitySettings(
         }
         mutableWebResearch.value = value
         mutableWebResearchNotice.value = null
+        onChanged()
+    }
+
+    private val mutableCallAgent =
+        MutableStateFlow(
+            runCatching {
+                kotlinx.serialization.json.Json
+                    .decodeFromString<CallAgentPatch>(prefs.getString("capabilities.callAgent", "{}")!!)
+                    .materialize()
+            }.getOrDefault(CallAgentTuning()),
+        )
+    val callAgentFlow = mutableCallAgent.asStateFlow()
+    val callAgent get() = mutableCallAgent.value
+
+    fun saveCallAgent(value: CallAgentTuning) {
+        commit {
+            putString(
+                "capabilities.callAgent",
+                kotlinx.serialization.json.Json
+                    .encodeToString(CallAgentTuning.serializer(), value),
+            )
+        }
+        mutableCallAgent.value = value
         onChanged()
     }
 

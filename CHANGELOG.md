@@ -4,6 +4,17 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Delegate phone calls to a realtime voice agent over cellular (Shizuku) or Twilio Voice, with a shared provider interface, live call cards and captions, private instructions, takeover, optional listen-in, and transcript-backed outcomes. Twilio also runs on an emulator without a physical phone.
+- Send keypad sequences with waits and encrypted saved-credential references. Call tuning, provider settings, credential references and listen-in preferences participate in configuration restore.
+- Experimental WhatsApp calling uses the same engine and is disabled by default, visibly marked unverified. Reusable phone/emulator test tools collect transcripts, far-end verification and recorded demos.
+
+### Fixed
+
+- Call cancellation remains responsive while the voice session connects. Shared admission prevents overlapping provider calls, and lost call observation attempts hang-up while preserving an explicit uncertain outcome.
+- Call agents answer direct questions instead of silently waiting, avoid narrating internal steps, read back critical values, and preserve outcomes when the other party hangs up. Listen-in defaults off to preserve interruption; cellular listen-in temporarily suppresses incoming audio while the agent speaks to prevent echo.
+
 ## [0.66.0] - 2026-10-14
 
 ### Changed

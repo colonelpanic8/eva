@@ -62,6 +62,8 @@ data class ConversationEntry(
     val initiator: ActionInitiator? = null,
     /** Each screen read and input a device task made, live while it runs. */
     val deviceSteps: List<DeviceStep> = emptyList(),
+    /** The latest state of the call task this `eva.call.start` action owns. */
+    val callTask: com.colonelpanic.eva.call.CallTaskSnapshot? = null,
 )
 
 data class DeviceStep(

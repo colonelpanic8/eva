@@ -3,6 +3,8 @@ package com.colonelpanic.eva.conversation
 import com.colonelpanic.eva.audio.AudioFocusState
 import com.colonelpanic.eva.audio.RealtimeMediaSession
 import com.colonelpanic.eva.audio.RealtimeMediaState
+import com.colonelpanic.eva.call.terminal
+import com.colonelpanic.eva.capability.ActionInitiator
 import com.colonelpanic.eva.capability.CallEnding
 import com.colonelpanic.eva.capability.CapabilityDispatcher
 import com.colonelpanic.eva.capability.CapabilityRegistry
@@ -122,6 +124,7 @@ class ThreadController(
     private val onBackgroundAnswerDelivered: (BackgroundAnswer) -> Unit = {},
     private val nowMillis: () -> Long = System::currentTimeMillis,
     private val deviceTasks: com.colonelpanic.eva.devicecontrol.DeviceTaskCoordinator? = null,
+    private val callTasks: com.colonelpanic.eva.call.CallTaskCoordinator? = null,
 ) {
     private data class PendingQuestion(
         val threadId: String,
@@ -129,6 +132,7 @@ class ThreadController(
         val target: ConversationSession? = null,
         val call: CallIdentity? = null,
         val deviceKey: String? = null,
+        val callAnswer: CompletableDeferred<String>? = null,
     )
 
     private val questions = linkedMapOf<String, PendingQuestion>()
@@ -213,6 +217,12 @@ class ThreadController(
             tasks.values.map { task ->
                 val record = progress.getOrPut(task.turnId) { TaskProgressRecord(now) }
                 val ownsDevice = device?.turnId == task.turnId
+                val phoneCall =
+                    callTasks
+                        ?.tasks
+                        ?.value
+                        ?.values
+                        ?.firstOrNull { it.turnId == task.turnId && !it.state.terminal }
                 val holdsLease = deviceTasks?.lease?.owner?.let { it in task.actionCallIds } == true
                 val baseState =
                     taskState(
@@ -230,13 +240,20 @@ class ThreadController(
                     task.turnId,
                     task.request,
                     when {
+                        phoneCall != null -> TaskKind.PHONE_CALL
                         ownsDevice -> TaskKind.DEVICE_TASK
                         task.delegated -> TaskKind.DELEGATED_TEXT_AGENT
                         task.isBackground -> TaskKind.REHOMED_CONTINUATION
                         connectionTools[task.originLeg]?.voice == true -> TaskKind.VOICE_TURN
                         else -> TaskKind.TYPED_TURN
                     },
-                    baseState,
+                    if (phoneCall?.phase == com.colonelpanic.eva.call.CallPhase.HOLD &&
+                        baseState == TaskState.WORKING
+                    ) {
+                        TaskState.ON_HOLD
+                    } else {
+                        baseState
+                    },
                     record.startedAt,
                     record.lastProgressAt,
                     task.actionCallIds.size,
@@ -247,6 +264,7 @@ class ThreadController(
                     baseState.canStall() && now - record.lastProgressAt >= stallPeriodMillis(),
                     pendingQuestions(task.threadId).firstOrNull { it.evidence.taskId == task.turnId }?.evidence?.question,
                     pendingQuestions(task.threadId).filter { it.evidence.taskId == task.turnId }.map { it.evidence },
+                    phoneCall,
                 )
             }
         taskTrace.observe(mutableTaskSnapshots.value)
@@ -519,6 +537,31 @@ class ThreadController(
         return tool.copy(description = tool.description + "\n\n" + wording().message(Wording.SKILLS) + "\n" + catalog)
     }
 
+    /**
+     * Like the bridge note: which call routes this phone has and which keypad credentials the owner
+     * saved are configuration, named on the call tool.
+     */
+    private fun callNote(tool: ProviderToolDefinition): ProviderToolDefinition {
+        if (tool.capabilityId != com.colonelpanic.eva.call.CallCapabilities.START) return tool
+        val calls = callTasks ?: return tool
+        val notes =
+            listOfNotNull(
+                calls.providerIds().takeIf { it.size > 1 }?.let { ids ->
+                    wording()
+                        .message(Wording.CALL_PROVIDERS)
+                        .replace("{providers}", ids.joinToString())
+                        .replace("{default}", ids.first())
+                },
+                calls.savedCredentials().takeIf { it.isNotEmpty() }?.let { saved ->
+                    wording()
+                        .message(Wording.CALL_CREDENTIALS)
+                        .replace("{credentials}", saved.joinToString(", ") { "${it.reference} (${it.label})" })
+                },
+            )
+        if (notes.isEmpty()) return tool
+        return tool.copy(description = (listOf(tool.description) + notes).joinToString("\n\n"))
+    }
+
     /** The prompt and the catalog are decided together: components rewrite and hide tools. */
     private suspend fun assemble(
         voice: Boolean,
@@ -535,6 +578,14 @@ class ThreadController(
         scope.launch {
             deviceTasks?.lease?.ownerFlow?.collect { callId ->
                 tasks.values.firstOrNull { callId in it.actionCallIds }?.let { taskProgress(it.turnId) }
+                refreshTaskSnapshots()
+            }
+        }
+        scope.launch {
+            var seen = emptyMap<String, com.colonelpanic.eva.call.CallTaskSnapshot>()
+            callTasks?.tasks?.collect { current ->
+                current.values.filter { seen[it.id] != it }.forEach { taskProgress(it.turnId) }
+                seen = current
                 refreshTaskSnapshots()
             }
         }
@@ -561,6 +612,7 @@ class ThreadController(
         scope.launch {
             try {
                 repository.recoverInterrupted()
+                callTasks?.recover()
                 store.recoverInterrupted().forEach { turn ->
                     store
                         .items(turn.threadId, limit = Int.MAX_VALUE)
@@ -793,7 +845,7 @@ class ThreadController(
                                         }
                                     ) +
                                         deviceControls + phone.second,
-                                ).map { tool -> endingNote(skillNote(bridgeNote(tool)), endings[tool.capabilityId]) },
+                                ).map { tool -> endingNote(callNote(skillNote(bridgeNote(tool))), endings[tool.capabilityId]) },
                             snapshot.revision,
                         ).copy(
                             excludedTools = phone.first.excluded(),
@@ -1219,6 +1271,34 @@ class ThreadController(
         requestRefresh()
     }
 
+    suspend fun askCallOwner(request: com.colonelpanic.eva.call.CallOwnerQuestion): String {
+        check(tasks[request.turnId]?.active == true) { "The call has no active owning turn." }
+        val answer = CompletableDeferred<String>()
+        val question =
+            PendingQuestion(
+                request.threadId,
+                QuestionEvidence(
+                    request.id,
+                    request.turnId,
+                    request.taskId,
+                    QuestionSource.CALL_AGENT,
+                    (if (request.urgent) wording().message(Wording.CALL_OWNER_URGENT) + " " else "") + request.question,
+                    order = nextQuestionOrder++,
+                ),
+                callAnswer = answer,
+            )
+        check(request.id !in questions)
+        questions[request.id] = question
+        try {
+            recordQuestion(question)
+            questionsChanged()
+            return answer.await()
+        } finally {
+            if (question.evidence.waiting) resolveQuestion(question, QuestionResolution.INTERRUPTED)
+            questionsChanged()
+        }
+    }
+
     private fun syncDeviceQuestion() {
         val running = deviceTasks?.running?.value
         val progress = running?.progress?.takeIf { it.phase == TaskPhase.NEEDS_INPUT && !it.message.isNullOrBlank() }
@@ -1272,6 +1352,7 @@ class ThreadController(
     ) {
         if (!question.evidence.waiting) return
         question.evidence = question.evidence.copy(resolution = resolution)
+        if (resolution != QuestionResolution.ACCEPTED) question.callAnswer?.cancel()
         val evidence = question.evidence
         val owner = tasks[evidence.taskId]
         EvaTrace.info("question.resolved", "questionId" to evidence.questionId, "resolution" to resolution)
@@ -1325,6 +1406,9 @@ class ThreadController(
             questions[questionId]?.takeIf { it.threadId == threadId && it.evidence.taskId == taskId }
                 ?: return Wording.BACKGROUND_ANSWER_MISSING
         if (answer.isBlank()) return Wording.BACKGROUND_ANSWER_INVALID
+        if (question.evidence.source == QuestionSource.CALL_AGENT && currentQuestion(threadId) !== question) {
+            return Wording.BACKGROUND_ANSWER_STALE
+        }
         if (question.evidence.resolution != QuestionResolution.PENDING ||
             tasks[taskId]?.active != true
         ) {
@@ -1345,7 +1429,15 @@ class ThreadController(
                 return Wording.BACKGROUND_ANSWER_STALE
             }
             val accepted =
-                if (question.evidence.source == QuestionSource.DEVICE_TASK) {
+                if (question.evidence.source == QuestionSource.CALL_AGENT) {
+                    val target = question.callAnswer
+                    if (target?.isActive == true) {
+                        resolveQuestion(question, QuestionResolution.ACCEPTED)
+                        target.complete(answer)
+                    } else {
+                        false
+                    }
+                } else if (question.evidence.source == QuestionSource.DEVICE_TASK) {
                     deviceTasks?.answer(threadId, taskId, checkNotNull(question.deviceKey), answer) == true
                 } else {
                     val target = checkNotNull(question.target)
@@ -1899,6 +1991,54 @@ class ThreadController(
     }
 
     /**
+     * Runs an owner call control from the call card through the dispatcher and journal, like the
+     * same tool proposed by a model. Only the shown thread's calls are controlled; a control that
+     * did not apply is reported in the provider message.
+     */
+    fun callControl(
+        taskId: String,
+        capabilityId: String,
+        arguments: Map<String, String> = emptyMap(),
+    ) {
+        val threadId = shownThreadId ?: return
+        val task =
+            callTasks
+                ?.tasks
+                ?.value
+                ?.get(taskId)
+                ?.takeIf { it.threadId == threadId } ?: return
+        require(capabilityId in com.colonelpanic.eva.call.CallCapabilities.controls)
+        scope.launch {
+            val record =
+                try {
+                    dispatcher.execute(
+                        ToolProposal(
+                            "owner-control:${UUID.randomUUID()}",
+                            capabilityId,
+                            arguments + ("taskId" to taskId),
+                            "Call card control",
+                            registry.snapshot.revision,
+                            threadId,
+                            task.turnId,
+                            initiator = ActionInitiator(InitiatorKind.OWNER_CONTROL),
+                        ),
+                    )
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    null
+                }
+            if (record?.status != InvocationStatus.COMPLETED) {
+                mutableState.update {
+                    it.copy(
+                        providerMessage = record?.message ?: "The call control could not be recorded, so whether it applied is unknown.",
+                    )
+                }
+            }
+        }
+    }
+
+    /**
      * Sends typed input. While a request runs on the attached thread, the input steers it: the model
      * reads it at its next step and answers it in the same turn. Input the running response can no
      * longer take waits, visibly, and is sent as the next request when the current one ends.
@@ -2268,6 +2408,7 @@ class ThreadController(
                                 }
 
                                 !definition.readOnly && !definition.bookkeeping &&
+                                    event.capabilityId !in com.colonelpanic.eva.call.CallCapabilities.controls &&
                                     (
                                         tasks.values.any { it.threadId == threadId && it.mutationUncertain } ||
                                             abandonedMutationOn(
@@ -2383,6 +2524,8 @@ class ThreadController(
             // The device coordinator owns long tasks and UI serialization. Other mutations share the thread lock.
             val serializedByDevice =
                 event.capabilityId == CapabilityRegistry.DEVICE_TASK ||
+                    event.capabilityId == com.colonelpanic.eva.call.CallCapabilities.START ||
+                    event.capabilityId in com.colonelpanic.eva.call.CallCapabilities.controls ||
                     runCatching { context.snapshot.resolve(proposal)?.usesDeviceUi(proposal) == true }.getOrDefault(false)
             val job =
                 taskScope.launch(start = CoroutineStart.UNDISPATCHED) {
@@ -2529,7 +2672,7 @@ class ThreadController(
                 fail(wording().message(Wording.BACKGROUND_QUESTION_UNRESOLVED))
                 return
             }
-            if (deviceTasks?.owns(turnId) == true) return
+            if (deviceTasks?.owns(turnId) == true || callTasks?.owns(turnId) == true) return
             when {
                 status == "cancelled" && rehomed -> interrupt(wording().message(Wording.BACKGROUND_RESPONSE_CANCELLED))
                 status == "completed" || status == "cancelled" -> complete()
@@ -2624,6 +2767,7 @@ class ThreadController(
                     store.append(notice(threadId, turnId, NoticeKind.INTERRUPTED, interruptionText(reason)))
                     requestRefresh()
                 }
+            callTasks?.stop(turnId)
             deviceTasks?.forceStop(turnId)
             if (active) interrupt(forceStopReason!!)
             taskScope.cancel()
@@ -2631,6 +2775,7 @@ class ThreadController(
         }
 
         fun interrupt(reason: String) {
+            callTasks?.stop(turnId)
             val drainingDevice = deviceTasks?.stop(turnId) == true
             if (!active) return
             EvaTrace.info("task.interrupted", "task" to turnId, "reason" to reason)
@@ -2652,13 +2797,14 @@ class ThreadController(
         private fun fail(reason: String) {
             if (!active) return
             EvaTrace.info("task.failed", "task" to turnId, "rehomed" to rehomed, "delegated" to delegated, "reason" to reason)
-            if (!rehomed && deviceTasks?.owns(turnId) == true) {
+            if (!rehomed && (deviceTasks?.owns(turnId) == true || callTasks?.owns(turnId) == true)) {
                 legLost()
                 return
             }
             active = false
             cancelQuestions(turnId)
             backgroundReady.complete(false)
+            callTasks?.stop(turnId)
             val drainingDevice = deviceTasks?.stop(turnId) == true
             launchFinalization(this) {
                 if (!drainingDevice) dispatches.forEach { it.cancel() }

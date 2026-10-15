@@ -76,6 +76,7 @@ fun EvaApp(
     denial: MicrophoneDenial? = null,
     onRetryMicrophone: () -> Unit = {},
     onDismissDenial: () -> Unit = {},
+    onCallControl: (String, String, Map<String, String>) -> Unit = { _, _, _ -> },
 ) {
     var destination by rememberSaveable { mutableStateOf(EvaDestination.CONVERSATION) }
     androidx.compose.runtime.LaunchedEffect(runningWorkRequest) {
@@ -140,6 +141,7 @@ fun EvaApp(
                         onNewThread()
                     },
                     onOpenExtensions = { destination = EvaDestination.EXTENSIONS },
+                    onCallControl = onCallControl,
                 )
             }
 
