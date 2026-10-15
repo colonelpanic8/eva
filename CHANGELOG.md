@@ -4,6 +4,13 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.66.0] - 2026-10-14
+
+### Changed
+
+- Past conversations now live in a separate **Conversation archive** instead of appearing individually in the navigation menu. Open a conversation from the archive to continue it.
+- **Archive conversation** in the conversation's options menu preserves its history and starts fresh. Existing background work continues; an attached voice call ends so it cannot keep using the old context.
+
 ## [0.65.0] - 2026-10-14
 
 ### Changed
