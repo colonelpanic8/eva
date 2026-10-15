@@ -6,6 +6,7 @@ All notable changes to EVA will be documented here.
 
 ### Fixed
 
+- A delegated phone call is refused before dialing when the call agent has no OpenAI access, instead of connecting a call the agent cannot speak on.
 - Voice connection readiness now requires an OpenAI API key when GPT-Live is selected for a direct connection. ChatGPT sign-in still enables text and Realtime; paired-host and Grok credentials retain their independent behavior.
 
 ## [0.67.0] - 2026-10-15

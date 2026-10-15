@@ -575,6 +575,13 @@ class EvaApplication :
             speechDetector = { null },
             wording = { prompts.wording.value },
             listenInByDefault = { capabilities.callAgent.listenInByDefault },
+            agentUnavailableReason = {
+                if (access() == null) {
+                    "The phone call agent speaks through OpenAI Realtime. Sign in with ChatGPT or add an OpenAI API key under Account."
+                } else {
+                    null
+                }
+            },
         )
     }
 

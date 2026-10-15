@@ -1176,7 +1176,9 @@ WhatsApp, then Twilio; see the [call engine](#android-call-engine-and-transports
 `OpenAiCallAgentBrainFactory`. `eva.call.start` takes an optional `provider`; without
 it the first available route places the call. An unknown or unavailable route is
 rejected naming the routes the phone has or why the chosen one cannot call, and nothing
-is journaled or dialed. With more than one route, the start tool's description lists
+is journaled or dialed. Start is also rejected before anything is journaled or dialed when the call
+agent cannot open (no OpenAI sign-in or API key), so no call connects to an agent that
+cannot speak. With more than one route, the start tool's description lists
 them (the `call-providers` wording note). A provider that is certain it dialed nothing
 throws `CallNotPlaced`; the task ends NotAccomplished with that reason and the leg
 Ended FAILED, instead of an uncertain setup failure. Live cellular calls are

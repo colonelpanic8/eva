@@ -170,6 +170,7 @@ class CallTaskCoordinatorTest {
         var speech = false
         var placements = 0
         var notPlaced: String? = null
+        var agentProblem: String? = null
         val placedLegs = mutableListOf<Leg>()
         val reattached = mutableListOf<String>()
         val traits =
@@ -231,6 +232,7 @@ class CallTaskCoordinatorTest {
                 speechDetector = { if (detectsSpeech) CallSpeechDetector { speech } else null },
                 nowMillis = { 42 },
                 listenInByDefault = { listenInByDefault },
+                agentUnavailableReason = { agentProblem },
             )
 
         val ownerRegistry = CapabilityRegistry(CallCapabilities.backends(coordinator), CallCapabilities.definitions)
@@ -1385,6 +1387,17 @@ class CallTaskCoordinatorTest {
             val result = h.ownerDispatcher.execute(h.start.copy(arguments = h.start.arguments + ("provider" to "whatsapp")))
             assertEquals(InvocationStatus.NOT_EXECUTED, result.status)
             assertEquals("This phone has no 'whatsapp' call route; it has fake. No call was placed.", result.message)
+            assertTrue(h.journal.records.isEmpty())
+            assertEquals(0, h.placements)
+        }
+
+    @Test fun aCallAgentThatCannotOpenRejectsTheStartBeforeAnythingIsDialed() =
+        runTest {
+            val h = Harness(this)
+            h.agentProblem = "Sign in to OpenAI."
+            val result = h.ownerDispatcher.execute(h.start)
+            assertEquals(InvocationStatus.NOT_EXECUTED, result.status)
+            assertEquals("Sign in to OpenAI.", result.message)
             assertTrue(h.journal.records.isEmpty())
             assertEquals(0, h.placements)
         }

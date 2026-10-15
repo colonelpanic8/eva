@@ -86,6 +86,8 @@ class CallTaskCoordinator(
      * task closes exactly as it would have without the window.
      */
     private val claimWindowMillis: Long = WRAP_UP_AFTER_END_MILLIS,
+    /** Why no call agent could be opened right now; checked before dialing so no call connects to an agent that cannot speak. */
+    private val agentUnavailableReason: suspend () -> String? = { null },
 ) : ExecutionBackend {
     private val sessions = java.util.concurrent.ConcurrentHashMap<String, Running>()
     private val recoveryJobs = mutableMapOf<String, Job>()
@@ -201,7 +203,7 @@ class CallTaskCoordinator(
 
     fun owns(turnId: String): Boolean = tasks.value.values.any { it.turnId == turnId && !it.state.terminal }
 
-    override suspend fun unavailableReason(): String? = providers.unavailableReason()
+    override suspend fun unavailableReason(): String? = agentUnavailableReason() ?: providers.unavailableReason()
 
     override suspend fun execute(arguments: Map<String, String>) =
         ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "A call task needs an owning conversation turn.")
