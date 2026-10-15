@@ -36,6 +36,14 @@ build:
 install:
     adb install -r app/build/outputs/apk/debug/app-debug.apk
 
+# Build the emulator, Android 36 Play image and gRPC Python the call test beds use.
+emulator-tools:
+    nix build --impure -f experiments/call-audio/whatsapp/emulator.nix --argstr repo "git+file://$PWD" sdk python -o build/eva-emulator
+
+# Drive EVA Debug on its test emulator: up, wait, install, signin, twilio-config, call, call-test, collect, record, demo.
+eva-emulator *args:
+    build/eva-emulator-1/bin/python3 experiments/call-audio/emulator/eva_emulator.py "$@"
+
 # Build a fail-closed signed release for MAJOR.MINOR.PATCH.
 release version:
     ./scripts/build-release.sh {{version}}
@@ -51,6 +59,10 @@ fdroid-changelogs *args:
 # Replace the shipped prompt and tool wording with the instruction catalog's current files.
 prompt-sync catalog="":
     for file in eva-prompt.yaml eva-wording.yaml; do if [ -n "$1" ]; then cp "$1/$file" "eva-core/src/main/resources/$file"; else curl -fsSL "https://raw.githubusercontent.com/colonelpanic8/eva-instructions/main/$file" -o "eva-core/src/main/resources/$file"; fi; done
+
+# Drive delegated phone calls on the test phone (run, demo, calls, status...); see experiments/call-audio/README.md.
+phone *args:
+    experiments/call-audio/phone/phone "$@"
 
 # Build the self-hosted F-Droid repository; see docs/operations.md.
 fdroid-repo:

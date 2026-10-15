@@ -285,6 +285,139 @@ class ConfigurationCompositionTest {
     }
 
     @Test
+    fun `call agent turn detection round trips composes per field and rejects values the API refuses`() {
+        val defaults =
+            com.colonelpanic.eva.call
+                .CallAgentTuning()
+        val base = fullConfiguration()
+        val tuned = defaults.copy(vadThreshold = 0.75, vadSilenceMillis = 1_200)
+        val expected = base.copy(capabilities = base.capabilities.copy(callAgent = tuned))
+        val baseDocument = EvaConfigurationCodec.complete(base)
+        val encoded = EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(expected))
+        assertTrue(encoded.contains("vadSilenceMillis: 1200"))
+        assertEquals(expected, EvaConfigurationCodec.resolve(reader(mapOf(EvaConfigurationCodec.FILE_NAME to encoded))).configuration)
+        assertEquals(
+            defaults,
+            EvaConfigurationCodec
+                .resolve(
+                    reader(
+                        mapOf(
+                            EvaConfigurationCodec.FILE_NAME to
+                                EvaConfigurationCodec.encode(
+                                    baseDocument.copy(capabilities = baseDocument.capabilities!!.copy(callAgent = null)),
+                                ),
+                        ),
+                    ),
+                ).configuration.capabilities.callAgent,
+        )
+        val override = EvaConfigurationCodec.overrides(expected, baseDocument, listOf("base.yaml"))
+        assertEquals(CapabilitiesPatch(callAgent = CallAgentPatch(vadThreshold = 0.75, vadSilenceMillis = 1_200)), override.capabilities)
+        val silenceOnly =
+            EvaConfigurationDocument(
+                include = listOf("base.yaml"),
+                capabilities = CapabilitiesPatch(callAgent = CallAgentPatch(vadSilenceMillis = 600)),
+            )
+        assertEquals(
+            tuned.copy(vadSilenceMillis = 600),
+            EvaConfigurationCodec
+                .resolve(
+                    reader(
+                        mapOf(
+                            EvaConfigurationCodec.FILE_NAME to EvaConfigurationCodec.encode(silenceOnly),
+                            "base.yaml" to encoded,
+                        ),
+                    ),
+                ).configuration.capabilities.callAgent,
+        )
+        for (invalid in listOf("vadThreshold: 1.5", "vadThreshold: -0.1", "vadSilenceMillis: -1", "vadPrefixPaddingMillis: -5")) {
+            val error =
+                assertThrows(IllegalArgumentException::class.java) {
+                    EvaConfigurationCodec.decode("format: eva\nversion: 3\ncapabilities:\n  callAgent:\n    $invalid\n")
+                }
+            assertTrue(error.message, error.message!!.startsWith("capabilities.callAgent:"))
+        }
+        assertEquals(
+            30_000,
+            EvaConfigurationCodec
+                .decode("format: eva\nversion: 3\ncapabilities:\n  callAgent:\n    vadSilenceMillis: 30000\n")
+                .capabilities!!
+                .callAgent!!
+                .materialize()
+                .vadSilenceMillis,
+        )
+    }
+
+    @Test
+    fun `listening in on new calls defaults off round trips when turned on and composes`() {
+        val base = fullConfiguration()
+        assertFalse(base.capabilities.callAgent.listenInByDefault)
+        // A file written before the setting existed has no such key and must not start listening in.
+        assertFalse(
+            EvaConfigurationCodec
+                .decode("format: eva\nversion: 3\ncapabilities:\n  callAgent:\n    vadThreshold: 0.7\n")
+                .capabilities!!
+                .callAgent!!
+                .materialize()
+                .listenInByDefault,
+        )
+        val on = base.copy(capabilities = base.capabilities.copy(callAgent = base.capabilities.callAgent.copy(listenInByDefault = true)))
+        val encoded = EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(on))
+        assertTrue(encoded.contains("listenInByDefault: true"))
+        assertEquals(on, EvaConfigurationCodec.resolve(reader(mapOf(EvaConfigurationCodec.FILE_NAME to encoded))).configuration)
+        assertEquals(
+            CapabilitiesPatch(callAgent = CallAgentPatch(listenInByDefault = true)),
+            EvaConfigurationCodec.overrides(on, EvaConfigurationCodec.complete(base), listOf("base.yaml")).capabilities,
+        )
+        val thresholdOnly =
+            EvaConfigurationDocument(
+                include = listOf("base.yaml"),
+                capabilities = CapabilitiesPatch(callAgent = CallAgentPatch(vadThreshold = 0.8)),
+            )
+        val composed =
+            EvaConfigurationCodec
+                .resolve(
+                    reader(mapOf(EvaConfigurationCodec.FILE_NAME to EvaConfigurationCodec.encode(thresholdOnly), "base.yaml" to encoded)),
+                ).configuration.capabilities.callAgent
+        assertTrue(composed.listenInByDefault)
+        assertEquals(0.8, composed.vadThreshold, 0.0)
+    }
+
+    @Test
+    fun `unverified WhatsApp route defaults off and its choice restores and composes`() {
+        val base = fullConfiguration()
+        assertFalse(base.capabilities.callAgent.whatsAppEnabled)
+        // A file written before the setting existed has no such key and must not start WhatsApp calling.
+        assertFalse(
+            EvaConfigurationCodec
+                .decode("format: eva\nversion: 3\ncapabilities:\n  callAgent:\n    vadThreshold: 0.7\n")
+                .capabilities!!
+                .callAgent!!
+                .materialize()
+                .whatsAppEnabled,
+        )
+        val on = base.copy(capabilities = base.capabilities.copy(callAgent = base.capabilities.callAgent.copy(whatsAppEnabled = true)))
+        val encoded = EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(on))
+        assertTrue(encoded.contains("whatsAppEnabled: true"))
+        assertEquals(on, EvaConfigurationCodec.resolve(reader(mapOf(EvaConfigurationCodec.FILE_NAME to encoded))).configuration)
+        assertEquals(
+            CapabilitiesPatch(callAgent = CallAgentPatch(whatsAppEnabled = true)),
+            EvaConfigurationCodec.overrides(on, EvaConfigurationCodec.complete(base), listOf("base.yaml")).capabilities,
+        )
+        val thresholdOnly =
+            EvaConfigurationDocument(
+                include = listOf("base.yaml"),
+                capabilities = CapabilitiesPatch(callAgent = CallAgentPatch(vadThreshold = 0.8)),
+            )
+        val composed =
+            EvaConfigurationCodec
+                .resolve(
+                    reader(mapOf(EvaConfigurationCodec.FILE_NAME to EvaConfigurationCodec.encode(thresholdOnly), "base.yaml" to encoded)),
+                ).configuration.capabilities.callAgent
+        assertTrue(composed.whatsAppEnabled)
+        assertEquals(0.8, composed.vadThreshold, 0.0)
+    }
+
+    @Test
     fun `verbose logging round trips composes and is absent from files that leave it off`() {
         val base = fullConfiguration()
         assertFalse(base.diagnostics.verboseLogging)
@@ -737,6 +870,39 @@ class ConfigurationCompositionTest {
         assertTrue(failure(mapOf("whatsapp" to MessagingBridgeDefinition("WhatsApp", "http://bridge.example"))).contains("HTTPS origin"))
         assertTrue(failure(mapOf("whatsapp" to MessagingBridgeDefinition("WhatsApp", "$origin/api"))).contains("HTTPS origin"))
         assertTrue(failure(emptyMap(), base.credentials.required + valid).contains("does not belong to a configured bridge"))
+    }
+
+    @Test
+    fun `call keypad credentials round-trip as labelled references and reject malformed ones`() {
+        val base = fullConfiguration()
+        val reference = SecretReference("call/bank/pin", "call-keypad", label = "Bank PIN")
+
+        fun encoded(credentials: List<SecretReference>) =
+            EvaConfigurationCodec.encode(
+                EvaConfigurationCodec.complete(
+                    base.copy(credentials = EvaConfiguration.Credentials(base.credentials.required + credentials)),
+                ),
+            )
+
+        fun failure(credential: SecretReference): String =
+            assertThrows(IllegalArgumentException::class.java) {
+                EvaConfigurationCodec.resolve(reader(mapOf(EvaConfigurationCodec.FILE_NAME to encoded(listOf(credential)))))
+            }.message.orEmpty()
+
+        val text = encoded(listOf(reference))
+        assertTrue(text, text.contains("  - id: call/bank/pin\n    kind: call-keypad\n    label: Bank PIN\n"))
+        val resolved = EvaConfigurationCodec.resolve(reader(mapOf(EvaConfigurationCodec.FILE_NAME to text))).configuration
+        assertTrue(reference in resolved.credentials.required)
+        assertEquals(text, EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(resolved)))
+        assertTrue(failure(reference.copy(label = null)).contains("each needs one"))
+        assertTrue(failure(reference.copy(label = " ")).contains("Invalid label"))
+        assertTrue(failure(reference.copy(id = "call/Bank PIN")).contains("Invalid call credential reference"))
+        assertTrue(failure(reference.copy(kind = "http-bearer")).contains("kind does not match"))
+        assertTrue(failure(reference.copy(endpoint = "https://bank.example")).contains("does not use an endpoint"))
+        assertTrue(
+            failure(SecretReference("messaging/whatsapp/bearer", "http-bearer", "https://bridge.example.ts.net", "WhatsApp"))
+                .contains("Only call keypad credentials take a label"),
+        )
     }
 
     @Test

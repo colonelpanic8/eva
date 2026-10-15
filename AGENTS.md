@@ -90,6 +90,7 @@ Both use the same package names. Paths below are relative to those roots:
 | Declarative package parsing/import/execution | `adapters/declarative/` |
 | Native phone operations | `adapters/android/` |
 | Messaging UI, reply access, remembered numbers | `ui/settings/MessagingScreen.kt`, `data/MessagingSettings.kt`, `data/ChosenNumbers.kt` |
+| Delegated phone calls, call card, call engine and transports | `call/`, `ui/CallCard.kt`, `adapters/android/CallEngine.kt`, `EngineCallLeg.kt`, `HelperCallLeg.kt`, `InAppAudioPath.kt`, `CellularCallProvider.kt`, `WhatsAppCallProvider.kt`, `TwilioCallProvider.kt` |
 | Media apps as per-app extensions | `adapters/android/MediaAdapter.kt`, `adapters/android/AndroidMediaApps.kt` |
 | Portable configuration, composition, restore | `data/configuration/` |
 | Managed Git checkout, validation, sync | `data/configuration/ManagedGitRepository.kt`, `EvaConfigurationManager.kt` |

@@ -1076,6 +1076,553 @@ paths have JVM coverage. These do not establish real-world walking/cycling rejec
 watch-to-phone latency, Bluetooth/audio routing, keyguard startup or screen-off
 reliability. See [watch setup and verification](operations.md#wear-os-watch-companion).
 
+## Delegated phone call tasks
+
+`com.colonelpanic.eva.call` implements the platform-neutral call-task boundary,
+verified with JVM fakes. Android registers `eva.call.start`, `.status`, `.instruct`,
+`.floor`, `.listen`, and `.cancel`, and composes the provider registry (cellular, then
+WhatsApp, then Twilio; see the [call engine](#android-call-engine-and-transports)) with
+`OpenAiCallAgentBrainFactory`. `eva.call.start` takes an optional `provider`; without
+it the first available route places the call. An unknown or unavailable route is
+rejected naming the routes the phone has or why the chosen one cannot call, and nothing
+is journaled or dialed. With more than one route, the start tool's description lists
+them (the `call-providers` wording note). A provider that is certain it dialed nothing
+throws `CallNotPlaced`; the task ends NotAccomplished with that reason and the leg
+Ended FAILED, instead of an uncertain setup failure. Live cellular calls are
+device-verified on the owner's Pixel 11 Pro Fold against the NIST time line and the
+Twilio test hotline. Started with the phone locked and its screen off
+(`CallTaskLiveTest`, no UI), a NIST call task dialed, heard the announcement, finished
+and hung up; the dialer's in-call screen lit the display over the lock screen for the
+call, so screen-off operation itself is not shown. No speech detector
+is connected: HOLD stays advisory and the brain keeps listening. Credential DTMF
+resolves the owner's saved call keypad credentials (below).
+
+`CallTaskCoordinator` owns a thread/turn's long-running start action independently
+of the owner's EVA attachment. Separate state machines describe:
+
+- Task: Briefing → Dialing → InCall → WrappingUp → Accomplished (transcript item
+  refs, resolved from IDs or quotes, and attributed claim), NotAccomplished, Uncertain, or Interrupted (possibly with
+  an Uncertain outcome). Claims are never independent verification.
+- Leg: provider-only Placing, Ringing, Connected (with precise call-state,
+  inferred-downlink or provider-assertion answer evidence), and Ended with cause.
+  Goodbye and `finish` cannot end it; `hang_up` journals a request, not an observed end.
+  The agent's hang-up goes through once its queued speech has played or been cleared
+  (`LocalPcm.awaitAgentAudioPlayed`): tools arrive with the completed response, before the
+  real-time uplink has played the goodbye spoken in it. An owner cancel hangs up at once.
+  A `hang_up` before any `finish` is not executed: the task ends with the leg, so the
+  outcome would be lost (seen on the device). The next `finish` hangs up instead.
+  When the leg ends with no outcome while the agent has the floor (the Twilio hotline
+  hung up right after goodbye), the task stays WrappingUp: the brain alone is told the
+  call ended, so a callback seeded from the transcript is not told to finish, and it has
+  30 s to `finish`. Without one the task ends NotAccomplished. Agent audio and captions
+  after the end are dropped: nobody heard them.
+- Advisory phase: IVR, HOLD, HUMAN, TRANSFERRING, VERIFYING, UNKNOWN; no authority.
+- Floor: AGENT, OWNER, AGENT_STALLING, MUTED. `ownerSpeechStarted` cancels model
+  output and queued local uplink audio before journal I/O, then routes the owner
+  microphone. `ownerTranscript` supplies OWNER_TO_REMOTE text context. Handback is
+  explicit; whispers and monitoring never acquire the speaking floor.
+- Brain attachment/replacement and owner monitoring are independent of the leg.
+
+The restricted `eva.call.agent.*` catalog is `dtmf`, `ask_owner`, `commit`,
+`report_phase`, `keep_listening`, `hang_up`, `finish`. These run through `CapabilityDispatcher`, the
+shared invocation journal and CALL_AGENT provenance. The brain receives no general
+owner catalog or memory. Mandates are exact owner-approved commitment identifiers;
+anything outside that set becomes an owner question requiring the exact answer
+`approved`. Disclosures and calling `commit` before binding speech are instructions:
+core cannot inspect arbitrary generated audio for agreements. A production brain
+must honor these controls. All stock instructions/descriptions live in
+`eva-wording.yaml`; the local additions still need upstreaming to the instruction
+catalog before publication.
+
+The agent introduces itself as calling on behalf of `callBrief.onBehalfOf`, the person it
+represents by name. EVA keeps no profile of its owner, so `eva.call.start` takes an optional
+`onBehalfOf` that the main agent fills from what it knows (memory, the conversation); without
+it the instructions use the account holder's name from the goal and never say "the owner"
+aloud. By deliberate invariant the agent does not announce up front that it is an AI, but
+when the other party sincerely asks it never denies it: it answers briefly and honestly and
+continues (`CallAgentInstructionsTest` checks the shipped wording). It never speaks about its
+own tools, steps or state; everything it says is addressed to the other party, it answers
+every direct question or request (saying it does not have or cannot share something rather
+than staying silent), reads back critical values before finishing, and never reads out the
+owner's whispers or answers.
+
+`dtmf` takes one ordered `sequence` of string steps so an IVR entry needs no model
+turn between keys: keys (`"1"`, `"4417#"`), waits (`"wait:2s"`, `"wait:1500ms"`) and
+credential references (`"credential:bank/pin"`). Separate items keep keys and pauses
+unambiguous within EVA's scalar-array input schema. Every step is parsed and every
+credential resolved before anything is sent; A–D need `dtmfLetterKeys` in the
+traits. The coordinator presses key by key outside the task lock while the brain's
+pending tool keeps it silent. Owner takeover, mute, cancellation or the leg ending
+stops it between keys or mid-wait, and the receipt names exactly the steps sent, why
+it stopped and the provider's sending method; the dispatch survives task teardown so
+that receipt is journaled. Each step becomes a DTMF transcript item, credentials only
+as `[credential <ref>]`. Length and waits are unbounded.
+
+Call keypad credentials are account numbers and PINs the owner saves under **Messaging →
+Call keypad credentials**: a reference (`bank/pin`, lowercase letters and digits split by
+`-`, `_`, `.` or `/`), a label, and a value of digits, `*` and `#`. `CallCredentialSettings`
+keeps the value only in the encrypted `SecretStore`; the reference and label are portable
+(see [call keypad credentials](#call-keypad-credentials)). The settings screen masks
+entry and never shows a saved value; a blank value keeps the saved one. At connection
+time EVA appends the saved references and labels to `eva.call.start`'s description (the
+`call-credentials` wording note), and the main agent names the ones a call needs in its
+optional `credentials` parameter. Start resolves each named credential before placing the
+call, so an unknown reference, a reference whose value this phone lacks, or a value that
+is not keypad keys is rejected with no call placed, naming the credential and where the
+owner sets it. The brief carries only references and labels (`callBrief.credentials`), and
+`dtmf` accepts only those: another reference, even a saved one, is rejected before any key
+is sent, so remote speech cannot steer the agent into entering an unrelated secret. Each
+`dtmf` call resolves again, so a value removed mid-call fails the same way. Values never
+enter the journal, transcript, brief, tool results or invocations; the call agent cannot
+speak them, only enter them on the keypad.
+JVM tests cover the store, the configuration round trip and restore report, start and
+keypad rejection, and the privacy of a sent credential through the coordinator. On the
+device: adding and removing one in the settings screen, and a model-driven call to the
+Twilio hotline entering it on the account prompt (Gather `Digits="4417"`) while EVA's
+transcript, journal, invocations and logs show only `[credential test/account]`; the
+hotline's spoken read-back of the digits was redacted to `[credential]` too. Android's
+autofill (Bitwarden) offered to handle the masked value field.
+
+`ask_owner` reuses ordered, one-shot question records and composer/voice answers,
+with connected-call urgency. It withholds the tool result in the same brain while
+AGENT_STALLING; multiple questions retain that floor until all resolve, and an
+owner takeover remains in force. Recovery interrupts unanswered questions. Speakers
+are REMOTE, AGENT, OWNER_TO_REMOTE, OWNER_TO_AGENT, SYSTEM_IVR and DTMF;
+REMOTE/SYSTEM_IVR carry `contentTrust: external_data`. Stable transcript IDs
+prevent replay duplicates. AGENT events describe completed generation; cancelled
+response captions are suppressed, and a caption does not establish that queued
+playback was heard by the remote party. `ThreadCallTaskJournal` stores structured
+CALL_TASK thread records holding the task and only the transcript items the thread
+does not already hold (`transcriptFrom`); a record is complete on its own when first
+written in a process, when the task state changes, and every 32 records. Records from
+before this format are whole snapshots and still fold. Recovery folds every record;
+the thread projection folds a call onto its `eva.call.start` entry, and history tells
+each call once, at its latest record, with the number of earlier transcript items a
+bounded read could not include. Running work labels call turns PHONE_CALL, holds
+ON_HOLD, and shows the call's summary.
+
+A cellular implementation plugs in `CallProvider` (traits, availability, placement,
+reattachment), `CallLeg` (state/events, DTMF, hang-up, owner microphone and monitoring
+routes), and `CallMedia.LocalPcm` (PCM16 mono remote frames at 8–48 kHz, agent frames,
+queued-audio cancellation). `PlaceCallRequest.legId` is journaled before dialing;
+providers must use it as the stable idempotency/reattachment identity even after a
+lost placement reply. A provider whose media a hosted model reaches directly (SIP or Twilio
+Media Streams) would use `CallMedia.ModelHosted.sidebandSessionId` and its own owner
+conference/monitor routes; EVA's [Twilio route](#twilio-provider) is `LocalPcm`, since the
+SDK hands the media to EVA. Traits expose caller ID (whether it is the owner's, and the
+number when a provider knows it), locked support, process survival and any connected-duration
+limit to owner status and brain requests. Core adds no call-duration timeout.
+
+### Android call engine and transports
+
+Every Android call provider is one `CallEngine` (`adapters/android/CallEngine.kt`)
+composed with a `CallTransport`. The engine is written once; a transport supplies only
+what differs between ways of calling. Transports belong to one of two media families, which
+decide where the call's audio meets EVA:
+
+- `HelperAudioTransport` (cellular, WhatsApp): Android carries the call through Telecom, and
+  EVA reaches its audio by redirecting it through the Shizuku call-audio helper.
+- `InAppAudioTransport` (Twilio): an SDK in EVA's own process carries the call and hands EVA
+  its media as PCM. No Telecom call, no Shizuku, no redirection; the call ends with EVA's
+  process.
+
+| Member | Family | Meaning |
+| --- | --- | --- |
+| `id`, `traits` | both | Route name for `eva.call.start.provider`, and `CallProviderTraits` (keypad, caller ID, locked support, process survival) |
+| `lostCheck`, `unavailableReason()` | both | What the owner checks when EVA loses a call; transport readiness (a permission, an app, its configuration) |
+| `redirect` | helper | `PSTN` or `VOIP`: which platform audio redirection applies |
+| `dial(number, helper)` | helper | Start the call; throw `CallNotPlaced` when certain nothing was dialed |
+| `owns(call, number)` | helper | Which Telecom calls are this transport's, and which dials `number` |
+| `observer()` | helper | A per-call `CallObserver` turning plain `CallSignals` into `LegObservation`s |
+| `needsCallControl`, `grantNote`, `recoveryDoubt(signals)` | helper | Whether its calls can be followed only through Telecom; receipt wording; why recovery cannot tell whether a live call is this transport's |
+| `dial(number)` → `InAppCall` | in-app | Start the call; the `InAppCall` reports `LegObservation`s, presses keys, hangs up and carries the SDK's `SdkAudioPort` |
+| `busy()` | in-app | Whether the transport already has a call in EVA's process |
+
+`CallSignals` is the audio mode, telephony's precise call states, the transport's
+Telecom call (state, disconnect cause, removed) and the time since dialing, so observers
+are pure and JVM-tested. `CallEngine.telecomObservation` maps a Telecom call to leg
+observations for any transport that is followed through Telecom.
+
+The engine does the rest. For both families: refusing emergency numbers and placing while
+another call is live (the audio mode is IN_CALL, Telecom shows a live call, or an in-app
+transport is busy); and one leg, `EngineCallLeg`. `LegStateTracker` (`:eva-core`) folds the
+route's polled observations (every 300 ms) into Placing → Ringing → Connected (with answer
+evidence) → Ended with cause; losing sight of the call ends the leg FAILED with the
+transport's check, or LOCAL_HANGUP after a hang-up request, and an explicit FAILED cause stays
+FAILED rather than reading as no answer. The leg opens a `CallAudioPath` when the call is
+first live, delivers the other party's frames, paces queued agent audio and in-band tones
+into the uplink at real time (`PacedUplink`, `:eva-core`), applies the floor's microphone
+routing, plays the other party locally when the owner would not otherwise hear them, runs
+listen-in (gating the agent's input while it plays when capture can hear EVA's playback; see
+the call card below), records the agent's input and the uplink for demos in debuggable
+builds when the phone tool asks (`CallAudioCapture`), and on the end releases audio and
+playback.
+
+For helper transports the engine also checks availability (Android 13, then the transport,
+then Shizuku and the helper, and PSTN interception for `PSTN`); allows `MANAGE_ONGOING_CALLS`
+before dialing (refusing to dial when a transport needs it and it cannot be allowed); finds
+the leg's Telecom call (the one dialing the number, else the transport's only call that was
+not live before dialing, kept once found); presses keys through Telecom DTMF with an in-band
+fallback, refused for a transport without a keypad; hangs up through `Call.disconnect`, else
+the helper's end-call key; and recovers (`reattach` builds a leg only for a live
+observation). Its `HelperAudioPath` reads and writes the helper's socket and routes the
+microphone by redirect mode, below. An in-app transport needs none of that: its readiness is
+its own, recovery never finds its calls, and its `InAppAudioPath` drives the SDK's audio
+device on EVA's clock, below.
+
+What stays per transport, and why: dialing (Telecom `placeCall`, an app's own entry point,
+or an SDK's connect), recognizing its calls (a cellular call is the non-self-managed one
+dialing the number; WhatsApp's are self-managed calls on WhatsApp's phone account), and
+reading state (cellular uses telephony's precise call state, which device verification relied
+on; WhatsApp's only signal is its Telecom connection; Twilio's are the SDK's call events). The
+redirect mode is a property of the platform route, not of code: it decides what the owner
+hears and how floor routing works, below.
+
+`CallRedirect.PSTN` taps the call at the telephony HAL: the owner keeps hearing the other
+party and the injection is mixed with the phone's microphone, so the agent's floor mutes
+that microphone (global `AudioManager` mute). `CallRedirect.VOIP` registers an audio
+policy loopback (AOSP `AudioRecord.buildCallExtractionRecord` and
+`AudioTrack.buildCallInjectionTrack`, chosen when the audio mode is IN_COMMUNICATION):
+playback with USAGE_VOICE_COMMUNICATION goes **only** to EVA (loop-back, not render), so
+the owner stops hearing the other party, and any VOICE_COMMUNICATION capture reads the
+injection, which **replaces** the app's microphone. The engine therefore plays the other
+party on the call's communication device, and the owner's floor releases the injection
+track so the app hears the real microphone again; the agent's floor recreates it.
+Because the loopback captures any voice-communication playback, EVA's own playback is
+pinned to that device with `setPreferredDevice`, which AOSP routes around the loopback.
+The platform releases a VoIP redirection when the audio mode leaves IN_COMMUNICATION.
+
+`InAppAudioPath` redirects nothing. EVA is the SDK's audio device (`SdkAudioPort`, 24 kHz
+mono PCM16 in 10 ms chunks): it pulls the other party on its own real-time clock, padding
+with silence while the SDK is not rendering, and pushes each paced uplink frame as two
+chunks. The owner hears the other party only through EVA's local playback (the call's
+communication device, else the earpiece), and nothing EVA plays reaches the SDK's capture,
+so no listen-in gate runs and the other party can always interrupt the agent. With the owner on the floor the phone's microphone
+(VOICE_COMMUNICATION capture, so the platform removes the other party's playback) is mixed
+into the uplink, saturating rather than wrapping; with the agent on the floor it is closed.
+
+### Twilio provider
+
+`TwilioCallProvider` is the engine with `TwilioTransport`, an in-app transport over the
+Twilio Voice Android SDK (6.10.4): a VoIP call from EVA to Twilio, which dials the phone
+network. It needs no Shizuku, no telephony audio interception and no Telecom call, so it works
+on stock Android and on an emulator. `TwilioAudioDevice` replaces the SDK's microphone and
+speaker with EVA's `SdkAudioPort`; the SDK's own echo cancellation, gain control and noise
+suppression are off, since the uplink is synthesized speech or tones.
+
+To place a call the transport normalizes the destination to E.164 (refusing a number it
+cannot, such as a short code), mints an access token on the phone (`TwilioAccessToken`,
+`:eva-core`: HS256 over the owner's API key, byte-identical to Twilio's server library, one
+hour, identity `eva`, only an outgoing grant for one TwiML app, so it cannot receive calls)
+and connects with the `To` parameter. The owner's TwiML app must dial `To` from the caller
+ID with `answerOnBridge`, so the SDK's call stays ringing until the other party answers
+(`experiments/call-audio/twilio/dial.js` does, and rejects EVA's call as busy when the line
+was). State comes from the SDK's `Call.Listener`: ringing is Live, connected is Live with
+PROVIDER_ASSERTION evidence, reconnecting stays live, and a failure or disconnect is Gone with
+the SDK's code, message and explanation as detail. Busy and busy-everywhere are BUSY. A 603
+Decline names no cause: an unanswered SDK call ends that way whenever the TwiML hangs up,
+which `dial.js` does both after no answer and after Twilio failed to place the dialed call
+(error 13227 when the account's geo permissions do not allow the country), so the detail says
+the console's notifications tell which. Temporarily unavailable is NO_ANSWER; a connection, signalling or media failure is
+DROPPED once answered and FAILED before; access-token, authorization, application and
+destination errors are FAILED. `dial` waits up to 15 s for the first event, and a token,
+authorization or application refusal before ringing throws `CallNotPlaced`: Twilio refused
+before running the TwiML that dials. Keys go out one at a time with `Call.sendDigits` (RFC
+2833, 400 ms per key) once the call is answered; hang-up is `Call.disconnect`. The SDK refuses
+to connect without the RECORD_AUDIO permission even though it never opens the microphone, so
+availability asks for it. Its log level is lowered to errors: at its default it logs every
+ICE candidate, the phone's public address included.
+
+Traits: a keypad without A–D, not the owner's caller ID, the configured caller ID as
+`callerId` (shown on the call card), does not survive EVA's process (the SDK's call dies with
+it; recovery treats the task as interrupted and Twilio ends the orphaned call), and claimed to
+work locked: nothing needs an Activity, audio is EVA's own playback and capture, and the
+owner's microphone is opened only on takeover, which needs EVA's foreground service as any
+background capture does. Locked use is not verified.
+
+Configuration: `capabilities.twilioCalls` holds `accountSid`, `twimlAppSid` and `callerId`
+(E.164; a Twilio number or verified caller ID), with a `provider/twilio-calls` reference of
+kind `twilio-api-key` in `credentials.required`; validation requires the two together. The
+API key SID and secret are saved only in the encrypted `SecretStore` under **Settings > Phone
+call agent > Twilio calls**, where a blank key keeps the saved one. A restored configuration
+keeps the route and reports the missing key as setup still required. Removing the route
+forgets the key.
+
+The SDK is a proprietary binary under Twilio's terms of service (see
+[operations](operations.md#twilio-voice-sdk)). It adds about 42 MB of native libraries across
+four ABIs, 11.7 MB for arm64, and the `ACCESS_WIFI_STATE` and `MODIFY_AUDIO_SETTINGS`
+permissions its manifest declares.
+
+Verification: token minting against Twilio's Python library, the transport's readiness,
+E.164 normalization, refusals, event mapping, keypad gating and hang-up with a fake SDK, the
+in-app path's pacing and mixing, the engine's in-app leg (state, remote frames, agent uplink,
+owner-microphone mixing on the floor, hang-up), and the configuration and restore round trip
+are JVM-tested. On an Android 36 emulator (`experiments/call-audio/emulator`): the settings
+screen saving the route and key, and a call task over the route with well-formed fake
+credentials, where the SDK's native library loaded, connected to Twilio's signalling with the
+custom audio device, and Twilio's refusal (20103) ended the task "No call was placed". With the
+owner's real resources, a first call's dial failed with 13227 (US not yet enabled in the account's
+geo permissions). After that, on the emulator against the Twilio hotline: connected calls with
+audio both ways, the hotline's Gather receiving `Digits="1"` from the agent's `dtmf` (RFC 2833
+through `sendDigits`), the agent's spoken name and account number, its question and its goodbye;
+hold music heard and sat through with `keep_listening`; the main agent choosing the twilio route
+from a typed request; listen-in playing both sides on the emulator's speaker; and both a remote
+hang-up and the agent's own hang-up ending the leg. Not yet verified: busy and no-answer through
+`dial.js`, owner takeover with the microphone mixed in, locked use, and a physical phone.
+
+### WhatsApp provider
+
+This unverified route is disabled by default. Settings → Phone call agent exposes an
+explicit **WhatsApp calling (unverified)** switch, persisted and restored as
+`capabilities.callAgent.whatsAppEnabled`. Enabling it takes effect for the next call.
+
+`WhatsAppTransport` calls a saved contact whose WhatsApp row WhatsApp has synced: it
+finds the `vnd.android.cursor.item/vnd.com.whatsapp.voip.call` data row whose account
+ID (`<digits>@s.whatsapp.net`) equals the destination in E.164, and the helper opens it
+with `am start` as shell, which may start activities while EVA is in the background.
+Without such a contact the call is refused, saying how to fix it. WhatsApp registers its
+calls with Telecom as self-managed connections (public reports; not yet seen on this
+phone), so `CallControlService` declares `INCLUDE_SELF_MANAGED_CALLS` and, with the
+`MANAGE_ONGOING_CALLS` app op, sees and disconnects them; this also binds the service for
+the owner's own WhatsApp calls, which it only tracks. The provider needs that app op and
+refuses to dial without it. A call that has not appeared in Telecom 45 s after dialing
+ends the leg FAILED, saying WhatsApp may be waiting on a screen or calling without EVA.
+Traits: no keypad (the agent's `dtmf` is rejected before anything is sent and the call
+card says "no keypad"), the owner's WhatsApp identity, survives EVA's process, not
+claimed to work locked. Recovery refuses to guess when a VoIP call is live but Telecom
+shows no WhatsApp call.
+
+Verification: the observers, account-number parsing and engine refusals, hang-up,
+keypad gating, recovery and loss handling are JVM-tested with a fake helper
+(`CallEngineTest`). Nothing WhatsApp-specific is device-verified yet: whether the row
+intent dials without a confirmation screen, whether it works locked, the self-managed
+Telecom call, the VoIP extraction and injection on the Pixel, the owner hearing the
+other party through EVA's playback, the pinned playback staying out of the loopback, and
+microphone handback on takeover.
+
+### Cellular provider and the owner's call card
+
+`CellularCallProvider` is the engine with `CellularTransport`: it places an ordinary
+call on the owner's line through Telecom and reaches its audio through a Shizuku helper
+running as shell, which holds CALL_AUDIO_INTERCEPTION: a TELEPHONY_RX downlink capture
+and a USAGE_CALL_ASSISTANT uplink injection at 24 kHz, carried over one socket. The owner hears the other party
+natively. The coordinator applies the floor's microphone routing at every live leg
+state, since telephony can reset mute: with the agent on the floor the phone's
+microphone is muted to the remote party (global `AudioManager` microphone mute); OWNER
+opens it. The leg clears the mute when the call ends. On handback, when no owner speech
+reached the transcript (cellular has no owner-speech capture), the agent is told it
+missed what the owner said.
+
+Before dialing, the provider allows EVA the `MANAGE_ONGOING_CALLS` app op through
+that helper (once; the DTMF receipt says so). While the op is allowed, Telecom binds EVA's non-UI
+`CallControlService` alongside the owner's dialer for **every** call, which also
+starts EVA's process for calls it did not place; the service only tracks the calls.
+The op applies only to calls added after it is allowed, and reinstalling the app can
+reset it, in which case the next placement grants it again. Keys go out with
+`Call.playDtmfTone`/`stopDtmfTone` (250 ms on, 150 ms gap), which Telephony sends as
+the network's out-of-band DTMF; hang-up uses `Call.disconnect`. When the service is not
+bound for the leg, keys fall back to in-band tones in the uplink (160 ms on, 120 ms
+gap, returning only once played), and the receipt says they were in-band and that
+many systems, Twilio included, ignore them. Without Shizuku the provider is
+unavailable and nothing is bound.
+
+Device-verified on the owner's Pixel 11 Pro Fold (Android 17): call audio (the NIST
+time line heard, injected speech recognized by the Twilio test hotline); Telecom
+binding the service after the Shizuku grant, and IMS `startDtmf`; Twilio Gather
+recognizing `Digits="1"` from a single key, and `Digits="1"` then `"4417"` from one
+`dtmf` sequence (`wait:12s, 1, wait:3s, credential, #`) sent through the coordinator
+by a scripted brain (`CellularDtmfLiveTest`); and model-driven call tasks started from
+EVA Debug's composer that pressed 1 at the hotline menu with `dtmf` (`Digits="1"`), spoke
+the name and account, stayed silent through hold, asked the hours and finished with them
+as quoted evidence. Not yet device-verified: in-band fallback on a live call. Call state
+still comes from polling, not Telecom, and the polled disconnect cause is gone once the
+call ends (`-1`), so a remote hang-up after an answer is recorded as DROPPED rather than
+REMOTE_HANGUP (the NIST line's 3-minute cut-off and the hotline's goodbye both were);
+Telecom's `DisconnectCause` through `CallControlService` would tell them apart.
+
+Each call shows as a card on its start entry: number, task state, leg state with
+elapsed time, floor and advisory phase, the agent's pending questions (answered through
+the composer), a speaker-attributed transcript (credential keypad entries show their
+reference, never digits), and the outcome presented as the agent's claim with the
+transcript lines it cites. Take over / Hand back, Listen in, Whisper and Hang up run
+`ThreadController.callControl`, which proposes the owner capability to the shared
+dispatcher with an OWNER_CONTROL initiator and needs no EVA connection; a control that
+does not complete is shown in the provider message. Whisper routes the composer to
+`eva.call.instruct` until the owner returns it to EVA.
+
+The card shows the agent's words as it speaks, whether or not the owner listens in. The
+brain streams `response.output_audio_transcript.delta` as `CallBrainEvent.Caption`s, and
+remote `input_audio_transcription.delta`s when the transcription model sends them
+(otherwise remote lines appear once transcribed). `CallTaskCoordinator.captions` holds
+them in memory, apart from the journaled snapshot: a caption is provisional, so it never
+reaches the journal, callback seeds or outcome evidence, and the finalized transcript
+item with the same ID replaces it. An agent utterance cancelled before its response
+completes (barge-in, takeover, a lost session, the call ending) stays on the card,
+italic and marked "cut off", rather than disappearing or being recorded as said in full.
+The model writes the transcript faster than the paced uplink plays the audio, so a
+caption can run slightly ahead of the voice; and playback cleared after a response
+completed is not marked, since its final item already exists.
+
+Listening in plays the injected uplink (agent speech and keypad tones) on a local
+USAGE_VOICE_COMMUNICATION track routed with the call. It is off for new calls by default
+(portable `capabilities.callAgent.listenInByDefault`, the "Listen in on new calls"
+switch under Settings → Phone call agent; a configuration without the field resolves to
+off), and the card's Listen in turns it on or off for that call; playback starts when the
+leg connects. The track sits on the call's voice output, so it follows the call's route:
+on the device it moved from the earpiece to the speaker when the owner switched the call
+to speaker (AudioFlinger output devices); Bluetooth and wired headsets were not available
+to test.
+
+On the Pixel the TELEPHONY_RX capture includes that playback: PSTN extraction is a HAL
+capture, not the framework loopback mix used for VoIP, so no playback attribute excludes
+it, and the agent heard and answered itself. While listen-in plays, the cellular monitor
+therefore silences the agent's input wherever echo of its playback may be (until 1 s
+after it stops); with listen-in off nothing is gated and the agent hears everything
+(`EvaCallMonitor` logs which applies). The cost of listening in is that the other party
+cannot interrupt the agent while it speaks, which is why it is off by default.
+
+`CallEchoCanceller` still runs during listen-in, for its logged measurements only. It
+works against the exact samples the track accepted: a 1 kHz envelope cross-correlation
+finds the bulk delay, a 256-tap NLMS filter models the path around it, adaptation freezes
+when the capture carries energy the echo model does not explain, playback resuming after
+a silence longer than the longest delay must measure removal again, and silent capture
+only counts as "no leak" once a full delay has elapsed. On the Pixel it reached only
+0–21 dB of removal on NIST calls. When its output was passed to the agent, the residual
+at an 18 dB threshold reached the brain as a remote "Eight." while the agent counted
+aloud; on a Twilio call a residual after a 25 dB pass was detected as remote speech and
+cut the agent off mid-sentence twice (the hotline heard only "I'm an AI assistant calling
+on behalf"); and an agent turn that began with a stale delay passed as echo-free until
+its late echo arrived. Listening in without losing barge-in remains open: it needs much
+better removal on this path, or a capture point that excludes the local playback.
+
+Verification: the incremental journal, folding, projection, control dispatch, mic
+routing and the canceller (linear paths at 40–600 ms, delay shifts, unmodellable paths
+and double talk) are JVM-tested. On the device: the card and its controls, default mute,
+takeover unmute and handback re-mute (read from `dumpsys audio`), whisper, hang-up
+recorded as an owner cancel, mute cleared after the call, the earpiece routing of the
+monitor and its move to the speaker, the leak, and the silence gate removing it; that the
+other party hears the agent while the owner's microphone is muted (Twilio Gather
+recognized the agent's speech with `dumpsys audio` showing the API mute in every sample
+while connected); listen-in on with no self-echo (no agent text came back as
+REMOTE once the gate decided, and the agent's whole utterances reached the uplink and the
+hotline); and the canceller's measurements, which show it converging only intermittently
+(0–21 dB) on that phone. Not verified on the device: owner speech after takeover; live
+captions; and that with listen-in off (now the default) no gate engages. The last two are
+JVM-tested and pending one NIST run (`just phone run nist-listen --install`; see the
+call-audio README for what to check).
+`experiments/call-audio/phone` reruns these device scenarios and records demos; see the
+[call-audio README](../experiments/call-audio/README.md).
+
+`OpenAiCallAgentBrainFactory.open(CallBrainRequest)` implements a direct GA
+Realtime WebSocket using `OpenAiAccess.authorize`, including subscription token
+refresh/account headers. Its endpoint is the public `/v1/realtime?model=...`, derived
+from the access object's realtime base; it never switches payment modes. Android
+uses the existing portable realtime-model setting. The 24 kHz mono PCM16
+little-endian stream is resampled incrementally to/from the leg's rate. The brain
+does **no playback pacing**: `LocalPcm.sendAgentFrame` must promptly enqueue bursts,
+and the provider must pace its uplink at the advertised sample rate and clear all
+queued audio on `cancelAgentAudio`. Capture supplies real-time downlink frames.
+
+The brain uses server VAD with `create_response: false` and `interrupt_response: true`.
+Its tuning is portable `capabilities.callAgent`: `vadThreshold` (default 0.6, 0.0–1.0),
+`vadPrefixPaddingMillis` (300, the API default) and `vadSilenceMillis` (800); the
+milliseconds must not be negative and have no maximum. Each field composes separately
+across includes and restores with the other capability settings; Settings → Phone call
+agent edits the threshold and silence with sliders, and the file accepts values outside
+them. Each brain reads the values when it opens, so a change applies to the next call or
+brain replacement, not to a live session. Replaying a captured NIST time-line downlink
+offline, the 0.5/500 ms API defaults committed ten tick/noise segments in 85 s at +12 dB;
+the stock values commit four and keep the spoken announcement one turn at both levels,
+at the cost of 300 ms more end-of-turn delay. `semantic_vad` with low eagerness dropped
+the announcement. Committed remote speech triggers an explicit
+`response.create`; metadata correlates late responses with their originating
+output epoch. EVA requests a response only for a new committed remote segment, a
+non-quiet tool result, an owner whisper or an owner handback; a replacement brain
+responds only when its seeded transcript ends with such input that no quiet tool
+answered. The voice model, which hears the audio, decides whether a segment needs
+a reply: for noise, hold music, recordings and announcements not waiting for it, it
+calls the quiet `keep_listening` instead of speaking. Quiet results never prompt another
+response, so an idle line cannot loop: `keep_listening` always, `report_phase`
+beside speech or another tool, and a completed `finish` whose response also spoke (on a
+Twilio call, answering that receipt made the agent narrate the outcome aloud; a rejected
+`finish` or one made without speech still prompts a reply). A phase report on its own is answered, since on the
+device the agent reported IVR alone, was never asked to act, and the menu timed out.
+Once a `hang_up` completes the brain requests no further responses, since the agent
+otherwise answered its own `finish` and `hang_up` results by reading the time aloud.
+Transcription is recorded for context and evidence but never gates a response. OWNER/MUTED/AGENT_STALLING suppress new inference. Tool continuation
+waits for all withheld results; explicit owner handback requests continuation
+without requiring another remote utterance. Preemption sends `response.cancel`,
+discards buffered/late audio, and requests provider queue clearing through
+`CallBrainEvent.OutputCancelled`. Remote barge-in clears playback without acquiring
+the owner's floor. Tools are released only after an uncancelled completed response.
+
+Session configuration and all attributed seeds are acknowledged before PCM starts.
+Stock instructions/tool descriptions come from wording; brief/traits and transcript
+JSON are user-role data messages, with explicit speaker/ID/contentTrust. Remote
+captions also supply their IDs as text context for outcome evidence references.
+
+A response starts on the committed segment, usually before its caption (and ID)
+exists, so `finish.evidence` takes item IDs or quotes. An entry equal to an item ID
+cites that item. Any other entry is a quote: it cites every spoken or keyed item (not
+SYSTEM_IVR records, whose tool receipts echo the agent's own arguments) containing it
+on word boundaries, ignoring case, punctuation, spacing and where word breaks fall inside
+the quote, since the model quotes what it heard rather than the caption's formatting (on
+a Twilio call it cited the caption "It's 22:34." as "it's 2234"). A quote no single item
+holds may span a run of consecutive items by one speaker (a caption split mid-sentence),
+citing each item it touches; a leading speaker label is ignored. A paraphrase, words from
+different speakers, or words nobody said match nothing, and the whole `finish` is rejected
+with no outcome recorded; the rejection names each such entry and the two items sharing
+the most words with it, with their IDs and exact text, so the agent can retry with IDs.
+The receipt lists each entry as `id` or `quote` with the items it resolved to; the outcome
+keeps the claim separate from those item IDs. While the task is open, a later `finish`
+replaces the recorded claim (the call can still correct a reference) and its receipt
+says so; the same claim again changes nothing and says that. After the task ends no claim
+is accepted. The
+brain also holds a response's tool calls when they include `finish` until every remote
+segment committed so far has a caption (or a transcription failure), so a quote of the
+latest utterance resolves; the pending tool keeps the agent silent. A caption that never
+arrives releases them after 10 s, and the coordinator then rejects anything unmatched.
+Completed tool receipts enter the durable transcript before result delivery, so
+replacement can reseed an owner answer/action receipt even if its original socket
+has disconnected. Normal session close, transport loss and session-expiry errors
+emit an attributed diagnostic and `Expired`; the coordinator replaces the brain
+without redial, deferring replacement while an owner question/tool result is pending.
+Intentional detach does not expire the brain. Initial authentication/configuration
+failures still fail setup explicitly. See the [GA Realtime WebSocket guide](https://developers.openai.com/api/docs/guides/realtime-websocket).
+
+Hosted sideband media needs a separate brain implementation. Local HOLD still gates
+PCM, detaches after tool-result delivery, and resumes through the injected
+`CallSpeechDetector` with a sample-accurate two-second pre-roll. Hosted HOLD gating
+belongs to its remote implementation. `CallCredentialResolver` privately resolves
+DTMF references; matching later captions are redacted in core. Local monitoring
+exposes the remote side as `ownerAudio` for providers whose owner does not hear it
+natively; no host plays it, since the Android engine plays the other party itself where
+the owner would not hear them (VoIP redirection and in-app calls). Replay tests use
+sanitized event shapes from the working Python experiment and a fake WebSocket:
+no live calls, tokens or provider requests are involved.
+
+A call often ends on the other side's schedule: the far end says goodbye and hangs up while
+the agent is still speaking, before it has had a turn to call `finish` (seen on the Twilio
+hotline). When the leg ends while the agent is attached, the owner did not cancel and no outcome
+is claimed yet, the task stays open for `claimWindowMillis` (30 s): the brain gets EVA's
+`call-ended-claim` note (`CallAgentBrain.callEnded`, which also clears a remote speech turn that
+will never end) and one response request, `finish` is accepted with the usual evidence rules,
+and the task then closes exactly as it would have. The stock instructions also tell the agent
+to call `finish` before its goodbye and `hang_up`.
+
+Drops around pending/accepted commitments or incomplete verification are Uncertain,
+naming what is unknown, with no redial. A callback is a new owner-approved task:
+`previousTaskId` seeds an ended same-thread call's transcript and reference numbers,
+while mandate/disclosures are fresh. Recovery reattaches hosted or process-surviving
+legs, requests hang-up and tracks asynchronous end evidence. Missing providers or
+unconfirmed hang-ups remain explicitly Uncertain and require provider intervention.
+Local PCM tasks are Interrupted with an Uncertain outcome for pending/accepted
+commitments. JVM tests cover these transitions, receipts, question ordering and
+interruption, transcript persistence/trust, preemption, credential redaction, brain
+replacement, pre-roll, callback seeds, owner-attachment independence, and keypad
+sequences: step order and waits in virtual time, stopping on takeover or leg end
+with partial receipts, credential privacy, and rejection before sending.
+
 ## Memory
 
 EVA exposes bundled `eva.memory.search`, `eva.memory.save`, `eva.memory.learn`, and
@@ -1450,7 +1997,7 @@ The schema separates these groups:
 | `services.http` | Named HTTPS origins with optional scoped local credential references |
 | `extensions` | Grants bound to exact identity, digest, and mutation names |
 | `spotify` | Public client ID |
-| `credentials` | Required scoped secret references and endpoints, never credential values |
+| `credentials` | Required scoped secret references and endpoints, and labelled call keypad credential references, never credential values |
 | `remembered` | Saved number-choice preferences |
 | `device` | Desired device authorizations to check on the destination |
 | `wearGesture` | Watch enablement, axis, rates, timing, angular excursion, dominance and acceleration rejection thresholds |
@@ -1590,6 +2137,43 @@ Changing the approved origin changes the package digest and grant boundary.
 Dawarich is an optional catalog package, not a shipped default, because each user
 must configure a personal reachable HTTPS origin and API key. Its HTTP and
 configuration paths have JVM coverage; this does not establish phone verification.
+
+### Call keypad credentials
+
+A call keypad credential is a `credentials.required` entry with ID `call/<reference>`,
+kind `call-keypad`, a `label`, and no endpoint. Only these entries take a label. Every
+credential saved under **Messaging → Call keypad credentials** is written, whether or
+not this device holds its value, and removing one there removes its entry. Restoring
+the configuration restores the references and reports each value this device lacks
+as setup still required, naming the credential and where to enter it:
+
+```yaml
+credentials:
+  required:
+  - id: call/bank/pin
+    kind: call-keypad
+    label: Bank PIN
+```
+
+The value is entered on each device and stored only in the encrypted secret store.
+
+### Twilio call route
+
+The [Twilio call route](#twilio-provider) is `capabilities.twilioCalls` plus its API key
+reference; the key itself is entered on each device and stored only in the encrypted secret
+store. The two must appear together:
+
+```yaml
+capabilities:
+  twilioCalls:
+    accountSid: <Twilio account SID>
+    twimlAppSid: AP0123456789abcdef0123456789abcdef
+    callerId: "+15592493930"
+credentials:
+  required:
+  - id: provider/twilio-calls
+    kind: twilio-api-key
+```
 
 ### Restore and edit contract
 

@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.conversation
 
+import com.colonelpanic.eva.call.terminal
 import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.capability.InvocationRecord
 import com.colonelpanic.eva.capability.InvocationStatus
@@ -26,6 +27,10 @@ fun projectEntries(
     val requests = mutableMapOf<String, String>()
     val answers = mutableMapOf<String, MutableList<String>>()
     val built = mutableMapOf<String, ConversationEntry>()
+    val calls =
+        com.colonelpanic.eva.call
+            .CallTaskFold()
+    val callParents = mutableMapOf<String, String?>()
 
     /** Later input within a turn, by entry id, with the turn it belongs to. */
     val followUps = mutableMapOf<String, Pair<String, String>>()
@@ -126,10 +131,34 @@ fun projectEntries(
             }
 
             is ThreadItem.Notice -> {
-                place(item.id)
-                built[item.id] = ConversationEntry(item.id, "", item.text, EntryStatus.SESSION)
+                val task = if (item.kind == NoticeKind.CALL_TASK) runCatching { calls.add(item.text).task }.getOrNull() else null
+                if (task != null) {
+                    place(task.id)
+                    if (task.id !in callParents) callParents[task.id] = turnId?.let { segments[it] ?: it }
+                } else if (item.kind == NoticeKind.CALL_TASK) {
+                    place(item.id)
+                    built[item.id] = ConversationEntry(item.id, "", "A call task record could not be read.", EntryStatus.SESSION)
+                } else {
+                    place(item.id)
+                    built[item.id] = ConversationEntry(item.id, "", item.text, EntryStatus.SESSION)
+                }
             }
         }
+    }
+    // A call card is its start action's entry; one whose action is not listed stands in its place.
+    for (folded in calls.values) {
+        val task = folded.task
+        built[task.id] =
+            built[task.id]?.copy(callTask = task)
+                ?: ConversationEntry(
+                    task.id,
+                    "",
+                    "",
+                    if (task.state.terminal) EntryStatus.ANSWER else EntryStatus.DISPATCHING,
+                    capabilityId = com.colonelpanic.eva.call.CallCapabilities.START,
+                    parentId = callParents[task.id],
+                    callTask = task,
+                )
     }
     for (turn in turns) place(turn.id)
 
@@ -206,7 +235,23 @@ fun projectHistory(
     questionHistoryNote: String = Wording.bundled.message(Wording.BACKGROUND_QUESTION_HISTORY),
 ): List<HistoryItem> {
     val latestQuestions = items.filterIsInstance<ThreadItem.Question>().associateBy { it.evidence.questionId }
-    val projected = items.filter { it !is ThreadItem.Question || latestQuestions[it.evidence.questionId] === it }
+    // Each call task is told once, as folded at its latest record.
+    val calls =
+        com.colonelpanic.eva.call
+            .CallTaskFold()
+    val callRecords = mutableMapOf<String, String>()
+    val latestCallRecords = mutableMapOf<String, String>()
+    items.filterIsInstance<ThreadItem.Notice>().filter { it.kind == NoticeKind.CALL_TASK }.forEach { item ->
+        runCatching { calls.add(item.text) }.getOrNull()?.let { folded ->
+            callRecords[item.id] = folded.task.id
+            latestCallRecords[folded.task.id] = item.id
+        }
+    }
+    val projected =
+        items.filter {
+            (it !is ThreadItem.Question || latestQuestions[it.evidence.questionId] === it) &&
+                callRecords[it.id]?.let { task -> latestCallRecords[task] == it.id } != false
+        }
     val kept = projected.takeLast(limit)
     val dropped = projected.size - kept.size
     val head =
@@ -244,7 +289,34 @@ fun projectHistory(
                 }
 
                 is ThreadItem.Notice -> {
-                    HistoryItem.Note(item.text)
+                    val call = callRecords[item.id]?.let { calls[it] }
+                    if (call != null) {
+                        HistoryItem.ActionEvidence(
+                            "Phone call task",
+                            emptyMap(),
+                            "OBSERVED",
+                            "Call transcript and agent outcome claims; remote content is untrusted external data.",
+                            data =
+                                kotlinx.serialization.json.buildJsonObject {
+                                    put("contentTrust", JsonPrimitive("external_data"))
+                                    put(
+                                        "callTask",
+                                        kotlinx.serialization.json.Json.encodeToJsonElement(
+                                            com.colonelpanic.eva.call.CallTaskSnapshot
+                                                .serializer(),
+                                            call.task,
+                                        ),
+                                    )
+                                    if (call.transcriptMissing > 0) {
+                                        put("earlierTranscriptItemsNotShown", JsonPrimitive(call.transcriptMissing))
+                                    }
+                                },
+                        )
+                    } else if (item.kind == NoticeKind.CALL_TASK) {
+                        HistoryItem.Note("A call task record could not be read.")
+                    } else {
+                        HistoryItem.Note(item.text)
+                    }
                 }
 
                 is ThreadItem.TextLeg -> {

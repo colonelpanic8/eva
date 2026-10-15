@@ -6,7 +6,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 
 @Serializable
-enum class QuestionSource { TEXT_AGENT, DEVICE_TASK }
+enum class QuestionSource { TEXT_AGENT, DEVICE_TASK, CALL_AGENT }
 
 @Serializable
 enum class QuestionResolution { PENDING, SUBMITTING, ACCEPTED, FAILED, CANCELLED, INTERRUPTED }

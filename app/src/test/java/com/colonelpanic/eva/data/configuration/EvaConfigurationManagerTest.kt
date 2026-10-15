@@ -21,6 +21,7 @@ import org.eclipse.jgit.api.Git
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -286,6 +287,9 @@ class EvaConfigurationManagerTest {
                         EvaConfiguration.Capabilities(
                             screenControl = false,
                             stallPeriodSeconds = 420,
+                            callAgent =
+                                com.colonelpanic.eva.call
+                                    .CallAgentTuning(vadThreshold = 0.7, vadPrefixPaddingMillis = 200, vadSilenceMillis = 1_000),
                             webResearch =
                                 com.colonelpanic.eva.web.WebResearchConfiguration(
                                     enabled = false,
@@ -363,6 +367,7 @@ class EvaConfigurationManagerTest {
             assertFalse(app.capabilities.screenControlEnabled)
             assertEquals(target.capabilities.webResearch, app.capabilities.webResearch)
             assertEquals(420, app.capabilities.stallPeriodSeconds)
+            assertEquals(target.capabilities.callAgent, app.capabilities.callAgent)
             assertTrue(app.diagnostics.verboseLogging)
             assertTrue(app.messagingSettings.state.value.enabled)
             assertEquals(setOf(LIVE_REPLY), app.messagingSettings.state.value.replies)
@@ -704,6 +709,99 @@ class EvaConfigurationManagerTest {
             assertTrue(removed.messaging.bridges.isEmpty())
             assertTrue(removed.credentials.required.none { it.id.startsWith("messaging/") })
         }
+
+    @Test
+    fun `restored call credentials keep their references and ask this device for their values`() =
+        runBlocking {
+            val baseline = app.configuration.snapshotForTest()
+            val reference = SecretReference("call/comcast/account", "call-keypad", label = "Comcast account number")
+            val restored = baseline.copy(credentials = EvaConfiguration.Credentials(baseline.credentials.required + reference))
+            val folder = MemoryDirectory(EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(restored)))
+            val manager = EvaConfigurationManager(app)
+            val loaded = manager.attachForTest(folder) as LinkedConfigurationResult.Loaded
+            val needed =
+                "Enter the value of call credential Comcast account number (comcast/account) under Messaging > Call keypad credentials."
+            assertTrue(loaded.setupRequired.toString(), needed in loaded.setupRequired)
+            assertEquals(mapOf("comcast/account" to "Comcast account number"), app.callCredentials.state.value)
+            assertEquals(setOf("comcast/account"), app.callCredentials.missingValues())
+
+            // Without a value on this device the reference still travels, so another device is told to provision it.
+            app.appearance.saveDynamicColor(!baseline.appearance.dynamicColor)
+            manager.localChangeForTest()
+            assertTrue(
+                reference in
+                    EvaConfigurationCodec
+                        .resolve(folder)
+                        .configuration.credentials.required,
+            )
+
+            // A credential defined here travels as its reference and label only.
+            app.callCredentials.save("bank/pin", "Bank PIN", "")
+            manager.localChangeForTest()
+            assertTrue(
+                SecretReference("call/bank/pin", "call-keypad", label = "Bank PIN") in
+                    EvaConfigurationCodec
+                        .resolve(folder)
+                        .configuration.credentials.required,
+            )
+
+            app.callCredentials.remove("comcast/account")
+            app.callCredentials.remove("bank/pin")
+            manager.localChangeForTest()
+            assertTrue(
+                EvaConfigurationCodec
+                    .resolve(folder)
+                    .configuration.credentials.required
+                    .none { it.id.startsWith("call/") },
+            )
+        }
+
+    @Test
+    fun `a restored Twilio route keeps its key reference and asks this device for the key`() =
+        runBlocking {
+            val baseline = app.configuration.snapshotForTest()
+            val route = TwilioCallsConfiguration("AC" + "a".repeat(32), "AP" + "c".repeat(32), "+15592493930")
+            val reference = SecretReference("provider/twilio-calls", "twilio-api-key")
+            val restored =
+                baseline.copy(
+                    capabilities = baseline.capabilities.copy(twilioCalls = route),
+                    credentials = EvaConfiguration.Credentials(baseline.credentials.required + reference),
+                )
+            val text = EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(restored))
+            assertTrue(text, "twimlAppSid: AP" in text && "kind: twilio-api-key" in text)
+            val folder = MemoryDirectory(text)
+            val manager = EvaConfigurationManager(app)
+            val loaded = manager.attachForTest(folder) as LinkedConfigurationResult.Loaded
+            assertTrue(
+                loaded.setupRequired.toString(),
+                "Enter the Twilio API key for calls under Settings > Phone call agent > Twilio calls." in loaded.setupRequired,
+            )
+            assertEquals(route, app.twilioCalls.configuration())
+
+            app.appearance.saveDynamicColor(!baseline.appearance.dynamicColor)
+            manager.localChangeForTest()
+            val saved = EvaConfigurationCodec.resolve(folder).configuration
+            assertEquals(route, saved.capabilities.twilioCalls)
+            assertTrue(reference in saved.credentials.required)
+
+            app.twilioCalls.remove()
+            manager.localChangeForTest()
+            val removed = EvaConfigurationCodec.resolve(folder).configuration
+            assertNull(removed.capabilities.twilioCalls)
+            assertTrue(removed.credentials.required.none { it.id == "provider/twilio-calls" })
+        }
+
+    @Test
+    fun `a Twilio route and its key reference must be configured together`() {
+        val baseline = runBlocking { app.configuration.snapshotForTest() }
+        val route = TwilioCallsConfiguration("AC" + "a".repeat(32), "AP" + "c".repeat(32), "+15592493930")
+        val orphan = baseline.copy(capabilities = baseline.capabilities.copy(twilioCalls = route))
+        val error =
+            runCatching {
+                EvaConfigurationCodec.resolve(MemoryDirectory(EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(orphan))))
+            }.exceptionOrNull()
+        assertTrue(error?.message.orEmpty(), error?.message.orEmpty().contains("provider/twilio-calls credential requirement"))
+    }
 
     private fun com.colonelpanic.eva.data.PortablePackageSettings.configuration() =
         EvaConfiguration.Packages(repositories, installed, waitMillis, services, serviceBindings)

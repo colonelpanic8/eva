@@ -1,0 +1,63 @@
+{
+  "name": "Test Company",
+  "start": "menu",
+  "answer_prompt": "Connecting your test call.",
+  "greeting": "Thanks for calling Test Company.",
+  "recording_notice": "This is a recorded test line.",
+  "recording_failure": "Call recording is unavailable. Your menu and speech responses will still be saved for this test.",
+  "empty_reply": "I did not receive a response.",
+  "voice": "alice",
+  "language": "en-US",
+  "hold_segment_seconds": 12,
+  "nodes": {
+    "menu": {
+      "type": "gather",
+      "input": "dtmf speech",
+      "numDigits": 1,
+      "timeout": 12,
+      "speechTimeout": 3,
+      "hints": "billing, support",
+      "prompt": "For billing press 1 or say billing. For support press 2 or say support.",
+      "next": "verification",
+      "empty": "end"
+    },
+    "verification": {
+      "type": "gather",
+      "input": "dtmf speech",
+      "timeout": 15,
+      "speechTimeout": 3,
+      "prompt": "Please enter or say the account number, followed by the pound key.",
+      "next": "hold",
+      "empty": "end"
+    },
+    "hold": {
+      "type": "hold",
+      "interjection": "Your call is important to us.",
+      "next": "representative"
+    },
+    "representative": {
+      "type": "gather",
+      "input": "speech",
+      "timeout": 15,
+      "speechTimeout": 3,
+      "prompt": "Thanks for waiting, this is the test representative. How can I help?",
+      "reply": "Test Company is open Monday through Friday, nine A M to five P M Pacific time.",
+      "next": "anything_else",
+      "empty": "end"
+    },
+    "anything_else": {
+      "type": "gather",
+      "input": "speech",
+      "timeout": 12,
+      "speechTimeout": 3,
+      "prompt": "Is there anything else?",
+      "end_pattern": "\\b(no|nope|nothing|all set|that is all|that's all|goodbye)\\b",
+      "next": "representative",
+      "empty": "end"
+    },
+    "end": {
+      "type": "end",
+      "prompt": "Thank you for calling Test Company. Goodbye."
+    }
+  }
+}

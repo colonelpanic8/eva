@@ -138,6 +138,7 @@ dependencies {
     implementation(libs.shizuku.api)
     implementation(libs.shizuku.provider)
     implementation(libs.webrtc)
+    implementation(libs.twilio.voice)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     testImplementation(libs.androidx.compose.ui.test.junit4)

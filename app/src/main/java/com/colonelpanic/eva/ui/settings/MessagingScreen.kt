@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -28,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -78,6 +80,8 @@ fun MessagingScreen(
             NotificationMessagingSection(state, actions)
             SettingsDivider()
             MessagingBridgesSection(state, actions)
+            SettingsDivider()
+            CallCredentialsSection(state, actions)
             SettingsDivider()
             RememberedNumbersSection(state, actions)
             Spacer(Modifier.height(24.dp))
@@ -290,6 +294,123 @@ private fun BridgeEditor(
 }
 
 /**
+ * Account numbers and PINs a delegated phone call can enter on a menu's keypad. The reference and
+ * label travel with the configuration; the value is saved on this phone only and never shown again,
+ * so a restored credential shows up here asking for it.
+ */
+@Composable
+private fun CallCredentialsSection(
+    state: SettingsUiState,
+    actions: SettingsActions,
+) {
+    SettingsSection("Call keypad credentials") {
+        SettingsBlock {
+            SettingsNote(
+                "When EVA delegates a phone call, the call agent can type these into a phone menu by reference without " +
+                    "seeing them. Values stay on this phone.",
+            )
+        }
+        state.callCredentials.forEach { (reference, label) ->
+            CallCredentialEditor(reference, label, reference in state.callCredentialsNeedingValue, actions)
+        }
+        CallCredentialEditor(null, null, false, actions)
+    }
+}
+
+@Composable
+private fun CallCredentialEditor(
+    reference: String?,
+    savedLabel: String?,
+    needsValue: Boolean,
+    actions: SettingsActions,
+) {
+    var name by remember(reference) { mutableStateOf(reference.orEmpty()) }
+    var nameEdited by remember(reference) { mutableStateOf(false) }
+    var label by remember(reference, savedLabel) { mutableStateOf(savedLabel.orEmpty()) }
+    var value by remember(reference) { mutableStateOf("") }
+    var error by remember(reference) { mutableStateOf<String?>(null) }
+    var expanded by rememberSaveable(reference) { mutableStateOf(needsValue) }
+    ExpandableSettingsRow(
+        title = if (reference == null) "Add a credential" else savedLabel ?: reference,
+        supporting =
+            when {
+                reference == null -> null
+                needsValue -> "A value is needed on this phone"
+                else -> "$reference · value saved"
+            },
+        supportingIsError = needsValue,
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+    ) {
+        SettingsBlock {
+            OutlinedTextField(
+                label,
+                {
+                    label = it
+                    if (reference == null && !nameEdited) name = referenceFor(it)
+                },
+                label = { Text("Label") },
+                supportingText = { Text("What it is, such as Bank PIN") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (reference == null) {
+                OutlinedTextField(
+                    name,
+                    {
+                        name = it
+                        nameEdited = true
+                    },
+                    label = { Text("Reference") },
+                    supportingText = { Text("How EVA names it, such as bank/pin; it cannot change later") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            OutlinedTextField(
+                value,
+                { value = it },
+                label = { Text(if (reference == null || needsValue) "Value" else "New value") },
+                supportingText = {
+                    Text(if (reference == null || needsValue) "Digits, * and # only" else "Blank keeps the saved one")
+                },
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, autoCorrectEnabled = false),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            error?.let { SettingsNote(it, error = true) }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = {
+                    error = actions.onSaveCallCredential(reference ?: name, label, value)
+                    if (error == null) {
+                        value = ""
+                        if (reference == null) {
+                            name = ""
+                            nameEdited = false
+                            label = ""
+                            expanded = false
+                        }
+                    }
+                }) { Text(if (reference == null) "Add" else "Save") }
+                if (reference != null) {
+                    TextButton(onClick = { actions.onRemoveCallCredential(reference) }) { Text("Remove") }
+                }
+            }
+        }
+    }
+}
+
+/** A starting reference from a label: "Comcast account number" becomes comcast-account-number. */
+private fun referenceFor(label: String): String =
+    label
+        .lowercase()
+        .replace(Regex("[^a-z0-9]+"), "-")
+        .trim('-')
+        .take(64)
+        .trimEnd('-')
+
+/**
  * The one messaging leftover that outlives a conversation, so it is forgettable from here. Only
  * the number and when it was reached are held, never a name or anything that was said.
  */
@@ -335,6 +456,8 @@ private fun MessagingPreview() {
                             replies = setOf("signal"),
                             bridges = mapOf("whatsapp" to MessagingBridgeDefinition("WhatsApp", "https://bridge.example.ts.net")),
                         ),
+                    callCredentials = mapOf("bank/pin" to "Bank PIN", "comcast-account" to "Comcast account number"),
+                    callCredentialsNeedingValue = setOf("comcast-account"),
                     messagingBridgeChecks = mapOf("whatsapp" to "Bridge state: connected. Transport connected, phone responsive."),
                     messagingApps =
                         listOf(

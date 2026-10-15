@@ -17,6 +17,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -46,6 +47,7 @@ import com.colonelpanic.eva.diagnostics.AndroidDiagnostics
 import com.colonelpanic.eva.providers.openai.ModelKind
 import com.colonelpanic.eva.ui.EvaApp
 import com.colonelpanic.eva.ui.HandsFreeSurface
+import com.colonelpanic.eva.ui.LocalCallCaptions
 import com.colonelpanic.eva.ui.VoiceAccessModel
 import com.colonelpanic.eva.ui.VoiceStart
 import com.colonelpanic.eva.ui.about.AboutInfo
@@ -275,6 +277,8 @@ class MainActivity : ComponentActivity() {
         val bridgeCredentialRevision by eva.messagingSettings.credentialRevision.collectAsStateWithLifecycle()
         val messagingApps by eva.notificationMessages.apps.collectAsStateWithLifecycle()
         val messagingBridgeChecks by eva.bridgeMessaging.checks.collectAsStateWithLifecycle()
+        val callCredentials by eva.callCredentials.state.collectAsStateWithLifecycle()
+        val callCredentialValueRevision by eva.callCredentials.valueRevision.collectAsStateWithLifecycle()
         val rememberedNumbers by eva.chosenNumbers.count.collectAsStateWithLifecycle()
         val memories by eva.memories.state.collectAsStateWithLifecycle()
         val skills by eva.skills.state.collectAsStateWithLifecycle()
@@ -283,6 +287,9 @@ class MainActivity : ComponentActivity() {
         val deviceTask by eva.capabilities.deviceTaskFlow.collectAsStateWithLifecycle()
         val webResearch by eva.capabilities.webResearchFlow.collectAsStateWithLifecycle()
         val webResearchNotice by eva.capabilities.webResearchNoticeFlow.collectAsStateWithLifecycle()
+        val callAgent by eva.capabilities.callAgentFlow.collectAsStateWithLifecycle()
+        val twilioCalls by eva.twilioCalls.state.collectAsStateWithLifecycle()
+        val twilioKeyRevision by eva.twilioCalls.keyRevision.collectAsStateWithLifecycle()
         val screenControl by eva.capabilities.screenControlFlow.collectAsStateWithLifecycle()
         val shizuku by shizukuAccess.collectAsStateWithLifecycle()
         val screenControlStatus by eva.screenControl.status.collectAsStateWithLifecycle()
@@ -342,6 +349,9 @@ class MainActivity : ComponentActivity() {
                         .map { it.split('/')[1] }
                         .toSet()
                 },
+            callCredentials = callCredentials,
+            callCredentialsNeedingValue =
+                remember(callCredentials, callCredentialValueRevision) { eva.callCredentials.missingValues() },
             rememberedNumbers = rememberedNumbers,
             memories = memories,
             skills = skills,
@@ -382,6 +392,9 @@ class MainActivity : ComponentActivity() {
             screenControlEnabled = screenControl,
             webResearch = webResearch,
             webResearchNotice = webResearchNotice,
+            callAgent = callAgent,
+            twilioCalls = twilioCalls,
+            twilioCallsKeySaved = remember(twilioKeyRevision) { eva.twilioCalls.apiKey() != null },
             screenControlStatus = screenControlStatus,
             screenControlRepairing = repairing,
             deviceTask = deviceTask,
@@ -526,6 +539,8 @@ class MainActivity : ComponentActivity() {
                 },
                 onRemoveMessagingBridge = eva.messagingSettings::removeBridge,
                 onCheckMessagingBridge = { name -> lifecycleScope.launch { eva.bridgeMessaging.check(name) } },
+                onSaveCallCredential = { reference, label, value -> save { eva.callCredentials.save(reference, label, value) } },
+                onRemoveCallCredential = eva.callCredentials::remove,
                 onForgetRememberedNumbers = { lifecycleScope.launch { eva.chosenNumbers.forget() } },
                 onKeepMemory = { name -> editMemory { eva.memories.keep(name) } },
                 onForgetMemory = { name -> editMemory { eva.memories.forget(name) } },
@@ -538,6 +553,18 @@ class MainActivity : ComponentActivity() {
                 onScreenControlChange = eva.capabilities::saveScreenControl,
                 onDeviceTaskChange = eva.capabilities::saveDeviceTask,
                 onWebResearchChange = eva.capabilities::saveWebResearch,
+                onCallAgentChange = eva.capabilities::saveCallAgent,
+                onSaveTwilioCalls = { account, app, callerId, keySid, keySecret ->
+                    save {
+                        eva.twilioCalls.save(
+                            com.colonelpanic.eva.data.configuration
+                                .TwilioCallsConfiguration(account.trim(), app.trim(), callerId.filterNot(Char::isWhitespace)),
+                            keySid,
+                            keySecret,
+                        )
+                    }
+                },
+                onRemoveTwilioCalls = eva.twilioCalls::remove,
                 onPortalToken = { token ->
                     eva.capabilities.savePortalToken(token)
                     lifecycleScope.launch { eva.screenControl.refresh() }
@@ -644,6 +671,7 @@ class MainActivity : ComponentActivity() {
             val state by controller.state.collectAsStateWithLifecycle()
             val threads by controller.threads.collectAsStateWithLifecycle()
             val dynamicColor by eva.appearance.dynamicColorFlow.collectAsStateWithLifecycle()
+            val callCaptions by eva.callTasks.captions.collectAsStateWithLifecycle()
             EvaTheme(dynamicColor = dynamicColor) {
                 if (surface.locked) {
                     HandsFreeSurface(
@@ -655,35 +683,38 @@ class MainActivity : ComponentActivity() {
                     )
                     return@EvaTheme
                 }
-                EvaApp(
-                    state = state,
-                    settings = settingsUiState(dynamicColor),
-                    settingsActions = settingsActions(),
-                    prompt = promptUiState(),
-                    promptActions = promptActions(),
-                    about = aboutInfo(),
-                    threads = threads,
-                    tasks = controller.taskSnapshots,
-                    runningWorkRequest = runningWorkRequest,
-                    onStopWork = controller::stopTask,
-                    onForceStopWork = controller::forceStopTask,
-                    onStopAllWork = controller::stopAllTasks,
-                    onShareDiagnostics = ::shareThreadDiagnostics,
-                    onNewThread = controller::newThread,
-                    onShowThread = controller::showThread,
-                    onStopTask = controller::stopTask,
-                    onSubmit = controller::submit,
-                    onAnswer = controller::submitAnswer,
-                    onConnect = { controller.connect(eva.settings.hostLink()) },
-                    onVoice = ::startVoice,
-                    onAssistant = ::showAssistant,
-                    onDisconnect = controller::disconnect,
-                    onToggleMicrophone = controller::toggleMicrophone,
-                    onTogglePlayback = controller::togglePlayback,
-                    denial = voice.denial,
-                    onRetryMicrophone = ::retryMicrophone,
-                    onDismissDenial = ::dismissDenial,
-                )
+                CompositionLocalProvider(LocalCallCaptions provides callCaptions) {
+                    EvaApp(
+                        state = state,
+                        settings = settingsUiState(dynamicColor),
+                        settingsActions = settingsActions(),
+                        prompt = promptUiState(),
+                        promptActions = promptActions(),
+                        about = aboutInfo(),
+                        threads = threads,
+                        tasks = controller.taskSnapshots,
+                        runningWorkRequest = runningWorkRequest,
+                        onStopWork = controller::stopTask,
+                        onForceStopWork = controller::forceStopTask,
+                        onStopAllWork = controller::stopAllTasks,
+                        onShareDiagnostics = ::shareThreadDiagnostics,
+                        onNewThread = controller::newThread,
+                        onShowThread = controller::showThread,
+                        onStopTask = controller::stopTask,
+                        onSubmit = controller::submit,
+                        onAnswer = controller::submitAnswer,
+                        onConnect = { controller.connect(eva.settings.hostLink()) },
+                        onVoice = ::startVoice,
+                        onAssistant = ::showAssistant,
+                        onDisconnect = controller::disconnect,
+                        onToggleMicrophone = controller::toggleMicrophone,
+                        onTogglePlayback = controller::togglePlayback,
+                        denial = voice.denial,
+                        onRetryMicrophone = ::retryMicrophone,
+                        onDismissDenial = ::dismissDenial,
+                        onCallControl = controller::callControl,
+                    )
+                }
             }
         }
         if (!voice.permissionsRequested) {
@@ -730,10 +761,12 @@ class MainActivity : ComponentActivity() {
         eva.intentHost.attach(this) { permission -> capabilityPermission.launch(permission) }
         if (Build.VERSION.SDK_INT >= 37) eva.shizukuShellHost?.attach(this)
         if (Build.VERSION.SDK_INT >= 30) eva.deviceControlHost?.attach(this)
+        if (Build.VERSION.SDK_INT >= 33) eva.callAudioHost?.attach(this)
     }
 
     override fun onPause() {
         eva.intentHost.detach(this)
+        if (Build.VERSION.SDK_INT >= 33) eva.callAudioHost?.detach(this)
         if (Build.VERSION.SDK_INT >= 30) eva.deviceControlHost?.detach(this)
         if (Build.VERSION.SDK_INT >= 37) eva.shizukuShellHost?.detach(this)
         super.onPause()

@@ -717,7 +717,15 @@ class EvaConfigurationManager(
                     }
                 }
             }
-        val credentialRefs = retainedCredentials(observedCredentialRefs, packages, messaging.bridges)
+        // The Twilio route's key reference always travels with the route, whether or not this device holds the key.
+        val twilioRef =
+            app.twilioCalls.configuration()?.let { SecretReference(EvaConfigurationCodec.TWILIO_CALLS_SECRET, TWILIO_KIND) }
+        val credentialRefs =
+            (
+                retainedCredentials(observedCredentialRefs, packages, messaging.bridges)
+                    .filterNot { it.id == EvaConfigurationCodec.TWILIO_CALLS_SECRET } +
+                    callCredentialRefs(app.callCredentials.state.value) + listOfNotNull(twilioRef)
+            ).sortedBy { it.id }
         val liveGrants =
             app.extensions.portableGrants().map { (instance, grant) ->
                 PortableGrant(instance, grant.identityKey, grant.digest, grant.mutations.sorted())
@@ -764,6 +772,8 @@ class EvaConfigurationManager(
                     app.capabilities.deviceTask,
                     app.capabilities.webResearch,
                     app.capabilities.stallPeriodSeconds,
+                    app.capabilities.callAgent,
+                    app.twilioCalls.configuration(),
                 ),
             messaging = EvaConfiguration.Messaging(messaging.enabled, replies, messaging.bridges),
             prompt = EvaConfiguration.Prompt(prompt.source, prompt.config.components),
@@ -890,12 +900,24 @@ class EvaConfigurationManager(
         // A bridge's token reference always travels with the bridge, whether or not this device holds the token.
         val bridgeIds = bridges.keys.map(EvaConfigurationCodec::messagingSecretId).toSet()
         retained.keys.filter { it.startsWith("messaging/") && it !in bridgeIds }.forEach(retained::remove)
+        retained.keys.filter { it.startsWith(EvaConfigurationCodec.CALL_SECRET_PREFIX) }.forEach(retained::remove)
         bridges.forEach { (name, bridge) ->
             val id = EvaConfigurationCodec.messagingSecretId(name)
             retained[id] = SecretReference(id, "http-bearer", bridge.origin)
         }
         return retained.values.sortedBy { it.id }
     }
+
+    /** Every saved call credential travels as its reference and label, whether or not this device holds its value. */
+    private fun callCredentialRefs(labels: Map<String, String>): List<SecretReference> =
+        labels.map { (reference, label) ->
+            SecretReference(EvaConfigurationCodec.callSecretId(reference), EvaConfigurationCodec.CALL_CREDENTIAL_KIND, label = label)
+        }
+
+    private fun EvaConfiguration.Credentials.callCredentialLabels(): Map<String, String> =
+        required
+            .filter { it.kind == EvaConfigurationCodec.CALL_CREDENTIAL_KIND }
+            .associate { it.id.removePrefix(EvaConfigurationCodec.CALL_SECRET_PREFIX) to checkNotNull(it.label) }
 
     private suspend fun applyOrdinary(
         configuration: EvaConfiguration,
@@ -917,10 +939,13 @@ class EvaConfigurationManager(
         app.capabilities.saveDeviceTask(configuration.capabilities.deviceTask)
         app.capabilities.saveWebResearch(configuration.capabilities.webResearch)
         app.capabilities.saveStallPeriodSeconds(configuration.capabilities.stallPeriodSeconds)
+        app.capabilities.saveCallAgent(configuration.capabilities.callAgent)
+        app.twilioCalls.replace(configuration.capabilities.twilioCalls)
         app.spotify.saveClientId(configuration.spotify.clientId.orEmpty())
         app.prompts.restorePortable(configuration.prompt.source, PromptConfig(configuration.prompt.components))
         val notices = app.packageSettings.restore(packages, beforePackagePreferences)
         app.chosenNumbers.replace(configuration.remembered.chosenNumbers)
+        app.callCredentials.replace(configuration.credentials.callCredentialLabels())
         return notices
     }
 
@@ -939,7 +964,21 @@ class EvaConfigurationManager(
         missingMessagingReplies: Set<String>,
     ): List<String> =
         buildList {
+            val missingCallValues = app.callCredentials.missingValues()
             configuration.credentials.required.forEach { reference ->
+                if (reference.kind == EvaConfigurationCodec.CALL_CREDENTIAL_KIND) {
+                    val name = reference.id.removePrefix(EvaConfigurationCodec.CALL_SECRET_PREFIX)
+                    if (name in missingCallValues) {
+                        add("Enter the value of call credential ${reference.label} ($name) under Messaging > Call keypad credentials.")
+                    }
+                    return@forEach
+                }
+                if (reference.id == EvaConfigurationCodec.TWILIO_CALLS_SECRET) {
+                    if (app.twilioCalls.apiKey() == null) {
+                        add("Enter the Twilio API key for calls under Settings > Phone call agent > Twilio calls.")
+                    }
+                    return@forEach
+                }
                 val available =
                     when (reference.id) {
                         "device/portal" -> {
@@ -1098,10 +1137,13 @@ class EvaConfigurationManager(
             app.capabilities.saveDeviceTask(before.capabilities.deviceTask)
             app.capabilities.saveWebResearch(before.capabilities.webResearch)
             app.capabilities.saveStallPeriodSeconds(before.capabilities.stallPeriodSeconds)
+            app.capabilities.saveCallAgent(before.capabilities.callAgent)
         }
+        attempt("Twilio calls") { app.twilioCalls.replace(before.capabilities.twilioCalls) }
         attempt("Spotify client") { app.spotify.saveClientId(before.spotify.clientId.orEmpty()) }
         attempt("packages") { app.packageSettings.restore(before.packages.portable(before.services)) }
         attempt("remembered choices") { app.chosenNumbers.replace(before.remembered.chosenNumbers) }
+        attempt("call credentials") { app.callCredentials.replace(before.credentials.callCredentialLabels()) }
         attempt("messaging") { app.messagingSettings.replace(messagingBefore) }
         attempt("prompt") { app.prompts.rollback(promptBefore) }
         attempt("extension grants") {
@@ -1138,6 +1180,7 @@ class EvaConfigurationManager(
         const val CHATGPT_REF = "provider/chatgpt"
         const val BROKER_REF = "provider/broker"
         const val SPOTIFY_REF = "provider/spotify-account"
+        const val TWILIO_KIND = "twilio-api-key"
     }
 }
 

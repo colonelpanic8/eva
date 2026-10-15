@@ -49,6 +49,10 @@ data class Wording(
 
     companion object {
         const val FILE_NAME = "eva-wording.yaml"
+        const val CALL_AGENT_INSTRUCTIONS = "call-agent-instructions"
+        const val CALL_OWNER_URGENT = "call-owner-urgent"
+        const val CALL_OWNER_UNTRANSCRIBED = "call-owner-untranscribed"
+        const val CALL_ENDED_BEFORE_FINISH = "call-ended-before-finish"
         const val CONTINUATION = "continuation"
         const val HANG_UP_DEFERRED = "hang-up-deferred"
         const val EXTENSION_GUIDANCE = "extension-guidance"
@@ -56,6 +60,8 @@ data class Wording(
         const val ENDS_CALL_IMMEDIATELY = "ends-call-immediately"
         const val ENDS_CALL_AFTER_REPLY = "ends-call-after-reply"
         const val MESSAGING_BRIDGES = "messaging-bridges"
+        const val CALL_CREDENTIALS = "call-credentials"
+        const val CALL_PROVIDERS = "call-providers"
         const val SKILLS = "skills"
         const val SKILL_LOADED = "skill-loaded"
         const val SKILL_UNKNOWN = "skill-unknown"

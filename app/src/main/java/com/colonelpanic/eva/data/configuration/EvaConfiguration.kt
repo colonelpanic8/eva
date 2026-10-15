@@ -9,6 +9,7 @@ import com.colonelpanic.eva.adapters.android.PhoneNumberKey
 import com.colonelpanic.eva.adapters.declarative.PackageCodec
 import com.colonelpanic.eva.adapters.declarative.PluginRepository
 import com.colonelpanic.eva.adapters.declarative.httpBindings
+import com.colonelpanic.eva.call.CallAgentTuning
 import com.colonelpanic.eva.capability.CallEnding
 import com.colonelpanic.eva.conversation.prompt.PromptComponent
 import com.colonelpanic.eva.conversation.prompt.PromptConfig
@@ -80,7 +81,38 @@ data class EvaConfigurationDocument(
     val deviceTask: DeviceTaskConfiguration? = null,
     val webResearch: WebResearchPatch? = null,
     val stallPeriodSeconds: Int? = null,
+    val callAgent: CallAgentPatch? = null,
+    /** The Twilio call route; its API key is the `provider/twilio-calls` credential, kept on each phone. */
+    val twilioCalls: TwilioCallsConfiguration? = null,
 )
+
+/** Turn detection for the phone call agent; see [CallAgentTuning] for what the defaults were chosen from. */
+@Serializable data class CallAgentPatch(
+    val vadThreshold: Double? = null,
+    val vadPrefixPaddingMillis: Int? = null,
+    val vadSilenceMillis: Int? = null,
+    val listenInByDefault: Boolean? = null,
+    val whatsAppEnabled: Boolean? = null,
+) {
+    init {
+        materialize()
+    }
+
+    fun materialize(): CallAgentTuning {
+        val defaults = CallAgentTuning()
+        return try {
+            CallAgentTuning(
+                vadThreshold ?: defaults.vadThreshold,
+                vadPrefixPaddingMillis ?: defaults.vadPrefixPaddingMillis,
+                vadSilenceMillis ?: defaults.vadSilenceMillis,
+                listenInByDefault ?: defaults.listenInByDefault,
+                whatsAppEnabled ?: defaults.whatsAppEnabled,
+            )
+        } catch (error: IllegalArgumentException) {
+            throw IllegalArgumentException("capabilities.callAgent: ${error.message}", error)
+        }
+    }
+}
 
 @Serializable data class WebResearchPatch(
     val enabled: Boolean? = null,
@@ -202,6 +234,8 @@ data class SecretReference(
     val id: String,
     val kind: String,
     val endpoint: String? = null,
+    /** What a call keypad credential is, such as "Bank PIN"; only those carry one. */
+    val label: String? = null,
 )
 
 @Serializable data class RememberedPatch(
@@ -291,6 +325,8 @@ data class EvaConfiguration(
         val deviceTask: DeviceTaskConfiguration = DeviceTaskConfiguration(),
         val webResearch: WebResearchConfiguration = WebResearchConfiguration(),
         val stallPeriodSeconds: Int = 180,
+        val callAgent: CallAgentTuning = CallAgentTuning(),
+        val twilioCalls: TwilioCallsConfiguration? = null,
     )
 
     data class Messaging(
@@ -592,6 +628,19 @@ object EvaConfigurationCodec {
                         .takeIf { it != base?.capabilities?.webResearch?.timeoutSeconds },
                 ).nonEmpty(),
                 current.capabilities.stallPeriodSeconds.takeIf { it != base?.capabilities?.stallPeriodSeconds },
+                CallAgentPatch(
+                    current.capabilities.callAgent.vadThreshold
+                        .takeIf { it != base?.capabilities?.callAgent?.vadThreshold },
+                    current.capabilities.callAgent.vadPrefixPaddingMillis
+                        .takeIf { it != base?.capabilities?.callAgent?.vadPrefixPaddingMillis },
+                    current.capabilities.callAgent.vadSilenceMillis
+                        .takeIf { it != base?.capabilities?.callAgent?.vadSilenceMillis },
+                    current.capabilities.callAgent.listenInByDefault
+                        .takeIf { it != base?.capabilities?.callAgent?.listenInByDefault },
+                    current.capabilities.callAgent.whatsAppEnabled
+                        .takeIf { it != base?.capabilities?.callAgent?.whatsAppEnabled },
+                ).nonEmpty(),
+                current.capabilities.twilioCalls.takeIf { it != base?.capabilities?.twilioCalls },
             ).nonEmpty(),
         messaging =
             MessagingPatch(
@@ -662,6 +711,8 @@ object EvaConfigurationCodec {
                     capabilities?.deviceTask ?: DeviceTaskConfiguration(),
                     capabilities?.webResearch?.materialize() ?: WebResearchConfiguration(),
                     capabilities?.stallPeriodSeconds ?: 180,
+                    capabilities?.callAgent?.materialize() ?: CallAgentTuning(),
+                    capabilities?.twilioCalls,
                 ),
             messaging =
                 EvaConfiguration.Messaging(
@@ -857,6 +908,7 @@ object EvaConfigurationCodec {
             val expectedKind =
                 PROVIDER_SECRETS[reference.id]
                     ?: "portal-bearer".takeIf { reference.id == "device/portal" }
+                    ?: CALL_CREDENTIAL_KIND.takeIf { reference.id.startsWith(CALL_SECRET_PREFIX) }
                     ?: ("http-" + reference.id.substringAfterLast("/")).takeIf {
                         SERVICE_SECRET.matches(reference.id) ||
                             PACKAGE_SECRET.matches(reference.id) ||
@@ -864,7 +916,18 @@ object EvaConfigurationCodec {
                     }
             require(expectedKind != null) { "Unknown or unscoped secret reference." }
             require(reference.kind == expectedKind) { "Secret reference kind does not match its scope." }
+            require((reference.label != null) == (expectedKind == CALL_CREDENTIAL_KIND)) {
+                "Only call keypad credentials take a label, and each needs one."
+            }
             when {
+                expectedKind == CALL_CREDENTIAL_KIND -> {
+                    require(isCallCredentialReference(reference.id.removePrefix(CALL_SECRET_PREFIX))) {
+                        "Invalid call credential reference ${reference.id}."
+                    }
+                    require(isCallCredentialLabel(reference.label!!)) { "Invalid label for call credential ${reference.id}." }
+                    require(reference.endpoint == null) { "A call credential does not use an endpoint." }
+                }
+
                 reference.id == "device/portal" -> {
                     require(reference.endpoint == "http://127.0.0.1:${capabilities.deviceTask.portalPort}") {
                         "Portal credential endpoint must match the configured local port."
@@ -912,6 +975,9 @@ object EvaConfigurationCodec {
                 .toSet() + packages.services.map { it.credential }.toSet()
         credentials.required.filter { SERVICE_SECRET.matches(it.id) || PACKAGE_SECRET.matches(it.id) }.forEach { reference ->
             require(reference.id in declaredCredentials) { "HTTP credential requirement does not belong to a declared service." }
+        }
+        require((capabilities.twilioCalls != null) == credentials.required.any { it.id == TWILIO_CALLS_SECRET }) {
+            "capabilities.twilioCalls and its $TWILIO_CALLS_SECRET credential requirement must be configured together."
         }
         credentials.required.filter { MESSAGING_SECRET.matches(it.id) }.forEach { reference ->
             require(reference.id in messaging.bridges.keys.map(::messagingSecretId)) {
@@ -1027,6 +1093,14 @@ object EvaConfigurationCodec {
                     override.capabilities?.webResearch?.timeoutSeconds ?: base.capabilities?.webResearch?.timeoutSeconds,
                 ).nonEmpty(),
                 override.capabilities?.stallPeriodSeconds ?: base.capabilities?.stallPeriodSeconds,
+                CallAgentPatch(
+                    override.capabilities?.callAgent?.vadThreshold ?: base.capabilities?.callAgent?.vadThreshold,
+                    override.capabilities?.callAgent?.vadPrefixPaddingMillis ?: base.capabilities?.callAgent?.vadPrefixPaddingMillis,
+                    override.capabilities?.callAgent?.vadSilenceMillis ?: base.capabilities?.callAgent?.vadSilenceMillis,
+                    override.capabilities?.callAgent?.listenInByDefault ?: base.capabilities?.callAgent?.listenInByDefault,
+                    override.capabilities?.callAgent?.whatsAppEnabled ?: base.capabilities?.callAgent?.whatsAppEnabled,
+                ).nonEmpty(),
+                override.capabilities?.twilioCalls ?: base.capabilities?.twilioCalls,
             ).nonEmpty(),
         messaging =
             MessagingPatch(
@@ -1098,7 +1172,13 @@ object EvaConfigurationCodec {
     private fun CapabilitiesPatch.nonEmpty() =
         takeIf {
             screenControl != null || deviceTask != null || webResearch != null ||
-                stallPeriodSeconds != null
+                stallPeriodSeconds != null || callAgent != null || twilioCalls != null
+        }
+
+    private fun CallAgentPatch.nonEmpty() =
+        takeIf {
+            vadThreshold != null || vadPrefixPaddingMillis != null || vadSilenceMillis != null || listenInByDefault != null ||
+                whatsAppEnabled != null
         }
 
     private fun WebResearchPatch.nonEmpty() = takeIf { enabled != null || model != null || effort != null || timeoutSeconds != null }
@@ -1178,6 +1258,7 @@ object EvaConfigurationCodec {
             "provider/chatgpt" to "chatgpt-account",
             "provider/broker" to "broker-link",
             "provider/spotify-account" to "spotify-account",
+            TWILIO_CALLS_SECRET to "twilio-api-key",
         )
     private const val BROKER_SECRET = "provider/broker"
     val DEVICE_AUTHORIZATIONS =
@@ -1196,6 +1277,9 @@ object EvaConfigurationCodec {
             com.colonelpanic.eva.adapters.android.ContentProviderAccess.MOVA_READ_TODOS,
         )
 
+    /** The API key that mints the Twilio call route's access tokens; never portable. */
+    const val TWILIO_CALLS_SECRET = "provider/twilio-calls"
+
     fun packageSecretId(instance: String) = "package/$instance/basic"
 
     fun serviceSecretId(
@@ -1205,10 +1289,40 @@ object EvaConfigurationCodec {
 
     fun messagingSecretId(name: String) = "messaging/$name/bearer"
 
+    const val CALL_SECRET_PREFIX = "call/"
+    const val CALL_CREDENTIAL_KIND = "call-keypad"
+    private val CALL_REFERENCE = Regex("[a-z0-9]+(?:[._/-][a-z0-9]+)*")
+
+    /** The reference the call agent names, such as `bank/pin`; its secret ID is [callSecretId]. */
+    fun isCallCredentialReference(reference: String) = reference.length <= 64 && CALL_REFERENCE.matches(reference)
+
+    fun isCallCredentialLabel(label: String) = label.isNotBlank() && label.length <= 100 && label.none(Char::isISOControl)
+
+    fun callSecretId(reference: String) = CALL_SECRET_PREFIX + reference
+
     fun isMessagingBridgeName(name: String) = SERVICE_NAME.matches(name) && name !in RESERVED_MESSAGING_SERVICES
 
     private fun com.colonelpanic.eva.adapters.declarative.PackageDefinition.httpOrigins(): Set<String> =
         httpBindings().map { it.origin }.toSet()
+}
+
+/**
+ * The owner's Twilio account as the Twilio call route uses it. None of it is secret: the API key
+ * that signs access tokens is a device-local credential.
+ */
+@Serializable
+data class TwilioCallsConfiguration(
+    val accountSid: String,
+    /** The TwiML application whose voice URL dials the `To` parameter. */
+    val twimlAppSid: String,
+    /** The Twilio number or verified caller ID the other party sees, in E.164. */
+    val callerId: String,
+) {
+    init {
+        require(Regex("AC[0-9a-fA-F]{32}").matches(accountSid)) { "A Twilio account SID is AC followed by 32 hexadecimal characters." }
+        require(Regex("AP[0-9a-fA-F]{32}").matches(twimlAppSid)) { "A TwiML app SID is AP followed by 32 hexadecimal characters." }
+        require(Regex("\\+[1-9][0-9]{6,14}").matches(callerId)) { "The Twilio caller ID must be an E.164 number such as +15551234567." }
+    }
 }
 
 @Serializable

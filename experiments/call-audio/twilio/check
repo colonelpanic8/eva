@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+if ! command -v ruff >/dev/null || ! command -v shellcheck >/dev/null; then
+    exec nix shell nixpkgs#ruff nixpkgs#shellcheck --command bash "$here/check" "$@"
+fi
+if ! command -v node >/dev/null || ! command -v npm >/dev/null || ! command -v prettier >/dev/null; then
+    exec nix shell nixpkgs#nodejs nixpkgs#prettier --command bash "$here/check" "$@"
+fi
+if [[ ! -d "$here/.cache/node_modules/twilio" ]]; then
+    npm install --prefix "$here/.cache" --ignore-scripts --no-audit --no-fund --save-exact twilio@6.2.0
+fi
+ruff check "$here"/*.py "$here"/../emulator/*.py
+ruff format --check "$here"/*.py "$here"/../emulator/*.py
+shellcheck "$here"/{setup,verify,e2e,check,voice-sdk}
+prettier --check "$here"/*.js "$here"/scenario*.json
+node --check "$here/hotline.js"
+node --check "$here/dial.js"
+node --test "$here/hotline.test.js" "$here/dial.test.js"
+python3 -m py_compile "$here"/*.py "$here"/../emulator/*.py
+python3 -m unittest discover -s "$here" -p 'test_*.py'
+"$here/setup" --help >/dev/null
+"$here/verify" --help >/dev/null
+"$here/e2e" --help >/dev/null
+"$here/voice-sdk" --help >/dev/null
+python3 "$here/../emulator/eva_emulator.py" --help >/dev/null

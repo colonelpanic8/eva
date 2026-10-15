@@ -1,0 +1,70 @@
+set shell := ["bash", "-euo", "pipefail", "-c"]
+set positional-arguments
+
+root := justfile_directory() / "../../.."
+out := root / "build"
+py := out / "whatsapp-far-end-python/bin/python3"
+far := justfile_directory() / "far_end.py"
+
+default:
+    @just --list
+
+# Build the pinned emulator SDK, the gRPC Python and the demo tools into build/ (repo root).
+tools:
+    cd {{root}} && for output in sdk python tools; do \
+      nix build --impure -f experiments/call-audio/whatsapp/emulator.nix --argstr repo "git+file://$PWD" "$output" -o "build/whatsapp-far-end-$output"; \
+    done
+
+# Boot the far end headless (software GPU); runs in the foreground.
+up *args:
+    {{py}} {{far}} up --sdk {{out}}/whatsapp-far-end-sdk "$@"
+
+# Boot the far end in a window with the host GPU, as emulator-5556 (needs the desktop session's display).
+up-window port="5556":
+    WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}" DISPLAY="${DISPLAY:-:0}" XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" \
+      {{py}} {{far}} up --sdk {{out}}/whatsapp-far-end-sdk --window --gpu host --port {{port}}
+
+# Show the running far end: serial, gRPC port, WhatsApp installed, app in front.
+status:
+    {{py}} {{far}} status
+
+# Download the official WhatsApp APK (about 150 MB) into experiments/call-audio/build/ and verify its signer.
+fetch-apk:
+    mkdir -p {{justfile_directory()}}/../build
+    curl -fL --retry 3 -o {{justfile_directory()}}/../build/WhatsApp.apk https://www.whatsapp.com/android/current/WhatsApp.apk
+    just verify-apk {{justfile_directory()}}/../build/WhatsApp.apk
+
+# Check an APK is signed by WhatsApp's known certificates (needs the repo dev shell for apksigner).
+verify-apk apk:
+    cd {{root}} && direnv exec . {{py}} {{far}} verify-apk --apk "$(realpath {{apk}})"
+
+# Verify, then install a WhatsApp APK on the far end.
+install serial apk:
+    cd {{root}} && direnv exec . {{py}} {{far}} install --serial {{serial}} --apk "$(realpath {{apk}})"
+
+# Check the recording path: a notification sound must reach the recording.
+test-sound serial:
+    {{py}} {{far}} test-sound --serial {{serial}}
+
+# Answer the next incoming call on the far end.
+answer serial:
+    {{py}} {{far}} answer --serial {{serial}}
+
+# Record what the far end hears for some seconds.
+record serial seconds wav:
+    {{py}} {{far}} record --serial {{serial}} --seconds {{seconds}} --out "$(realpath -m {{wav}})"
+
+# Loudness of a recording over time.
+levels wav:
+    python3 -I {{justfile_directory()}}/audio_check.py levels {{wav}}
+# Keypad tones heard in a recording, in order.
+dtmf wav:
+    python3 -I {{justfile_directory()}}/audio_check.py dtmf {{wav}}
+
+# Read-only WhatsApp checks on the shared phone, under /tmp/eva-phone.lock.
+phone-checks serial="adb-67091FDDJ0007B-YBkFMQ._adb-tls-connect._tcp":
+    flock -w 1800 /tmp/eva-phone.lock {{justfile_directory()}}/phone_checks.sh {{serial}}
+
+# Record a demo: screens (serial[:display], repeatable) plus far-end audio, into experiments/call-audio/build/demos/.
+demo title seconds *args:
+    {{py}} {{justfile_directory()}}/demo.py --title "{{title}}" --seconds {{seconds}} "${@:3}"

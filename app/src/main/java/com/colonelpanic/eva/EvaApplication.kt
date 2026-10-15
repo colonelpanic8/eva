@@ -13,6 +13,8 @@ import com.colonelpanic.eva.adapters.android.AndroidMediaLauncher
 import com.colonelpanic.eva.adapters.android.AndroidMediaLibraryQueueClient
 import com.colonelpanic.eva.adapters.android.AndroidMediaSessions
 import com.colonelpanic.eva.adapters.android.AppFunctionsBackend
+import com.colonelpanic.eva.adapters.android.CallAudioHost
+import com.colonelpanic.eva.adapters.android.CellularCallProvider
 import com.colonelpanic.eva.adapters.android.ContactHistory
 import com.colonelpanic.eva.adapters.android.ContactNameKeywords
 import com.colonelpanic.eva.adapters.android.ContactsQueryBackend
@@ -31,6 +33,7 @@ import com.colonelpanic.eva.adapters.android.NativeIntents
 import com.colonelpanic.eva.adapters.android.ShizukuShellHost
 import com.colonelpanic.eva.adapters.android.SmsSendBackend
 import com.colonelpanic.eva.adapters.android.SpotifyQueueProvider
+import com.colonelpanic.eva.adapters.android.WhatsAppCallProvider
 import com.colonelpanic.eva.adapters.android.observeExtensionPackages
 import com.colonelpanic.eva.audio.RealtimeMediaConfig
 import com.colonelpanic.eva.audio.VoiceSessionHost
@@ -51,6 +54,7 @@ import com.colonelpanic.eva.conversation.TurnWorkService
 import com.colonelpanic.eva.conversation.WorkNotifications
 import com.colonelpanic.eva.conversation.prompt.VoiceCallMode
 import com.colonelpanic.eva.data.AppearanceSettings
+import com.colonelpanic.eva.data.CallCredentialSettings
 import com.colonelpanic.eva.data.CapabilitySettings
 import com.colonelpanic.eva.data.ChatGptAccountStore
 import com.colonelpanic.eva.data.ChosenNumbers
@@ -99,6 +103,8 @@ class EvaApplication :
     TurnWorkHost {
     val intentHost = AndroidIntentHost(this, deviceTaskRunning = { deviceTasks.running.value != null })
     val shizukuShellHost by lazy { if (Build.VERSION.SDK_INT >= 37) ShizukuShellHost(this) else null }
+
+    val callAudioHost by lazy { if (Build.VERSION.SDK_INT >= 33) CallAudioHost(this) else null }
 
     /** Screen control needs Shizuku too, but not Android 17: its helper only needs UiAutomation. */
     val deviceControlHost: DeviceControlHost? by lazy {
@@ -248,6 +254,12 @@ class EvaApplication :
 
     val messagingSettings by lazy {
         MessagingSettings(this, configuration::onLocalChange, configuration::onMessagingReplyChange, configuration::onCredentialChange)
+    }
+
+    val callCredentials by lazy { CallCredentialSettings(this, configuration::onLocalChange, configuration::onCredentialChange) }
+    val twilioCalls by lazy {
+        com.colonelpanic.eva.data
+            .TwilioCallSettings(this, configuration::onLocalChange, configuration::onCredentialChange)
     }
 
     /** Linked messaging accounts behind self-hosted bridges; tokens resolve only for a bridge's own origin. */
@@ -524,10 +536,49 @@ class EvaApplication :
         )
     }
 
+    val callProviders by lazy {
+        com.colonelpanic.eva.call.CallProviderRegistry(
+            callAudioHost
+                ?.let {
+                    listOf(
+                        CellularCallProvider(this, it),
+                        WhatsAppCallProvider(this, it, enabled = { capabilities.callAgent.whatsAppEnabled }),
+                    )
+                }.orEmpty() +
+                com.colonelpanic.eva.adapters.android
+                    .TwilioCallProvider(this, twilioCalls),
+        )
+    }
+    val callTasks: com.colonelpanic.eva.call.CallTaskCoordinator by lazy {
+        com.colonelpanic.eva.call.CallTaskCoordinator(
+            providers = callProviders,
+            brains =
+                com.colonelpanic.eva.providers.openai.OpenAiCallAgentBrainFactory(
+                    access = { checkNotNull(access()) { "Sign in to OpenAI before starting a phone call agent." } },
+                    model = { settings.realtimeModel },
+                    tuning = { capabilities.callAgent },
+                ),
+            journal =
+                com.colonelpanic.eva.call
+                    .ThreadCallTaskJournal(conversations),
+            invocations = invocations,
+            scope = scope,
+            askOwner = { controller.askCallOwner(it) },
+            credentials = callCredentials,
+            speechDetector = { null },
+            wording = { prompts.wording.value },
+            listenInByDefault = { capabilities.callAgent.listenInByDefault },
+        )
+    }
+
     val registry by lazy {
         CapabilityRegistry(
             buildMap {
                 put(CapabilityRegistry.DEVICE_TASK, deviceTasks)
+                putAll(
+                    com.colonelpanic.eva.call.CallCapabilities
+                        .backends(callTasks),
+                )
                 put(
                     com.colonelpanic.eva.web.WebResearchBackend.ID,
                     com.colonelpanic.eva.web.WebResearchBackend(
@@ -873,7 +924,7 @@ class EvaApplication :
             .AndroidDiagnostics(this)
     }
 
-    val controller by lazy {
+    val controller: ThreadController by lazy {
         val repository = invocations
         ThreadController(
             registry = registry,
@@ -885,6 +936,7 @@ class EvaApplication :
                     deviceTasks.executeAdmitted(proposal, backend, backend.usesDeviceUi(proposal))
                 }),
             deviceTasks = deviceTasks,
+            callTasks = callTasks,
             onWorkAccepted = { TurnWorkService.ensureStarted(this) },
             stallPeriodMillis = { capabilities.stallPeriodSeconds * 1_000L },
             store = conversations,
