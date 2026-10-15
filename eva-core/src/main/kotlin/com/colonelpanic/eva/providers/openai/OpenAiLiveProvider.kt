@@ -29,7 +29,6 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -44,15 +43,22 @@ import java.util.concurrent.TimeUnit
 
 /** Live owns speech; EVA owns the independent worker accepting its delegations. */
 class OpenAiLiveProvider(
-    private val access: ApiKeyAccess,
+    private val access: OpenAiAccess,
     private val media: RealtimeMediaSession,
     private val instructions: String,
-    private val model: String = OpenAiModels.LIVE,
+    model: String = OpenAiModels.LIVE,
     private val backendModel: String = OpenAiModels.TEXT,
-    private val voice: String = "marin",
+    private val voice: String = if (access is SubscriptionAccess) "cove" else "marin",
     private val client: OkHttpClient = OkHttpClient.Builder().callTimeout(30, TimeUnit.SECONDS).build(),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ConversationProvider {
+    private val protocol =
+        when (access) {
+            is ApiKeyAccess -> LiveProtocol.API
+            is SubscriptionAccess -> LiveProtocol.CODEX
+        }
+    private val model = if (protocol == LiveProtocol.CODEX && model == OpenAiModels.LIVE) OpenAiModels.LIVE_SUBSCRIPTION else model
+
     override suspend fun open(request: SessionOpenRequest): ConversationSession {
         var opened: OpenAiLiveSession? = null
         try {
@@ -75,10 +81,10 @@ class OpenAiLiveProvider(
                             put("model", model)
                             put("delegation", buildJsonObject { put("type", "client") })
                             put("instructions", request.instructions + "\n\n" + instructions)
-                            put("store", false)
+                            if (protocol == LiveProtocol.API) put("store", false)
                             put("audio", buildJsonObject { put("output", buildJsonObject { put("voice", voice) }) })
                             put(
-                                "input",
+                                protocol.historyField,
                                 JsonArray(
                                     retained.map { message ->
                                         buildJsonObject {
@@ -101,34 +107,52 @@ class OpenAiLiveProvider(
                             )
                         },
                     )
-                    put(
-                        "transport",
-                        buildJsonObject {
-                            put("type", "webrtc")
-                            put("sdp", offer)
-                        },
-                    )
+                    if (protocol == LiveProtocol.CODEX) {
+                        put("sdp", offer)
+                    } else {
+                        put(
+                            "transport",
+                            buildJsonObject {
+                                put("type", "webrtc")
+                                put("sdp", offer)
+                            },
+                        )
+                    }
                 }
-            val response =
+            val (answer, expectedSessionId) =
                 withContext(ioDispatcher) {
                     val http =
                         access
                             .authorize(Request.Builder().url(access.liveSessionsUrl))
+                            .apply { if (protocol == LiveProtocol.CODEX) header("OpenAI-Alpha", "quicksilver=v2") }
                             .post(body.toString().toRequestBody("application/json".toMediaType()))
                             .build()
                     client.newCall(http).execute().use {
                         val text = it.body.string()
                         check(it.isSuccessful) { openAiErrorMessage(it.code, text, "the GPT-Live session", model) }
-                        Json.parseToJsonElement(text) as? JsonObject ?: error("OpenAI returned an invalid GPT-Live session.")
+                        if (protocol == LiveProtocol.CODEX) {
+                            check(text.startsWith("v=")) { "OpenAI returned no SDP answer for Codex Live." }
+                            text to null
+                        } else {
+                            val response =
+                                Json.parseToJsonElement(text) as? JsonObject ?: error("OpenAI returned an invalid GPT-Live session.")
+                            val answer = response.obj("transport")?.str("sdp") ?: error("OpenAI returned no SDP answer for GPT-Live.")
+                            val sessionId = response.obj("session")?.str("id") ?: error("OpenAI returned no GPT-Live session ID.")
+                            answer to sessionId
+                        }
                     }
                 }
-            val answer =
-                response.obj("transport")?.str("sdp")
-                    ?: error("OpenAI returned no SDP answer for GPT-Live.")
-            val sessionId =
-                response.obj("session")?.str("id")
-                    ?: error("OpenAI returned no GPT-Live session ID.")
-            opened = OpenAiLiveSession(media, sessionId, request.catalog.revision, model, backendModel, ioDispatcher)
+            opened =
+                OpenAiLiveSession(
+                    media,
+                    expectedSessionId,
+                    request.catalog.revision,
+                    model,
+                    backendModel,
+                    access.label,
+                    protocol,
+                    ioDispatcher,
+                )
             media.acceptAnswer(answer)
             withTimeout(30_000) {
                 media.eventsReady.first { it }
@@ -150,10 +174,12 @@ class OpenAiLiveProvider(
 
 private class OpenAiLiveSession(
     private val media: RealtimeMediaSession,
-    private val sessionId: String,
+    private val expectedSessionId: String?,
     private val revision: String,
     private val model: String,
     private val backendModel: String,
+    private val accountLabel: String,
+    private val protocol: LiveProtocol,
     dispatcher: CoroutineDispatcher,
 ) : ClientDelegationSession {
     override val connectionEpoch = UUID.randomUUID().toString()
@@ -167,12 +193,13 @@ private class OpenAiLiveSession(
     private val delegations = mutableSetOf<String>()
     private val pending = mutableMapOf<String, String?>()
     private var closing = false
+    private var sessionId = expectedSessionId.orEmpty()
 
     init {
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
                 media.events.collect { raw ->
-                    val event = Json.parseToJsonElement(raw) as? JsonObject ?: error("Invalid GPT-Live event.")
+                    val event = protocol.receive(Json.parseToJsonElement(raw) as? JsonObject ?: error("Invalid GPT-Live event."))
                     val id = event.str("event_id")
                     if (id == null || seen.add(id)) receive(event)
                 }
@@ -199,9 +226,10 @@ private class OpenAiLiveSession(
         when (val type = event.str("type")) {
             "session.started" -> {
                 val confirmed = event.obj("session")?.str("id") ?: error("GPT-Live startup omitted its session ID.")
-                check(confirmed == sessionId) { "GPT-Live startup identified a different session." }
+                check(expectedSessionId == null || confirmed == expectedSessionId) { "GPT-Live startup identified a different session." }
                 if (!started.isCompleted) {
-                    output.send(ProviderEvent.Account(OpenAiModels.ACCOUNT_LABEL))
+                    sessionId = confirmed
+                    output.send(ProviderEvent.Account(accountLabel))
                     output.send(ProviderEvent.Connected(sessionId, revision, event.obj("session")?.str("model") ?: model, backendModel))
                     started.complete(Unit)
                 }
@@ -238,7 +266,9 @@ private class OpenAiLiveSession(
                 output.send(ProviderEvent.ClientDelegationRequested(sessionId, id, offset))
             }
 
-            "session.thinking.appended", "session.commentary.appended", "session.instructions.appended" -> {
+            "session.thinking.appended", "session.commentary.appended", "session.instructions.appended",
+            "session.context.appended", "delegation.context.appended",
+            -> {
                 writes.withLock { pending.remove(event.str("client_event_id")) }
                 // Context injection is neither speech completion nor playback evidence.
             }
@@ -312,23 +342,7 @@ private class OpenAiLiveSession(
                 val id = UUID.randomUUID().toString()
                 pending[id] = deliveryId
                 try {
-                    media.send(
-                        buildJsonObject {
-                            put(
-                                "type",
-                                if (respond &&
-                                    index == chunks.lastIndex
-                                ) {
-                                    "session.commentary.append"
-                                } else {
-                                    "session.thinking.append"
-                                },
-                            )
-                            put("event_id", id)
-                            put("delegation_id", delegationId?.let(::JsonPrimitive) ?: JsonNull)
-                            put("content", chunk)
-                        }.toString(),
-                    )
+                    media.send(protocol.append(id, delegationId, chunk, respond && index == chunks.lastIndex).toString())
                 } catch (error: Exception) {
                     pending.remove(id)
                     notice(

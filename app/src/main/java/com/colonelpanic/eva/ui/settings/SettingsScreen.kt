@@ -473,7 +473,7 @@ private fun ModelsSection(
                     "Live stays connected until you ask to end the call or tap Hang up. Automatic hangup after a reply is not available.",
                 )
                 SettingsNote(
-                    "GPT-Live uses your paid OpenAI API key for voice and the text model above for background work. ChatGPT sign-in remains available for the text worker. Delegated phone calls continue to use ${OpenAiModels.REALTIME}.",
+                    "GPT-Live uses gpt-live-1-codex with Cove through ChatGPT sign-in, or gpt-live-1 with Marin through your paid API key when signed out. The text model above handles background work. Delegated phone calls continue to use ${OpenAiModels.REALTIME}.",
                 )
             } else {
                 ReasoningEffortPicker(

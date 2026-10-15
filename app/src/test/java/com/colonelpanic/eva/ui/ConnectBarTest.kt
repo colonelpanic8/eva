@@ -12,11 +12,12 @@ import org.junit.Test
 class ConnectBarTest {
     private val ready = ConversationState(isLoading = false)
 
-    @Test fun `Live needs an API key while subscription text and Realtime stay available`() {
+    @Test fun `Live and Realtime accept subscription access without an API key`() {
         val live = SettingsUiState(account = "Signed in", realtimeModel = OpenAiModels.LIVE)
         assertTrue(connectPrompt(ready, live.hasCredential).canConnect)
-        assertFalse(connectPrompt(ready, live.hasVoiceCredential).canConnect)
-        assertTrue(connectPrompt(ready, live.copy(hasApiKey = true).hasVoiceCredential).canConnect)
+        assertTrue(connectPrompt(ready, live.hasVoiceCredential).canConnect)
+        assertFalse(connectPrompt(ready, live.copy(account = null).hasVoiceCredential).canConnect)
+        assertTrue(connectPrompt(ready, live.copy(account = null, hasApiKey = true).hasVoiceCredential).canConnect)
         assertTrue(connectPrompt(ready, live.copy(realtimeModel = OpenAiModels.REALTIME).hasVoiceCredential).canConnect)
         assertTrue(connectPrompt(ready, live.copy(account = null, hasHostLink = true).hasVoiceCredential).canConnect)
     }

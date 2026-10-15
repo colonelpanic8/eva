@@ -124,7 +124,6 @@ data class SettingsUiState(
             when {
                 voiceSelection.provider == "grok" -> hasXaiApiKey
                 hasHostLink -> true
-                OpenAiModels.isLive(realtimeModel) -> hasApiKey
                 else -> hasCredential
             }
 

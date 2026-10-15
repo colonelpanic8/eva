@@ -1,0 +1,1 @@
+* Fixed: GPT-Live now works through ChatGPT sign-in using the Codex Live model and Cove voice, without requiring API credits. The subscription adapter handles its distinct delegation and spoken-result protocol. API-key access remains available when signed out; connection failures never silently switch to paid usage.

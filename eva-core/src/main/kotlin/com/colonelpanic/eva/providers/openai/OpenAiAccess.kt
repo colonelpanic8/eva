@@ -20,6 +20,8 @@ sealed interface OpenAiAccess {
     /** Where the phone posts its SDP offer to open a realtime call. */
     val realtimeCallsUrl: String
 
+    val liveSessionsUrl: String
+
     /** Whether the provider retains the turn, or the phone must resend the conversation. */
     val serverKeepsHistory: Boolean
 
@@ -34,7 +36,7 @@ class ApiKeyAccess(
     override val responsesUrl = "$baseUrl/v1/responses"
     override val modelsUrl = "$baseUrl/v1/models"
     override val realtimeCallsUrl = "$baseUrl/v1/realtime/calls"
-    val liveSessionsUrl = "$baseUrl/v1/live/sessions"
+    override val liveSessionsUrl = "$baseUrl/v1/live/sessions"
     override val serverKeepsHistory = true
 
     override suspend fun authorize(builder: Request.Builder): Request.Builder = builder.header("Authorization", "Bearer $key")
@@ -51,6 +53,7 @@ class SubscriptionAccess(
     override val modelsUrl = "$baseUrl/models?client_version=${modelsClientVersion(clientVersion)}"
 
     override val realtimeCallsUrl = "$realtimeBaseUrl/v1/realtime/calls"
+    override val liveSessionsUrl = "$baseUrl/realtime/calls?intent=quicksilver&architecture=avas"
 
     /** The subscription backend rejects stored responses, so continuity is the phone's job. */
     override val serverKeepsHistory = false

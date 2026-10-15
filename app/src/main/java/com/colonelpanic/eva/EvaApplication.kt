@@ -979,20 +979,16 @@ class EvaApplication :
                 } else if (link.isBlank()) {
                     val rtc = requireNotNull(audio as? RealtimeMediaSession) { "OpenAI voice requires WebRTC media." }
                     val model = settings.realtimeModel
+                    val access = access() ?: error("Sign in with ChatGPT, add an API key, or paste a paired host link.")
                     if (OpenAiModels.isLive(model)) {
-                        val key =
-                            settings.apiKey() ?: error(
-                                "GPT-Live requires a funded OpenAI API key. Add one in Settings; ChatGPT sign-in does not provide access through this integration.",
-                            )
                         OpenAiLiveProvider(
-                            ApiKeyAccess(key),
+                            access,
                             rtc,
                             prompts.wording.value.message(com.colonelpanic.eva.conversation.prompt.Wording.LIVE_FRONTEND),
                             model = model,
                             backendModel = settings.textModel,
                         )
                     } else {
-                        val access = access() ?: error("Sign in with ChatGPT, add an API key, or paste a paired host link.")
                         OpenAiRealtimeProvider(access, rtc, model, settings.voiceReasoningEffort)
                     }
                 } else {

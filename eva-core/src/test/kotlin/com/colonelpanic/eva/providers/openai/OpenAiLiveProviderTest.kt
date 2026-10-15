@@ -67,14 +67,16 @@ class OpenAiLiveProviderTest {
             history = listOf(HistoryItem.User("Earlier request")),
         )
 
-    private fun TestScope.provider(media: FakeMedia) =
-        OpenAiLiveProvider(
-            ApiKeyAccess("test-key", "https://example.test"),
-            media,
-            "Live delegation policy",
-            client = client,
-            ioDispatcher = StandardTestDispatcher(testScheduler),
-        )
+    private fun TestScope.provider(
+        media: FakeMedia,
+        access: OpenAiAccess = ApiKeyAccess("test-key", "https://example.test"),
+    ) = OpenAiLiveProvider(
+        access,
+        media,
+        "Live delegation policy",
+        client = client,
+        ioDispatcher = StandardTestDispatcher(testScheduler),
+    )
 
     @Test
     fun `WebRTC starts once with client delegation and waits for session started`() =
@@ -178,6 +180,107 @@ class OpenAiLiveProviderTest {
             collect.join()
         }
 
+    private fun subscription(): SubscriptionAccess =
+        SubscriptionAccess(
+            { ChatGptTokens("id", "access-1", "refresh-1", "acct-1", "eva@example.test", "pro", 0) },
+            "1.0.0",
+            "https://backend.test",
+        )
+
+    @Test
+    fun `subscription Live uses Codex handshake captions and speakable delegation results without an API key`() =
+        runTest {
+            response = "v=0 subscription answer"
+            val media = FakeMedia(startedModel = null)
+            val session = provider(media, subscription()).open(request) as ClientDelegationSession
+            val events = mutableListOf<ProviderEvent>()
+            val collect = launch { session.events.collect { events += it } }
+            runCurrent()
+            val http = requests.single()
+            assertEquals("https://backend.test/realtime/calls?intent=quicksilver&architecture=avas", http.url.toString())
+            assertEquals("Bearer access-1", http.header("Authorization"))
+            assertEquals("acct-1", http.header("chatgpt-account-id"))
+            assertEquals("quicksilver=v2", http.header("OpenAI-Alpha"))
+            val body = bodies.single()
+            assertEquals("v=0 offer", body.str("sdp"))
+            val config = body.obj("session")!!
+            assertEquals(OpenAiModels.LIVE_SUBSCRIPTION, config.str("model"))
+            assertEquals("cove", config.obj("audio")!!.obj("output")!!.str("voice"))
+            assertEquals(
+                "Earlier request",
+                config["initial_items"]!!
+                    .jsonArray
+                    .single()
+                    .jsonObject["content"]!!
+                    .jsonArray
+                    .single()
+                    .jsonObject
+                    .str("text"),
+            )
+            assertFalse(config.containsKey("input"))
+            assertFalse(config.containsKey("store"))
+            assertEquals(ProviderEvent.Account(ChatGpt.ACCOUNT_LABEL), events.first())
+            assertEquals(OpenAiModels.LIVE_SUBSCRIPTION, events.filterIsInstance<ProviderEvent.Connected>().single().model)
+            repeat(2) {
+                media.incoming.send(
+                    """{"type":"input_transcript.added","start_ms":100,"end_ms":200,"item":{"id":"caption","text":"Find my flight"}}""",
+                )
+                media.incoming.send(
+                    """{"type":"delegation.created","offset_ms":200,"item":{"id":"delegation_1","type":"delegation","target":"client"}}""",
+                )
+            }
+            media.incoming.send(
+                """{"type":"output_transcript.added","start_ms":200,"end_ms":300,"item":{"id":"reply","text":"Checking."}}""",
+            )
+            runCurrent()
+            assertEquals(listOf("Find my flight", "Checking."), events.filterIsInstance<ProviderEvent.TimedTranscript>().map { it.text })
+            assertEquals(
+                ProviderEvent.ClientDelegationRequested("live_1", "delegation_1", 200),
+                events.filterIsInstance<ProviderEvent.ClientDelegationRequested>().single(),
+            )
+            session.appendDelegationUpdate("delegation_1", "Still checking", respond = false)
+            session.appendDelegationUpdate("delegation_1", "It departs at nine.")
+            session.submitContext("Another task finished.", respond = true, deliveryId = "result")
+            val updates = media.sent
+            assertEquals("delegation.context.append", updates[0].str("type"))
+            assertFalse(updates[0].containsKey("channel"))
+            assertEquals("delegation_1", updates[1].str("delegation_item_id"))
+            assertEquals("speakable", updates[1].str("channel"))
+            val envelope =
+                Json
+                    .parseToJsonElement(
+                        updates[1]["content"]!!
+                            .jsonArray
+                            .single()
+                            .jsonObject
+                            .str("text")!!,
+                    ).jsonObject
+            assertEquals("It departs at nine.", Json.parseToJsonElement(envelope.str("text")!!).jsonObject.str("note"))
+            assertEquals("session.context.append", updates[2].str("type"))
+            assertFalse(updates[2].containsKey("delegation_item_id"))
+            media.incoming.send("""{"type":"session.context.appended","client_event_id":"${updates[2].str("event_id")}"}""")
+            runCurrent()
+            assertTrue(events.none { it is ProviderEvent.ContextDelivery || it is ProviderEvent.AssistantSpeaking })
+            session.close()
+            collect.join()
+            assertTrue(media.closed)
+        }
+
+    @Test
+    fun `a subscription SDP answer followed by access denied never counts as a connected session`() =
+        runTest {
+            response = "v=0 subscription answer"
+            val media = FakeMedia(startAutomatically = false)
+            val opening = async { runCatching { provider(media, subscription()).open(request) } }
+            runCurrent()
+            assertFalse(opening.isCompleted)
+            media.incoming.send("""{"type":"error","error":{"code":"forbidden","message":"Voice session access denied."}}""")
+            val error = opening.await().exceptionOrNull()
+            assertEquals("Voice session access denied.", error?.message)
+            assertTrue(media.closed)
+            assertEquals(1, requests.size)
+        }
+
     @Test
     fun `API rejection releases media and explains the funding error`() =
         runTest {
@@ -218,6 +321,7 @@ class OpenAiLiveProviderTest {
 
     private class FakeMedia(
         private val startAutomatically: Boolean = true,
+        private val startedModel: String? = OpenAiModels.LIVE,
     ) : RealtimeMediaSession {
         override val state = MutableStateFlow<RealtimeMediaState>(RealtimeMediaState.Idle)
         override val controls = MutableStateFlow(MediaControls())
@@ -236,7 +340,19 @@ class OpenAiLiveProviderTest {
             if (startAutomatically) started()
         }
 
-        suspend fun started() = incoming.send("""{"type":"session.started","session":{"id":"live_1","model":"gpt-live-1"}}""")
+        suspend fun started() =
+            incoming.send(
+                buildJsonObject {
+                    put("type", "session.started")
+                    put(
+                        "session",
+                        buildJsonObject {
+                            put("id", "live_1")
+                            startedModel?.let { put("model", it) }
+                        },
+                    )
+                }.toString(),
+            )
 
         suspend fun delegation() =
             incoming.send(

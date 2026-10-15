@@ -2,6 +2,7 @@ package com.colonelpanic.eva.providers
 
 import android.media.AudioFormat
 import android.media.AudioManager
+import android.os.Build
 import android.os.Bundle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -16,6 +17,7 @@ import com.colonelpanic.eva.audio.RealtimeMediaController
 import com.colonelpanic.eva.audio.RealtimeMediaState
 import com.colonelpanic.eva.audio.webrtc.WebRtcPeerLink
 import com.colonelpanic.eva.providers.openai.ApiKeyAccess
+import com.colonelpanic.eva.providers.openai.ChatGptTokens
 import com.colonelpanic.eva.providers.openai.OpenAiLiveProvider
 import com.colonelpanic.eva.providers.openai.OpenAiRealtimeProvider
 import com.colonelpanic.eva.providers.openai.SubscriptionAccess
@@ -26,6 +28,11 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -44,10 +51,12 @@ class NativeVoiceLiveTest {
         val args = InstrumentationRegistry.getArguments()
         val link = args.getString("evaBrokerLink")
         val subscription = args.getString("evaSubscriptionVoice") == "true"
-        val live = args.getString("evaLiveVoice") == "true"
+        val liveApi = args.getString("evaLiveVoice") == "true"
+        val liveSubscription = args.getString("evaLiveSubscriptionVoice") == "true"
+        val live = liveApi || liveSubscription
         val path = args.getString("evaSpeechPcmPath")
         assumeTrue("Requires an explicit voice route and synthetic PCM fixture", (link != null || subscription || live) && path != null)
-        require(listOf(link != null, subscription, live).count { it } == 1)
+        require(listOf(link != null, subscription, liveApi, liveSubscription).count { it } == 1)
         require(checkNotNull(path).matches(Regex("/data/local/tmp/eva-[a-z0-9-]+\\.pcm")))
         val fixture =
             instrumentation.uiAutomation.executeShellCommand("cat $path").use {
@@ -109,11 +118,15 @@ class NativeVoiceLiveTest {
                 try {
                     val provider =
                         if (live) {
-                            val key =
-                                args.getString("evaLiveApiKey")
-                                    ?: (context.applicationContext as EvaApplication).settings.requireApiKey()
+                            val application = context.applicationContext as EvaApplication
+                            val access =
+                                if (liveSubscription) {
+                                    subscriptionAccess(args, application)
+                                } else {
+                                    ApiKeyAccess(args.getString("evaLiveApiKey") ?: application.settings.requireApiKey())
+                                }
                             OpenAiLiveProvider(
-                                ApiKeyAccess(key),
+                                access,
                                 media,
                                 "This is a synthetic audio test. Delegate arithmetic to the client. Client updates are numbered JSON envelopes whose text reconstructs an EVA note and result data. Explain the verified answer briefly.",
                             )
@@ -218,7 +231,9 @@ class NativeVoiceLiveTest {
                                 putInt("nonzeroDecodedBytes", receivedNonzeroBytes.get())
                                 putString(
                                     "route",
-                                    if (live) {
+                                    if (liveSubscription) {
+                                        "direct-live-subscription"
+                                    } else if (live) {
                                         "direct-live-api"
                                     } else if (subscription) {
                                         "direct-subscription"
@@ -239,5 +254,37 @@ class NativeVoiceLiveTest {
                 }
             }
         }
+    }
+
+    private fun subscriptionAccess(
+        args: Bundle,
+        application: EvaApplication,
+    ): SubscriptionAccess {
+        val port = args.getString("credentialPort")?.toInt()
+        if (port == null) {
+            check(application.chatGpt.signedIn) { "The debug app needs a ChatGPT sign-in for this test." }
+            return SubscriptionAccess(application.chatGpt, application.clientVersion.orEmpty())
+        }
+        require(Build.MODEL.startsWith("sdk_gphone")) { "The runtime credential bridge is emulator-only." }
+        val credentials =
+            OkHttpClient().newCall(Request.Builder().url("http://127.0.0.1:$port/credentials").build()).execute().use {
+                check(it.isSuccessful) { "The runtime credential bridge rejected the request." }
+                Json
+                    .parseToJsonElement(it.body.string())
+                    .jsonObject
+                    .getValue("tokens")
+                    .jsonObject
+            }
+        val tokens =
+            ChatGptTokens(
+                "",
+                credentials.getValue("access_token").jsonPrimitive.content,
+                "",
+                credentials.getValue("account_id").jsonPrimitive.content,
+                null,
+                null,
+                0,
+            )
+        return SubscriptionAccess({ tokens }, application.clientVersion.orEmpty())
     }
 }

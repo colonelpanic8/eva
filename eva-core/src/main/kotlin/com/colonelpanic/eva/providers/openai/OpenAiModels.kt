@@ -16,6 +16,7 @@ object OpenAiModels {
     const val REALTIME = "gpt-realtime-2.1"
 
     const val LIVE = "gpt-live-1"
+    const val LIVE_SUBSCRIPTION = "gpt-live-1-codex"
 
     fun isLive(model: String): Boolean = model == LIVE || model.startsWith("$LIVE-")
 

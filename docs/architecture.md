@@ -296,11 +296,21 @@ stay behind their adapters. A working provider does not establish a public or
 stable subscription protocol guarantee.
 
 Selecting `gpt-live-1` in the portable `models.realtime` setting uses a separate
-Live adapter and the existing WebRTC media implementation. It creates a client
-delegation session at `/v1/live/sessions`, waits for `session.started`, and leaves
-EVA's configured text model responsible for tools and background work. Live voice
-requires an explicitly configured, funded OpenAI API key; the UI identifies this
-paid path even when ChatGPT sign-in is also available for the text worker. Existing
+Live adapter and the existing WebRTC media implementation. ChatGPT sign-in takes
+precedence and uses Codex's subscription protocol: `gpt-live-1-codex`, the Cove
+voice, and `/backend-api/codex/realtime/calls?intent=quicksilver&architecture=avas`
+with `OpenAI-Alpha: quicksilver=v2`. Without sign-in, the explicit API key uses
+`gpt-live-1`, Marin, and `/v1/live/sessions`. Settings explain both routes, and
+connection evidence reports the actual model and account. A rejection never
+falls back to paid API access. This subscription route is account-verified,
+not a public or stable protocol guarantee.
+
+Both routes create a client delegation session, wait for `session.started`, and
+leave EVA's configured text model responsible for tools and background work.
+The adapter normalizes Codex's timestamped transcript and delegation events;
+results use `delegation.context.append` (or `session.context.append` without a
+delegation), with `speakable` for requested speech and no channel for quiet
+context. Public Live uses its thinking/commentary append events. Existing
 Realtime remains the default. Delegated phone-call agents retain Realtime when
 Live is selected for the assistant, because their PCM protocol is different.
 
@@ -325,11 +335,14 @@ updates are not completion evidence. The adapter requests graceful session close
 if finalization cannot be observed, final usage remains unconfirmed. JVM protocol
 and lifecycle tests do not establish device audio or account entitlement. The opt-in
 `NativeVoiceLiveTest` accepts `evaLiveVoice=true`, `evaLiveApiKey` (or the debug
-app's saved key), and a synthetic `evaSpeechPcmPath`. A Pixel run verified real Live
+app's saved key), and a synthetic `evaSpeechPcmPath`; `evaLiveSubscriptionVoice=true`
+selects the debug app's ChatGPT login instead. A Pixel run verified real Live
 WebRTC startup, injected PCM captions, client delegation, result append, and decoded
 spoken output. Controller/dispatcher behavior is separately covered by JVM tests;
-Bluetooth, locked-device behavior and a real delegated phone action remain separate
-verification targets.
+A subscription-only Android emulator run also verified synthetic input, client
+delegation, expected answer captions, and nonzero decoded output through the
+Codex Live protocol. Bluetooth, locked-device behavior and a real delegated phone
+action remain separate verification targets.
 
 Realtime voice uses WebRTC audio and explicit microphone ownership, mute, route,
 focus, and teardown handling. The session owns its audible edges: a rising cue when

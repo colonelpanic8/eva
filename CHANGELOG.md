@@ -4,6 +4,12 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.68.1] - 2026-10-15
+
+### Fixed
+
+- GPT-Live now works through ChatGPT sign-in using the Codex Live model and Cove voice, without requiring API credits. The subscription adapter handles its distinct delegation and spoken-result protocol. API-key access remains available when signed out; connection failures never silently switch to paid usage.
+
 ## [0.68.0] - 2026-10-15
 
 ### Added

@@ -919,6 +919,47 @@ arithmetic transcript and nonzero decoded output PCM, and uses no tools. The
 injection hook is not shipped in production. Tests that invoke a timer have real
 side effects and should run on a dedicated test device.
 
+### GPT-Live subscription access
+
+GPT-Live has distinct API-key and ChatGPT subscription protocols. The subscription
+route follows [Codex 0.162.1's call client](https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/codex-api/src/endpoint/realtime_call.rs):
+`POST /backend-api/codex/realtime/calls?intent=quicksilver&architecture=avas`,
+JSON containing `sdp` and `session`, and `OpenAI-Alpha: quicksilver=v2`.
+It uses `gpt-live-1-codex` and `cove`, not the public API's `gpt-live-1` and
+`marin`. Codex's subscription voice list excludes Marin. Passing Marin returned
+HTTP 201 followed by `Voice session access denied` on the data channel; that
+message did not establish an account entitlement problem. An SDP answer alone
+never establishes a working session: wait for `session.started`.
+
+On 2026-10-15, Codex 0.162.1 itself opened Live with the existing ChatGPT Pro login
+and no API-key environment variables. A standalone workstation WebRTC probe then
+opened the same route using that login, with EVA's own originator header, after
+changing only Marin to Cove. Synthetic speech produced timed captions and a
+client delegation; a `delegation.context.append` with `channel: speakable`
+produced the expected arithmetic-answer captions. `channel: commentary` was
+acknowledged but did not produce the answer during the test. The public
+`/v1/live/sessions` and `/v1/live` routes rejected the subscription token; those
+failures do not apply to the working ChatGPT backend route.
+
+To exercise the Android subscription adapter, sign in to ChatGPT in EVA Debug,
+install the debug and test APKs, and run `NativeVoiceLiveTest` with
+`evaLiveSubscriptionVoice=true` and `evaSpeechPcmPath` as below. Use
+`evaLiveVoice=true` for the separately billed API-key route. The test requires
+client delegation, the expected answer captions, and nonzero decoded output
+PCM. On an emulator without a saved login, `credentialPort` can name a one-shot
+loopback credential server exposed through an explicit `adb reverse`; only the
+access token and account ID are read into test memory, without saving them to
+the app or passing credentials as instrumentation arguments.
+
+The Android emulator run on 2026-10-15 passed with 586,998 synthetic input bytes
+and 376,427 nonzero decoded output bytes, including the expected question,
+client delegation, and arithmetic answer. It exercised EVA's production Live
+provider and native WebRTC media using the host's subscription token through the
+runtime bridge. This verifies synthetic audio and the provider protocol, not
+physical-device acoustics or a real phone action; controller/dispatcher lifecycle
+behavior has separate JVM coverage. Neither route silently retries through the
+other credential type.
+
 ### Direct subscription voice on a signed-in phone
 
 Sign in to ChatGPT in the debug app, build and install the debug application and
