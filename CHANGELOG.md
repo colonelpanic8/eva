@@ -4,6 +4,13 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.65.0] - 2026-10-14
+
+### Changed
+
+- Portable configuration now references catalog extensions by repository, full commit SHA, path, and stable installation identity. Definitions stay in the extension repository; settings and grants remain in the user configuration. Exact definitions are validated before restore and cached for offline use.
+- Opening Extensions keeps the configured catalog pin. **Update** and **Update all** advance it explicitly; a failed package update retains that package's previous revision. File and raw-URL imports still carry their own definitions. Configuration format 4 requires EVA 0.65.0 or newer.
+
 ## [0.64.0] - 2026-10-14
 
 ### Fixed

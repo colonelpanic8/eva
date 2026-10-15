@@ -1,0 +1,2 @@
+* Changed: Portable configuration now references catalog extensions by repository, full commit SHA, path, and stable installation identity. Definitions stay in the extension repository; settings and grants remain in the user configuration. Exact definitions are validated before restore and cached for offline use.
+* ...see CHANGELOG.md for the rest.
