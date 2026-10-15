@@ -21,7 +21,7 @@ jgit = "6.10.1.202505221210-r"
 desugarJdkLibs = "2.1.5"
 slf4j = "2.0.20"
 sqliteJdbc = "3.53.4.0"
-composeMultiplatform = "1.12.1"
+composeMultiplatform = "1.12.2"
 dbusJava = "5.2.2"
 mcpSdk = "0.15.0"
 
