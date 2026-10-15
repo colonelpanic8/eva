@@ -131,6 +131,8 @@ class ThreadController(
     private val liveCaptionSettleMillis: () -> Long = { 500L },
     /** The longest a delegation waits for late captions before asking the user to repeat. */
     private val liveCaptionWaitMillis: () -> Long = { 5_000L },
+    /** Cleared for threads without running work when a new conversation starts. */
+    private val secrets: com.colonelpanic.eva.capability.SecretVault? = null,
 ) {
     private data class PendingQuestion(
         val threadId: String,
@@ -707,6 +709,12 @@ class ThreadController(
     /** Starts an empty thread and shows it. The next attachment or request lands there. */
     fun newThread() {
         scope.launch {
+            secrets?.retain(
+                tasks.values
+                    .filter { it.active }
+                    .map { it.threadId }
+                    .toSet(),
+            )
             val thread = store.createThread(UNTITLED)
             shownThreadId = thread.id
             reattachTextToShownThread()

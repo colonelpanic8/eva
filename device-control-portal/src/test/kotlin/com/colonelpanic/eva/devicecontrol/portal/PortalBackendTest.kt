@@ -133,6 +133,37 @@ class PortalBackendTest {
             assertEquals(null, (mismatch.error as TextMismatch).expected)
         }
 
+    @Test fun sensitiveTextInAPlainFieldIsVerifiedWithoutBeingRepeated() =
+        runTest {
+            val phone = Phone()
+            val backend = PortalBackend(phone, clock = { testScheduler.currentTime })
+            val before = backend.observe()
+            val result = backend.perform(SetText("a", "task", 0, before.observationId, 1, "481516", sensitive = true))
+            assertTrue(result.ok)
+            assertEquals(SetTextDetails(1, true, null, null), result.details)
+            phone.mismatch = true
+            val mismatch =
+                backend.perform(SetText("b", "task", 0, result.observation!!.observationId, 1, "hunter2-correct", sensitive = true))
+            assertFalse(mismatch.ok)
+            assertEquals(SetTextDetails(1, false, null, null), mismatch.details)
+            assertEquals(TextMismatch("b", result.observation!!.observationId, 1, null, null), mismatch.error)
+        }
+
+    @Test fun aRejectedSecretNamesTheDeviceReasonWithoutTheValue() =
+        runTest {
+            val phone =
+                object : PortalTransport by Phone() {
+                    override suspend fun command(command: PortalCommand) {
+                        if (command.method == "keyboard/input") throw PortalCommandFailure("cannot type hunter2-correct here")
+                    }
+                }
+            val backend = PortalBackend(phone, clock = { testScheduler.currentTime })
+            val before = backend.observe()
+            val result = backend.perform(SetText("a", "task", 0, before.observationId, 1, "hunter2-correct", sensitive = true))
+            assertEquals("cannot type <secret> here", (result.details as SetTextDetails).inputError)
+            assertFalse(ProtocolJson.encodeToString(ActionResult.serializer(), result).contains("hunter2"))
+        }
+
     @Test fun waitsForFocusBeforeTypingAndAcceptsMaskedReadBack() =
         runTest {
             val phone =

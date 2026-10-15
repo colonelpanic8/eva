@@ -91,6 +91,54 @@ class ExtensionProtocolTest {
         }
         val request = Json.parseToJsonElement(ExtensionProtocol.describeRequest()).jsonObject
         assertEquals(JsonArray(listOf(JsonPrimitive(1))), request["supportedProtocolVersions"])
+        assertEquals(JsonArray(listOf(JsonPrimitive("secrets"))), request["features"])
+    }
+
+    @Test
+    fun `a completed reply may carry bounded named secrets and any violation is malformed`() {
+        val envelope = """"protocolVersion":1,"reasonCode":null,"truncated":false,"content":[]"""
+
+        fun reply(
+            secrets: String,
+            status: String = "completed",
+        ) = """{$envelope,"status":"$status","secrets":$secrets}"""
+
+        fun secret(
+            value: String = "hunter2",
+            label: String = "Password for github.com/me",
+        ) = """{"value":${JsonPrimitive(value)},"label":${JsonPrimitive(label)}}"""
+
+        val parsed = ExtensionProtocol.executeResult(reply("""{"password":${secret()},"otp_2":${secret("123456", "Code")}}"""))
+        assertEquals(setOf("password", "otp_2"), parsed.secrets.keys)
+        assertEquals("hunter2", parsed.secrets.getValue("password").value)
+        assertFalse(parsed.secrets.toString().contains("hunter2"))
+        assertEquals(parsed, ExtensionProtocol.executeResult(ExtensionProtocol.encodeResult(parsed)))
+        ExtensionProtocol.executeResult(reply("""{"p":${secret("x".repeat(4096), "l".repeat(120))}}"""))
+
+        val nine = (1..9).joinToString(",", "{", "}") { "\"s$it\":${secret()}" }
+        listOf(
+            reply("""{"password":${secret()}}""", "not_executed"),
+            reply("""{"password":${secret()}}""", "failed"),
+            reply("""{"password":${secret()}}""", "handed_off"),
+            reply("""{"password":${secret()}}""", "unknown"),
+            reply("{}"),
+            reply("null"),
+            reply(nine),
+            reply("""{"Password":${secret()}}"""),
+            reply("""{"1password":${secret()}}"""),
+            reply("""{"pass-word":${secret()}}"""),
+            reply("""{"${"a".repeat(33)}":${secret()}}"""),
+            reply("""{"password":${secret(value = "")}}"""),
+            reply("""{"password":${secret(value = "x".repeat(4097))}}"""),
+            reply("""{"password":${secret(label = "")}}"""),
+            reply("""{"password":${secret(label = "l".repeat(121))}}"""),
+            reply("""{"password":{"value":"hunter2"}}"""),
+            reply("""{"password":{"value":"hunter2","label":"l","hint":"x"}}"""),
+            reply("""{"password":{"value":7,"label":"l"}}"""),
+            reply("""{"password":"hunter2"}"""),
+        ).forEach { assertThrows(it, Exception::class.java) { ExtensionProtocol.executeResult(it) } }
+        val large = reply("""{"p":${secret("x".repeat(4000))}}""")
+        assertThrows(Exception::class.java) { ExtensionProtocol.executeResult(large, maxBytes = large.length - 1) }
     }
 
     @Test

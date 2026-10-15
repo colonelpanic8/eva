@@ -613,6 +613,43 @@ resumed conversations, and delivered to the model within a result budget equal t
 the extension result limit. See the [extension protocol](extension-protocol.md)
 for concrete identity, schema, waiting, and authorization rules.
 
+### Secret handles
+
+An installed extension can return passwords and one-time codes in a reply's
+[`secrets`](extension-protocol.md#secrets) field: fill, don't reveal.
+`ExtensionBackend` moves each value into `capability/SecretVault.kt` before the
+outcome reaches the dispatcher. The vault is in memory only, with no disk, SQLite,
+trace, or log copy. The journaled message and data, and therefore receipts, history,
+diagnostics exports, and what the model receives, hold only an opaque
+`secret:<32 hex>` handle and the provider's label. The values cannot be retrieved
+through any tool.
+
+Handles are scoped to the thread whose call received them. `eva.device.set_text`
+takes `secret` instead of `text`, and a device task started from that thread gets
+a scoped view of the vault (`SecretValues`), so its worker's `set_text` can take the
+handle the conversation model put in the goal. A handle in task text is only a
+reference, so the goal, revisions, and step history are stored as written. The
+value is resolved at input time into a `SetText` marked `sensitive`. That flag makes
+`PortalBackend` redact the expected and actual text in its read-back and errors,
+whatever kind of field it is, on both the Portal and Shizuku transports. Verification
+reports only match or mismatch. Typing into a password field still goes through the
+virtual key map, and a value with characters the map lacks fails with the helper's
+reason, which reaches the model with any copy of the value masked.
+
+A secret typed into a plain field is visible on screen. Every observation the
+direct tools or the worker hand to a model therefore has each held value of four or
+more characters replaced with `<secret>`. Step descriptions name a secret by label.
+Shorter values are not masked, since masking them would garble ordinary screen text.
+Screenshots are images and are not masked: a worker screenshot of a plain field that
+holds a code shows the code. Password fields show dots.
+
+Handles have no expiry timer. Starting a new conversation (`ThreadController.newThread`)
+clears every thread without running work, and process death clears everything.
+An unknown, cleared, or other thread's handle is refused before input. That is
+`NOT_EXECUTED` for the direct tool, and a `secret_unavailable` refusal for the
+worker; both say to look the credential up again. Restored history keeps its
+handles, which then fail the same way.
+
 ## Android capabilities
 
 - Declarative `android.content` reads use bounded background `ContentResolver`
@@ -842,7 +879,7 @@ worker. An unresolved primitive effect remains UNKNOWN at terminal task receipt,
 even if later actions succeed. The task uses neither `BudgetedBackend` nor
 `BoundedExecution`, returns no startup handoff, and holds its lease until terminal
 completion/drain. Its one receipt includes task/revision identity, effects, and
-per-step kind, a readable description (password text redacted), the worker's stated
+per-step kind, a readable description (password text redacted, secrets named by label), the worker's stated
 intent, the serving backend, result and observation/model/action timings. Step receipts
 also retain the device-worker initiator, task/leg ID, call ID, and available
 response/output-item IDs, separate from the outer call's initiator. The conversation
@@ -853,7 +890,8 @@ UNKNOWN. Journal recovery never replays a task.
 
 The conversation model can also act on the screen itself, one input per call,
 without the worker: `eva.device.observe`, `tap`, `set_text`, `scroll`, `press_enter`,
-and `navigate` (Back, Home, notification shade). They run through
+and `navigate` (Back, Home, notification shade). `set_text` takes either `text` or a
+[secret handle](#secret-handles). They run through
 `devicecontrol/ScreenActions.kt` on the same `PortalBackend` as tasks, so rechecks,
 settling and text read-back are shared. They use the backends in the same order as
 tasks: each call starts at the preferred backend, and one that is not ready or passes

@@ -31,6 +31,22 @@
       }
     },
     "structuredContent": { "type": ["object", "null"] },
+    "secrets": {
+      "description": "Values EVA types into the screen but withholds from the model, journal, and history; sent only when the describe request lists the secrets feature.",
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 8,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["value", "label"],
+        "additionalProperties": false,
+        "properties": {
+          "value": { "type": "string", "minLength": 1, "maxLength": 4096 },
+          "label": { "type": "string", "minLength": 1, "maxLength": 120, "description": "Non-secret description shown to the model and the user." }
+        }
+      }
+    },
     "_meta": { "type": "object" }
   },
   "allOf": [
@@ -45,6 +61,10 @@
     {
       "if": { "properties": { "reasonCode": { "const": "deadline_exceeded" } } },
       "then": { "properties": { "status": { "enum": ["not_executed", "unknown"] } } }
+    },
+    {
+      "if": { "required": ["secrets"] },
+      "then": { "properties": { "status": { "const": "completed" } } }
     }
   ]
 }

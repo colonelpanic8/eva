@@ -2,6 +2,7 @@
 
 package com.colonelpanic.eva.devicecontrol.proto
 
+import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonClassDiscriminator
@@ -82,7 +83,14 @@ data class SetText(
     override val expiresAt: String? = null,
     @SerialName("lease_id")
     override val leaseId: String? = null,
-) : Action()
+    /** The text is a secret: no result, error or read-back may repeat it, whatever kind of field it enters. */
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val sensitive: Boolean = false,
+) : Action() {
+    override fun toString() =
+        "SetText(actionId=$actionId, taskId=$taskId, taskRevision=$taskRevision, boundObservationId=$boundObservationId, " +
+            "element=$element, text=${if (sensitive) "<secret>" else text}, replace=$replace, sensitive=$sensitive)"
+}
 
 @Serializable
 @SerialName("scroll")

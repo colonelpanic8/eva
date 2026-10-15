@@ -745,8 +745,9 @@ tool object plus `effects`, `execution`, and `result`; a reply is EVA's outcome
 envelope around MCP `content` and `structuredContent`. See
 [`extension-descriptor.schema.json`](schemas/extension-descriptor.schema.json),
 [`extension-result.schema.json`](schemas/extension-result.schema.json), and the
-fixtures [`extension-describe.json`](examples/extension-describe.json) and
-[`extension-result.json`](examples/extension-result.json).
+fixtures [`extension-describe.json`](examples/extension-describe.json),
+[`extension-result.json`](examples/extension-result.json), and
+[`extension-secret-result.json`](examples/extension-secret-result.json).
 
 ### 1. Discovery and copied AIDL
 
@@ -814,8 +815,13 @@ unknown-ID, wrong-provider, and already-expired callbacks.
 `requestJson` tells the provider what EVA speaks:
 
 ```json
-{"protocolVersion": 1, "supportedProtocolVersions": [1]}
+{"protocolVersion": 1, "supportedProtocolVersions": [1], "features": ["secrets"]}
 ```
+
+`features` lists optional v1 behavior EVA implements. `secrets` means EVA strips and
+withholds a reply's [`secrets`](#secrets) field. Advertise a tool that returns secrets
+only when the request lists it; an older EVA omits `features` and would reject the field
+as malformed. A provider ignores feature names it does not know.
 
 A provider answers with a descriptor whose `protocolVersion` is one EVA listed.
 Future EVA versions extend the list; a provider that only knows a version EVA no
@@ -849,6 +855,10 @@ array order is significant. Unknown fields are rejected everywhere except inside
 | Title | 120 Unicode code points |
 | Description or schema description | 2,000 Unicode code points |
 | Content blocks per reply | 64 |
+| Secrets per reply | 8 |
+| Secret name | `[a-z][a-z0-9_]{0,31}` |
+| Secret value | 1–4,096 Unicode code points |
+| Secret label | 1–120 Unicode code points |
 
 Titles/descriptions are nonempty; content text may be empty. Both sides enforce
 limits. Truncate human text at Unicode boundaries and set `truncated: true`.
@@ -993,6 +1003,59 @@ uncertain writes, including through HTTP clients/work queues. EVA never retries
 execution to repair a lost reply; even reads receive no automatic execution
 retry in this pass.
 
+#### Secrets
+
+A completed reply may add a top-level `secrets` object: values EVA types into the
+screen for the user but never shows the model. A password manager uses it so a
+credential can be filled without being read aloud or sent to the model provider.
+See [`extension-secret-result.json`](examples/extension-secret-result.json):
+
+```json
+{
+  "protocolVersion": 1,
+  "status": "completed",
+  "reasonCode": null,
+  "truncated": false,
+  "content": [{"type": "text", "text": "Decrypted github.com/colonelpanic8."}],
+  "structuredContent": {"path": "github.com/colonelpanic8", "username": "colonelpanic8", "hasOtp": true},
+  "secrets": {
+    "password": {"value": "…", "label": "Password for github.com/colonelpanic8"},
+    "otp": {"value": "123456", "label": "Current one-time code for github.com/colonelpanic8"}
+  }
+}
+```
+
+Rules, any violation of which makes the whole reply malformed (handled like any
+malformed reply: `unknown`, nothing kept):
+
+- Only a `completed` reply may carry `secrets`. It holds 1–8 entries named by
+  `[a-z][a-z0-9_]{0,31}`; each is exactly `{"value", "label"}`.
+- `value` is 1–4,096 code points. `label` is 1–120 code points of non-secret
+  description that the model and the user see, such as which account it is for.
+- The field counts toward `result.maxBytes`. It is separate from
+  `structuredContent` and is not checked against `outputSchema`.
+- Keep values out of `content` and `structuredContent`. EVA masks any copy of a
+  value it finds there, but that is a backstop, not the channel.
+
+What EVA guarantees once a reply is accepted:
+
+- `ExtensionBackend` removes `secrets` before the outcome reaches the dispatcher.
+  Values go to an in-memory vault. They never reach disk, the action journal,
+  receipts, conversation history, diagnostics, traces, logs, or the model.
+- Each value gets an opaque random handle (`secret:` and 32 hex digits). The
+  attributed message gains EVA's `secrets-withheld` note listing each name,
+  handle, and quoted label. The structured data gains
+  `"secrets": {name: {"handle", "label"}}`, replacing any provider field of that name.
+- The model uses a handle only through the `secret` parameter of
+  `eva.device.set_text`, or by naming it in an `eva.device.task` goal for the
+  task's `set_text`. EVA resolves the handle when typing; the value leaves the
+  process only as input to the screen-control backend.
+- A handle is valid in the conversation thread that received it and in the device
+  tasks that thread starts. It has no timer. Starting a new conversation clears every
+  thread without running work, and process death clears everything. An unknown or
+  cleared handle is `not_executed` with a message saying to look the credential up
+  again.
+
 Truncated means incomplete information, including capped ingestion before
 filtering. Do not claim exhaustive search or definitive absence from a capped
 set. Keep item references whole. EVA attributes provider-reported evidence rather
@@ -1090,7 +1153,7 @@ must explain this. Unknown effects never get read grants. EVA rechecks grants
 and registry revision immediately before durably committing dispatch.
 
 All provider titles, descriptions, schema descriptions, annotations, references,
-content, and structured content are untrusted data. They cannot change
+content, structured content, and secret labels are untrusted data. They cannot change
 instructions, grants, outcomes, model settings, or execution destinations. EVA
 separates its receipt envelope from quoted external content in live results and
 restored history. No model-controlled shell, arbitrary IPC component, callback

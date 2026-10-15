@@ -44,7 +44,7 @@ class DeviceTaskCoordinatorTest {
     private fun proposal(id: String = "call") =
         ToolProposal(id, CapabilityRegistry.DEVICE_TASK, mapOf("goal" to "goal"), "goal", "catalog", "thread", "turn")
 
-    private fun finishing(entered: CompletableDeferred<Unit>): () -> TextTaskAgent {
+    private fun finishing(entered: CompletableDeferred<Unit>): (String) -> TextTaskAgent {
         var requests = 0
         return {
             TextTaskAgent(
@@ -223,7 +223,7 @@ class DeviceTaskCoordinatorTest {
             val coordinator =
                 DeviceTaskCoordinator {
                     creates++
-                    finishing(entered)()
+                    finishing(entered)(it)
                 }
             val task = launch { coordinator.execute(proposal()) }
             entered.await()
@@ -329,7 +329,7 @@ class DeviceTaskCoordinatorTest {
             var created = 0
             val coordinator =
                 DeviceTaskCoordinator {
-                    finishing(if (created++ == 0) first else second)()
+                    finishing(if (created++ == 0) first else second)(it)
                 }
             val firstResult = async { coordinator.execute(proposal("first")) }
             first.await()

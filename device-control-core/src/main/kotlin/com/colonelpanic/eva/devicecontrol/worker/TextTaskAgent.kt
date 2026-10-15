@@ -2,12 +2,14 @@ package com.colonelpanic.eva.devicecontrol.worker
 
 import com.colonelpanic.eva.devicecontrol.DeviceBackend
 import com.colonelpanic.eva.devicecontrol.PreferredDeviceBackend
+import com.colonelpanic.eva.devicecontrol.SecretValues
 import com.colonelpanic.eva.devicecontrol.StepTiming
 import com.colonelpanic.eva.devicecontrol.TaskAgent
 import com.colonelpanic.eva.devicecontrol.TaskPhase
 import com.colonelpanic.eva.devicecontrol.TaskProgress
 import com.colonelpanic.eva.devicecontrol.TaskResult
 import com.colonelpanic.eva.devicecontrol.TaskStatus
+import com.colonelpanic.eva.devicecontrol.masked
 import com.colonelpanic.eva.devicecontrol.proto.Action
 import com.colonelpanic.eva.devicecontrol.proto.ActionResult
 import com.colonelpanic.eva.devicecontrol.proto.Element
@@ -18,6 +20,7 @@ import com.colonelpanic.eva.devicecontrol.proto.Screenshot
 import com.colonelpanic.eva.devicecontrol.proto.ScreenshotDetails
 import com.colonelpanic.eva.devicecontrol.proto.Scroll
 import com.colonelpanic.eva.devicecontrol.proto.ScrollDirection
+import com.colonelpanic.eva.devicecontrol.proto.SetText
 import com.colonelpanic.eva.devicecontrol.proto.SetTextDetails
 import com.colonelpanic.eva.devicecontrol.proto.renderTable
 import kotlinx.coroutines.CancellationException
@@ -46,6 +49,8 @@ class TextTaskAgent(
     private val settings: WorkerSettings = WorkerSettings(),
     val taskId: String = UUID.randomUUID().toString(),
     private val clock: () -> Long = { System.nanoTime() / 1_000_000 },
+    /** Handles the owning conversation received; set_text types their values without the worker seeing them. */
+    private val secrets: SecretValues = SecretValues.NONE,
 ) : TaskAgent {
     private val control = Any()
     private val mailbox = Channel<Unit>(Channel.CONFLATED)
@@ -161,7 +166,7 @@ class TextTaskAgent(
                     progress(TaskPhase.OBSERVING)
                     val start = clock()
                     try {
-                        observation = interruptible { withTimeout(remaining()) { backend.observe() } }
+                        observation = interruptible { withTimeout(remaining()) { backend.observe() } }.masked(secrets)
                     } catch (
                         e: CancellationException,
                     ) {
@@ -280,7 +285,7 @@ class TextTaskAgent(
                 noCall = 0
                 // Redact secret text in replayed calls as well as progress history.
                 val safeArgs =
-                    if (call.name == "set_text" &&
+                    if (call.name == "set_text" && call.arguments.text("text") != null &&
                         before.elements.getOrNull(call.arguments["element"]?.jsonPrimitive?.intOrNull ?: -1)?.password == true
                     ) {
                         JsonObject(call.arguments + ("text" to JsonPrimitive("<password>")))
@@ -343,6 +348,12 @@ class TextTaskAgent(
                 var action: Action? = null
                 try {
                     if (call.name != "observe") action = action(call, before, rev)
+                } catch (_: SecretUnavailable) {
+                    steps[steps.lastIndex] = steps.last().copy(result = "secret_unavailable")
+                    note = wording.note("secret_unavailable")
+                    refused++
+                    if (refused >= settings.maxRefusals) return result(TaskStatus.FAILED, "refusal_limit")
+                    continue
                 } catch (
                     _: Exception,
                 ) {
@@ -385,14 +396,14 @@ class TextTaskAgent(
                     interruptible {
                         if (revision != rev || isStopped) throw CancellationException()
                         if (action == null) {
-                            observation = backend.observe()
+                            observation = backend.observe().masked(secrets)
                         } else {
                             performEntered = true
                             val r = backend.perform(action)
                             actionResult = r
                             if (r.executionStatus == ExecutionStatus.EXECUTED && action !is Screenshot) effects++
                             if (r.executionStatus in setOf(ExecutionStatus.OUTCOME_UNKNOWN, ExecutionStatus.IN_FLIGHT)) uncertain = true
-                            observation = r.observation ?: backend.observe()
+                            observation = (r.observation ?: backend.observe()).masked(secrets)
                         }
                     }
                 } catch (e: CancellationException) {
@@ -437,16 +448,25 @@ class TextTaskAgent(
                 if (r?.details is SetTextDetails) {
                     val d = r.details as SetTextDetails
                     note =
-                        if (d.verified) {
-                            wording.note("text_verified")
-                        } else {
-                            wording.note(
-                                "text_result",
-                                "verified" to d.verified,
-                                "expected" to JsonPrimitive(d.expected ?: "<password>"),
-                                "actual" to JsonPrimitive(d.actual ?: "<password>"),
-                            )
+                        when {
+                            d.verified -> {
+                                wording.note("text_verified")
+                            }
+
+                            (action as? SetText)?.sensitive == true -> {
+                                wording.note("secret_mismatch")
+                            }
+
+                            else -> {
+                                wording.note(
+                                    "text_result",
+                                    "verified" to d.verified,
+                                    "expected" to JsonPrimitive(d.expected ?: "<password>"),
+                                    "actual" to JsonPrimitive(d.actual ?: "<password>"),
+                                )
+                            }
                         }
+                    d.inputError?.let { note += "\n" + wording.note("input_error", "detail" to JsonPrimitive(it)) }
                 }
                 if (r?.details is ScreenshotDetails) {
                     note = wording.note("screenshot_attached")
@@ -542,6 +562,15 @@ class TextTaskAgent(
                     listOf("start_x", "start_y", "end_x", "end_y").forEach { remove(it) }
                     if (get("duration_ms") == JsonNull) remove("duration_ms")
                 }
+                if (call.name == "set_text") {
+                    val handle = (remove("secret") as? JsonPrimitive)?.takeIf { it.isString }?.content
+                    if (handle != null) {
+                        require(get("text") == null || get("text") == JsonNull)
+                        val secret = secrets.resolve(handle) ?: throw SecretUnavailable()
+                        put("text", JsonPrimitive(secret.value))
+                        put("sensitive", JsonPrimitive(true))
+                    }
+                }
                 put("kind", JsonPrimitive(call.name))
                 put("action_id", JsonPrimitive(UUID.randomUUID().toString()))
                 put("task_id", JsonPrimitive(taskId))
@@ -584,8 +613,11 @@ class TextTaskAgent(
             }
 
             "set_text" -> {
-                (if ((args["replace"] as? JsonPrimitive)?.content == "false") "Append " else "Enter ") +
-                    "${quoted(args.text("text"))} in ${target()}"
+                val entered =
+                    args.text("secret")?.let { handle ->
+                        secrets.resolve(handle)?.let { "secret ${quoted(it.label)}" } ?: "an unavailable secret"
+                    } ?: quoted(args.text("text"))
+                (if ((args["replace"] as? JsonPrimitive)?.content == "false") "Append " else "Enter ") + "$entered in ${target()}"
             }
 
             "scroll" -> {
@@ -689,6 +721,8 @@ class TextTaskAgent(
             summary.take(MAX_SUMMARY) + " " + wording.note("summary_cut", "count" to MAX_SUMMARY)
         }
 
+    private class SecretUnavailable : Exception(null, null, false, false)
+
     private data class ScrollState(
         val direction: ScrollDirection,
         val target: String,
@@ -725,7 +759,7 @@ data class WorkerStep(
     val callId: String? = null,
     val responseId: String? = null,
     val outputItemId: String? = null,
-    /** The call in words, with password text redacted. */
+    /** The call in words, with password text redacted and secrets named only by label. */
     val detail: String = kind,
     /** Why the worker said it made the call. */
     val intent: String? = null,

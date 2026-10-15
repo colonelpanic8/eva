@@ -36,6 +36,14 @@ class ExtensionFixtureTest {
     }
 
     @Test
+    fun `secret result fixture decodes with its secrets apart from the structured content`() {
+        val reply = ExtensionProtocol.executeResult(File(docs, "examples/extension-secret-result.json").readText())
+        assertEquals(setOf("password", "otp"), reply.secrets.keys)
+        assertEquals("Current one-time code for github.com/colonelpanic8", reply.secrets.getValue("otp").label)
+        assertEquals(setOf("path", "username", "hasOtp"), reply.outcome.data!!.keys)
+    }
+
+    @Test
     fun `published schemas parse and name the draft they use`() {
         val schemas = File(docs, "schemas").listFiles { file -> file.extension == "json" }.orEmpty()
         assertEquals(

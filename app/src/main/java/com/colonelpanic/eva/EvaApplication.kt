@@ -116,11 +116,19 @@ class EvaApplication :
     val deviceControlHost: DeviceControlHost? by lazy {
         if (Build.VERSION.SDK_INT >= 30) DeviceControlHost(this) { scope.launch { screenControl.refresh() } } else null
     }
+
+    /** Extension secrets, in memory only; see docs/architecture.md#secret-handles. */
+    val secrets =
+        com.colonelpanic.eva.capability
+            .SecretVault()
+
     private val screenActions by lazy {
         ScreenActions(
             enabled = { capabilities.screenControlEnabled },
             select = ::screenActionBackend,
             elapsedMillis = SystemClock::elapsedRealtime,
+            secrets = secrets,
+            wording = { prompts.wording.value },
         )
     }
 
@@ -317,7 +325,7 @@ class EvaApplication :
         com.colonelpanic.eva.devicecontrol
             .DeviceTaskCoordinator(unavailable = ::deviceTaskUnavailableReason, releaseScope = scope, wording = {
                 prompts.wording.value
-            }) { createDeviceTaskAgent() }
+            }) { thread -> createDeviceTaskAgent(secrets = secrets.scoped(thread)) }
     }
 
     private suspend fun deviceTaskUnavailableReason(): String? {
@@ -487,6 +495,7 @@ class EvaApplication :
 
     internal fun createDeviceTaskAgent(
         onDeviceTiming: (com.colonelpanic.eva.devicecontrol.portal.ActionTiming) -> Unit = {},
+        secrets: com.colonelpanic.eva.devicecontrol.SecretValues = com.colonelpanic.eva.devicecontrol.SecretValues.NONE,
         decorateModel: (
             com.colonelpanic.eva.devicecontrol.worker.WorkerModel,
         ) -> com.colonelpanic.eva.devicecontrol.worker.WorkerModel = { it },
@@ -540,6 +549,7 @@ class EvaApplication :
                     options.maxScreenshots,
                     options.launchAliases,
                 ),
+            secrets = secrets,
         )
     }
 
@@ -822,6 +832,8 @@ class EvaApplication :
                         InstalledServiceAdapter(
                             ExtensionDiscovery(connector::scan, connections, extensionScope, ::logExtensionFailure),
                             connections,
+                            secrets = secrets,
+                            wording = { prompts.wording.value },
                         )
                     },
                     com.colonelpanic.eva.capability.extensions.IsolatedCapabilityAdapter(
@@ -951,6 +963,7 @@ class EvaApplication :
                 }),
             deviceTasks = deviceTasks,
             callTasks = callTasks,
+            secrets = secrets,
             onWorkAccepted = { TurnWorkService.ensureStarted(this) },
             stallPeriodMillis = { capabilities.stallPeriodSeconds * 1_000L },
             store = conversations,

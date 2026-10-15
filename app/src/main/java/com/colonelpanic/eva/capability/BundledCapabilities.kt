@@ -289,16 +289,23 @@ object BundledCapabilities {
                 "observationRef":{"type":"string","minLength":1,"maxLength":64},
                 "node":{"type":"integer","minimum":0,"maximum":999},
                 "text":{"type":"string","maxLength":2000},
+                "secret":{"type":"string","minLength":1,"maxLength":64},
                 "quiet":{"type":"boolean"}},
-                "required":["observationRef","node","text"],"additionalProperties":false}
+                "required":["observationRef","node"],"additionalProperties":false}
             """,
                 ),
             ) { args ->
-                val text = args.getValue("text")
-                if (text.any { it.isISOControl() && it != '\n' && it != '\t' }) {
-                    "Enter text without unsupported control characters."
-                } else {
-                    null
+                val text = args["text"]
+                when {
+                    (text == null) == (args["secret"] == null) -> "Give exactly one of text or secret."
+
+                    text != null &&
+                        text.any {
+                            it.isISOControl() && it != '\n' && it != '\t'
+                        }
+                    -> "Enter text without unsupported control characters."
+
+                    else -> null
                 }
             },
             tool(

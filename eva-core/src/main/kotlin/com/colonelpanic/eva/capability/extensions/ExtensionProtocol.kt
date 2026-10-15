@@ -27,6 +27,12 @@ object ExtensionProtocol {
     const val ARGUMENT_BYTES = 16_384
     const val RESULT_BYTES = 16_384
     const val DEFAULT_WAIT_MILLIS = 30_000L
+    const val MAX_SECRETS = 8
+    const val SECRET_VALUE_CHARS = 4096
+
+    /** What EVA advertises with `describe`: `secrets` means it strips and withholds a reply's `secrets`. */
+    val FEATURES = listOf("secrets")
+    private val SECRET_NAME = Regex("[a-z][a-z0-9_]{0,31}")
     private val NAME = Regex("[A-Za-z_][A-Za-z0-9_]{0,63}")
     private val PROPERTY = Regex("[A-Za-z][A-Za-z0-9_]{0,63}")
     private val REVISION = Regex("[A-Za-z0-9._:-]{1,128}")
@@ -55,6 +61,7 @@ object ExtensionProtocol {
             mapOf(
                 "protocolVersion" to JsonPrimitive(PROTOCOL_VERSION),
                 "supportedProtocolVersions" to JsonArray(listOf(JsonPrimitive(PROTOCOL_VERSION))),
+                "features" to JsonArray(FEATURES.map(::JsonPrimitive)),
             ),
         ).toString()
 
@@ -84,13 +91,29 @@ object ExtensionProtocol {
     ): ResultReply {
         require(maxBytes in 1..RESULT_BYTES)
         val root = BoundedJson.parse(payload, maxBytes).obj()
-        root.fields(setOf("protocolVersion", "status", "reasonCode", "truncated", "content"), setOf("structuredContent", "_meta"))
+        root.fields(
+            setOf("protocolVersion", "status", "reasonCode", "truncated", "content"),
+            setOf("structuredContent", "secrets", "_meta"),
+        )
         val reply = result(root)
         val data = reply.outcome.data
         if (outputSchema != null && data != null) {
             require(ToolSchema.error(outputSchema, data) == null) { "Structured content does not match the output schema" }
         }
-        return reply
+        val secrets = root["secrets"]?.let(::secrets).orEmpty()
+        require(secrets.isEmpty() || reply.outcome.status == InvocationStatus.COMPLETED) { "Only a completed reply may carry secrets" }
+        return reply.copy(secrets = secrets)
+    }
+
+    private fun secrets(element: JsonElement): Map<String, ExtensionSecret> {
+        val secrets = element.obj()
+        require(secrets.size in 1..MAX_SECRETS) { "A reply carries 1 to $MAX_SECRETS secrets" }
+        return secrets.mapValues { (name, entry) ->
+            require(SECRET_NAME.matches(name)) { "Unsupported secret name" }
+            val fields = entry.obj()
+            fields.fields(setOf("value", "label"))
+            ExtensionSecret(fields.getValue("value").text(SECRET_VALUE_CHARS), fields.getValue("label").text(120))
+        }
     }
 
     fun encodeResult(
@@ -117,6 +140,16 @@ object ExtensionProtocol {
                         ),
                     )
                     reply.outcome.data?.let { put("structuredContent", it) }
+                    if (reply.secrets.isNotEmpty()) {
+                        put(
+                            "secrets",
+                            JsonObject(
+                                reply.secrets.mapValues { (_, secret) ->
+                                    JsonObject(mapOf("value" to JsonPrimitive(secret.value), "label" to JsonPrimitive(secret.label)))
+                                },
+                            ),
+                        )
+                    }
                 },
             ).toString()
         executeResult(payload, maxBytes)
@@ -412,7 +445,20 @@ data class ResultReply(
     val outcome: ExecutionOutcome,
     val reasonCode: String?,
     val truncated: Boolean,
+    /** Values a completed reply returned for typing only; [ExtensionBackend] strips them before anything else sees the reply. */
+    val secrets: Map<String, ExtensionSecret> = emptyMap(),
 )
+
+class ExtensionSecret(
+    val value: String,
+    val label: String,
+) {
+    override fun equals(other: Any?) = other is ExtensionSecret && other.value == value && other.label == label
+
+    override fun hashCode() = 31 * value.hashCode() + label.hashCode()
+
+    override fun toString() = "ExtensionSecret(label=$label)"
+}
 
 data class DescriptionReply(
     val result: ResultReply,
