@@ -7,6 +7,7 @@ import com.charleskorn.kaml.YamlConfiguration
 import com.charleskorn.kaml.YamlException
 import com.colonelpanic.eva.adapters.android.PhoneNumberKey
 import com.colonelpanic.eva.adapters.declarative.PackageCodec
+import com.colonelpanic.eva.adapters.declarative.PluginRepository
 import com.colonelpanic.eva.adapters.declarative.httpBindings
 import com.colonelpanic.eva.capability.CallEnding
 import com.colonelpanic.eva.conversation.prompt.PromptComponent
@@ -49,7 +50,7 @@ data class EvaConfigurationDocument(
 ) {
     companion object {
         const val FORMAT = "eva"
-        const val VERSION = 3
+        const val VERSION = 4
         const val OLDEST_SUPPORTED_VERSION = 1
     }
 }
@@ -138,6 +139,7 @@ data class PackagesPatch(
     val serviceBindings: List<PackageServiceBinding>? = null,
     val appliedDefaults: List<String>? = null,
     val autoEnabled: Map<String, Boolean>? = null,
+    val revisions: Map<String, String>? = null,
 )
 
 @Serializable
@@ -145,7 +147,9 @@ data class PortablePackage(
     val instance: String,
     val source: String,
     val url: String,
-    val document: String,
+    val document: String? = null,
+    val revision: String? = null,
+    val id: String? = null,
 )
 
 @Serializable
@@ -312,6 +316,7 @@ data class EvaConfiguration(
         val appliedDefaults: List<String> = emptyList(),
         /** Extensions a refresh may not enable on its own, recorded when the user turns one off. */
         val autoEnabled: Map<String, Boolean> = emptyMap(),
+        val revisions: Map<String, String> = emptyMap(),
     )
 
     data class Services(
@@ -610,6 +615,7 @@ object EvaConfigurationCodec {
                 current.packages.serviceBindings.takeIf { it != base?.packages?.serviceBindings },
                 current.packages.appliedDefaults.takeIf { it != base?.packages?.appliedDefaults },
                 current.packages.autoEnabled.takeIf { it != base?.packages?.autoEnabled },
+                current.packages.revisions.takeIf { it != base?.packages?.revisions.orEmpty() },
             ).nonEmpty(),
         services = ServicesPatch(current.services.http.takeIf { it != base?.services?.http }).nonEmpty(),
         extensions = ExtensionsPatch(current.extensions.grants.takeIf { it != base?.extensions?.grants }).nonEmpty(),
@@ -680,6 +686,7 @@ object EvaConfigurationCodec {
                     packages?.legacyBundledInstances.orEmpty(),
                     packages?.appliedDefaults.orEmpty(),
                     packages?.autoEnabled.orEmpty(),
+                    packages?.revisions.orEmpty(),
                 ),
             services = EvaConfiguration.Services(services?.http.orEmpty()),
             extensions =
@@ -738,11 +745,27 @@ object EvaConfigurationCodec {
         ) { "Duplicate bundled package instance." }
         require(packages.appliedDefaults.distinct().size == packages.appliedDefaults.size) { "Duplicate applied default package." }
         packages.appliedDefaults.forEach { require(it.matches(Regex("[A-Za-z0-9._-]{1,128}"))) { "Invalid applied default package." } }
+        packages.revisions.forEach { (source, revision) ->
+            PluginRepository.catalogSource(source)
+            PluginRepository.validateReference("packages/validation.json", revision)
+        }
         require(packages.installed.size <= 64) { "At most 64 packages may be installed." }
         packages.installed.forEach { item ->
             item.instance.uuid("package")
             require(item.source.length in 1..2048 && item.url.length in 1..2048)
-            PackageCodec.decode(item.document)
+            if (item.document != null) {
+                require(item.revision == null) { "An inline extension cannot also name a revision." }
+                PackageCodec.decode(item.document)
+            } else {
+                PluginRepository.catalogSource(item.source)
+                PluginRepository.validateReference(
+                    item.url,
+                    requireNotNull(item.revision ?: packages.revisions[item.source]) {
+                        "Extension ${item.url} needs a pinned repository revision."
+                    },
+                )
+                require(!item.id.isNullOrBlank()) { "A referenced extension must name its package id." }
+            }
         }
         require(
             packages.installed
@@ -789,7 +812,11 @@ object EvaConfigurationCodec {
         require(packages.serviceBindings.map { it.service }.toSet() == services.http.keys) {
             "Every HTTP service must be used by a package binding."
         }
-        val installedDefinitions = packages.installed.associate { it.instance to PackageCodec.decode(it.document) }
+        val installedDefinitions =
+            packages.installed
+                .mapNotNull { item ->
+                    item.document?.let { item.instance to PackageCodec.decode(it) }
+                }.toMap()
         packages.serviceBindings.forEach { binding ->
             installedDefinitions[binding.packageInstance]?.let { definition ->
                 require(definition.httpOrigins().contains(binding.sourceOrigin)) {
@@ -911,6 +938,7 @@ object EvaConfigurationCodec {
             voice = voice.copy(endCallAfter = voice.endCallAfter.toSortedMap()),
             packages =
                 packages.copy(
+                    revisions = packages.revisions.toSortedMap(),
                     installed = packages.installed.sortedBy { it.instance },
                     waitMillis = packages.waitMillis.toSortedMap(),
                     services = packages.services.sortedBy { it.packageInstance },
@@ -938,6 +966,7 @@ object EvaConfigurationCodec {
             packages =
                 document.packages?.copy(
                     legacyBundledInstances = document.packages.legacyBundledInstances?.toSortedMap(),
+                    revisions = document.packages.revisions?.toSortedMap(),
                     installed = document.packages.installed?.sortedBy { it.instance },
                     waitMillis = document.packages.waitMillis?.toSortedMap(),
                     services = document.packages.services?.sortedBy { it.packageInstance },
@@ -1021,6 +1050,7 @@ object EvaConfigurationCodec {
                 override.packages?.serviceBindings ?: base.packages?.serviceBindings,
                 override.packages?.appliedDefaults ?: base.packages?.appliedDefaults,
                 override.packages?.autoEnabled ?: base.packages?.autoEnabled,
+                override.packages?.revisions ?: base.packages?.revisions,
             ).nonEmpty(),
         services = ServicesPatch(override.services?.http ?: base.services?.http).nonEmpty(),
         extensions = ExtensionsPatch(override.extensions?.grants ?: base.extensions?.grants).nonEmpty(),
@@ -1081,7 +1111,7 @@ object EvaConfigurationCodec {
         takeIf {
             repository != null || repositories != null || legacyBundledInstances != null || installed != null ||
                 waitMillis != null || services != null || serviceBindings != null || appliedDefaults != null ||
-                autoEnabled != null
+                autoEnabled != null || revisions != null
         }
 
     private fun ServicesPatch.nonEmpty() = takeIf { http != null }

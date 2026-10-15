@@ -18,7 +18,10 @@ class PluginSyncPolicy(
     override suspend fun apply(preview: PluginPreview): SyncOutcome {
         val source = PluginRepository.installationSource(preview.source)
         val existing = installed().find { it.source == source && it.definition.id == preview.definition.id }
-        if (existing != null && existing.definition.digest == preview.definition.digest) return SyncOutcome.UNCHANGED
+        if (existing != null && existing.definition.digest == preview.definition.digest) {
+            if (existing.revision != preview.revision) install(preview)
+            return SyncOutcome.UNCHANGED
+        }
         val identity = install(preview).identity
         return if (existing == null) {
             if (autoEnable(preview.definition.id)) adopt(identity)

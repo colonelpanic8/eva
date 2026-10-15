@@ -16,6 +16,7 @@ data class RepositoryState(
     val busy: Boolean = false,
     val error: String? = null,
     val refreshed: Boolean = false,
+    val revision: String? = null,
 )
 
 data class PluginBrowserState(
@@ -54,15 +55,17 @@ class PluginBrowser(
     private val sync: PluginSync,
     private val install: suspend (PluginPreview) -> Unit,
     private val remove: suspend (String) -> Unit,
+    private val revisions: () -> Map<String, String> = { emptyMap() },
+    private val saveRevision: (String, String) -> Unit = { _, _ -> },
 ) {
     private val mutable =
         MutableStateFlow(
-            PluginBrowserState(sources().map(::RepositoryState), installed()),
+            PluginBrowserState(sources().map { RepositoryState(it, revision = revisions()[it]) }, installed()),
         )
     val state = mutable.asStateFlow()
     private val work = Mutex()
 
-    /** Refreshes every followed catalog, as when the extensions screen opens. */
+    /** Explicitly updates every followed catalog and advances its pin. */
     fun refreshAll() = run { sources().forEach { synchronize(it) } }
 
     fun refresh(source: String) = run { synchronize(source) }
@@ -72,7 +75,7 @@ class PluginBrowser(
         run {
             sources()
                 .filter { source -> mutable.value.repositories.none { it.source == source && it.refreshed } }
-                .forEach { synchronize(it) }
+                .forEach { synchronize(it, update = false) }
         }
 
     fun addRepository(value: String) =
@@ -126,23 +129,35 @@ class PluginBrowser(
             mutable.value = mutable.value.copy(installed = installed(), notice = "Extension removed. Its Android app is unchanged.")
         }
 
-    private suspend fun synchronize(source: String) {
+    private suspend fun synchronize(
+        source: String,
+        update: Boolean = true,
+    ) {
         update(source) { it.copy(busy = true, error = null) }
         runCatching {
-            val catalog = repository.list(source)
+            val pin = revisions()[source].takeUnless { update }
+            val catalog = repository.list(source, pin)
             val problems = catalog.problems.toMutableList()
             val outcomes =
-                catalog.listings.map { listing ->
+                (if (pin == null) catalog.listings else emptyList()).map { listing ->
                     runCatching { sync.apply(repository.preview(source, listing)) }
                         .onFailure { failure ->
                             rethrowFatalExtensionFailure(failure)
                             problems += "${listing.id}: ${failure.message ?: "could not be installed"}"
                         }.getOrNull()
                 }
+            if (pin == null) catalog.revision?.let { saveRevision(source, it) }
             val added = outcomes.count { it == SyncOutcome.ADDED }
             val updated = outcomes.count { it == SyncOutcome.UPDATED }
             update(source) {
-                it.copy(listings = catalog.listings, problems = problems, busy = false, error = null, refreshed = true)
+                it.copy(
+                    listings = catalog.listings,
+                    problems = problems,
+                    busy = false,
+                    error = null,
+                    refreshed = true,
+                    revision = catalog.revision,
+                )
             }
             mutable.value =
                 mutable.value.copy(

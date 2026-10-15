@@ -1,0 +1,11 @@
+{
+  "packages/calendar.json": "2b7e9b52d325feba747ae0805c4dff20a1d9eadc",
+  "packages/clock.json": "2b7e9b52d325feba747ae0805c4dff20a1d9eadc",
+  "packages/email.json": "2b7e9b52d325feba747ae0805c4dff20a1d9eadc",
+  "packages/google-maps.json": "2b7e9b52d325feba747ae0805c4dff20a1d9eadc",
+  "packages/openstreetmap-places.json": "2b7e9b52d325feba747ae0805c4dff20a1d9eadc",
+  "packages/paseo.json": "230f60921872a665b0e1859ac797b36821a6038f",
+  "packages/settings.json": "2b7e9b52d325feba747ae0805c4dff20a1d9eadc",
+  "packages/waze.json": "2b7e9b52d325feba747ae0805c4dff20a1d9eadc",
+  "packages/web.json": "2b7e9b52d325feba747ae0805c4dff20a1d9eadc"
+}

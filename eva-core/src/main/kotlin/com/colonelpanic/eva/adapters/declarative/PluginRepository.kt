@@ -6,8 +6,12 @@ import okhttp3.Request
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.api.ResetCommand
 import org.eclipse.jgit.lib.Constants
+import org.eclipse.jgit.lib.FileMode
+import org.eclipse.jgit.lib.ObjectId
+import org.eclipse.jgit.revwalk.RevWalk
 import org.eclipse.jgit.transport.RefSpec
 import org.eclipse.jgit.transport.TagOpt
+import org.eclipse.jgit.treewalk.TreeWalk
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
@@ -23,6 +27,7 @@ data class PluginListing(
     /** Path inside the catalog, `packages/<name>.json`. */
     val url: String,
     val androidPackages: List<String>,
+    val revision: String? = null,
 )
 
 data class PluginPreview(
@@ -30,12 +35,14 @@ data class PluginPreview(
     val url: String,
     val json: String,
     val definition: PackageDefinition,
+    val revision: String? = null,
 )
 
 data class CatalogListing(
     val listings: List<PluginListing>,
     /** Files under `packages/` that did not decode, so one bad file cannot hide the rest. */
     val problems: List<String>,
+    val revision: String? = null,
 )
 
 /**
@@ -49,29 +56,100 @@ class PluginRepository(
 ) {
     fun source(value: String): String = catalogSource(value, allowLocalTransportForTests)
 
-    fun list(source: String): CatalogListing {
+    @Synchronized
+    fun list(
+        source: String,
+        revision: String? = null,
+    ): CatalogListing {
         val remote = source(source)
-        val checkout = checkout(remote)
-        synchronize(checkout, remote)
-        val files =
-            File(checkout, PACKAGES)
-                .listFiles { file -> file.isFile && PACKAGE_FILE.matches(file.name) }
-                .orEmpty()
-                .sortedBy { it.name }
-        val problems = mutableListOf<String>()
-        val listings =
-            files.mapNotNull { file ->
-                runCatching {
-                    val definition = PackageCodec.decode(read(file))
-                    PluginListing(definition.id, definition.version, definition.title, "$PACKAGES/${file.name}", definition.androidPackages)
-                }.getOrElse { failure ->
-                    problems += "${file.name}: ${failure.message ?: "could not be read"}"
-                    null
+        val directory = checkout(remote)
+        if (revision == null) synchronize(directory, remote) else ensureRevision(remote, revision)
+        return Git.open(directory).use { git ->
+            val commit = revision ?: requireNotNull(git.repository.resolve(Constants.HEAD)).name
+            RevWalk(git.repository).use { walk ->
+                val tree = walk.parseCommit(ObjectId.fromString(commit)).tree
+                val problems = mutableListOf<String>()
+                val listings = mutableListOf<PluginListing>()
+                TreeWalk(git.repository).use { files ->
+                    files.addTree(tree)
+                    files.isRecursive = true
+                    while (files.next()) {
+                        val path = files.pathString
+                        if (!PACKAGE_PATH.matches(path)) continue
+                        runCatching {
+                            val preview = readRevision(remote, path, commit)
+                            val definition = preview.definition
+                            PluginListing(definition.id, definition.version, definition.title, path, definition.androidPackages, commit)
+                        }.onSuccess(listings::add).onFailure {
+                            problems +=
+                                "${path.substringAfterLast('/')}: ${it.message ?: "could not be read"}"
+                        }
+                    }
+                }
+                require(listings.map { it.id }.distinct().size == listings.size) { "The catalog declares one package ID twice" }
+                CatalogListing(listings.sortedBy { it.url }, problems, commit)
+            }
+        }
+    }
+
+    @Synchronized
+    fun pinned(
+        source: String,
+        path: String,
+        revision: String,
+    ): PluginPreview {
+        val remote = source(source)
+        validateReference(path, revision)
+        ensureRevision(remote, revision)
+        return readRevision(remote, path, revision)
+    }
+
+    private fun ensureRevision(
+        remote: String,
+        revision: String,
+    ) {
+        require(REVISION.matches(revision)) { "Extension revisions must be full Git commit IDs." }
+        val directory = checkout(remote)
+        if (!File(directory, Constants.DOT_GIT).isDirectory) synchronize(directory, remote)
+        Git.open(directory).use { git ->
+            if (!git.repository.objectDatabase.has(ObjectId.fromString(revision))) {
+                git
+                    .fetch()
+                    .setRemote(REMOTE)
+                    .setRefSpecs(RefSpec(revision))
+                    .setTagOpt(TagOpt.NO_TAGS)
+                    .setTimeout(TIMEOUT_SECONDS)
+                    .call()
+            }
+            RevWalk(git.repository).use { it.parseCommit(ObjectId.fromString(revision)) }
+        }
+    }
+
+    private fun readRevision(
+        remote: String,
+        path: String,
+        revision: String,
+    ): PluginPreview =
+        Git.open(checkout(remote)).use { git ->
+            RevWalk(git.repository).use { walk ->
+                val commit = walk.parseCommit(ObjectId.fromString(revision))
+                val file =
+                    requireNotNull(TreeWalk.forPath(git.repository, path, commit.tree)) {
+                        "Extension $path does not exist in $remote at $revision."
+                    }
+                file.use {
+                    require(file.getFileMode(0) in setOf(FileMode.REGULAR_FILE, FileMode.EXECUTABLE_FILE)) {
+                        "Extension $path must be a regular file."
+                    }
+                    val json =
+                        git.repository
+                            .open(file.getObjectId(0))
+                            .getBytes(PackageCodec.MAX_BYTES)
+                            .toString(Charsets.UTF_8)
+                    PluginPreview(remote, path, json, PackageCodec.decode(json), revision)
                 }
             }
-        require(listings.map { it.id }.distinct().size == listings.size) { "The catalog declares one package ID twice" }
-        return CatalogListing(listings, problems)
-    }
+        }
 
     fun previewUrl(source: String): PluginPreview {
         val url =
@@ -86,20 +164,18 @@ class PluginRepository(
         return PluginPreview(url, url, json, PackageCodec.decode(json))
     }
 
+    @Synchronized
     fun preview(
         source: String,
         listing: PluginListing,
     ): PluginPreview {
         val remote = source(source)
-        require(PACKAGE_PATH.matches(listing.url)) { "Catalog packages live under $PACKAGES/" }
-        val file = File(checkout(remote), listing.url)
-        require(file.isFile) { "Extension file is no longer in the catalog. Refresh the repository." }
-        val json = read(file)
-        val definition = PackageCodec.decode(json)
-        require(definition.id == listing.id && definition.version == listing.version) {
+        val revision = listing.revision ?: Git.open(checkout(remote)).use { requireNotNull(it.repository.resolve(Constants.HEAD)).name }
+        val preview = pinned(remote, listing.url, revision)
+        require(preview.definition.id == listing.id && preview.definition.version == listing.version) {
             "Extension changed since the catalog was listed. Refresh the repository."
         }
-        return PluginPreview(remote, listing.url, json, definition)
+        return preview
     }
 
     private fun checkout(remote: String): File =
@@ -154,16 +230,20 @@ class PluginRepository(
         }
     }
 
-    private fun read(file: File): String {
-        require(file.length() <= PackageCodec.MAX_BYTES) { "Extension file is too large" }
-        return file.readText()
-    }
-
     companion object {
         const val PACKAGES = "packages"
+        private val REVISION = Regex("[0-9a-f]{40}")
+
+        fun validateReference(
+            path: String,
+            revision: String,
+        ) {
+            require(PACKAGE_PATH.matches(path)) { "Catalog packages live under packages/ and must name a JSON file." }
+            require(REVISION.matches(revision)) { "Extension revisions must be full Git commit IDs." }
+        }
+
         private const val REMOTE = Constants.DEFAULT_REMOTE_NAME
         private const val TIMEOUT_SECONDS = 20
-        private val PACKAGE_FILE = Regex("[A-Za-z0-9._-]{1,200}\\.json")
         private val PACKAGE_PATH = Regex("$PACKAGES/[A-Za-z0-9._-]{1,200}\\.json")
         private val LEGACY_INDEX = Regex("https://raw\\.githubusercontent\\.com/([^/]+)/([^/]+)/[^/]+/index\\.json")
         private val LEGACY_PACKAGE = Regex("https://raw\\.githubusercontent\\.com/[^/]+/[^/]+/[^/]+/($PACKAGES/[^/]+\\.json)")

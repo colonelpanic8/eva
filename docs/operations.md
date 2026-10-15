@@ -151,6 +151,20 @@ direnv exec . ./gradlew :app:testDebugUnitTest \
   --tests 'com.colonelpanic.eva.capability.extensions.ExtensionGrantsTest'
 ```
 
+Pinned-package JVM tests cover immutable Git reads, offline caches, failed
+restores preserving installed state, and reference-only export. To verify a
+standalone migrated config against its real public catalogs, opt into this test:
+
+```sh
+EVA_PINNED_CONFIG=/absolute/path/eva.yaml direnv exec . ./gradlew \
+  :app:testDebugUnitTest --rerun --tests '*PinnedConfigurationLiveTest'
+```
+
+It restores into isolated Robolectric stores, verifies identities and grants,
+then edits a setting and checks that saving retains references. It fetches the
+catalogs but executes no extension actions and does not change the input file.
+This is JVM restore verification, not physical-device verification.
+
 For a device check, use a dedicated debug installation and a test folder. Save
 nondefault settings, verify the resulting `eva.yaml`, and restore that folder
 into a fresh test installation. Check effective settings and extension identities,

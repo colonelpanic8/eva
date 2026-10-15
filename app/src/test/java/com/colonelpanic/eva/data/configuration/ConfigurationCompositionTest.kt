@@ -86,6 +86,55 @@ class ConfigurationCompositionTest {
     }
 
     @Test
+    fun `repository pins round trip and references reject mutable revisions and escaping paths`() {
+        val base = fullConfiguration()
+        val source = "https://github.com/colonelpanic8/eva-extensions.git"
+        val revision = "a".repeat(40)
+        val reference = PortablePackage("00000000-0000-0000-0000-000000000091", source, "packages/clock.json", id = "android.clock")
+        val target =
+            base.copy(
+                packages =
+                    base.packages.copy(
+                        installed = listOf(reference),
+                        revisions = mapOf(source to revision),
+                        waitMillis = emptyMap(),
+                        services = emptyList(),
+                        serviceBindings = emptyList(),
+                    ),
+                services = EvaConfiguration.Services(emptyMap()),
+                credentials = EvaConfiguration.Credentials(emptyList()),
+            )
+
+        fun resolve(config: EvaConfiguration) =
+            EvaConfigurationCodec
+                .resolve(
+                    reader(
+                        mapOf(
+                            "eva.yaml" to EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(config)),
+                        ),
+                    ),
+                ).configuration
+        assertEquals(target, resolve(target))
+        assertFalse(EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(target)).contains("document:"))
+        assertThrows(IllegalArgumentException::class.java) {
+            resolve(
+                target.copy(
+                    packages =
+                        target.packages.copy(
+                            revisions =
+                                mapOf(source to "main"),
+                        ),
+                ),
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            resolve(target.copy(packages = target.packages.copy(installed = listOf(reference.copy(url = "packages/../secret.json")))))
+        }
+        val override = target.copy(packages = target.packages.copy(installed = listOf(reference.copy(revision = "b".repeat(40)))))
+        assertEquals(override, resolve(override))
+    }
+
+    @Test
     fun `web research settings round trip compose and default for older configurations`() {
         val defaults =
             com.colonelpanic.eva.web
@@ -295,7 +344,7 @@ class ConfigurationCompositionTest {
                             current.packages.installed.map {
                                 it.copy(
                                     document =
-                                        it.document.replace(
+                                        requireNotNull(it.document).replace(
                                             "\"credential\": \"example\"",
                                             "\"credential\": \"example\", \"credentialScheme\": \"bearer\"",
                                         ),
@@ -317,7 +366,7 @@ class ConfigurationCompositionTest {
         val encoded = EvaConfigurationCodec.encode(EvaConfigurationDocument())
 
         assertTrue(encoded.contains("format: eva\n"))
-        assertTrue(encoded.contains("version: 3\n"))
+        assertTrue(encoded.contains("version: 4\n"))
         val missingFormat =
             assertThrows(IllegalArgumentException::class.java) {
                 EvaConfigurationCodec.decode("version: 2\n")
@@ -411,7 +460,7 @@ class ConfigurationCompositionTest {
         val versionOne = EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(legacy).copy(version = 1))
 
         assertEquals(legacy, EvaConfigurationCodec.resolve(reader(mapOf("eva.yaml" to versionOne))).configuration)
-        assertTrue(EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(legacy)).contains("version: 3\n"))
+        assertTrue(EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(legacy)).contains("version: 4\n"))
     }
 
     @Test

@@ -1439,7 +1439,7 @@ The schema separates these groups:
 | `appearance`, `capabilities` | Dynamic color, optional capability switches, and device-task backend/model/budgets |
 | `messaging` | Notification-read opt-in, exact app-installation reply identities, and `bridges`: service name to label and HTTPS origin of a messaging bridge |
 | `prompt` | Source URL and complete ordered component list |
-| `packages` | Repository, imported package bytes and origins, wait budgets, service bindings, applied shipped defaults |
+| `packages` | Repository sources and commit pins, installed package references, wait budgets, service bindings, applied shipped defaults |
 | `services.http` | Named HTTPS origins with optional scoped local credential references |
 | `extensions` | Grants bound to exact identity, digest, and mutation names |
 | `spotify` | Public client ID |
@@ -1455,7 +1455,7 @@ field; collections replace as a whole, so an explicit empty collection clears
 inherited entries. Includes cannot escape the folder, form cycles, or exceed
 eight include levels, 32 file visits, 4 MiB per file, or 8 MiB across the graph.
 Every file must declare `format: eva` and a supported version; unknown fields are
-rejected. EVA writes version 3. Versions 1 and 2 remain readable; legacy bundled
+rejected. EVA writes version 4. Versions 1–3 remain readable; legacy bundled
 package references are reported for manual reinstall and omitted on the next complete write.
 UI writes retain includes and store local overrides.
 They normalize the root YAML and remove its comments; included files are not rewritten.
@@ -1464,9 +1464,43 @@ A skill switched off in a root file over a shared base needs only its name in th
 root's `skills.disabled`; the base's `skills.installed` is inherited. A disabled name
 with no installed skill is kept, so a base can bring the skill back already off.
 
-Imported extension JSON remains exact text rather than a re-encoded approximation:
-restoring configuration must preserve the bytes whose digest and identity were
-approved. Missing credentials or target applications must not erase desired
+Catalog extension definitions live in their source repositories. `packages.revisions`
+maps each repository URL to a full Git commit ID. Each `packages.installed` entry
+keeps its `instance`, `source`, `url` (a `packages/*.json` path), and declared `id`;
+it has no `document`. An optional entry-level `revision` overrides the shared pin,
+so a package whose update failed can retain its previous version. For example:
+
+```yaml
+packages:
+  repositories:
+  - https://github.com/colonelpanic8/eva-extensions.git
+  revisions:
+    https://github.com/colonelpanic8/eva-extensions.git: 2b7e9b52d325feba747ae0805c4dff20a1d9eadc
+  installed:
+  - instance: 00000000-0000-0000-0000-000000000091
+    source: https://github.com/colonelpanic8/eva-extensions.git
+    url: packages/clock.json
+    id: android.clock
+```
+
+Use an actual catalog commit and retain the installation's existing instance ID.
+Restore resolves and validates definitions before changing settings. It checks the
+package ID and retains grants only for the same identity and canonical contract
+digest. Reads use immutable Git objects, including when the browsing checkout has
+moved; cached objects, installed definitions, and matching shipped defaults work
+offline. A missing uncached revision fails the restore with its cause and leaves
+the prior configuration in place. No fallback to the latest branch is made.
+
+Opening Extensions lists the pinned revision. **Update** and **Update all** fetch
+the catalog branch and advance the pin, using the existing install/enable policy.
+New catalog installs and shipped defaults export references immediately; older
+inline installations become references when updated from their catalog. One-off
+file/raw-URL imports have no immutable Git source and retain their `document`.
+`default-package-revisions.json` records the verified catalog commit for each
+shipped default; update it whenever changing a shipped package. References and
+pins survive include composition, settings edits, and re-export.
+
+Missing credentials or target applications must not erase desired
 configuration. Restored grants authorize only the matching installed identity and
 contract; they cannot confer Android permissions or trust a different signer.
 Messaging reply grants likewise require the exact installed app identity. Missing

@@ -1,6 +1,8 @@
 package com.colonelpanic.eva.adapters.declarative
 
 import com.colonelpanic.eva.capability.extensions.PackageIdentity
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
 import java.util.UUID
 
 /**
@@ -22,6 +24,12 @@ data class DefaultPackage(
 }
 
 object DefaultPackages {
+    val revisions: Map<String, String> by lazy {
+        Json.decodeFromString(
+            checkNotNull(javaClass.getResourceAsStream("/default-package-revisions.json")).bufferedReader().use { it.readText() },
+        )
+    }
+
     val all =
         listOf(
             DefaultPackage("android.google-maps", "packages/google-maps.json"),

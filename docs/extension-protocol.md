@@ -118,10 +118,10 @@ command-line bindings) where Android uses intents and content providers.
 Packages are single JSON files. A catalog is a Git repository whose `packages/`
 directory holds them; EVA follows a list of them, by default the one
 [eva-extensions](https://github.com/colonelpanic8/eva-extensions) publishes. Each is
-refreshed on its own from Extensions → Extension repositories, and opening the tab
-refreshes any this run has not listed yet.
+updated on its own from Extensions → Repositories. Opening the tab lists the
+configuration’s pinned commit; it does not advance that pin.
 
-**Following a repository is the trust decision.** Refreshing one installs every
+**Following a repository is the trust decision.** Explicitly updating one installs every
 package it publishes and replaces every package whose content changed, with no
 per-package review. A package that is new is enabled outright unless its
 auto-enable switch is off. An update keeps actions already enabled and automatically
@@ -242,11 +242,13 @@ packages/org-agenda.json
 ```
 
 EVA keeps a read-only clone of the configured catalog remote under app storage
-(`extension-catalogs/`). Refresh fetches the clone's branch, fast-forwards to the
-remote head, and lists every `packages/*.json` that decodes; a file that does not
+(`extension-catalogs/`). Update fetches the clone's branch, advances its browsing
+checkout to the remote head, and lists every `packages/*.json` that decodes; a file that does not
 decode is reported by name and skipped rather than hiding the rest, and duplicate
-package IDs fail the refresh. Preview reads the listed file from the clone, and
-installation uses those exact bytes. The remote must be an HTTPS Git URL without
+package IDs fail the refresh. Each listing records its commit. Preview and restore read immutable Git objects
+at that commit, and installation uses those exact bytes. Portable configuration
+stores the repository, path, package ID, and pin rather than copying the definition.
+See [portable configuration](architecture.md#portable-configuration-format). The remote must be an HTTPS Git URL without
 credentials; an index-era `raw.githubusercontent.com/…/index.json` source, and
 installations recorded against one, are read as that repository so they keep
 matching catalog updates. There is no separate index or digest to regenerate:

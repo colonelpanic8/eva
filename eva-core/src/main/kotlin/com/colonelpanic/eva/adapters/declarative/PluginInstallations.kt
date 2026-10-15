@@ -16,6 +16,7 @@ data class InstalledPlugin(
     val url: String,
     val definition: PackageDefinition,
     val json: String,
+    val revision: String? = null,
 )
 
 class PluginInstallations(
@@ -37,6 +38,7 @@ class PluginInstallations(
                             PluginRepository.legacyUrl(root.getValue("url").jsonPrimitive.content),
                             PackageCodec.decode(json),
                             json,
+                            root["revision"]?.jsonPrimitive?.content,
                         )
                     }.also { values ->
                         require(values.map { it.identity }.distinct().size == values.size)
@@ -64,6 +66,7 @@ class PluginInstallations(
                 PluginRepository.installationUrl(preview.url),
                 definition,
                 preview.json,
+                preview.revision,
             )
         commit(entries.filterNot { it.identity == installed.identity } + installed)
         return installed
@@ -94,7 +97,10 @@ class PluginInstallations(
         const val MAX_BYTES = 4_194_304
 
         fun validate(entries: List<InstalledPlugin>) {
-            entries.forEach { item -> require(PackageCodec.decode(item.json).digest == item.definition.digest) }
+            entries.forEach { item ->
+                require(PackageCodec.decode(item.json).digest == item.definition.digest)
+                item.revision?.let { PluginRepository.validateReference(item.url, it) }
+            }
             require(entries.map { it.identity }.distinct().size == entries.size)
             require(entries.map { it.source to it.definition.id }.distinct().size == entries.size)
             encode(entries)
@@ -106,12 +112,17 @@ class PluginInstallations(
                 JsonArray(
                     next.map { item ->
                         JsonObject(
-                            mapOf(
-                                "instance" to JsonPrimitive(item.identity.id),
-                                "source" to JsonPrimitive(item.source),
-                                "url" to JsonPrimitive(item.url),
-                                "json" to JsonPrimitive(item.json),
-                            ),
+                            buildMap {
+                                putAll(
+                                    mapOf(
+                                        "instance" to JsonPrimitive(item.identity.id),
+                                        "source" to JsonPrimitive(item.source),
+                                        "url" to JsonPrimitive(item.url),
+                                        "json" to JsonPrimitive(item.json),
+                                    ),
+                                )
+                                item.revision?.let { put("revision", JsonPrimitive(it)) }
+                            },
                         )
                     },
                 ).toString()

@@ -791,7 +791,7 @@ class EvaConfigurationManager(
 
     private suspend fun apply(configuration: EvaConfiguration): ConfigurationApplyResult {
         val packageTarget = configuration.packages.portable(configuration.services)
-        app.packageSettings.validateRestore(packageTarget)
+        withContext(Dispatchers.IO) { app.packageSettings.validateRestore(packageTarget) }
         val promptBefore = app.prompts.portableSnapshot()
         val messagingBefore = app.messagingSettings.state.value
         val before = snapshot()
@@ -1043,6 +1043,7 @@ class EvaConfigurationManager(
             serviceBindings,
             appliedDefaults = appliedDefaults,
             autoEnabled = autoEnabled,
+            revisions = revisions,
         )
 
     private fun EvaConfiguration.Packages.portable(
@@ -1058,6 +1059,7 @@ class EvaConfigurationManager(
             serviceBindings.filter { it.packageInstance in installedInstances },
             appliedDefaults,
             autoEnabled,
+            revisions,
         )
     }
 

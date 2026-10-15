@@ -87,6 +87,8 @@ class PluginRepositoryTest {
                 .call()
         }
 
+        val revision: String get() = requireNotNull(git.repository.resolve("HEAD")).name
+
         fun close() = git.close()
     }
 
@@ -117,11 +119,85 @@ class PluginRepositoryTest {
         assertEquals("0.2.0", second.listings.single().version)
         assertEquals(1, second.problems.size)
         assertTrue(second.problems.single().startsWith("broken.json"))
-        assertThrows(IllegalArgumentException::class.java) { repository.preview(catalog.source, listing) }
+        assertEquals(json, repository.preview(catalog.source, listing).json)
         val preview = repository.preview(catalog.source, second.listings.single())
         assertEquals(catalog.source.trimEnd('/'), preview.source)
         assertEquals("packages/caffeine.json", preview.url)
     }
+
+    @Test
+    fun `pinned reads fetch missing commits and stay usable offline after the branch advances`() {
+        catalog.publish("caffeine.json", json)
+        val first = repository.list(catalog.source)
+        val old = requireNotNull(first.revision)
+        val next = json.replace("0.1.0", "0.2.0")
+        catalog.publish("caffeine.json", next)
+        val latest = catalog.revision
+        assertEquals(next, repository.pinned(catalog.source, "packages/caffeine.json", latest).json)
+        assertEquals(json, repository.pinned(catalog.source, "packages/caffeine.json", old).json)
+        File(root, "remote.git").renameTo(File(root, "offline.git"))
+        assertEquals(
+            json,
+            repository
+                .list(catalog.source, old)
+                .listings
+                .single()
+                .let { repository.preview(catalog.source, it).json },
+        )
+        assertEquals(next, repository.pinned(catalog.source, "packages/caffeine.json", latest).json)
+        assertThrows(IllegalArgumentException::class.java) { repository.pinned(catalog.source, "../caffeine.json", latest) }
+        assertThrows(IllegalArgumentException::class.java) { repository.pinned(catalog.source, "packages/caffeine.json", "main") }
+        assertThrows(IllegalArgumentException::class.java) { repository.pinned(catalog.source, "packages/missing.json", latest) }
+    }
+
+    @Test
+    fun `opening the browser preserves a pin and explicit update advances it`() =
+        runTest {
+            catalog.publish("caffeine.json", json)
+            val initial = repository.list(catalog.source)
+            val store = PluginInstallations({ null }, {})
+            store.install(repository.preview(catalog.source, initial.listings.single()))
+            var pins = mapOf(catalog.source to requireNotNull(initial.revision))
+            catalog.publish("caffeine.json", json.replace("0.1.0", "0.2.0"))
+            val browser =
+                PluginBrowser(
+                    repository,
+                    backgroundScope,
+                    { listOf(catalog.source) },
+                    store::all,
+                    { emptySet() },
+                    {},
+                    PluginSync {
+                        store.install(it)
+                        SyncOutcome.UPDATED
+                    },
+                    { store.install(it) },
+                    {},
+                    revisions = { pins },
+                    saveRevision = { source, revision -> pins = pins + (source to revision) },
+                )
+            browser.refreshNew()
+            runCurrent()
+            assertEquals(
+                "0.1.0",
+                store
+                    .all()
+                    .single()
+                    .definition.version,
+            )
+            assertEquals(initial.revision, pins[catalog.source])
+            browser.refresh(catalog.source)
+            runCurrent()
+            assertEquals(
+                "0.2.0",
+                store
+                    .all()
+                    .single()
+                    .definition.version,
+            )
+            assertEquals(catalog.revision, pins[catalog.source])
+            assertEquals(catalog.revision, store.all().single().revision)
+        }
 
     @Test
     fun `catalog sources are HTTPS git remotes and index era identities map onto them`() {

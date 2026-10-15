@@ -43,7 +43,9 @@ internal fun ExtensionCatalogSection(
     var repositoryUrl by remember { mutableStateOf("") }
     SettingsSection("Repositories") {
         SettingsBlock {
-            SettingsNote("EVA installs and updates everything a followed repository publishes. Follow only repositories you trust.")
+            SettingsNote(
+                "Repository versions are pinned in your configuration. Update fetches the latest version and installs its extensions.",
+            )
             if (state.busy) SettingsNote("Refreshing…")
             state.error?.let { SettingsNote(it, error = true) }
             state.notice?.let { SettingsNote(it) }
@@ -54,6 +56,7 @@ internal fun ExtensionCatalogSection(
                 repository.source.substringAfterLast('/').removeSuffix(".git"),
                 listOfNotNull(
                     repository.source.removePrefix("https://"),
+                    repository.revision?.let { "Pinned to ${it.take(12)}" },
                     when {
                         repository.busy -> "Refreshing…"
                         repository.error != null -> repository.error
@@ -66,7 +69,7 @@ internal fun ExtensionCatalogSection(
             ) {
                 Row {
                     IconButton(onClick = { actions.onRepositorySync(repository.source) }, enabled = !state.busy) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Refresh ${repository.source}")
+                        Icon(Icons.Default.Refresh, contentDescription = "Update ${repository.source}")
                     }
                     IconButton(onClick = { actions.onRepositoryRemove(repository.source) }, enabled = !state.busy) {
                         Icon(Icons.Default.Delete, contentDescription = "Unfollow ${repository.source}")
@@ -91,7 +94,7 @@ internal fun ExtensionCatalogSection(
                     enabled = !state.busy && repositoryUrl.isNotBlank(),
                 ) { Text("Follow") }
                 if (state.repositories.isNotEmpty()) {
-                    TextButton(onClick = actions.onRepositoryRefresh, enabled = !state.busy) { Text("Refresh all") }
+                    TextButton(onClick = actions.onRepositoryRefresh, enabled = !state.busy) { Text("Update all") }
                 }
             }
         }

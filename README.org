@@ -121,6 +121,11 @@ another device to restore its configuration; EVA lists any credentials, apps, or
 Android authorizations still needed. Use =include= files to share a base and keep
 local overrides.
 
+Extension definitions stay in their catalog repositories. =eva.yaml= records the
+repository commit pins and compact installed-package references, plus your grants
+and service settings. Opening Extensions keeps the pins; *Update* advances them.
+Cached definitions remain usable offline.
+
 The remote URL, branch, commit author, Git username, and enabled mode are local
 bootstrap settings, not fields inside =eva.yaml=. The Git token is encrypted in
 device-local secret storage and is never written into the URL, checkout, Git

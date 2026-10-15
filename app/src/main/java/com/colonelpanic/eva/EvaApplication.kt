@@ -632,10 +632,18 @@ class EvaApplication :
         CoroutineScope(
             SupervisorJob() + Dispatchers.IO + kotlinx.coroutines.CoroutineExceptionHandler { _, failure -> logExtensionFailure(failure) },
         )
+    private val pluginRepository by lazy {
+        com.colonelpanic.eva.adapters.declarative.PluginRepository(
+            java.io.File(noBackupFilesDir, "extension-catalogs"),
+            com.colonelpanic.eva.adapters.declarative
+                .RepositoryHttpClient()::fetch,
+        )
+    }
     val packageSettings by lazy {
         com.colonelpanic.eva.data
             .PackageSettings(
                 this,
+                repository = pluginRepository,
                 onChanged = configuration::onLocalChange,
                 onCredentialChanged = configuration::onCredentialChange,
             )
@@ -664,11 +672,7 @@ class EvaApplication :
 
     val pluginBrowser by lazy {
         com.colonelpanic.eva.adapters.declarative.PluginBrowser(
-            com.colonelpanic.eva.adapters.declarative.PluginRepository(
-                java.io.File(noBackupFilesDir, "extension-catalogs"),
-                com.colonelpanic.eva.adapters.declarative
-                    .RepositoryHttpClient()::fetch,
-            ),
+            pluginRepository,
             extensionScope,
             packageSettings::repositorySources,
             packageSettings::imported,
@@ -694,6 +698,8 @@ class EvaApplication :
                     packageAdapter.refresh()
                 }
             },
+            revisions = packageSettings::repositoryRevisions,
+            saveRevision = packageSettings::saveRepositoryRevision,
         )
     }
 

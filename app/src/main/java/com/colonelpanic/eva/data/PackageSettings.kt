@@ -54,6 +54,7 @@ data class PortablePackageSettings(
     val appliedDefaults: List<String> = emptyList(),
     /** Extensions whose auto-enable choice differs from the default; absent means a refresh may enable it. */
     val autoEnabled: Map<String, Boolean> = emptyMap(),
+    val revisions: Map<String, String> = emptyMap(),
 )
 
 @Serializable
@@ -69,6 +70,12 @@ class PackageSettings(
     private val readAsset: (String) -> String = { name -> context.assets.open(name).use { it.readBytes().toString(Charsets.UTF_8) } },
     private val providerPresent: (String) -> Boolean = { authority -> context.packageManager.resolveContentProvider(authority, 0) != null },
     private val appInstalled: (String) -> Boolean = { name -> runCatching { context.packageManager.getPackageInfo(name, 0) }.isSuccess },
+    private val repository: PluginRepository =
+        PluginRepository(
+            java.io.File(context.noBackupFilesDir, "extension-catalogs"),
+            com.colonelpanic.eva.adapters.declarative
+                .RepositoryHttpClient()::fetch,
+        ),
 ) {
     private val secrets = SecretStore(context)
     private val prefs = context.getSharedPreferences("eva.packages", Context.MODE_PRIVATE)
@@ -94,6 +101,17 @@ class PackageSettings(
                 prefs.getString("repository", null)?.let(PluginRepository::legacySource)
                     ?: com.colonelpanic.eva.adapters.declarative.DEFAULT_PLUGIN_REPOSITORY,
             )
+
+    fun repositoryRevisions(): Map<String, String> =
+        prefs.getString(REVISIONS, null)?.let { Json.decodeFromString<Map<String, String>>(it) }.orEmpty()
+
+    fun saveRepositoryRevision(
+        source: String,
+        revision: String,
+    ) {
+        savePreferences { putString(REVISIONS, Json.encodeToString(repositoryRevisions() + (source to revision))) }
+        onChanged()
+    }
 
     fun saveRepositories(sources: List<String>) {
         savePreferences { putString(REPOSITORIES, Json.encodeToString(sources.distinct())) }
@@ -124,6 +142,11 @@ class PackageSettings(
 
     fun installPlugin(preview: com.colonelpanic.eva.adapters.declarative.PluginPreview): InstalledPlugin {
         val installed = imports.install(preview)
+        installed.revision?.let { revision ->
+            if (installed.source !in repositoryRevisions()) {
+                savePreferences { putString(REVISIONS, Json.encodeToString(repositoryRevisions() + (installed.source to revision))) }
+            }
+        }
         mutable.value = entries()
         onChanged()
         return installed
@@ -167,9 +190,22 @@ class PackageSettings(
                 val json = readAsset(default.path)
                 val definition = PackageCodec.decode(json)
                 require(definition.id == default.id) { "Shipped default ${default.path} declares ${definition.id}." }
-                imports.adopt(InstalledPlugin(default.identity, default.source, default.path, definition, json))
+                imports.adopt(
+                    InstalledPlugin(
+                        default.identity,
+                        default.source,
+                        default.path,
+                        definition,
+                        json,
+                        DefaultPackages.revisions.getValue(default.path),
+                    ),
+                )
             }
-        savePreferences { putString(DEFAULTS, Json.encodeToString(applied + pending.map { it.id })) }
+        savePreferences {
+            putString(DEFAULTS, Json.encodeToString(applied + pending.map { it.id }))
+            val revisions = adopted.mapNotNull { item -> item.revision?.let { item.source to it } }.toMap() + repositoryRevisions()
+            putString(REVISIONS, Json.encodeToString(revisions))
+        }
         mutable.value = entries()
         onChanged()
         return adopted
@@ -386,9 +422,23 @@ class PackageSettings(
 
     fun portable(): PortablePackageSettings {
         val configured = resolvedServiceSettings()
+        val installed = imported()
+        val revisions = repositoryRevisions()
         return PortablePackageSettings(
             repositorySources,
-            imported().map { PortablePackage(it.identity.id, it.source, it.url, it.json) },
+            installed.map {
+                if (it.revision == null) {
+                    PortablePackage(it.identity.id, it.source, it.url, it.json)
+                } else {
+                    PortablePackage(
+                        it.identity.id,
+                        it.source,
+                        it.url,
+                        revision = it.revision.takeUnless { revision -> revisions[it.source] == revision },
+                        id = it.definition.id,
+                    )
+                }
+            },
             prefs.all
                 .mapNotNull { (key, value) ->
                     if (key.startsWith("wait:") && value is Long) key.removePrefix("wait:") to value else null
@@ -398,6 +448,7 @@ class PackageSettings(
             configured.bindings,
             appliedDefaults(),
             autoEnabled(),
+            revisions,
         )
     }
 
@@ -419,15 +470,35 @@ class PackageSettings(
     fun validateRestore(restored: PortablePackageSettings): List<InstalledPlugin> =
         restored.installed
             .map { item ->
-                val definition = PackageCodec.decode(item.document)
-                InstalledPlugin(
-                    PackageIdentity(item.instance),
-                    PluginRepository.legacySource(item.source),
-                    PluginRepository.legacyUrl(item.url),
-                    definition,
-                    item.document,
-                )
-            }.also(com.colonelpanic.eva.adapters.declarative.PluginInstallations::validate)
+                val source = PluginRepository.legacySource(item.source)
+                val path = PluginRepository.legacyUrl(item.url)
+                val revision =
+                    if (item.document == null) {
+                        requireNotNull(item.revision ?: restored.revisions[source]) {
+                            "Extension $path needs a pinned repository revision."
+                        }
+                    } else {
+                        null
+                    }
+                revision?.let { PluginRepository.validateReference(path, it) }
+                val cached = imported().firstOrNull { it.source == source && it.url == path && it.revision == revision }
+                val shipped =
+                    DefaultPackages.all.firstOrNull {
+                        it.source == source && it.path == path && DefaultPackages.revisions[path] == revision
+                    }
+                val json =
+                    item.document ?: cached?.json ?: shipped?.let { readAsset(it.path) }
+                        ?: repository.pinned(source, path, requireNotNull(revision)).json
+                val definition = PackageCodec.decode(json)
+                require(item.id == null || definition.id == item.id) { "Extension $path declares ${definition.id}, expected ${item.id}." }
+                InstalledPlugin(PackageIdentity(item.instance), source, path, definition, json, revision)
+            }.also { installed ->
+                com.colonelpanic.eva.adapters.declarative.PluginInstallations
+                    .validate(installed)
+                val definitions = installed.associate { it.identity to it.definition }
+                val resolved = resolveLegacy(restored, definitions)
+                validateRuntimeMappings(resolved.http, resolved.bindings, definitions)
+            }
 
     fun restore(
         restored: PortablePackageSettings,
@@ -441,6 +512,7 @@ class PackageSettings(
         beforePreferences()
         savePreferences {
             putString(REPOSITORIES, Json.encodeToString(restored.repositories.distinct()))
+            putString(REVISIONS, Json.encodeToString(restored.revisions))
             remove("repository")
             prefs.all.keys
                 .filter { it.startsWith("instance:") || it.startsWith("auto:") }
@@ -592,6 +664,7 @@ class PackageSettings(
     private companion object {
         const val SERVICES = "services:v2"
         const val DEFAULTS = "defaults"
+        const val REVISIONS = "revisions"
         const val REPOSITORIES = "repositories"
         val SERVICE_NAME = Regex("[a-z][a-z0-9-]{0,63}")
     }
