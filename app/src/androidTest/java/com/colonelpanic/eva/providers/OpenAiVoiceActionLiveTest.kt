@@ -128,7 +128,12 @@ class OpenAiVoiceActionLiveTest {
                                 this,
                             )
                         },
-                        voiceProviderFactory = { _, audio -> OpenAiRealtimeProvider(access, audio as RealtimeMediaSession) },
+                        voiceProviderFactory = { _, audio ->
+                            OpenAiRealtimeProvider(
+                                access,
+                                requireNotNull(audio as? RealtimeMediaSession) { "OpenAI voice test requires WebRTC media." },
+                            )
+                        },
                     )
                 VoiceSessionService.start(context)
                 try {

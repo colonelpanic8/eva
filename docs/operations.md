@@ -1126,13 +1126,49 @@ emulator was stopped after verification.
 ## Grok voice verification
 
 Grok assistant voice is available through Settings → Models → Grok voice, with a
-separate xAI API key under Account. No xAI credential was available during initial
-implementation, so no live xAI call, credit purchase, or physical-device voice
-verification was performed. JVM protocol tests exercise configuration/history,
+separate xAI API key under Account. JVM protocol tests exercise configuration/history,
 PCM messages, transcript ownership, parallel tool results, interruption, ambiguous
-response ownership, and playback-dependent announcement delivery. These tests do
-not establish microphone quality, hardware echo cancellation, Bluetooth routing,
-service-side protocol acceptance, or latency.
+response ownership, and playback-dependent announcement delivery.
+
+`PcmVoiceMediaDeviceTest` passed on a dedicated Android 16/API 36 emulator. It
+exercises real AudioRecord capture and AudioTrack playback-head completion,
+microphone/playback mute, interruption followed by new playback, undrained output
+on close, and audio-focus release. Synthetic emulator audio does not establish
+physical microphone quality, acoustic echo cancellation, Bluetooth routing, or
+audibility at a physical speaker.
+
+`GrokVoiceLiveTest` is a separate, paid, opt-in check. It replaces capture buffers
+with a generated 24 kHz mono PCM16 utterance, uses the production Grok provider,
+ThreadController and CapabilityDispatcher with a read-only stored-fact fixture,
+and checks the transcript, completed receipt, answer and Android playback drain
+separately. It accepts a saved Account key or provisions one from a one-request
+host credential endpoint using `credentialPort` over emulator-only adb reverse.
+Never pass the key in instrumentation arguments or save it in a plaintext file.
+The first emulator attempt reached xAI but was rejected with HTTP 403 on an
+unfunded API team; no successful live voice conversation has been verified.
+
+After provisioning funded access on the dedicated emulator:
+
+```sh
+espeak-ng -s 145 -w /tmp/eva-grok-speech.wav \
+  'Look up the stored fact about the courier and tell me the name.'
+direnv exec . ffmpeg -v error -y -i /tmp/eva-grok-speech.wav \
+  -ar 24000 -ac 1 -f s16le /tmp/eva-grok-speech.pcm
+direnv exec . ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
+direnv exec . adb -s "$EVA_TEST_DEVICE" install -r app/build/outputs/apk/debug/app-debug.apk
+direnv exec . adb -s "$EVA_TEST_DEVICE" install -r \
+  app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+direnv exec . adb -s "$EVA_TEST_DEVICE" push \
+  /tmp/eva-grok-speech.pcm /data/local/tmp/eva-grok-speech.pcm
+direnv exec . adb -s "$EVA_TEST_DEVICE" shell am instrument -w -r \
+  -e class com.colonelpanic.eva.providers.GrokVoiceLiveTest -e evaGrokLive true \
+  -e evaSpeechPcmPath /data/local/tmp/eva-grok-speech.pcm \
+  com.colonelpanic.eva.debug.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+The probe ends its voice attachment within 120 seconds and reports bounded
+sample/receipt counts, without printing the credential or transcript. Check the
+instrumentation result for failures; adb's process exit code alone is insufficient.
 
 Before claiming device support, use existing funded xAI access for a bounded
 session: verify microphone and playback mute, late captions, a read-only tool,

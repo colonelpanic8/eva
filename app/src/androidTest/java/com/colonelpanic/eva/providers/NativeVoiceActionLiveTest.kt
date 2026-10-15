@@ -117,7 +117,7 @@ class NativeVoiceActionLiveTest {
                             )
                         },
                         voiceProviderFactory = { brokerLink, audio ->
-                            val rtc = audio as RealtimeMediaSession
+                            val rtc = requireNotNull(audio as? RealtimeMediaSession) { "Broker voice test requires WebRTC media." }
                             BrokerConversationProvider(
                                 BrokerEndpoint.parse(brokerLink),
                                 offerSdp = rtc.createOffer(),
