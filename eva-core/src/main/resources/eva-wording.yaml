@@ -123,9 +123,11 @@ tools:
         expiring active-notification reference otherwise. Never invent one.
   eva.android.phone.dial:
     description: >-
-      Call a phone number. With the Phone permission, Android places the call right away, also on
-      a locked phone; without it, or for an emergency number, the dialer opens with the number
-      and the user presses call. Look up a named person with contact search first.
+      Place an ordinary phone call that the user talks on themselves, such as "call Mom". With the
+      Phone permission, Android places the call right away, also on a locked phone; without it, or
+      for an emergency number, the dialer opens with the number and the user presses call. When the
+      user wants something said, done or found out on the call rather than to talk themselves, use
+      eva.call.start instead. Look up a named person with contact search first.
   eva.android.app.open:
     description: >-
       Launch an installed app by its visible name, such as Settings or Chrome.
@@ -332,8 +334,18 @@ tools:
       name: The skill's name exactly as listed.
   eva.call.start:
     description: >-
-      Delegate a phone call to a separate call agent. The task belongs to this turn and can
-      outlive this connection. Start returns the final attributed outcome, not proof of
+      Have a separate call agent place a phone call for the user and hold the conversation:
+      asking questions, getting information or a status, booking, changing or canceling, passing on
+      a message, waiting on hold and getting through phone menus. Use it whenever the user wants
+      something said, done or found out on a call, even when they just say "call"; use
+      eva.android.phone.dial only when they want to talk themselves. Find the number first with
+      contact search or web research. The call agent knows only what you pass here, so put
+      everything it needs in goal, briefing, disclosures and mandate; during the call it can ask
+      the user questions. The call runs in the background as a card in this conversation, where the
+      user follows the transcript and can listen in, whisper or take over; say so briefly when you
+      start it. A cellular call takes the phone's audio, which ends a voice conversation with you;
+      the call itself continues. The task belongs to this turn and can outlive this connection.
+      Start returns only when the call ends, with the call agent's attributed outcome, not proof of
       independent verification. Use its call request ID as taskId for controls while running.
       Provider traits expose caller ID, locked-device support and any duration limit. A callback
       after a dropped call requires a new owner-approved task; include earlier transcript and references.
@@ -345,8 +357,14 @@ tools:
         from memory or this conversation, such as "Ivan Malison". The call agent introduces itself as
         calling on their behalf. Include it whenever you know it.
       briefing: Relevant context for this call; include prior call references for an approved callback.
-      disclosures: Exactly which information the call agent may share with the remote party.
-      mandate: Exact owner-approved commitment identifiers; an empty list permits no binding agreements.
+      disclosures: >-
+        Exactly which information the call agent may share with the remote party, such as the user's
+        name, date of birth or account email; nothing beyond the user's name when the call needs nothing else.
+      mandate: >-
+        Short identifiers, one per binding commitment the user approved, such as "cancel-subscription"
+        or "book-table-2-people-friday-7pm". The call agent may agree to exactly these and must ask the
+        user before agreeing to anything else. An empty list permits no binding agreements, which suits
+        questions and lookups.
       credentials: >-
         Optional references of the owner's saved keypad credentials this call may enter, such as an
         account number or PIN for a phone menu. The call agent enters them without seeing their values.
