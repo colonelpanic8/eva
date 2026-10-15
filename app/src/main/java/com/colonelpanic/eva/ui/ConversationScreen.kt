@@ -92,6 +92,7 @@ internal fun ConversationScreen(
     onOpenScreenControl: () -> Unit = {},
     onRepairScreenControl: (ScreenControlStatus.Route) -> Unit = {},
     onShareDiagnostics: (String) -> Unit = {},
+    onClearContext: () -> Unit = {},
     onOpenExtensions: () -> Unit = {},
 ) {
     var draft by rememberSaveable { mutableStateOf("") }
@@ -135,7 +136,12 @@ internal fun ConversationScreen(
                         onOpenScreenControl,
                         onRepairScreenControl,
                     )
-                    ThreadMenu(state.threadId, onShareDiagnostics)
+                    ThreadMenu(state.threadId, onShareDiagnostics) {
+                        draft = ""
+                        draftQuestionId = null
+                        draftQuestionText = null
+                        onClearContext()
+                    }
                 },
                 colors = evaTopAppBarColors(),
             )
@@ -314,11 +320,20 @@ private fun LoadingHistory(modifier: Modifier = Modifier) {
 private fun ThreadMenu(
     threadId: String?,
     onShareDiagnostics: (String) -> Unit,
+    onClearContext: () -> Unit,
 ) {
     var open by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { open = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "Conversation options") }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(
+                text = { Text("Archive conversation") },
+                enabled = threadId != null,
+                onClick = {
+                    open = false
+                    onClearContext()
+                },
+            )
             DropdownMenuItem(
                 text = { Text("Share diagnostics") },
                 enabled = threadId != null,

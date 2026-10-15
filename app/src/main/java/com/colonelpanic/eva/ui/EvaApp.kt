@@ -37,7 +37,7 @@ import com.colonelpanic.eva.ui.settings.SkillsScreen
 import com.colonelpanic.eva.ui.theme.EvaTheme
 import kotlinx.coroutines.launch
 
-internal enum class EvaDestination { CONVERSATION, RUNNING_WORK, EXTENSIONS, MESSAGING, MEMORY, SKILLS, PROMPT, SETTINGS, ABOUT }
+internal enum class EvaDestination { CONVERSATION, ARCHIVE, RUNNING_WORK, EXTENSIONS, MESSAGING, MEMORY, SKILLS, PROMPT, SETTINGS, ABOUT }
 
 /**
  * Top-level destinations behind a navigation drawer. A navigation library would only
@@ -104,20 +104,8 @@ fun EvaApp(
             EvaDrawerSheet(
                 providerLabel = state.providerLabel,
                 current = destination,
-                threads = threads,
-                shownThreadId = state.threadId,
                 onSelect = { selected ->
                     destination = selected
-                    scope.launch { drawer.close() }
-                },
-                onNewThread = {
-                    onNewThread()
-                    destination = EvaDestination.CONVERSATION
-                    scope.launch { drawer.close() }
-                },
-                onShowThread = { id ->
-                    onShowThread(id)
-                    destination = EvaDestination.CONVERSATION
                     scope.launch { drawer.close() }
                 },
             )
@@ -147,7 +135,22 @@ fun EvaApp(
                     onOpenScreenControl = ::openScreenControl,
                     onRepairScreenControl = { route -> settingsActions.onRepairScreenControl(route.backend, ::openScreenControl) },
                     onShareDiagnostics = onShareDiagnostics,
+                    onClearContext = {
+                        if (state.voiceMode) onDisconnect()
+                        onNewThread()
+                    },
                     onOpenExtensions = { destination = EvaDestination.EXTENSIONS },
+                )
+            }
+
+            EvaDestination.ARCHIVE -> {
+                ConversationArchiveScreen(
+                    threads = threads.filter { it.id != state.threadId },
+                    onOpenDrawer = { openDrawer() },
+                    onShowThread = { id ->
+                        onShowThread(id)
+                        destination = EvaDestination.CONVERSATION
+                    },
                 )
             }
 

@@ -89,6 +89,13 @@ indicators follow the shown thread; background work alone does not block a new
 foreground text request. Answered turns without request or response text are hidden;
 request-only turns show no synthetic answer bubble, while action evidence remains.
 
+The navigation drawer links to a separate **Conversation archive** instead of
+listing individual threads. The archive opens past conversations for continuation.
+**Archive conversation** in the conversation's options menu starts an empty thread,
+preserving prior history and accepted background work. It ends an attached voice
+call so the old call cannot keep using the cleared context; text reconnects to the
+new thread. This clears conversation context, not saved memory or configuration.
+
 Typed input while the shown thread's foreground request runs steers that request
 (`ConversationSession.steer`). The Responses session adds it as user input to the
 turn's next model request, after any pending tool outputs; input that arrives while
