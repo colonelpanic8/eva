@@ -104,4 +104,3 @@ Then check, in the printed run directory under `build/phone/`:
 - The transcript has the agent's two utterances and no REMOTE line echoing them.
 - `caption-listen-off-*.png` and `caption-listen-on-*.png` show the agent's words on the call
   card while it speaks (italic, ending in "…"), replaced by the final line afterwards.
-

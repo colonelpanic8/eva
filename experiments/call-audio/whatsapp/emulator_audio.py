@@ -79,4 +79,3 @@ def record(serial, out, seconds):
             if "DEADLINE_EXCEEDED" not in str(error):
                 raise
         wav.writeframes(bytes(2 * max(0, int(seconds * RATE) - written)))
-
