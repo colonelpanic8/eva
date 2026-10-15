@@ -100,6 +100,7 @@ internal fun ConversationScreen(
     onClearContext: () -> Unit = {},
     onOpenExtensions: () -> Unit = {},
     onCallControl: (String, String, Map<String, String>) -> Unit = { _, _, _ -> },
+    onDictate: (DictationTarget) -> Unit = {},
     /** Text placed in the composer for the user to review and send. */
     draftRequest: String? = null,
     onDraftRequestTaken: () -> Unit = {},
@@ -255,6 +256,13 @@ internal fun ConversationScreen(
                     placeholder = if (whispering) "Whisper to the call agent…" else "Ask EVA…",
                     focusRequester = composerFocus,
                     onSend = ::send,
+                    onDictate =
+                        if (inSession || whispering) {
+                            null
+                        } else {
+                            { onDictate(DictationTarget(state.threadId, state.currentQuestion?.questionId)) }
+                        },
+                    dictateEnabled = !storageFailed && !state.isLoading,
                 )
             }
         },
@@ -297,6 +305,8 @@ private fun Composer(
     placeholder: String,
     focusRequester: FocusRequester,
     onSend: () -> Unit,
+    onDictate: (() -> Unit)?,
+    dictateEnabled: Boolean,
 ) {
     Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
         Row(
@@ -349,6 +359,11 @@ private fun Composer(
                             }
                         }.semantics { contentDescription = "Request to EVA" },
             )
+            if (onDictate != null) {
+                IconButton(onClick = onDictate, enabled = dictateEnabled, modifier = Modifier.padding(bottom = 20.dp)) {
+                    Icon(DictateIcon, contentDescription = "Dictate to EVA")
+                }
+            }
             FilledIconButton(
                 onClick = onSend,
                 enabled = canSend,

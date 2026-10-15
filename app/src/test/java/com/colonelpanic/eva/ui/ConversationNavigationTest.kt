@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -26,6 +27,7 @@ class ConversationNavigationTest {
     @Test fun conversationsOpenSelectedHistoryAndCreateNewThreads() {
         val opened = mutableListOf<String>()
         var created = 0
+        var dictated = 0
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup()
         try {
             activity.get().setContent {
@@ -38,12 +40,15 @@ class ConversationNavigationTest {
                             ),
                         onOpenDrawer = {},
                         onNewThread = { created++ },
+                        onDictate = { dictated++ },
                         onShowThread = { opened += it },
                     )
                 }
             }
             compose.onNodeWithText("New").performClick()
             compose.runOnIdle { assertEquals(1, created) }
+            compose.onNode(hasText("Dictate task"), useUnmergedTree = true).performClick()
+            compose.runOnIdle { assertEquals(1, dictated) }
             compose.onNodeWithText("Previous request").assertExists()
             compose.onNodeWithText("Working…").assertExists()
             compose.onNodeWithText("New conversation").performClick()
@@ -57,7 +62,7 @@ class ConversationNavigationTest {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup()
         try {
             activity.get().setContent {
-                MaterialTheme { ConversationsScreen(emptyList(), {}, {}, {}) }
+                MaterialTheme { ConversationsScreen(emptyList(), {}, {}, {}, {}) }
             }
             compose.onNodeWithText("No conversations yet.").assertExists()
         } finally {

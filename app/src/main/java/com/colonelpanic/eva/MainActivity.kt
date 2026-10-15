@@ -24,6 +24,9 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.core.content.pm.ShortcutInfoCompat
+import androidx.core.content.pm.ShortcutManagerCompat
+import androidx.core.graphics.drawable.IconCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
@@ -45,6 +48,9 @@ import com.colonelpanic.eva.data.PromptState
 import com.colonelpanic.eva.devicecontrol.RepairOutcome
 import com.colonelpanic.eva.diagnostics.AndroidDiagnostics
 import com.colonelpanic.eva.providers.openai.ModelKind
+import com.colonelpanic.eva.ui.DictateSpeech
+import com.colonelpanic.eva.ui.DictationResult
+import com.colonelpanic.eva.ui.DictationTarget
 import com.colonelpanic.eva.ui.EvaApp
 import com.colonelpanic.eva.ui.HandsFreeSurface
 import com.colonelpanic.eva.ui.LocalCallCaptions
@@ -75,6 +81,7 @@ class MainActivity : ComponentActivity() {
             voice.surface = value
         }
     private var runningWorkRequest by mutableStateOf(0)
+    private var conversationRequest by mutableIntStateOf(0)
     private var deviceAssistant by mutableStateOf(false)
     private var mediaControlAccess by mutableStateOf(false)
     private var messagingPermissions by mutableStateOf(emptyList<PermissionStatus>())
@@ -94,6 +101,19 @@ class MainActivity : ComponentActivity() {
         }
 
     private val eva get() = application as EvaApplication
+
+    /** Saved with the instance: the recognizer runs in another app, which can outlive this process. */
+    private var dictationTarget: DictationTarget? = null
+    private val dictation =
+        registerForActivityResult(DictateSpeech()) { result ->
+            val target = dictationTarget ?: return@registerForActivityResult
+            dictationTarget = null
+            when (result) {
+                is DictationResult.Heard -> submitDictation(result.text, target)
+                is DictationResult.Failed -> Toast.makeText(this, result.reason, Toast.LENGTH_LONG).show()
+                DictationResult.Cancelled -> Unit
+            }
+        }
 
     private val pluginFile =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -139,6 +159,62 @@ class MainActivity : ComponentActivity() {
         if (missing.isEmpty()) return
         voice.requestInFlight = true
         runtimePermissions.launch(missing.toTypedArray())
+    }
+
+    private fun dictate(target: DictationTarget) {
+        dictationTarget = target
+        try {
+            dictation.launch(if (target.questionId != null) "Answer EVA" else "What should EVA do?")
+        } catch (_: ActivityNotFoundException) {
+            dictationTarget = null
+            Toast
+                .makeText(
+                    this,
+                    "No speech recognition app is available. Install or enable Google speech services, or type the request.",
+                    Toast.LENGTH_LONG,
+                ).show()
+        }
+    }
+
+    /** Dictated work runs as a background text task, so it needs no live connection and survives leaving EVA. */
+    private fun submitDictation(
+        text: String,
+        target: DictationTarget,
+    ) {
+        val controller = eva.controller
+        lifecycleScope.launch {
+            try {
+                val accepted = controller.submitBackground(text, target.threadId, target.questionId)
+                if (target.openConversation && accepted.threadId != controller.state.value.threadId) {
+                    controller.showThread(accepted.threadId)
+                    conversationRequest++
+                }
+                if (target.threadId == null) {
+                    Toast.makeText(this@MainActivity, "EVA is working on it. You can leave EVA; work continues.", Toast.LENGTH_SHORT).show()
+                }
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                Toast
+                    .makeText(
+                        this@MainActivity,
+                        "Could not start the dictated request: ${error.message ?: error.javaClass.simpleName}",
+                        Toast.LENGTH_LONG,
+                    ).show()
+            }
+        }
+    }
+
+    private fun publishShortcuts() {
+        ShortcutManagerCompat.pushDynamicShortcut(
+            this,
+            ShortcutInfoCompat
+                .Builder(this, DICTATE_SHORTCUT)
+                .setShortLabel("Dictate task")
+                .setLongLabel("Dictate a task to EVA")
+                .setIcon(IconCompat.createWithResource(this, R.mipmap.ic_launcher))
+                .setIntent(Intent(this, MainActivity::class.java).setAction(ACTION_DICTATE_TASK))
+                .build(),
+        )
     }
 
     /** The paired host link now lives in settings, not in a field on the conversation screen. */
@@ -212,6 +288,11 @@ class MainActivity : ComponentActivity() {
      * before the controller accepts a connection, and an existing session is left alone.
      */
     private fun openHandsFree() {
+        if (intent?.action == ACTION_DICTATE_TASK) {
+            if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
+            dictate(DictationTarget())
+            return
+        }
         val kind = currentLaunch()
         surface = kind
         if (!kind.startsVoice) return
@@ -689,6 +770,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        savedInstanceState?.getBundle(STATE_DICTATION)?.let {
+            dictationTarget = DictationTarget(it.getString("threadId"), it.getString("questionId"), it.getBoolean("open"))
+        }
+        publishShortcuts()
         requestedOrientation =
             if (resources.configuration.smallestScreenWidthDp >= 600) {
                 ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
@@ -730,6 +815,8 @@ class MainActivity : ComponentActivity() {
                         threads = threads,
                         tasks = controller.taskSnapshots,
                         runningWorkRequest = runningWorkRequest,
+                        conversationRequest = conversationRequest,
+                        onDictate = ::dictate,
                         onStopWork = controller::stopTask,
                         onForceStopWork = controller::forceStopTask,
                         onStopAllWork = controller::stopAllTasks,
@@ -775,6 +862,20 @@ class MainActivity : ComponentActivity() {
         openHandsFree()
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        dictationTarget?.let {
+            outState.putBundle(
+                STATE_DICTATION,
+                Bundle().apply {
+                    putString("threadId", it.threadId)
+                    putString("questionId", it.questionId)
+                    putBoolean("open", it.openConversation)
+                },
+            )
+        }
+        super.onSaveInstanceState(outState)
+    }
+
     override fun onResume() {
         super.onResume()
         com.colonelpanic.eva.conversation.TurnWorkService
@@ -810,3 +911,6 @@ class MainActivity : ComponentActivity() {
 }
 
 private const val SCREEN_CONTROL_REFRESH_MILLIS = 5_000L
+private const val ACTION_DICTATE_TASK = "com.colonelpanic.eva.action.DICTATE_TASK"
+private const val DICTATE_SHORTCUT = "dictate_task"
+private const val STATE_DICTATION = "dictationTarget"

@@ -161,6 +161,18 @@ The JVM regression suite covers ownership, admission deduplication, question rou
 continuation and reply fragmentation. System speech capture and paired-device Data
 Layer delivery for this feature have not yet been verified on a physical watch.
 
+### Dictated phone tasks
+
+1. With EVA disconnected, open **Conversations** and tap **Dictate task**. Speak a
+   request; EVA opens the new conversation working on it. Leave EVA and confirm the
+   result notification arrives.
+2. Long-press the launcher icon, choose **Dictate task**, and repeat from outside EVA.
+3. In a finished conversation, tap the composer microphone and dictate a follow-up;
+   confirm it continues that conversation. Repeat with a pending question and confirm
+   the dictation answers it.
+4. Cancel the recognizer: nothing is submitted. Disable the recognizer app (or use a
+   device without one): EVA names the missing recognizer.
+
 ## Configuration verification
 
 The focused configuration tests cover composition, linked-file conflicts,

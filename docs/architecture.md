@@ -96,6 +96,18 @@ thread, preserving prior history and accepted background work. It ends an attach
 call so the old call cannot keep using the cleared context; text reconnects to the
 new thread. This clears conversation context, not saved memory or configuration.
 
+Phone dictation uses the same background path as the watch. **Dictate task** on
+Conversations, the launcher shortcut of the same name, and the microphone beside the
+composer open the system recognizer (`RecognizerIntent.ACTION_RECOGNIZE_SPEECH`) and
+pass its transcript to `ThreadController.submitBackground`. No text or voice
+connection is needed, and leaving EVA does not stop the accepted work. The list and
+shortcut start a new conversation; the composer microphone sends a follow-up to the
+shown conversation, or answers its current question. The microphone is hidden during
+a voice session and while whispering to a call agent. Recognizer cancellation is
+silent; missing recognition and recognizer errors are shown with the reason. The
+recognizer app records audio, so dictation needs no EVA microphone grant. JVM checks
+cover the shared submission path; phone dictation is not yet device-verified.
+
 Typed input while the shown thread's foreground request runs steers that request
 (`ConversationSession.steer`). The Responses session adds it as user input to the
 turn's next model request, after any pending tool outputs; input that arrives while

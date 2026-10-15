@@ -62,6 +62,8 @@ fun EvaApp(
                 emptyList(),
             ),
     runningWorkRequest: Int = 0,
+    conversationRequest: Int = 0,
+    onDictate: (DictationTarget) -> Unit = {},
     onStopWork: (String) -> Unit = {},
     onForceStopWork: (String) -> Unit = {},
     onStopAllWork: () -> Unit = {},
@@ -82,6 +84,9 @@ fun EvaApp(
     var destination by rememberSaveable { mutableStateOf(EvaDestination.CONVERSATION) }
     androidx.compose.runtime.LaunchedEffect(runningWorkRequest) {
         if (runningWorkRequest > 0) destination = EvaDestination.RUNNING_WORK
+    }
+    androidx.compose.runtime.LaunchedEffect(conversationRequest) {
+        if (conversationRequest > 0) destination = EvaDestination.CONVERSATION
     }
     var showScreenControl by rememberSaveable { mutableStateOf(false) }
     var draftRequest by rememberSaveable { mutableStateOf<String?>(null) }
@@ -145,6 +150,7 @@ fun EvaApp(
                     },
                     onOpenExtensions = { destination = EvaDestination.EXTENSIONS },
                     onCallControl = onCallControl,
+                    onDictate = onDictate,
                     draftRequest = draftRequest,
                     onDraftRequestTaken = { draftRequest = null },
                 )
@@ -159,6 +165,7 @@ fun EvaApp(
                         destination = EvaDestination.CONVERSATION
                     },
                     onOpenDrawer = { openDrawer() },
+                    onDictate = { onDictate(DictationTarget(openConversation = false)) },
                     onShowThread = { id ->
                         onShowThread(id)
                         destination = EvaDestination.CONVERSATION
@@ -271,7 +278,7 @@ internal fun composerHint(state: ConversationState): String {
         }
 
         state.providerStatus != ProviderStatus.CONNECTED -> {
-            "Connect to start a conversation."
+            "Connect to type, or tap the microphone to dictate a task."
         }
 
         else -> {

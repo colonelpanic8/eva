@@ -9,6 +9,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -27,9 +29,16 @@ internal fun ConversationsScreen(
     threads: List<ThreadSummary>,
     onOpenDrawer: () -> Unit,
     onNewThread: () -> Unit,
+    onDictate: () -> Unit,
     onShowThread: (String) -> Unit,
 ) {
-    Scaffold(topBar = {
+    Scaffold(floatingActionButton = {
+        ExtendedFloatingActionButton(
+            onClick = onDictate,
+            icon = { Icon(DictateIcon, contentDescription = null) },
+            text = { Text("Dictate task") },
+        )
+    }, topBar = {
         TopAppBar(
             title = { Text("Conversations") },
             actions = { TextButton(onClick = onNewThread) { Text("New") } },
