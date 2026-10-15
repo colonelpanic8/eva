@@ -116,8 +116,15 @@ data class SettingsUiState(
     /** Whether a conversation is shown, so its diagnostics can be shared. */
     val hasCurrentThread: Boolean = false,
 ) {
-    /** Whether any of the three ways to reach a provider is configured. */
-    val hasVoiceCredential: Boolean get() = if (voiceSelection.provider == "grok") hasXaiApiKey else hasCredential
+    val hasVoiceCredential: Boolean
+        get() =
+            when {
+                voiceSelection.provider == "grok" -> hasXaiApiKey
+                hasHostLink -> true
+                OpenAiModels.isLive(realtimeModel) -> hasApiKey
+                else -> hasCredential
+            }
+
     val hasCredential: Boolean get() = account != null || hasApiKey || hasHostLink
 }
 

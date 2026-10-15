@@ -1,6 +1,8 @@
 package com.colonelpanic.eva.ui
 
 import com.colonelpanic.eva.conversation.ConversationState
+import com.colonelpanic.eva.providers.openai.OpenAiModels
+import com.colonelpanic.eva.ui.settings.SettingsUiState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -9,6 +11,15 @@ import org.junit.Test
 
 class ConnectBarTest {
     private val ready = ConversationState(isLoading = false)
+
+    @Test fun `Live needs an API key while subscription text and Realtime stay available`() {
+        val live = SettingsUiState(account = "Signed in", realtimeModel = OpenAiModels.LIVE)
+        assertTrue(connectPrompt(ready, live.hasCredential).canConnect)
+        assertFalse(connectPrompt(ready, live.hasVoiceCredential).canConnect)
+        assertTrue(connectPrompt(ready, live.copy(hasApiKey = true).hasVoiceCredential).canConnect)
+        assertTrue(connectPrompt(ready, live.copy(realtimeModel = OpenAiModels.REALTIME).hasVoiceCredential).canConnect)
+        assertTrue(connectPrompt(ready, live.copy(account = null, hasHostLink = true).hasVoiceCredential).canConnect)
+    }
 
     @Test fun `Grok-only credentials enable voice without enabling OpenAI text`() {
         val grok =
