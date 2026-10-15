@@ -151,8 +151,13 @@ fun EvaApp(
             }
 
             EvaDestination.ARCHIVE -> {
-                ConversationArchiveScreen(
-                    threads = threads.filter { it.id != state.threadId },
+                ConversationsScreen(
+                    threads = threads,
+                    onNewThread = {
+                        if (state.voiceMode) onDisconnect()
+                        onNewThread()
+                        destination = EvaDestination.CONVERSATION
+                    },
                     onOpenDrawer = { openDrawer() },
                     onShowThread = { id ->
                         onShowThread(id)

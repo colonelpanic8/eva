@@ -62,6 +62,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.job
@@ -283,6 +284,7 @@ class ThreadController(
                         phoneCall != null -> TaskKind.PHONE_CALL
                         ownsDevice -> TaskKind.DEVICE_TASK
                         task.delegated -> TaskKind.DELEGATED_TEXT_AGENT
+                        task.originLeg == null -> TaskKind.BACKGROUND_TEXT_AGENT
                         task.isBackground -> TaskKind.REHOMED_CONTINUATION
                         connectionTools[task.originLeg]?.voice == true -> TaskKind.VOICE_TURN
                         else -> TaskKind.TYPED_TURN
@@ -2341,6 +2343,45 @@ class ThreadController(
         send(text, opened, threadId)
     }
 
+    data class BackgroundSubmission(
+        val threadId: String,
+        val taskId: String,
+    )
+
+    private val backgroundSubmissionLock = Mutex()
+
+    /** Accepts work without changing the shown conversation or the current attachment. */
+    suspend fun submitBackground(
+        text: String,
+        threadId: String? = null,
+        questionId: String? = null,
+    ): BackgroundSubmission =
+        backgroundSubmissionLock.withLock {
+            val ready = state.first { !it.isLoading }
+            check(ready.errorMessage == null) { ready.errorMessage.orEmpty() }
+            require(text.isNotBlank()) { "The dictated request was empty." }
+            if (threadId != null) require(store.thread(threadId) != null) { "This conversation no longer exists." }
+            if (questionId != null) {
+                val question = questions[questionId]
+                require(threadId != null && question?.threadId == threadId) { "This question is no longer available." }
+                val taskId = checkNotNull(question).evidence.taskId
+                val result = answerQuestion(threadId, taskId, questionId, text, AnswerProvenance.TYPED)
+                check(result == Wording.BACKGROUND_ANSWER_ACCEPTED) { wording().message(result) }
+                return@withLock BackgroundSubmission(threadId, taskId)
+            }
+            val id = threadId ?: store.createThread(UNTITLED).id
+            val running = tasks.values.lastOrNull { it.threadId == id && it.active }
+            if (running != null) {
+                check(currentQuestion(id) == null) { "Open the pending question and answer it before sending a follow-up." }
+                check(running.steer(text)) { "This task cannot take a follow-up yet. Wait for its result or start a new task." }
+                return@withLock BackgroundSubmission(id, running.turnId)
+            }
+            val task = startTask(id, UUID.randomUUID().toString(), text, null, spoken = false)
+            task.startInBackground()
+            refresh()
+            BackgroundSubmission(id, task.turnId)
+        }
+
     private fun send(
         text: String,
         opened: ConversationSession,
@@ -2423,7 +2464,7 @@ class ThreadController(
         threadId: String,
         inputId: String,
         request: String,
-        leg: ConversationSession,
+        leg: ConversationSession?,
         spoken: Boolean,
         announceOnly: Boolean = false,
         /** False when the request's words are already journaled, as captions are. */
@@ -2441,7 +2482,7 @@ class ThreadController(
         val task = TurnTask(threadId, turnId, inputId, request, leg, announceOnly, tools)
         tasks[turnId] = task
         progress[turnId] = TaskProgressRecord(nowMillis())
-        if (spoken) voiceTurns[leg to inputId] = VoiceTurn(turnId, announceOnly)
+        if (spoken) voiceTurns[checkNotNull(leg) to inputId] = VoiceTurn(turnId, announceOnly)
         finishSubmitting(inputId)
         mutableState.update {
             it.copy(
@@ -2451,7 +2492,14 @@ class ThreadController(
         }
         mutableWorking.update { it + threadId }
         updateWorkCoverage()
-        if (!spoken) onWorkAccepted()
+        if (!spoken) {
+            try {
+                onWorkAccepted()
+            } catch (error: Exception) {
+                task.fail("Could not start background work: ${error.message ?: error.javaClass.simpleName}")
+                throw error
+            }
+        }
         return task
     }
 
@@ -2467,7 +2515,7 @@ class ThreadController(
         threadId: String,
         leg: ConversationSession?,
     ) {
-        tasks.values.filter { it.threadId == threadId && it.active && it.leg === leg }.forEach { it.legLost() }
+        tasks.values.filter { it.threadId == threadId && it.active && !it.isBackground && it.leg === leg }.forEach { it.legLost() }
     }
 
     // ---- turn tasks ----
@@ -2482,7 +2530,7 @@ class ThreadController(
         /** What the current leg calls this turn; the store's id is [turnId]. */
         var inputId: String,
         var request: String,
-        leg: ConversationSession,
+        leg: ConversationSession?,
         val announceOnly: Boolean,
         initialTools: ConnectionTools? = null,
     ) {
@@ -2503,7 +2551,12 @@ class ThreadController(
         private val backgroundReady = CompletableDeferred<Boolean>()
         var backgroundState = "CONNECTING"
             private set
-        private var tools = initialTools ?: connectionTools.getValue(leg)
+        private lateinit var tools: ConnectionTools
+
+        init {
+            (initialTools ?: leg?.let(connectionTools::getValue))?.let { tools = it }
+        }
+
         var awaitingFollowUp = false
             private set
         val dispatches = mutableListOf<Job>()
@@ -2531,7 +2584,7 @@ class ThreadController(
         private var answered = false
         private var forceStopJournal: Job? = null
         private val terminalWrites = Mutex()
-        private var detached = false
+        private var detached = leg == null
         val isBackground: Boolean get() = rehomed || detached
         var delegated = false
             private set
@@ -2912,7 +2965,7 @@ class ThreadController(
         /** Adds typed input to the response this turn is still producing; false when it no longer takes any. */
         suspend fun steer(text: String): Boolean {
             val current = leg
-            if (!active || delegated || rehomed || current == null) return false
+            if (!active || current == null) return false
             val accepted =
                 try {
                     current.steer(inputId, ConversationInput(UUID.randomUUID().toString(), text))
@@ -3071,7 +3124,7 @@ class ThreadController(
             }
         }
 
-        private fun fail(reason: String) {
+        fun fail(reason: String) {
             if (!active) return
             EvaTrace.info("task.failed", "task" to turnId, "rehomed" to rehomed, "delegated" to delegated, "reason" to reason)
             if (!rehomed && (deviceTasks?.owns(turnId) == true || callTasks?.owns(turnId) == true)) {
@@ -3333,10 +3386,15 @@ class ThreadController(
             }
         }
 
+        fun startInBackground() {
+            taskScope.launch { if (active) rehome(initialRequest = true) }
+        }
+
         /** [brief], when given, replaces the handoff note that frames [instruction] for the worker. */
         private suspend fun rehome(
             instruction: String? = null,
             brief: String? = null,
+            initialRequest: Boolean = false,
         ): Boolean {
             if (rehomed) {
                 fail(wording().message(Wording.BACKGROUND_RESTART_REFUSED))
@@ -3376,12 +3434,20 @@ class ThreadController(
                                 .copy(excludedTools = phone.first.excluded())
                         tools = ConnectionTools(snapshot, catalog, false)
                         val instructions =
-                            assembled.instructions + extensionGuidance(snapshot, catalog) + "\n\n" +
-                                (
-                                    brief
-                                        ?: instruction?.let { wording().message(Wording.HANDOFF_INSTRUCTIONS) + "\n" + JsonPrimitive(it) }
-                                        ?: wording().message(Wording.CONTINUATION)
-                                )
+                            assembled.instructions + extensionGuidance(snapshot, catalog) +
+                                if (initialRequest) {
+                                    ""
+                                } else {
+                                    "\n\n" +
+                                        (
+                                            brief
+                                                ?: instruction?.let {
+                                                    wording().message(Wording.HANDOFF_INSTRUCTIONS) + "\n" +
+                                                        JsonPrimitive(it)
+                                                }
+                                                ?: wording().message(Wording.CONTINUATION)
+                                        )
+                                }
                         val history =
                             projectHistory(
                                 items,

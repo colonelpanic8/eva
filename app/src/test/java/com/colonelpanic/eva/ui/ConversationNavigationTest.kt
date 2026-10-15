@@ -23,23 +23,27 @@ import org.robolectric.annotation.GraphicsMode
 class ConversationNavigationTest {
     @get:Rule val compose = createEmptyComposeRule()
 
-    @Test fun archiveShowsPastConversationsAndOpensTheSelectedOne() {
+    @Test fun conversationsOpenSelectedHistoryAndCreateNewThreads() {
         val opened = mutableListOf<String>()
+        var created = 0
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup()
         try {
             activity.get().setContent {
                 MaterialTheme {
-                    ConversationArchiveScreen(
+                    ConversationsScreen(
                         threads =
                             listOf(
                                 ThreadSummary("old", "Previous request", 1, true),
                                 ThreadSummary("fresh", "New conversation", 2, false),
                             ),
                         onOpenDrawer = {},
+                        onNewThread = { created++ },
                         onShowThread = { opened += it },
                     )
                 }
             }
+            compose.onNodeWithText("New").performClick()
+            compose.runOnIdle { assertEquals(1, created) }
             compose.onNodeWithText("Previous request").assertExists()
             compose.onNodeWithText("Working…").assertExists()
             compose.onNodeWithText("New conversation").performClick()
@@ -49,13 +53,13 @@ class ConversationNavigationTest {
         }
     }
 
-    @Test fun emptyArchiveExplainsThereAreNoPastConversations() {
+    @Test fun emptyConversationsExplainsThereAreNoConversations() {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup()
         try {
             activity.get().setContent {
-                MaterialTheme { ConversationArchiveScreen(emptyList(), {}, {}) }
+                MaterialTheme { ConversationsScreen(emptyList(), {}, {}, {}) }
             }
-            compose.onNodeWithText("No past conversations.").assertExists()
+            compose.onNodeWithText("No conversations yet.").assertExists()
         } finally {
             activity.pause().stop().destroy()
         }

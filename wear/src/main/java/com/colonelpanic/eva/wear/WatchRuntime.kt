@@ -25,6 +25,7 @@ class WatchRuntime(
     private val context: Context,
 ) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    val tasks = WatchTaskClient(context, scope, ::phoneNode)
     private val prefs = context.getSharedPreferences("eva.watch", Context.MODE_PRIVATE)
     private val mutable = MutableStateFlow(WatchUi())
     val state = mutable.asStateFlow()

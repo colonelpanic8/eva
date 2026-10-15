@@ -117,6 +117,7 @@ class ThreadControllerTest {
         provider: FakeProvider,
         registry: CapabilityRegistry = this@ThreadControllerTest.registry,
         background: FakeProvider = provider,
+        backgroundFactory: () -> ConversationProvider = { background },
         media: (() -> RealtimeMediaSession)? = null,
         voiceProvider: FakeProvider = provider,
         voiceKeywords: suspend () -> List<String> = { emptyList() },
@@ -143,7 +144,7 @@ class ThreadControllerTest {
         providerFactory = textProvider,
         mediaFactory = media,
         voiceProviderFactory = { _, _ -> voiceProvider },
-        backgroundProviderFactory = { background },
+        backgroundProviderFactory = backgroundFactory,
         voiceKeywords = voiceKeywords,
         awaitCapabilities = awaitCapabilities,
         hiddenCapabilities = hiddenCapabilities,
@@ -154,6 +155,168 @@ class ThreadControllerTest {
         onBackgroundAnswer = { answers += it },
         onBackgroundAnswerDelivered = { deliveredAnswers += it },
     )
+
+    @Test
+    fun `independent text tasks survive new conversations and a voice attachment`() =
+        runTest {
+            val voice = FakeProvider()
+            val first = FakeProvider(epoch = "first")
+            val second = FakeProvider(epoch = "second")
+            val providers = ArrayDeque(listOf(first, second))
+            val controller = controller(voice, media = { VoiceMedia() }, backgroundFactory = { providers.removeFirst() })
+            runCurrent()
+            val a = controller.submitBackground("Research the first thing")
+            runCurrent()
+            val b = controller.submitBackground("Research another thing")
+            runCurrent()
+            assertNotEquals(a.threadId, b.threadId)
+            controller.newThread()
+            runCurrent()
+            controller.connectVoice("test", newThread = true)
+            runCurrent()
+            val voiceThread = controller.state.value.attachedThreadId
+            controller.showThread(a.threadId)
+            runCurrent()
+            controller.showThread(b.threadId)
+            runCurrent()
+            assertEquals(voiceThread, controller.state.value.attachedThreadId)
+            assertEquals(
+                setOf(a.taskId, b.taskId),
+                controller.taskSnapshots.value
+                    .map { it.taskId }
+                    .toSet(),
+            )
+            assertEquals(0, first.closes)
+            assertEquals(0, second.closes)
+            first.input = ConversationInput(a.taskId, "")
+            second.input = ConversationInput(b.taskId, "")
+            first.call("first-action", action.id, "place" to "first place")
+            second.call("second-action", action.id, "place" to "second place")
+            runCurrent()
+            assertEquals(2, executions)
+            assertEquals("HANDED_OFF", first.results.single().status)
+            assertEquals("HANDED_OFF", second.results.single().status)
+            first.channel.send(ProviderEvent.AssistantText(a.taskId, "First result", false))
+            first.channel.send(ProviderEvent.ResponseEnded(a.taskId, "completed"))
+            runCurrent()
+            assertEquals(TurnStatus.ANSWERED, store.turns(a.threadId).single().status)
+            assertEquals(TurnStatus.OPEN, store.turns(b.threadId).single().status)
+            controller.stopTask(b.taskId)
+            runCurrent()
+            assertEquals(TurnStatus.INTERRUPTED, store.turns(b.threadId).single().status)
+            assertEquals(ProviderStatus.CONNECTED, controller.state.value.providerStatus)
+            controller.disconnect()
+            runCurrent()
+        }
+
+    @Test
+    fun `failed attachment cannot detach a background task still starting on the same thread`() =
+        runTest {
+            val gate = CompletableDeferred<Unit>()
+            val background = FakeProvider(openGate = gate)
+            val attachment = FakeProvider(openFailure = IllegalStateException("Attachment unavailable"))
+            val controller = controller(attachment, background = background)
+            runCurrent()
+            val task = controller.submitBackground("Continue independently")
+            runCurrent()
+            controller.showThread(task.threadId)
+            controller.connect("test")
+            runCurrent()
+            assertEquals(TurnStatus.OPEN, store.turns(task.threadId).single().status)
+            gate.complete(Unit)
+            runCurrent()
+            assertEquals(listOf(task.taskId), background.responseRequests)
+            assertEquals(TurnStatus.OPEN, store.turns(task.threadId).single().status)
+            controller.stopTask(task.taskId)
+            runCurrent()
+        }
+
+    @Test
+    fun `background followups steer the selected task and completed conversations seed a fresh leg`() =
+        runTest {
+            val first = FakeProvider()
+            val resumed = FakeProvider(epoch = "resume")
+            val providers = ArrayDeque(listOf(first, resumed))
+            val controller = controller(FakeProvider(), backgroundFactory = { providers.removeFirst() })
+            runCurrent()
+            val a = controller.submitBackground("Research this")
+            runCurrent()
+            val steered = controller.submitBackground("Include prices", a.threadId)
+            assertEquals(a, steered)
+            assertEquals(listOf(a.taskId to "Include prices"), first.steers)
+            first.channel.send(ProviderEvent.AssistantText(a.taskId, "Original result", false))
+            first.channel.send(ProviderEvent.ResponseEnded(a.taskId, "completed"))
+            runCurrent()
+            val b = controller.submitBackground("Explain the result", a.threadId)
+            runCurrent()
+            assertEquals(a.threadId, b.threadId)
+            assertNotEquals(a.taskId, b.taskId)
+            assertTrue(
+                resumed.request.history
+                    .toString()
+                    .contains("Original result"),
+            )
+            assertTrue(
+                resumed.request.history
+                    .toString()
+                    .contains("Explain the result"),
+            )
+            controller.stopTask(b.taskId)
+            runCurrent()
+        }
+
+    @Test
+    fun `watch answer targets the question without switching the displayed conversation`() =
+        runTest {
+            val background = FakeProvider()
+            val controller = controller(FakeProvider(), background = background)
+            runCurrent()
+            val task = controller.submitBackground("Research")
+            runCurrent()
+            background.input = ConversationInput(task.taskId, "")
+            background.call("ask-watch", ThreadController.ASK_USER.capabilityId, "question" to "Which city?")
+            runCurrent()
+            val question =
+                controller.taskSnapshots.value
+                    .single()
+                    .questions
+                    .single()
+            controller.newThread()
+            runCurrent()
+            val shown = controller.state.value.threadId
+            assertEquals(task, controller.submitBackground("Paris", task.threadId, question.questionId))
+            runCurrent()
+            assertEquals(shown, controller.state.value.threadId)
+            assertEquals("COMPLETED", background.results.single().status)
+            assertTrue(
+                background.results
+                    .single()
+                    .data
+                    .toString()
+                    .contains("Paris"),
+            )
+            controller.stopTask(task.taskId)
+            runCurrent()
+        }
+
+    @Test
+    fun `background startup failure does not stop another task`() =
+        runTest {
+            val first = FakeProvider()
+            val broken = FakeProvider(openFailure = IllegalStateException("No credentials"))
+            val providers = ArrayDeque(listOf(first, broken))
+            val controller = controller(FakeProvider(), backgroundFactory = { providers.removeFirst() })
+            runCurrent()
+            val a = controller.submitBackground("Keep working")
+            runCurrent()
+            val b = controller.submitBackground("Cannot start")
+            runCurrent()
+            assertEquals(TurnStatus.OPEN, store.turns(a.threadId).single().status)
+            assertEquals(TurnStatus.FAILED, store.turns(b.threadId).single().status)
+            assertEquals(0, first.closes)
+            controller.stopTask(a.taskId)
+            runCurrent()
+        }
 
     @Test
     fun `watch origin follows the voice attachment through provider connection and hangup`() =

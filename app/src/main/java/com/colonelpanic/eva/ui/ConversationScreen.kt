@@ -401,7 +401,7 @@ private fun ThreadMenu(
         IconButton(onClick = { open = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "Conversation options") }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             DropdownMenuItem(
-                text = { Text("Archive conversation") },
+                text = { Text("New conversation") },
                 enabled = threadId != null,
                 onClick = {
                     open = false

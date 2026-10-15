@@ -12,6 +12,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -22,21 +23,23 @@ import java.util.Date
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun ConversationArchiveScreen(
+internal fun ConversationsScreen(
     threads: List<ThreadSummary>,
     onOpenDrawer: () -> Unit,
+    onNewThread: () -> Unit,
     onShowThread: (String) -> Unit,
 ) {
     Scaffold(topBar = {
         TopAppBar(
-            title = { Text("Conversation archive") },
+            title = { Text("Conversations") },
+            actions = { TextButton(onClick = onNewThread) { Text("New") } },
             navigationIcon = { MenuButton(onOpenDrawer) },
             colors = evaTopAppBarColors(),
         )
     }) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (threads.isEmpty()) item { Text("No past conversations.") }
-            items(threads, key = { it.id }) { thread ->
+            if (threads.isEmpty()) item { Text("No conversations yet.") }
+            items(threads.sortedByDescending { it.working }, key = { it.id }) { thread ->
                 Card(onClick = { onShowThread(thread.id) }, modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(thread.title, style = MaterialTheme.typography.titleMedium)

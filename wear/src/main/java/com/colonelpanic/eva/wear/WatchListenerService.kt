@@ -24,11 +24,15 @@ class WatchListenerService : WearableListenerService() {
     }
 
     override fun onMessageReceived(event: MessageEvent) {
-        if (event.path != WearProtocol.RESULT) return
+        if (event.path !in setOf(WearProtocol.RESULT, WatchTasks.REPLY)) return
         runBlocking {
             withContext(Dispatchers.Main.immediate) {
                 try {
-                    runtime.result(event.sourceNodeId, WearProtocol.decode(event.data))
+                    if (event.path == WatchTasks.REPLY) {
+                        runtime.tasks.receive(event.sourceNodeId, WearProtocol.decode(event.data))
+                    } else {
+                        runtime.result(event.sourceNodeId, WearProtocol.decode(event.data))
+                    }
                 } catch (
                     error: Exception,
                 ) {

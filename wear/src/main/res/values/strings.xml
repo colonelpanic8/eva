@@ -10,4 +10,15 @@
     <string name="channel">Wrist gesture listener</string>
     <string name="notification">Alternating rotation pulses required: %1$d</string>
     <string name="stop">Pause</string>
+    <string name="dictate_task">Dictate new task</string>
+    <string name="recent_tasks">Recent conversations</string>
+    <string name="dictate_answer">Dictate answer</string>
+    <string name="dictate_followup">Dictate follow-up</string>
+    <string name="stop_task">Stop this conversation’s work</string>
+    <string name="older_tasks">Show older</string>
+    <string name="refresh_tasks">Refresh conversations</string>
+    <string name="task_summary">%1$s — %2$s</string>
+    <string name="task_entry">%1$s: %2$s</string>
+    <string name="no_recognizer">No system speech recognizer is installed. Enable voice input in watch settings, then try again.</string>
+    <string name="recognizer_denied">The watch refused speech recognition. Check system voice input permissions.</string>
 </resources>

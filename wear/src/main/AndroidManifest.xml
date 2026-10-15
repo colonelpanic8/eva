@@ -30,7 +30,10 @@
             </intent-filter>
             <intent-filter>
                 <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
-                <data android:scheme="wear" android:host="*" android:path="/eva/wrist/result" />
+                <data android:scheme="wear" />
+                <data android:host="*" />
+                <data android:path="/eva/wrist/result" />
+                <data android:path="/eva/tasks/reply" />
             </intent-filter>
         </service>
         <receiver android:name=".WatchBootReceiver" android:exported="true">

@@ -139,6 +139,28 @@ foreground service plus Ongoing Activity is not an exemption from every power ru
 See the [architecture contract](architecture.md#watch-wrist-gesture) for thresholds,
 service-type rationale and remaining limits.
 
+### Dictated watch tasks
+
+Install matching phone and watch debug APKs before this check. This flow is separate
+from wrist gestures and does not require the gesture toggle or default assistant role.
+
+1. On the watch, choose **Dictate new task**, speak a request, and wait for
+   **Accepted on phone**. Close the watch app while the phone works.
+2. Submit a second task and start a phone voice call. In phone **Running work**,
+   confirm that both accepted tasks retain their own IDs and continue independently.
+3. Reopen **Recent conversations** on the watch. Open either result and dictate a
+   follow-up; confirm it uses that conversation's history. Exercise a task that asks
+   a question, and use **Dictate answer** to resume it.
+4. Stop one conversation's work while another is running. Confirm only the selected
+   conversation stops. Disconnect the watch during submission: the UI must report
+   unconfirmed delivery without resending it or claiming failure of the underlying work.
+5. Restart the phone process during a task. Confirm the saved conversation is marked
+   interrupted and can be reopened, without automatically replaying its actions.
+
+The JVM regression suite covers ownership, admission deduplication, question routing,
+continuation and reply fragmentation. System speech capture and paired-device Data
+Layer delivery for this feature have not yet been verified on a physical watch.
+
 ## Configuration verification
 
 The focused configuration tests cover composition, linked-file conflicts,

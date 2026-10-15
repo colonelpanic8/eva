@@ -189,7 +189,10 @@
         <service android:name=".wear.PhoneWearListenerService" android:exported="true">
             <intent-filter>
                 <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
-                <data android:scheme="wear" android:host="*" android:pathPrefix="/eva/wrist/" />
+                <data android:scheme="wear" />
+                <data android:host="*" />
+                <data android:pathPrefix="/eva/wrist/" />
+                <data android:pathPrefix="/eva/tasks/" />
             </intent-filter>
             <intent-filter>
                 <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />

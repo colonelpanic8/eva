@@ -41,6 +41,11 @@ class PhoneWearCompanion(
 ) {
     private val prefs = app.getSharedPreferences("eva.wear.requests", Context.MODE_PRIVATE)
     private var observing = false
+    private val taskRequests by lazy {
+        PhoneWatchTasks(app, app.controller, app.conversations) { node, chunk ->
+            Wearable.getMessageClient(app).sendMessage(node, WatchTasks.REPLY, WearProtocol.encode(chunk)).await()
+        }
+    }
 
     fun observeConfiguration() {
         if (observing) return
@@ -87,6 +92,10 @@ class PhoneWearCompanion(
         try {
             app.configuration.awaitReady()
             when (path) {
+                WatchTasks.REQUEST -> {
+                    taskRequests.message(node, data)
+                }
+
                 WearProtocol.REFRESH -> {
                     sync()
                 }

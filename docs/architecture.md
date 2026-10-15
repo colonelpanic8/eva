@@ -89,10 +89,10 @@ indicators follow the shown thread; background work alone does not block a new
 foreground text request. Answered turns without request or response text are hidden;
 request-only turns show no synthetic answer bubble, while action evidence remains.
 
-The navigation drawer links to a separate **Conversation archive** instead of
-listing individual threads. The archive opens past conversations for continuation.
-**Archive conversation** in the conversation's options menu starts an empty thread,
-preserving prior history and accepted background work. It ends an attached voice
+The navigation drawer links to **Conversations**, with working conversations first,
+followed by recent history. Selecting one reopens it for continuation. **New** in
+that list or **New conversation** in the conversation's options menu starts an empty
+thread, preserving prior history and accepted background work. It ends an attached voice
 call so the old call cannot keep using the cleared context; text reconnects to the
 new thread. This clears conversation context, not saved memory or configuration.
 
@@ -1021,8 +1021,53 @@ application ID and signing identity, including `.debug` for debug builds.
 `:wear-core` holds the Android-free detector, wire types and configuration;
 `:diagnostics-core` holds the existing shared redactor and trace primitives.
 The provider-aware watch-origin session trace remains in `:eva-core`. `app/wear/` owns phone admission and sync; `wear/`
-owns watch sensing, its UI and Ongoing Activity. No wake word or watch microphone
-is used. Starting a call is the only gesture action; ending it is unchanged.
+owns watch sensing, its UI and Ongoing Activity. The gesture itself uses no wake
+word or microphone. Starting a call is the only gesture action; ending it is unchanged.
+
+#### Dictated text tasks
+
+**Dictate new task** opens the watch's system speech-recognition activity
+(`RecognizerIntent.ACTION_RECOGNIZE_SPEECH`). Its returned transcript starts a new
+conversation on the phone's configured background text provider. This requires the
+paired phone and matching EVA installs, but does not require EVA to be the default
+assistant or wrist gestures to be enabled. Recognition availability, permissions,
+and network requirements belong to the system recognizer; missing recognition is
+reported on the watch. EVA does not record or transmit watch audio itself.
+
+`ThreadController.submitBackground` journals the request, starts work-service
+coverage, and launches a thread-owned text leg without changing the shown thread
+or any attached voice/text session. Acceptance means the phone has taken ownership,
+not that inference or actions have completed. New tasks, browsing, closing the
+watch activity, and starting another voice call do not cancel accepted tasks.
+**Stop this conversation’s work** explicitly interrupts that conversation's active
+tasks, leaving other conversations alone. Action execution still uses the dispatcher
+and journal; shared device access can queue behind other work.
+
+**Recent conversations** on the watch reads phone-owned history and live status;
+**Show older** pages through it. An opened conversation can accept a dictated
+follow-up, steering its running leg when supported or opening a fresh leg with saved
+history after completion. A pending question has an explicit **Dictate answer**
+action bound to its question and thread IDs, even if navigation changes during
+recognition. Stale answers are rejected rather than becoming new tasks. The phone
+also exposes these conversations and existing result/question notifications.
+
+Watch messages use `/eva/tasks/request` and `/eva/tasks/reply`. The phone commits a
+request-ID reservation before admission and retains the acknowledgement: duplicate
+delivery, including after listener recreation, cannot start another task. A crash
+between reservation and acknowledgement leaves an explicit unknown outcome and
+never replays the request. The watch does not retry an unconfirmed submission;
+users can check recent conversations. Read-only refresh runs while the watch UI is
+visible, with pagination pausing automatic refresh while older history is being
+read. Replies are split into 48 KB byte fragments before encoding to stay below
+MessageClient's 100 KB limit without truncating answers; only the expected phone's
+fragments for an outstanding request are assembled.
+
+History survives process restarts. In-flight work interrupted by a phone process
+restart is marked interrupted by journal recovery, not automatically replayed;
+users can reopen the conversation and send a follow-up. JVM tests cover independent
+task ownership, question routing, history continuation, duplicate admission and
+fragmentation. Watch speech capture and paired-device delivery require device
+verification.
 
 **Gesture:** two quick full wrist twists: **out, back, out, back** about the
 watch's strap/forearm axis (either sign first). Each twist consists of an outward
