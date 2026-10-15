@@ -34,6 +34,7 @@ class ApiKeyAccess(
     override val responsesUrl = "$baseUrl/v1/responses"
     override val modelsUrl = "$baseUrl/v1/models"
     override val realtimeCallsUrl = "$baseUrl/v1/realtime/calls"
+    val liveSessionsUrl = "$baseUrl/v1/live/sessions"
     override val serverKeepsHistory = true
 
     override suspend fun authorize(builder: Request.Builder): Request.Builder = builder.header("Authorization", "Bearer $key")

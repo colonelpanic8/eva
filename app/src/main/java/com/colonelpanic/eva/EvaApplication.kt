@@ -78,7 +78,9 @@ import com.colonelpanic.eva.providers.openai.ApiKeyAccess
 import com.colonelpanic.eva.providers.openai.ChatGptSignIn
 import com.colonelpanic.eva.providers.openai.ModelKind
 import com.colonelpanic.eva.providers.openai.OpenAiAccess
+import com.colonelpanic.eva.providers.openai.OpenAiLiveProvider
 import com.colonelpanic.eva.providers.openai.OpenAiModelCatalog
+import com.colonelpanic.eva.providers.openai.OpenAiModels
 import com.colonelpanic.eva.providers.openai.OpenAiRealtimeProvider
 import com.colonelpanic.eva.providers.openai.OpenAiResponsesProvider
 import com.colonelpanic.eva.providers.openai.SubscriptionAccess
@@ -555,7 +557,7 @@ class EvaApplication :
             brains =
                 com.colonelpanic.eva.providers.openai.OpenAiCallAgentBrainFactory(
                     access = { checkNotNull(access()) { "Sign in to OpenAI before starting a phone call agent." } },
-                    model = { settings.realtimeModel },
+                    model = { OpenAiModels.callModel(settings.realtimeModel) },
                     tuning = { capabilities.callAgent },
                 ),
             journal =
@@ -954,8 +956,24 @@ class EvaApplication :
             mediaFactory = { mediaFactory.create(RealtimeMediaConfig()) },
             voiceProviderFactory = { link, audio ->
                 if (link.isBlank()) {
-                    val access = access() ?: error("Sign in with ChatGPT, add an API key, or paste a paired host link.")
-                    OpenAiRealtimeProvider(access, audio, settings.realtimeModel, settings.voiceReasoningEffort)
+                    val model = settings.realtimeModel
+                    if (OpenAiModels.isLive(model)) {
+                        val key =
+                            settings.apiKey()
+                                ?: error(
+                                    "GPT-Live requires a funded OpenAI API key. Add one in Settings; ChatGPT sign-in does not provide access through this integration.",
+                                )
+                        OpenAiLiveProvider(
+                            ApiKeyAccess(key),
+                            audio,
+                            prompts.wording.value.message(com.colonelpanic.eva.conversation.prompt.Wording.LIVE_FRONTEND),
+                            model = model,
+                            backendModel = settings.textModel,
+                        )
+                    } else {
+                        val access = access() ?: error("Sign in with ChatGPT, add an API key, or paste a paired host link.")
+                        OpenAiRealtimeProvider(access, audio, model, settings.voiceReasoningEffort)
+                    }
                 } else {
                     val endpoint = BrokerEndpoint.parse(link)
                     BrokerConversationProvider(endpoint, offerSdp = audio.createOffer(), onAnswer = audio::acceptAnswer)

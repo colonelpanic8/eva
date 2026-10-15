@@ -285,7 +285,7 @@ error instead of silently opening with an incomplete catalog.
 ## Providers and audio
 
 `ConversationProvider` adapts session setup, input, responses, tools, and correlated
-results. OpenAI Responses and Realtime have direct on-phone implementations;
+results. OpenAI Responses, Realtime, and Live have direct on-phone implementations;
 `BrokerConversationProvider` supports the development host bridge. The local
 command provider is a diagnostic harness.
 
@@ -294,6 +294,42 @@ distinct modes. Subscription access depends on the service; it must not silently
 fall back to billable API usage. Provider-specific authentication and transport
 stay behind their adapters. A working provider does not establish a public or
 stable subscription protocol guarantee.
+
+Selecting `gpt-live-1` in the portable `models.realtime` setting uses a separate
+Live adapter and the existing WebRTC media implementation. It creates a client
+delegation session at `/v1/live/sessions`, waits for `session.started`, and leaves
+EVA's configured text model responsible for tools and background work. Live voice
+requires an explicitly configured, funded OpenAI API key; the UI identifies this
+paid path even when ChatGPT sign-in is also available for the text worker. Existing
+Realtime remains the default. Delegated phone-call agents retain Realtime when
+Live is selected for the assistant, because their PCM protocol is different.
+
+Live transcript fragments retain their independent speaker timestamps and exact
+text. Delegation carries a provider ID and timeline offset, not a tool call or a
+user request. The controller resolves that context before starting an EVA-owned
+background task; the dispatcher remains responsible for every actual action.
+Voice disconnection does not cancel accepted background work. Task results sent
+to the originating Live session preserve the delegation ID; another session gets
+ordinary context. Append acknowledgments confirm context injection only, so EVA
+keeps background notifications rather than reporting unobserved speech delivery.
+Live stays attached until the user asks to end it or hangs up; automatic after-reply
+and one-request endings are unavailable without a speech-completion signal. An
+explicit end request closes immediately and may cut off a spoken goodbye.
+
+Startup history is limited to the most recent 128 messages and a conservative
+8,192-byte text budget for the provider's 8,192-token input limit. A persistent
+notice reports omitted context; EVA retains its journal and the worker's normal
+history. Live updates are losslessly split into numbered JSON envelopes, each
+under the 500-token append limit using a conservative UTF-8 byte bound. Incomplete
+updates are not completion evidence. The adapter requests graceful session close;
+if finalization cannot be observed, final usage remains unconfirmed. JVM protocol
+and lifecycle tests do not establish device audio or account entitlement. The opt-in
+`NativeVoiceLiveTest` accepts `evaLiveVoice=true`, `evaLiveApiKey` (or the debug
+app's saved key), and a synthetic `evaSpeechPcmPath`. A Pixel run verified real Live
+WebRTC startup, injected PCM captions, client delegation, result append, and decoded
+spoken output. Controller/dispatcher behavior is separately covered by JVM tests;
+Bluetooth, locked-device behavior and a real delegated phone action remain separate
+verification targets.
 
 Realtime voice uses WebRTC audio and explicit microphone ownership, mute, route,
 focus, and teardown handling. The session owns its audible edges: a rising cue when

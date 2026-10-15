@@ -15,6 +15,12 @@ object OpenAiModels {
     /** Speech-to-speech model for direct WebRTC sessions. */
     const val REALTIME = "gpt-realtime-2.1"
 
+    const val LIVE = "gpt-live-1"
+
+    fun isLive(model: String): Boolean = model == LIVE || model.startsWith("$LIVE-")
+
+    fun callModel(voiceModel: String): String = if (isLive(voiceModel)) REALTIME else voiceModel
+
     /** Text model for typed turns over the Responses API. */
     const val TEXT = "gpt-6.1-sol"
 

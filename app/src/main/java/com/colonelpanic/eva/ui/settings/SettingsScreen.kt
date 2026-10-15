@@ -421,7 +421,7 @@ private fun ModelsSection(
             ModelPicker(
                 "Voice model",
                 state.realtimeModel,
-                state.availableRealtimeModels,
+                (state.availableRealtimeModels + OpenAiModels.LIVE).distinct(),
                 OpenAiModels.REALTIME,
                 actions.onSelectRealtimeModel,
             )
@@ -431,12 +431,21 @@ private fun ModelsSection(
                 OpenAiModels.TEXT_REASONING_EFFORTS,
                 actions.onSelectReasoningEffort,
             )
-            ReasoningEffortPicker(
-                "Voice reasoning effort",
-                state.voiceReasoningEffort,
-                OpenAiModels.VOICE_REASONING_EFFORTS,
-                actions.onSelectVoiceReasoningEffort,
-            )
+            if (OpenAiModels.isLive(state.realtimeModel)) {
+                SettingsNote(
+                    "Live stays connected until you ask to end the call or tap Hang up. Automatic hangup after a reply is not available.",
+                )
+                SettingsNote(
+                    "GPT-Live uses your paid OpenAI API key for voice and the text model above for background work. ChatGPT sign-in remains available for the text worker. Delegated phone calls continue to use ${OpenAiModels.REALTIME}.",
+                )
+            } else {
+                ReasoningEffortPicker(
+                    "Voice reasoning effort",
+                    state.voiceReasoningEffort,
+                    OpenAiModels.VOICE_REASONING_EFFORTS,
+                    actions.onSelectVoiceReasoningEffort,
+                )
+            }
             SettingsNote("Changes apply from the next connection.")
         }
     }

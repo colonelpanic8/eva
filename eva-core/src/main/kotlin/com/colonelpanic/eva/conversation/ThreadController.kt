@@ -30,6 +30,7 @@ import com.colonelpanic.eva.devicecontrol.TaskPhase
 import com.colonelpanic.eva.diagnostics.EvaTrace
 import com.colonelpanic.eva.providers.CallIdentity
 import com.colonelpanic.eva.providers.CallRejection
+import com.colonelpanic.eva.providers.ClientDelegationSession
 import com.colonelpanic.eva.providers.Continuation
 import com.colonelpanic.eva.providers.ConversationInput
 import com.colonelpanic.eva.providers.ConversationProvider
@@ -125,6 +126,10 @@ class ThreadController(
     private val nowMillis: () -> Long = System::currentTimeMillis,
     private val deviceTasks: com.colonelpanic.eva.devicecontrol.DeviceTaskCoordinator? = null,
     private val callTasks: com.colonelpanic.eva.call.CallTaskCoordinator? = null,
+    /** How long a delegation's captions must stay unchanged before EVA reads the request from them. */
+    private val liveCaptionSettleMillis: () -> Long = { 500L },
+    /** The longest a delegation waits for late captions before asking the user to repeat. */
+    private val liveCaptionWaitMillis: () -> Long = { 5_000L },
 ) {
     private data class PendingQuestion(
         val threadId: String,
@@ -139,6 +144,41 @@ class ThreadController(
     private var nextQuestionOrder = 0L
     private val questionWrites = Mutex()
     private val transcriptItems = mutableMapOf<Pair<ConversationSession, String>, String>()
+
+    /** A delegating speech session's captions and the delegations it raised, kept until each is settled. */
+    private class LiveAttachment(
+        val session: ConversationSession,
+        val threadId: String,
+    ) {
+        val transcript = LiveTranscript()
+        val delegations = linkedMapOf<String, LiveDelegation>()
+    }
+
+    private enum class LiveDelegationState { PENDING, STARTED, UNCLEAR }
+
+    /** The provider's identity for one delegated request. Never an EVA task ID; [turnId] is. */
+    private class LiveDelegation(
+        val attachment: LiveAttachment,
+        val sessionId: String,
+        val delegationId: String,
+        val offsetMs: Long,
+        val tools: ConnectionTools,
+    ) {
+        var state = LiveDelegationState.PENDING
+        var turnId: String? = null
+
+        /** The user's speech since the previous delegation on this session, up to this one. */
+        fun heard(): String =
+            attachment.transcript.speech(
+                "user",
+                attachment.delegations.values
+                    .filter { it !== this && it.offsetMs < offsetMs }
+                    .maxOfOrNull { it.offsetMs } ?: -1L,
+                offsetMs,
+            )
+    }
+
+    private val liveAttachments = mutableMapOf<ConversationSession, LiveAttachment>()
 
     private val deviceSpeechOwners = mutableMapOf<String, DeviceSpeech>()
 
@@ -806,6 +846,7 @@ class ThreadController(
                             .WatchSessionTrace(it, nowMillis())
                     }
                 var openedSession: ConversationSession? = null
+                var openedMedia: RealtimeMediaSession? = null
                 var threadId: String? = null
                 try {
                     threadId = if (newThread) store.createThread(UNTITLED).id.also { shownThreadId = it } else shownOrNewThread()
@@ -855,6 +896,7 @@ class ThreadController(
                             providerFactory(link)
                         } else {
                             val audio = checkNotNull(mediaFactory).invoke()
+                            openedMedia = audio
                             media = audio
                             launch {
                                 audio.controls.collect { controls ->
@@ -926,7 +968,16 @@ class ThreadController(
                     )
                     if (openedSession != null && threadId != null) {
                         val label = "${if (voice) "Call" else "Session"} $reason"
-                        withContext(NonCancellable) { store.append(notice(threadId, null, NoticeKind.SESSION_ENDED, label)) }
+                        val captions =
+                            liveAttachments
+                                .remove(openedSession)
+                                ?.transcript
+                                ?.drain()
+                                .orEmpty()
+                        withContext(NonCancellable) {
+                            captions.forEach { journalCaption(threadId, it) }
+                            store.append(notice(threadId, null, NoticeKind.SESSION_ENDED, label))
+                        }
                     }
                     if (thisAttempt == attempt) {
                         session = null
@@ -964,6 +1015,8 @@ class ThreadController(
                                     it.copy(providerMessage = it.providerMessage ?: "Provider cleanup failed. Reconnect to try again.")
                                 }
                             }
+                        } finally {
+                            openedMedia?.close()
                         }
                     }
                 }
@@ -1233,6 +1286,21 @@ class ThreadController(
                 }
             }
 
+            is ProviderEvent.TimedTranscript -> {
+                if (event.role == "user") {
+                    disarmQuietHangUp()
+                    replyHangUp = false
+                }
+                val attachment = liveAttachments.getOrPut(opened) { LiveAttachment(opened, threadId) }
+                attachment.transcript
+                    .add(LiveTranscript.Fragment(event.role, event.text, event.startMs, event.endMs))
+                    .forEach { journalCaption(threadId, it) }
+            }
+
+            is ProviderEvent.ClientDelegationRequested -> {
+                onClientDelegation(event, opened, threadId)
+            }
+
             is ProviderEvent.Failure -> {
                 throw IllegalStateException(event.message)
             }
@@ -1240,6 +1308,189 @@ class ThreadController(
             ProviderEvent.Closed -> {}
         }
     }
+
+    private suspend fun journalCaption(
+        threadId: String,
+        segment: LiveTranscript.Segment,
+    ) {
+        if (segment.role == "user") {
+            store.append(ThreadItem.UserMessage(UUID.randomUUID().toString(), threadId, null, nowMillis(), segment.text, spoken = true))
+            titleFrom(threadId, segment.text)
+        } else {
+            store.append(
+                ThreadItem.AssistantMessage(UUID.randomUUID().toString(), threadId, null, nowMillis(), segment.text, spoken = true),
+            )
+        }
+    }
+
+    /**
+     * A delegation names a timeline offset, not a request. EVA waits for the captions before it to
+     * settle, reads the user's speech since the previous delegation, and starts one task for it.
+     * A repeated ID is ignored; a request it cannot attribute is never guessed at or re-run.
+     */
+    private fun onClientDelegation(
+        event: ProviderEvent.ClientDelegationRequested,
+        opened: ConversationSession,
+        threadId: String,
+    ) {
+        val attachment = liveAttachments.getOrPut(opened) { LiveAttachment(opened, threadId) }
+        val key = event.sessionId + ":" + event.delegationId
+        val known = key in attachment.delegations
+        EvaTrace.info(
+            "live.delegation",
+            "delegation" to event.delegationId,
+            "offsetMs" to event.offsetMs,
+            "duplicate" to known,
+        )
+        if (known) return
+        val delegation = LiveDelegation(attachment, event.sessionId, event.delegationId, event.offsetMs, connectionTools.getValue(opened))
+        attachment.delegations[key] = delegation
+        scope.launch {
+            var previous: String? = null
+            var waited = 0L
+            while (true) {
+                val settle = liveCaptionSettleMillis().coerceAtLeast(1L)
+                delay(settle)
+                waited += settle
+                val heard = delegation.heard()
+                if (heard.isNotBlank() && (heard == previous || attachment.transcript.reached(delegation.offsetMs))) break
+                if (waited >= liveCaptionWaitMillis()) break
+                previous = heard
+            }
+            try {
+                startLiveDelegation(delegation)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                EvaTrace.info("live.delegation_failed", "delegation" to delegation.delegationId, "error" to error::class.simpleName)
+                val detail = error.message ?: SessionController.STORAGE_ERROR
+                mutableState.update { it.copy(providerMessage = "EVA could not start the voice model's request: $detail") }
+            }
+        }
+    }
+
+    private suspend fun startLiveDelegation(delegation: LiveDelegation) {
+        val attachment = delegation.attachment
+        val threadId = attachment.threadId
+        val request = delegation.heard().trim()
+        // An earlier offset arriving after a later delegation started would re-read speech that one already owns.
+        val overtaken =
+            attachment.delegations.values.any {
+                it !== delegation && it.state != LiveDelegationState.PENDING && it.offsetMs >= delegation.offsetMs
+            }
+        if (request.isEmpty() || overtaken) {
+            delegation.state = LiveDelegationState.UNCLEAR
+            val reason = if (overtaken) "overlaps_earlier_request" else "no_user_speech"
+            EvaTrace.info("live.delegation_unclear", "delegation" to delegation.delegationId, "reason" to reason)
+            store.append(
+                notice(
+                    threadId,
+                    null,
+                    NoticeKind.INTERRUPTED,
+                    "The voice model asked EVA to act, but EVA could not tell which request it meant " +
+                        "(${reason.replace('_', ' ')}). Nothing was started.",
+                ),
+            )
+            tellLive(
+                delegation,
+                wording().message(Wording.LIVE_DELEGATION_UNCLEAR),
+                respond = true,
+                data =
+                    buildJsonObject {
+                        put("reason", reason)
+                        put("heard", clipped(request, 400))
+                        put("contentTrust", "external_data")
+                    },
+            )
+            return
+        }
+        delegation.state = LiveDelegationState.STARTED
+        // The request's own words reach the worker's history, not only its instructions.
+        attachment.transcript.drain().forEach { journalCaption(threadId, it) }
+        val turnId = UUID.randomUUID().toString()
+        delegation.turnId = turnId
+        val (excerpt, limited) =
+            attachment.transcript.excerpt(delegation.offsetMs - LIVE_EXCERPT_WINDOW_MS, delegation.offsetMs, LIVE_EXCERPT_CHARS)
+        val brief =
+            wording().message(Wording.LIVE_DELEGATION) + "\n" +
+                buildJsonObject {
+                    put("request", request)
+                    put(
+                        "transcript",
+                        JsonArray(
+                            excerpt.map {
+                                buildJsonObject {
+                                    put("role", it.role)
+                                    put("text", it.text)
+                                    put("startMs", it.startMs)
+                                    put("endMs", it.endMs)
+                                }
+                            },
+                        ),
+                    )
+                    put("transcriptLimited", limited)
+                    put("pendingQuestions", JsonArray(pendingQuestions(threadId).map { it.evidence.data() }))
+                    put(
+                        "activeTasks",
+                        JsonArray(
+                            tasks.values.filter { it.threadId == threadId && it.active }.map {
+                                buildJsonObject {
+                                    put("taskId", it.turnId)
+                                    put("task", clipped(it.request, 256))
+                                }
+                            },
+                        ),
+                    )
+                    put(
+                        "delegation",
+                        buildJsonObject {
+                            put("sessionId", delegation.sessionId)
+                            put("delegationId", delegation.delegationId)
+                            put("offsetMs", delegation.offsetMs)
+                        },
+                    )
+                    put("contentTrust", "external_data")
+                }
+        val task =
+            startTask(
+                threadId,
+                "live:${delegation.delegationId}",
+                request,
+                attachment.session,
+                spoken = false,
+                journalRequest = false,
+                tools = delegation.tools,
+                turnId = turnId,
+            )
+        task.delegateFromLive(delegation, brief)
+    }
+
+    /** Tells the session that raised [delegation], if it is still the attached one; later sessions learn through task reports. */
+    private suspend fun tellLive(
+        delegation: LiveDelegation,
+        note: String,
+        respond: Boolean,
+        data: JsonObject,
+    ): Boolean {
+        val live = delegation.attachment.session as? ClientDelegationSession ?: return false
+        if (session !== live) return false
+        return runCatching { live.appendDelegationUpdate(delegation.delegationId, note, data, respond) }.getOrDefault(false)
+    }
+
+    /** EVA's context for an attached voice session; a delegating one takes it as an update outside any delegation unless one is named. */
+    private suspend fun tellVoice(
+        voice: ConversationSession,
+        note: String,
+        respond: Boolean,
+        data: JsonObject?,
+        deliveryId: String? = null,
+        delegationId: String? = null,
+    ): Boolean =
+        if (voice is ClientDelegationSession) {
+            voice.appendDelegationUpdate(delegationId, note, data, respond)
+        } else {
+            voice.submitContext(note, respond, data, deliveryId)
+        }
 
     private fun pendingQuestions(threadId: String?) = questions.values.filter { it.threadId == threadId && it.evidence.waiting }
 
@@ -1365,7 +1616,7 @@ class ThreadController(
                 return@launchFinalization
             }
             session?.takeIf { attachedThreadId == question.threadId && connectionTools[it]?.voice == true }?.let { voice ->
-                runCatching { voice.submitContext(wording().message(Wording.BACKGROUND_QUESTION_RESOLVED), false, evidence.data()) }
+                runCatching { tellVoice(voice, wording().message(Wording.BACKGROUND_QUESTION_RESOLVED), false, evidence.data()) }
             }
         }
     }
@@ -1488,13 +1739,19 @@ class ThreadController(
         questionRelays[relayKey] = QuestionRelay(key, held = true)
         scope.launch {
             if (session !== voice || currentQuestion(attachedThreadId) !== question || !question.evidence.waiting) return@launch
+            // A delegating session cannot call the answer tool; its user's answer comes back as a delegation.
             val accepted =
                 runCatching {
-                    voice.submitContext(
-                        wording().message(Wording.BACKGROUND_QUESTION),
+                    tellVoice(
+                        voice,
+                        wording().message(if (voice is ClientDelegationSession) Wording.LIVE_QUESTION else Wording.BACKGROUND_QUESTION),
                         true,
                         question.evidence.data(),
                         QUESTION_DELIVERY + key,
+                        tasks[question.evidence.taskId]
+                            ?.liveDelegation
+                            ?.takeIf { it.attachment.session === voice }
+                            ?.delegationId,
                     )
                 }.getOrDefault(false)
             EvaTrace.info("question.relay_submitted", "questionId" to key, "accepted" to accepted)
@@ -1510,8 +1767,9 @@ class ThreadController(
         event: ProviderEvent.ToolCallReady,
         opened: ConversationSession,
         threadId: String,
+        catalog: ProviderToolCatalog? = connectionTools[opened]?.catalog,
     ) {
-        val offered = connectionTools[opened]?.catalog?.tools?.any { it.capabilityId == event.capabilityId } == true
+        val offered = catalog?.tools?.any { it.capabilityId == event.capabilityId } == true
         val correction = (event.arguments["correction"] as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim()
         val owner = deviceTasks?.running?.value?.takeIf { it.threadId == threadId }
         val (status, key) =
@@ -1567,8 +1825,11 @@ class ThreadController(
         event: ProviderEvent.ToolCallReady,
         opened: ConversationSession,
         threadId: String,
+        catalog: ProviderToolCatalog? = connectionTools[opened]?.catalog,
+        /** The task proposing the control, which cannot stop itself this way. */
+        caller: String? = null,
     ) {
-        val definition = connectionTools[opened]?.catalog?.tools?.find { it.capabilityId == event.capabilityId }
+        val definition = catalog?.tools?.find { it.capabilityId == event.capabilityId }
         if (definition == null || ToolSchema.error(definition.inputSchema, event.arguments) != null) {
             val message =
                 if (event.capabilityId ==
@@ -1684,7 +1945,8 @@ class ThreadController(
             val id = (event.arguments["taskId"] as JsonPrimitive).content
             val task =
                 tasks[id]?.takeIf {
-                    it.threadId == threadId && it.active && (it.delegated || it.isBackground || deviceTasks?.owns(it.turnId) == true)
+                    it.threadId == threadId && it.active && it.turnId != caller &&
+                        (it.delegated || it.isBackground || deviceTasks?.owns(it.turnId) == true)
                 }
             if (task == null) {
                 opened.submitToolResult(CorrelatedToolResult(event.call, "NOT_EXECUTED", wording().message(Wording.BACKGROUND_NONE)))
@@ -1856,7 +2118,12 @@ class ThreadController(
         actionResponses.clear()
         assistantSpeaking = false
         connectionJob?.cancel()
-        media?.close()
+        if (session is ClientDelegationSession) {
+            media?.setMicrophoneMuted(true)
+            media?.setPlaybackMuted(true)
+        } else {
+            media?.close()
+        }
         media = null
         session = null
         attachedThreadId = null
@@ -2159,14 +2426,19 @@ class ThreadController(
         leg: ConversationSession,
         spoken: Boolean,
         announceOnly: Boolean = false,
+        /** False when the request's words are already journaled, as captions are. */
+        journalRequest: Boolean = true,
+        tools: ConnectionTools? = null,
+        turnId: String = UUID.randomUUID().toString(),
     ): TurnTask {
-        val turnId = UUID.randomUUID().toString()
         store.openTurn(threadId, request, turnId)
         if (request.isNotBlank()) {
-            store.append(ThreadItem.UserMessage(UUID.randomUUID().toString(), threadId, turnId, nowMillis(), request, spoken))
+            if (journalRequest) {
+                store.append(ThreadItem.UserMessage(UUID.randomUUID().toString(), threadId, turnId, nowMillis(), request, spoken))
+            }
             titleFrom(threadId, request)
         }
-        val task = TurnTask(threadId, turnId, inputId, request, leg, announceOnly)
+        val task = TurnTask(threadId, turnId, inputId, request, leg, announceOnly, tools)
         tasks[turnId] = task
         progress[turnId] = TaskProgressRecord(nowMillis())
         if (spoken) voiceTurns[leg to inputId] = VoiceTurn(turnId, announceOnly)
@@ -2212,6 +2484,7 @@ class ThreadController(
         var request: String,
         leg: ConversationSession,
         val announceOnly: Boolean,
+        initialTools: ConnectionTools? = null,
     ) {
         val taskScope =
             CoroutineScope(scope.coroutineContext + SupervisorJob()).also { taskScope ->
@@ -2230,7 +2503,7 @@ class ThreadController(
         private val backgroundReady = CompletableDeferred<Boolean>()
         var backgroundState = "CONNECTING"
             private set
-        private var tools = connectionTools.getValue(leg)
+        private var tools = initialTools ?: connectionTools.getValue(leg)
         var awaitingFollowUp = false
             private set
         val dispatches = mutableListOf<Job>()
@@ -2261,6 +2534,10 @@ class ThreadController(
         private var detached = false
         val isBackground: Boolean get() = rehomed || detached
         var delegated = false
+            private set
+
+        /** The speech model's request this task answers; only the session that raised it hears results by its ID. */
+        var liveDelegation: LiveDelegation? = null
             private set
         private val backgroundAnswers = mutableListOf<String>()
         private val answerParts = mutableListOf<String>()
@@ -2899,6 +3176,90 @@ class ThreadController(
             }
         }
 
+        /** Runs a delegated request on EVA's own text worker; the speech session only ever hears verified outcomes. */
+        fun delegateFromLive(
+            delegation: LiveDelegation,
+            brief: String,
+        ) {
+            if (!active || rehomed || delegated) return
+            delegated = true
+            liveDelegation = delegation
+            EvaTrace.info("live.delegation_started", "task" to turnId, "delegation" to delegation.delegationId)
+            updateWorkCoverage()
+            taskScope.launch(start = CoroutineStart.UNDISPATCHED) {
+                val started = rehome(request, brief)
+                val data =
+                    buildJsonObject {
+                        put("taskId", turnId)
+                        put("state", if (started) "WORKING" else "NOT_STARTED")
+                        put("task", request)
+                        put("contentTrust", "external_data")
+                    }
+                withContext(NonCancellable) {
+                    if (started) {
+                        tellLive(delegation, wording().message(Wording.LIVE_DELEGATION_STARTED), respond = false, data)
+                    } else {
+                        tellLive(delegation, wording().message(Wording.LIVE_DELEGATION_FAILED), respond = true, data)
+                        onBackgroundAnswer(
+                            BackgroundAnswer(
+                                threadId,
+                                store.thread(threadId)?.title ?: UNTITLED,
+                                "EVA could not start this request: $request",
+                                turnId,
+                                TurnStatus.FAILED,
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+
+        /**
+         * Session controls a delegated worker proposes for the speech session, which has no tools of
+         * its own. Each is validated against the worker's catalog and the thread's real tasks and questions.
+         */
+        private suspend fun liveControl(
+            event: ProviderEvent.ToolCallReady,
+            opened: ConversationSession,
+        ) {
+            val definition = tools.catalog.tools.find { it.capabilityId == event.capabilityId }
+            if (!active || leg !== opened || event.call.connectionEpoch != opened.connectionEpoch ||
+                event.call.providerSessionId != backgroundSessionId || event.call.inputId != inputId ||
+                event.call.catalogRevision != tools.catalog.revision || event.rejection != null ||
+                definition == null || ToolSchema.error(definition.inputSchema, event.arguments) != null ||
+                (
+                    event.call.initiator != null &&
+                        (event.call.initiator.kind != InitiatorKind.TEXT_AGENT || event.call.initiator.legId != textLegId)
+                )
+            ) {
+                opened.submitToolResult(CorrelatedToolResult(event.call, "NOT_EXECUTED", wording().message(Wording.BACKGROUND_INVALID)))
+                return
+            }
+            when (event.capabilityId) {
+                END_CONVERSATION.capabilityId -> {
+                    val origin = liveDelegation?.attachment?.session
+                    val attached =
+                        origin != null && session === origin && tools.catalog.tools.any { it.capabilityId == event.capabilityId }
+                    if (attached) endCall(ENDED_BY_MODEL)
+                    opened.submitToolResult(
+                        CorrelatedToolResult(
+                            event.call,
+                            if (attached) "COMPLETED" else "NOT_EXECUTED",
+                            wording().message(if (attached) Wording.LIVE_CALL_ENDING else Wording.LIVE_CALL_NOT_ATTACHED),
+                        ),
+                    )
+                }
+
+                in DEVICE_CONTROLS -> {
+                    controlDeviceTask(event, opened, threadId, tools.catalog)
+                }
+
+                else -> {
+                    controlBackgroundTask(event, opened, threadId, tools.catalog, caller = turnId)
+                }
+            }
+        }
+
         private fun interruptionText(reason: String): String =
             (listOf(reason) + answerParts).filter { it.isNotBlank() }.joinToString("\n\n")
 
@@ -2924,7 +3285,45 @@ class ThreadController(
             val notification = if (status == TurnStatus.ANSWERED) answer else interruptionText(reason.orEmpty())
             val fallback = BackgroundAnswer(threadId, store.thread(threadId)?.title ?: UNTITLED, notification, turnId, status)
             onBackgroundAnswer(fallback)
-            if (voice != null) {
+            if (voice is ClientDelegationSession) {
+                // The session acknowledges context, not speech, so nothing here counts as delivered.
+                val receipts =
+                    if (liveDelegation ==
+                        null
+                    ) {
+                        null
+                    } else {
+                        runCatching { repository.byCallIds(actionCallIds.toList()) }.getOrNull()
+                    }
+                val reported =
+                    if (liveDelegation == null) {
+                        data
+                    } else {
+                        JsonObject(
+                            data +
+                                (
+                                    "actions" to
+                                        JsonArray(
+                                            actionCallIds.map { id ->
+                                                val record = receipts?.get(id)
+                                                buildJsonObject {
+                                                    put("capabilityId", record?.capabilityId ?: "")
+                                                    put("status", record?.status?.name ?: InvocationStatus.UNKNOWN.name)
+                                                    put(
+                                                        "message",
+                                                        clipped(record?.message ?: wording().message(Wording.RECEIPT_UNAVAILABLE), 300),
+                                                    )
+                                                }
+                                            },
+                                        )
+                                ),
+                        )
+                    }
+                val delegationId = liveDelegation?.takeIf { it.attachment.session === voice }?.delegationId
+                runCatching {
+                    voice.appendDelegationUpdate(delegationId, wording().message(Wording.BACKGROUND_UPDATE), reported, respond = true)
+                }
+            } else if (voice != null) {
                 pendingAnnouncements[voice to turnId] = fallback
                 val accepted =
                     runCatching {
@@ -2934,7 +3333,11 @@ class ThreadController(
             }
         }
 
-        private suspend fun rehome(instruction: String? = null): Boolean {
+        /** [brief], when given, replaces the handoff note that frames [instruction] for the worker. */
+        private suspend fun rehome(
+            instruction: String? = null,
+            brief: String? = null,
+        ): Boolean {
             if (rehomed) {
                 fail(wording().message(Wording.BACKGROUND_RESTART_REFUSED))
                 return false
@@ -2949,15 +3352,34 @@ class ThreadController(
                         awaitCapabilities()
                         val assembled = assemble(voice = false)
                         val snapshot = registry.snapshot
-                        val phone = phoneTools(snapshot, false, assembled.hidden, textControls = 1)
+                        val deviceTool = snapshot.catalog.any { it.id == CapabilityRegistry.DEVICE_TASK }
+                        val liveControls =
+                            if (liveDelegation == null) {
+                                0
+                            } else {
+                                LIVE_WORKER_CONTROLS.size + if (deviceTool) DEVICE_CONTROLS.size else 0
+                            }
+                        val phone = phoneTools(snapshot, false, assembled.hidden, textControls = 1 + liveControls)
+                        val controls =
+                            if (liveDelegation == null) {
+                                emptyList()
+                            } else {
+                                listOf(END_CONVERSATION, BACKGROUND_STATUS, BACKGROUND_CANCEL, BACKGROUND_ANSWER).map(wording()::describe) +
+                                    if (phone.second.any { it.capabilityId == CapabilityRegistry.DEVICE_TASK }) {
+                                        listOf(DEVICE_TASK_REVISE, DEVICE_TASK_STOP).map(wording()::describe)
+                                    } else {
+                                        emptyList()
+                                    }
+                            }
                         val catalog =
-                            catalogOf(assembled.apply(phone.second + wording().describe(ASK_USER)), snapshot.revision)
+                            catalogOf(assembled.apply(controls + phone.second + wording().describe(ASK_USER)), snapshot.revision)
                                 .copy(excludedTools = phone.first.excluded())
                         tools = ConnectionTools(snapshot, catalog, false)
                         val instructions =
                             assembled.instructions + extensionGuidance(snapshot, catalog) + "\n\n" +
                                 (
-                                    instruction?.let { wording().message(Wording.HANDOFF_INSTRUCTIONS) + "\n" + JsonPrimitive(it) }
+                                    brief
+                                        ?: instruction?.let { wording().message(Wording.HANDOFF_INSTRUCTIONS) + "\n" + JsonPrimitive(it) }
                                         ?: wording().message(Wording.CONTINUATION)
                                 )
                         val history =
@@ -3048,6 +3470,10 @@ class ThreadController(
                                             if (backgroundState == "WORKING" && event.call.inputId == turnId) {
                                                 if (event.capabilityId == ASK_USER.capabilityId) {
                                                     askUser(event, opened, textLeg.id)
+                                                } else if (liveDelegation != null &&
+                                                    event.capabilityId in LIVE_WORKER_CONTROLS + DEVICE_CONTROLS
+                                                ) {
+                                                    liveControl(event, opened)
                                                 } else {
                                                     dispatch(event, textLeg.id)
                                                 }
@@ -3229,6 +3655,13 @@ class ThreadController(
         private const val BACKGROUND_STATUS_ITEMS = 512
         private const val BACKGROUND_RECENT_TASKS = 5
         private const val BACKGROUND_START_TIMEOUT_MILLIS = 15_000L
+
+        /** Session controls a delegated worker proposes on behalf of a speech model that cannot call tools. */
+        private val LIVE_WORKER_CONTROLS = BACKGROUND_CONTROLS + PromptDefaults.END_CONVERSATION_ID
+
+        /** How far before a delegation the worker's transcript excerpt reaches, and its size. */
+        private const val LIVE_EXCERPT_WINDOW_MS = 120_000L
+        private const val LIVE_EXCERPT_CHARS = 6_000
 
         fun catalogOf(
             tools: List<ProviderToolDefinition>,

@@ -15,6 +15,8 @@ import com.colonelpanic.eva.audio.RealtimeMediaConfig
 import com.colonelpanic.eva.audio.RealtimeMediaController
 import com.colonelpanic.eva.audio.RealtimeMediaState
 import com.colonelpanic.eva.audio.webrtc.WebRtcPeerLink
+import com.colonelpanic.eva.providers.openai.ApiKeyAccess
+import com.colonelpanic.eva.providers.openai.OpenAiLiveProvider
 import com.colonelpanic.eva.providers.openai.OpenAiRealtimeProvider
 import com.colonelpanic.eva.providers.openai.SubscriptionAccess
 import kotlinx.coroutines.CompletableDeferred
@@ -42,9 +44,10 @@ class NativeVoiceLiveTest {
         val args = InstrumentationRegistry.getArguments()
         val link = args.getString("evaBrokerLink")
         val subscription = args.getString("evaSubscriptionVoice") == "true"
+        val live = args.getString("evaLiveVoice") == "true"
         val path = args.getString("evaSpeechPcmPath")
-        assumeTrue("Requires an explicit voice route and synthetic PCM fixture", (link != null || subscription) && path != null)
-        require(!(subscription && link != null))
+        assumeTrue("Requires an explicit voice route and synthetic PCM fixture", (link != null || subscription || live) && path != null)
+        require(listOf(link != null, subscription, live).count { it } == 1)
         require(checkNotNull(path).matches(Regex("/data/local/tmp/eva-[a-z0-9-]+\\.pcm")))
         val fixture =
             instrumentation.uiAutomation.executeShellCommand("cat $path").use {
@@ -105,7 +108,16 @@ class NativeVoiceLiveTest {
                 var session: ConversationSession? = null
                 try {
                     val provider =
-                        if (subscription) {
+                        if (live) {
+                            val key =
+                                args.getString("evaLiveApiKey")
+                                    ?: (context.applicationContext as EvaApplication).settings.requireApiKey()
+                            OpenAiLiveProvider(
+                                ApiKeyAccess(key),
+                                media,
+                                "This is a synthetic audio test. Delegate arithmetic to the client. Client updates are numbered JSON envelopes whose text reconstructs an EVA note and result data. Explain the verified answer briefly.",
+                            )
+                        } else if (subscription) {
                             val account = (context.applicationContext as EvaApplication).chatGpt
                             check(account.signedIn) { "The debug app needs a ChatGPT sign-in for this test." }
                             OpenAiRealtimeProvider(SubscriptionAccess(account, "1.0.0"), media)
@@ -125,6 +137,8 @@ class NativeVoiceLiveTest {
                         )
                     val heardQuestion = CompletableDeferred<Unit>()
                     val heardAnswer = CompletableDeferred<Unit>()
+                    val liveDelegated = CompletableDeferred<Unit>()
+                    val liveCaptions = mutableMapOf<String, String>()
                     val collector =
                         launch {
                             session.events.collect { event ->
@@ -138,6 +152,29 @@ class NativeVoiceLiveTest {
                                         if (event.role == "assistant" && Regex("(?i)(ninety.five|95)").containsMatchIn(event.text)) {
                                             heardAnswer.complete(Unit)
                                         }
+                                    }
+
+                                    is ProviderEvent.TimedTranscript -> {
+                                        val text = liveCaptions.getOrDefault(event.role, "") + event.text
+                                        liveCaptions[event.role] = text
+                                        if (event.role == "user" &&
+                                            Regex("(?i)(thirty.seven|37)").containsMatchIn(text)
+                                        ) {
+                                            heardQuestion.complete(Unit)
+                                        }
+                                        if (event.role == "assistant" &&
+                                            Regex("(?i)(ninety.five|95)").containsMatchIn(text)
+                                        ) {
+                                            heardAnswer.complete(Unit)
+                                        }
+                                    }
+
+                                    is ProviderEvent.ClientDelegationRequested -> {
+                                        liveDelegated.complete(Unit)
+                                        (session as ClientDelegationSession).appendDelegationUpdate(
+                                            event.delegationId,
+                                            "Verified synthetic test calculation: EVA calculated 37 + 58 = ${37 + 58}. Tell the user the result.",
+                                        )
                                     }
 
                                     is ProviderEvent.Failure -> {
@@ -164,6 +201,7 @@ class NativeVoiceLiveTest {
                         withTimeout(60000) {
                             heardQuestion.await()
                             heardAnswer.await()
+                            if (live) liveDelegated.await()
                         }
                         withTimeout(10000) { while (receivedNonzeroBytes.get() == 0) delay(100) }
                         assertTrue("Audio callback must retain 48kHz mono PCM16", formatValid.get())
@@ -178,7 +216,16 @@ class NativeVoiceLiveTest {
                                 )
                                 putInt("syntheticBytes", sentBytes.get())
                                 putInt("nonzeroDecodedBytes", receivedNonzeroBytes.get())
-                                putString("route", if (subscription) "direct-subscription" else "broker")
+                                putString(
+                                    "route",
+                                    if (live) {
+                                        "direct-live-api"
+                                    } else if (subscription) {
+                                        "direct-subscription"
+                                    } else {
+                                        "broker"
+                                    },
+                                )
                             },
                         )
                     } finally {

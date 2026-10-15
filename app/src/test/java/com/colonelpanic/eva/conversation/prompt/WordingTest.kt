@@ -40,6 +40,14 @@ class WordingTest {
             .forEach { assertTrue(Wording.bundled.message(it).isNotBlank()) }
         assertTrue(ThreadController.DEVICE_TASK_REVISE.description.isNotBlank())
         listOf(
+            Wording.LIVE_FRONTEND,
+            Wording.LIVE_DELEGATION,
+            Wording.LIVE_DELEGATION_STARTED,
+            Wording.LIVE_DELEGATION_FAILED,
+            Wording.LIVE_DELEGATION_UNCLEAR,
+            Wording.LIVE_QUESTION,
+            Wording.LIVE_CALL_ENDING,
+            Wording.LIVE_CALL_NOT_ATTACHED,
             Wording.BACKGROUND_QUESTION,
             Wording.BACKGROUND_QUESTION_RESOLVED,
             Wording.BACKGROUND_QUESTION_HISTORY,

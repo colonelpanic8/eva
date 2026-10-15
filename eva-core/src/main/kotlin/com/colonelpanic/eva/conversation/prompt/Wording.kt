@@ -110,6 +110,14 @@ data class Wording(
         const val BACKGROUND_RESTART_REFUSED = "background-restart-refused"
         const val TURN_STOPPED = "turn-stopped"
         const val RECEIPT_UNAVAILABLE = "receipt-unavailable"
+        const val LIVE_FRONTEND = "live-frontend"
+        const val LIVE_DELEGATION = "live-delegation"
+        const val LIVE_DELEGATION_STARTED = "live-delegation-started"
+        const val LIVE_DELEGATION_FAILED = "live-delegation-failed"
+        const val LIVE_DELEGATION_UNCLEAR = "live-delegation-unclear"
+        const val LIVE_QUESTION = "live-question"
+        const val LIVE_CALL_ENDING = "live-call-ending"
+        const val LIVE_CALL_NOT_ATTACHED = "live-call-not-attached"
 
         private val yaml = Yaml(configuration = YamlConfiguration(encodeDefaults = false))
 

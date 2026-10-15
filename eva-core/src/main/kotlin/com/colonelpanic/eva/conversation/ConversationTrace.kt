@@ -60,6 +60,27 @@ internal fun traceProviderEvent(
             )
         }
 
+        is ProviderEvent.TimedTranscript -> {
+            EvaTrace.verbose(
+                "transcript.delta",
+                "connection" to connection,
+                "role" to event.role,
+                "startMs" to event.startMs,
+                "endMs" to event.endMs,
+                "chars" to event.text.length,
+            )
+        }
+
+        is ProviderEvent.ClientDelegationRequested -> {
+            EvaTrace.info(
+                "delegation.created",
+                "connection" to connection,
+                "session" to event.sessionId,
+                "delegation" to event.delegationId,
+                "offsetMs" to event.offsetMs,
+            )
+        }
+
         is ProviderEvent.AssistantText -> {
             EvaTrace.verbose("assistant.text", "connection" to connection, "input" to event.inputId, "chars" to event.text.length)
         }

@@ -206,6 +206,28 @@ sealed interface ProviderEvent {
         val delivered: Boolean,
     ) : ProviderEvent
 
+    /**
+     * A raw caption fragment, exactly as received, placed on the session timeline. [startMs] and
+     * [endMs] are milliseconds from session start; order fragments by them, not by arrival.
+     */
+    data class TimedTranscript(
+        val role: String,
+        val text: String,
+        val startMs: Long,
+        val endMs: Long,
+    ) : ProviderEvent
+
+    /**
+     * The speech model asked EVA to do work. It carries no request text: what was asked is the
+     * user's speech before [offsetMs] on the session timeline. [delegationId] is the provider's,
+     * valid only on [sessionId]; it is never an EVA task ID.
+     */
+    data class ClientDelegationRequested(
+        val sessionId: String,
+        val delegationId: String,
+        val offsetMs: Long,
+    ) : ProviderEvent
+
     data class Failure(
         val message: String,
     ) : ProviderEvent
@@ -246,4 +268,19 @@ interface ConversationSession {
     ): Boolean = false
 
     suspend fun close()
+}
+
+/** A speech session that hands work to EVA through [ProviderEvent.ClientDelegationRequested] instead of calling tools. */
+interface ClientDelegationSession : ConversationSession {
+    /**
+     * Adds an EVA-authored update to the speech model's context, about [delegationId] or, when null,
+     * the session as a whole. [respond] asks for it to be said aloud. True means the session took
+     * the update; it is never evidence that anything was spoken or heard.
+     */
+    suspend fun appendDelegationUpdate(
+        delegationId: String?,
+        note: String,
+        data: JsonObject? = null,
+        respond: Boolean = true,
+    ): Boolean
 }
