@@ -57,6 +57,8 @@ data class SettingsUiState(
     val contentProviders: Map<String, com.colonelpanic.eva.adapters.android.ContentProviderAccess> = emptyMap(),
     val waitDefaults: Map<com.colonelpanic.eva.capability.InteractionMode, Long> = emptyMap(),
     val extensions: ExtensionSettings = ExtensionSettings(),
+    /** Each declared extension credential's state on this phone, keyed by its `extension/<package>/<name>` reference. */
+    val extensionCredentials: Map<String, com.colonelpanic.eva.data.ExtensionCredentialSettings.Status> = emptyMap(),
     val extensionOverflow: Map<String, String> = emptyMap(),
     val catalogAdmission: com.colonelpanic.eva.capability.CatalogAdmission.Preview? = null,
     /** Extensions the user has told a refresh not to enable on its own; absent means it may. */
@@ -175,6 +177,9 @@ data class SettingsActions(
     val onPluginRemove: (String) -> Unit = {},
     val onSavePackageServer: (String, String, String, String, String, String) -> String? = { _, _, _, _, _, _ -> null },
     val onClearPackageServer: (String, String) -> Unit = { _, _ -> },
+    /** Saves a declared credential for an installed extension's entry key; returns why it failed, or null. */
+    val onSaveExtensionCredential: (String, String, String) -> String? = { _, _, _ -> null },
+    val onClearExtensionCredential: (String, String) -> Unit = { _, _ -> },
     val onSaveWait: (String, String) -> String? = { _, _ -> null },
     val onExtensionEnable: (String, Boolean) -> Unit = { _, _ -> },
     val onExtensionEnableAll: (String) -> Unit = {},

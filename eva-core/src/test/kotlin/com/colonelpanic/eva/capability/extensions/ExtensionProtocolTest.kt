@@ -91,7 +91,45 @@ class ExtensionProtocolTest {
         }
         val request = Json.parseToJsonElement(ExtensionProtocol.describeRequest()).jsonObject
         assertEquals(JsonArray(listOf(JsonPrimitive(1))), request["supportedProtocolVersions"])
-        assertEquals(JsonArray(listOf(JsonPrimitive("secrets"))), request["features"])
+        assertEquals(JsonArray(listOf(JsonPrimitive("secrets"), JsonPrimitive("credentials"))), request["features"])
+    }
+
+    @Test
+    fun `declared credentials are bounded unique password entries that belong to the contract digest`() {
+        fun credential(
+            name: String = "passphrase",
+            title: String = "Key passphrase",
+            description: String = "Unlocks the PGP key.",
+            kind: String = "password",
+        ) = """{"name":"$name","title":"$title","description":"$description","kind":"$kind"}"""
+
+        fun declaring(vararg credentials: String) =
+            describe().replace("\"title\":\"Agenda\",", "\"title\":\"Agenda\",\"credentials\":[${credentials.joinToString(",")}],")
+
+        val plain = ExtensionProtocol.describe(describe()).descriptor!!
+        val declared = ExtensionProtocol.describe(declaring(credential(), credential("pin", "PIN", "x".repeat(500)))).descriptor!!
+        assertEquals(
+            listOf(CredentialSpec("passphrase", "Key passphrase", "Unlocks the PGP key."), CredentialSpec("pin", "PIN", "x".repeat(500))),
+            declared.credentials,
+        )
+        assertTrue(plain.credentials.isEmpty())
+        assertNotEquals(plain.digest, declared.digest)
+        ExtensionProtocol.describe(declaring())
+        ExtensionProtocol.describe(declaring(*(1..4).map { credential("c$it") }.toTypedArray()))
+        listOf(
+            declaring(*(1..5).map { credential("c$it") }.toTypedArray()),
+            declaring(credential(), credential()),
+            declaring(credential(name = "Passphrase")),
+            declaring(credential(name = "_passphrase")),
+            declaring(credential(name = "a".repeat(33))),
+            declaring(credential(kind = "token")),
+            declaring(credential(title = "")),
+            declaring(credential(title = "t".repeat(121))),
+            declaring(credential(description = "d".repeat(501))),
+            declaring("""{"name":"passphrase","title":"T","description":"D"}"""),
+            declaring("""{"name":"passphrase","title":"T","description":"D","kind":"password","value":"x"}"""),
+            describe().replace("\"title\":\"Agenda\",", "\"title\":\"Agenda\",\"credentials\":{},"),
+        ).forEach { assertThrows(it, Exception::class.java) { ExtensionProtocol.describe(it) } }
     }
 
     @Test

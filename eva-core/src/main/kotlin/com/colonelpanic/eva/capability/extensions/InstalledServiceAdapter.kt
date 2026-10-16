@@ -11,6 +11,7 @@ class InstalledServiceAdapter(
     private val worker: CoroutineDispatcher = Dispatchers.IO,
     private val secrets: SecretVault? = null,
     private val wording: () -> Wording = { Wording.bundled },
+    private val credentials: ExtensionCredentialSource = ExtensionCredentialSource.NONE,
 ) : CapabilityAdapter {
     override val installed = discovery.installed
     override val ready = discovery.ready
@@ -31,7 +32,7 @@ class InstalledServiceAdapter(
         val identity = extension.identity as? ExtensionIdentity ?: return emptyList()
         val descriptor = extension.descriptor ?: return emptyList()
         return descriptor.capabilities.map { capability ->
-            val backend = ExtensionBackend(identity, descriptor, capability, connections, worker, secrets, wording)
+            val backend = ExtensionBackend(identity, descriptor, capability, connections, worker, secrets, wording, credentials)
             CapabilityBinding(capability, backend.definition, backend, "${identity.key}:${descriptor.digest}")
         }
     }

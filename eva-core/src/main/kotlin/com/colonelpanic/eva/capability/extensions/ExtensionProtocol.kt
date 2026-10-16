@@ -30,8 +30,16 @@ object ExtensionProtocol {
     const val MAX_SECRETS = 8
     const val SECRET_VALUE_CHARS = 4096
 
-    /** What EVA advertises with `describe`: `secrets` means it strips and withholds a reply's `secrets`. */
-    val FEATURES = listOf("secrets")
+    const val MAX_CREDENTIALS = 4
+
+    /** The reserved arguments key that carries provisioned credentials; added only at IPC. */
+    const val CREDENTIALS_KEY = "_credentials"
+
+    /**
+     * What EVA advertises with `describe`: `secrets` means it strips and withholds a reply's
+     * `secrets`; `credentials` means it delivers declared credentials in `_credentials`.
+     */
+    val FEATURES = listOf("secrets", "credentials")
     private val SECRET_NAME = Regex("[a-z][a-z0-9_]{0,31}")
     private val NAME = Regex("[A-Za-z_][A-Za-z0-9_]{0,63}")
     private val PROPERTY = Regex("[A-Za-z][A-Za-z0-9_]{0,63}")
@@ -156,12 +164,22 @@ object ExtensionProtocol {
         return payload
     }
 
+    /** With [delivered], the payload may also carry EVA's own [CREDENTIALS_KEY], which the schema never names. */
     fun arguments(
         schema: JsonObject,
         payload: String,
+        delivered: Boolean = false,
     ): JsonObject {
         checkSchema(schema)
-        val args = BoundedJson.parse(payload, ARGUMENT_BYTES).obj()
+        val parsed = BoundedJson.parse(payload, ARGUMENT_BYTES).obj()
+        val args =
+            if (delivered && CREDENTIALS_KEY in parsed) {
+                val values = parsed.getValue(CREDENTIALS_KEY).obj()
+                require(values.isNotEmpty() && values.values.all { (it as? JsonPrimitive)?.isString == true })
+                JsonObject(parsed - CREDENTIALS_KEY)
+            } else {
+                parsed
+            }
         require(ToolSchema.error(schema, args) == null) { "Arguments do not match schema" }
         val properties = schema.getValue("properties").obj()
         args.forEach { (key, value) -> checkValue(properties.getValue(key).obj(), value) }
@@ -231,7 +249,10 @@ object ExtensionProtocol {
     }
 
     private fun descriptor(root: JsonObject): Descriptor {
-        root.fields(setOf("protocolVersion", "descriptorRevision", "authorizationScopeRevision", "title", "capabilities"), setOf("_meta"))
+        root.fields(
+            setOf("protocolVersion", "descriptorRevision", "authorizationScopeRevision", "title", "capabilities"),
+            setOf("credentials", "_meta"),
+        )
         require(root.getValue("protocolVersion").integer() == PROTOCOL_VERSION)
         root.meta()
         val revision = root.getValue("descriptorRevision").text(128).also { require(REVISION.matches(it)) }
@@ -241,7 +262,39 @@ object ExtensionProtocol {
         require(capabilities.size in 1..64)
         val parsed = capabilities.map { capability(it.obj()) }
         require(parsed.map { it.name }.distinct().size == parsed.size) { "Duplicate capability" }
-        return Descriptor(revision, scope, title, parsed, BoundedJson.digest(root))
+        val credentials = root["credentials"]?.let(::credentials).orEmpty()
+        return Descriptor(revision, scope, title, parsed, BoundedJson.digest(root), credentials)
+    }
+
+    private fun credentials(element: JsonElement): List<CredentialSpec> {
+        val entries = element as? JsonArray ?: error("Expected credentials array")
+        require(entries.size <= MAX_CREDENTIALS) { "A descriptor declares at most $MAX_CREDENTIALS credentials" }
+        val parsed =
+            entries.map { entry ->
+                val fields = entry.obj()
+                fields.fields(setOf("name", "title", "description", "kind"))
+                val name = fields.getValue("name").text(32).also { require(SECRET_NAME.matches(it)) { "Unsupported credential name" } }
+                require(fields["kind"] == JsonPrimitive("password")) { "Unsupported credential kind" }
+                CredentialSpec(name, fields.getValue("title").text(120), fields.getValue("description").text(500))
+            }
+        require(parsed.map { it.name }.distinct().size == parsed.size) { "Duplicate credential" }
+        return parsed
+    }
+
+    /**
+     * [arguments] with the provisioned [values] under [CREDENTIALS_KEY]. Only the IPC boundary calls
+     * this; the journal and the model keep the arguments without it.
+     */
+    fun withCredentials(
+        arguments: String,
+        values: Map<String, String>,
+    ): String {
+        if (values.isEmpty()) return arguments
+        val root = BoundedJson.parse(arguments, ARGUMENT_BYTES).obj()
+        require(CREDENTIALS_KEY !in root)
+        val payload = JsonObject(root + (CREDENTIALS_KEY to JsonObject(values.mapValues { JsonPrimitive(it.value) }))).toString()
+        require(payload.toByteArray(Charsets.UTF_8).size <= ARGUMENT_BYTES) { "Arguments with credentials exceed $ARGUMENT_BYTES bytes" }
+        return payload
     }
 
     private fun capability(root: JsonObject): Capability {
@@ -439,6 +492,15 @@ data class Descriptor(
     val title: String,
     val capabilities: List<Capability>,
     val digest: String,
+    /** Values the provider asks the user to provision in EVA, which delivers them in `_credentials`. */
+    val credentials: List<CredentialSpec> = emptyList(),
+)
+
+/** A declared credential; its value, if the user set one, is device-local and never in this type. */
+data class CredentialSpec(
+    val name: String,
+    val title: String,
+    val description: String,
 )
 
 data class ResultReply(

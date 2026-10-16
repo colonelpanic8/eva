@@ -757,6 +757,29 @@ class EvaConfigurationManagerTest {
         }
 
     @Test
+    fun `extension credentials travel as references and a restore asks this device for their values`() =
+        runBlocking {
+            val baseline = app.configuration.snapshotForTest()
+            val reference = SecretReference("extension/app.passwordstore.colonelpanic/passphrase", "extension-credential")
+            val restored = baseline.copy(credentials = EvaConfiguration.Credentials(baseline.credentials.required + reference))
+            val folder = MemoryDirectory(EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(restored)))
+            val manager = EvaConfigurationManager(app)
+            val loaded = manager.attachForTest(folder) as LinkedConfigurationResult.Loaded
+            val needed = "Enter the passphrase credential of the app.passwordstore.colonelpanic extension under Extensions > Installed."
+            assertTrue(loaded.setupRequired.toString(), needed in loaded.setupRequired)
+
+            // Without a value on this device the reference still travels, so another device is told to provision it.
+            app.appearance.saveDynamicColor(!baseline.appearance.dynamicColor)
+            manager.localChangeForTest()
+            assertTrue(
+                reference in
+                    EvaConfigurationCodec
+                        .resolve(folder)
+                        .configuration.credentials.required,
+            )
+        }
+
+    @Test
     fun `a restored Twilio route keeps its key reference and asks this device for the key`() =
         runBlocking {
             val baseline = app.configuration.snapshotForTest()

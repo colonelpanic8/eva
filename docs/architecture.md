@@ -650,6 +650,30 @@ An unknown, cleared, or other thread's handle is refused before input. That is
 worker; both say to look the credential up again. Restored history keeps its
 handles, which then fail the same way.
 
+### Extension credentials held by EVA
+
+An installed extension can declare up to four `credentials` in its descriptor, such as a
+key passphrase it needs on a locked phone. The extension's entry under **Extensions →
+Installed** shows each one's title, description, and state (not set, set, or saved for
+another signer) with a masked field to set, replace, or clear it. Values are device-local
+authorization: `data/ExtensionCredentialSettings.kt` keeps each in the Keystore-encrypted
+`SecretStore` beside the Android user and signer it was entered for. Only an
+`extension/<package>/<name>` reference reaches the [portable
+configuration](#extension-credentials).
+
+`ExtensionBackend` adds `_credentials` to the arguments only after they are encoded for
+journaling, so the journal, receipts, traces, and the model never see it, and a duplicate
+call returns the journaled record without contacting the provider. A value whose bound
+user or signer no longer matches the installed app is not sent: the call is
+`NOT_EXECUTED` with a message to re-enter it. A provider that rejects a value reports
+`not_configured`, which reaches the user and model as its message.
+
+Locked-phone reads: `SecretStore`'s AES-GCM key sets neither
+`setUserAuthenticationRequired` nor `setUnlockedDeviceRequired`, so the Keystore can use it
+while the phone is locked. Its preferences file is in credential-encrypted storage, so
+values are readable after the first unlock since boot and not before it. EVA is not
+direct-boot aware either. Verified by reading the key parameters, not on a device.
+
 ## Android capabilities
 
 - Declarative `android.content` reads use bounded background `ContentResolver`
@@ -2377,6 +2401,21 @@ credentials:
 ```
 
 The value is entered on each device and stored only in the encrypted secret store.
+
+### Extension credentials
+
+A value an installed extension [declares](extension-protocol.md#declared-credentials) is a
+`credentials.required` entry with ID `extension/<package>/<name>`, kind
+`extension-credential`, and no endpoint or label. It is written while this device holds a
+value, and kept from the loaded configuration for other devices until the user clears it
+here. A restore reports each one this device lacks, naming the credential and app:
+
+```yaml
+credentials:
+  required:
+  - id: extension/app.passwordstore.colonelpanic/pgp_passphrase
+    kind: extension-credential
+```
 
 ### Twilio call route
 

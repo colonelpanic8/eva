@@ -26,6 +26,7 @@ class ExtensionBackend(
     private val worker: CoroutineDispatcher = Dispatchers.IO,
     private val secrets: SecretVault? = null,
     private val wording: () -> Wording = { Wording.bundled },
+    private val credentials: ExtensionCredentialSource = ExtensionCredentialSource.NONE,
 ) : ExecutionBackend {
     val definition =
         CapabilityDefinition(
@@ -54,8 +55,26 @@ class ExtensionBackend(
                         "Extension arguments were rejected. Nothing was submitted.",
                     )
                 }
+            val delivered =
+                when (val provisioned = credentials.values(identity, descriptor.credentials)) {
+                    is CredentialValues.Refused -> {
+                        return@withContext ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "${provisioned.message} Nothing was submitted.")
+                    }
+
+                    is CredentialValues.Ready -> {
+                        try {
+                            ExtensionProtocol.withCredentials(arguments, provisioned.values)
+                        } catch (_: IllegalArgumentException) {
+                            return@withContext ExecutionOutcome(
+                                InvocationStatus.NOT_EXECUTED,
+                                "The arguments and this extension's saved credentials together exceed " +
+                                    "${ExtensionProtocol.ARGUMENT_BYTES} bytes. Nothing was submitted; shorten the request.",
+                            )
+                        }
+                    }
+                }
             val invocation = invocationId(proposal.callId)
-            when (val exchange = connections.execute(identity, invocation, descriptor.revision, capability, arguments)) {
+            when (val exchange = connections.execute(identity, invocation, descriptor.revision, capability, delivered)) {
                 is ExtensionExchange.Unavailable -> {
                     ExecutionOutcome(InvocationStatus.NOT_EXECUTED, exchange.message)
                 }

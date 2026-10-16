@@ -931,6 +931,7 @@ object EvaConfigurationCodec {
                 PROVIDER_SECRETS[reference.id]
                     ?: "portal-bearer".takeIf { reference.id == "device/portal" }
                     ?: CALL_CREDENTIAL_KIND.takeIf { reference.id.startsWith(CALL_SECRET_PREFIX) }
+                    ?: EXTENSION_CREDENTIAL_KIND.takeIf { reference.id.startsWith(EXTENSION_SECRET_PREFIX) }
                     ?: ("http-" + reference.id.substringAfterLast("/")).takeIf {
                         SERVICE_SECRET.matches(reference.id) ||
                             PACKAGE_SECRET.matches(reference.id) ||
@@ -948,6 +949,11 @@ object EvaConfigurationCodec {
                     }
                     require(isCallCredentialLabel(reference.label!!)) { "Invalid label for call credential ${reference.id}." }
                     require(reference.endpoint == null) { "A call credential does not use an endpoint." }
+                }
+
+                expectedKind == EXTENSION_CREDENTIAL_KIND -> {
+                    require(isExtensionSecretId(reference.id)) { "Invalid extension credential reference ${reference.id}." }
+                    require(reference.endpoint == null) { "An extension credential does not use an endpoint." }
                 }
 
                 reference.id == "device/portal" -> {
@@ -1333,6 +1339,20 @@ object EvaConfigurationCodec {
     fun isCallCredentialLabel(label: String) = label.isNotBlank() && label.length <= 100 && label.none(Char::isISOControl)
 
     fun callSecretId(reference: String) = CALL_SECRET_PREFIX + reference
+
+    const val EXTENSION_SECRET_PREFIX = "extension/"
+
+    /** A credential an installed extension's descriptor declares, provisioned on each device. */
+    const val EXTENSION_CREDENTIAL_KIND = "extension-credential"
+    private val EXTENSION_SECRET =
+        Regex("extension/[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z][A-Za-z0-9_]*)+/[a-z][a-z0-9_]{0,31}")
+
+    fun extensionSecretId(
+        packageName: String,
+        name: String,
+    ) = "$EXTENSION_SECRET_PREFIX$packageName/$name"
+
+    fun isExtensionSecretId(id: String) = id.length <= 300 && EXTENSION_SECRET.matches(id)
 
     fun isMessagingBridgeName(name: String) = SERVICE_NAME.matches(name) && name !in RESERVED_MESSAGING_SERVICES
 

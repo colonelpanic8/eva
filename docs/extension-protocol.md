@@ -746,8 +746,10 @@ envelope around MCP `content` and `structuredContent`. See
 [`extension-descriptor.schema.json`](schemas/extension-descriptor.schema.json),
 [`extension-result.schema.json`](schemas/extension-result.schema.json), and the
 fixtures [`extension-describe.json`](examples/extension-describe.json),
-[`extension-result.json`](examples/extension-result.json), and
-[`extension-secret-result.json`](examples/extension-secret-result.json).
+[`extension-result.json`](examples/extension-result.json),
+[`extension-secret-result.json`](examples/extension-secret-result.json),
+[`extension-credential-describe.json`](examples/extension-credential-describe.json), and
+[`extension-credential-arguments.json`](examples/extension-credential-arguments.json).
 
 ### 1. Discovery and copied AIDL
 
@@ -815,13 +817,17 @@ unknown-ID, wrong-provider, and already-expired callbacks.
 `requestJson` tells the provider what EVA speaks:
 
 ```json
-{"protocolVersion": 1, "supportedProtocolVersions": [1], "features": ["secrets"]}
+{"protocolVersion": 1, "supportedProtocolVersions": [1], "features": ["secrets", "credentials"]}
 ```
 
-`features` lists optional v1 behavior EVA implements. `secrets` means EVA strips and
-withholds a reply's [`secrets`](#secrets) field. Advertise a tool that returns secrets
-only when the request lists it; an older EVA omits `features` and would reject the field
-as malformed. A provider ignores feature names it does not know.
+`features` lists the optional v1 behavior EVA implements. A provider ignores feature names
+it does not know. An older EVA omits `features` and rejects either field below as malformed,
+so use a field only when the request lists its feature:
+
+- `secrets`: EVA strips and withholds a reply's [`secrets`](#secrets) field. Advertise
+  tools that return secrets only with it.
+- `credentials`: EVA accepts a descriptor's [`credentials`](#declared-credentials) and
+  delivers provisioned values in `_credentials`.
 
 A provider answers with a descriptor whose `protocolVersion` is one EVA listed.
 Future EVA versions extend the list; a provider that only knows a version EVA no
@@ -855,6 +861,9 @@ array order is significant. Unknown fields are rejected everywhere except inside
 | Title | 120 Unicode code points |
 | Description or schema description | 2,000 Unicode code points |
 | Content blocks per reply | 64 |
+| Declared credentials per descriptor | 4 |
+| Credential title / description | 120 / 500 Unicode code points |
+| Provisioned credential value | 4,096 Unicode code points (and the arguments plus `_credentials` stay within 16,384 bytes) |
 | Secrets per reply | 8 |
 | Secret name | `[a-z][a-z0-9_]{0,31}` |
 | Secret value | 1–4,096 Unicode code points |
@@ -945,6 +954,28 @@ No authoritative package ID comes from the descriptor. EVA derives user, package
 component, and signer from Android and exposes `extension.<package>.<name>`.
 Debug packages have distinct identities.
 
+#### Declared credentials
+
+A provider that needs a value only the user knows, such as the passphrase of a key it
+decrypts with while the phone is locked, declares it and lets EVA hold it. The descriptor's
+optional top-level `credentials` array (see
+[`extension-credential-describe.json`](examples/extension-credential-describe.json)):
+
+```json
+"credentials": [{
+  "name": "pgp_passphrase",
+  "title": "PGP key passphrase",
+  "description": "Unlocks your PGP key so the app can decrypt entries while the phone is locked.",
+  "kind": "password"
+}]
+```
+
+At most four entries, each exactly `name` (`[a-z][a-z0-9_]{0,31}`, unique), `title`
+(1–120 code points), `description` (1–500 code points), and `kind`, which is `password`
+in v1. Anything else makes the descriptor malformed. The array is part of the descriptor
+and so of its digest. Declaring, renaming, or removing a credential is a contract change
+that needs renewed enablement.
+
 ### 4. Arguments
 
 Arguments are an object of actual JSON values matching `inputSchema`:
@@ -952,6 +983,37 @@ numbers/booleans are not quoted strings, and array properties arrive as JSON
 arrays of scalars. EVA restores types before IPC. Providers independently validate
 arguments and operation semantics (a ten-character date still needs calendar
 validation).
+
+When the user has provisioned a value for a [declared credential](#declared-credentials),
+EVA adds a reserved top-level `_credentials` object mapping each declared name that has a
+value to that value (see
+[`extension-credential-arguments.json`](examples/extension-credential-arguments.json)):
+
+```json
+{"path": "github.com/colonelpanic8", "_credentials": {"pgp_passphrase": "…"}}
+```
+
+The key is omitted when no declared credential has a value, so a provider must handle a
+missing credential, normally `not_executed`/`not_configured` with a message that says
+where to enter it. A value the provider finds wrong gets the same reply. Input-schema
+property names start with a letter, so `_credentials` never collides with an argument.
+EVA guarantees:
+
+- The model never sees `_credentials` or a schema for it, and cannot supply it: a model
+  argument by that name fails schema validation.
+- EVA adds the key in `ExtensionBackend` after encoding the journaled arguments, right
+  before the Binder call. Journals, receipts, traces, diagnostics, conversation history,
+  and replays of a journaled call never contain it. A duplicate call ID returns the
+  journaled record without contacting the provider.
+- A value is stored in EVA's device-local Keystore-encrypted `SecretStore`, bound to the
+  Android user, package, and signing certificate it was entered for, plus the credential
+  name. It is never sent to another package. When the installed app's signer or user
+  differs, for example after a reinstall with another key, EVA sends nothing, replies
+  `not_executed`, and asks the user to re-enter the value. Reinstalling with the same key
+  keeps the value.
+- The portable configuration lists `extension/<package>/<name>` of kind
+  `extension-credential` in `credentials.required`, never the value. A restore on another
+  device reports that the value needs entering there.
 
 ### 5. Execute callback, statuses, and reasons
 
@@ -1156,8 +1218,9 @@ All provider titles, descriptions, schema descriptions, annotations, references,
 content, structured content, and secret labels are untrusted data. They cannot change
 instructions, grants, outcomes, model settings, or execution destinations. EVA
 separates its receipt envelope from quoted external content in live results and
-restored history. No model-controlled shell, arbitrary IPC component, callback
-execution, or credential forwarding is part of the contract.
+restored history. No model-controlled shell, arbitrary IPC component, or callback
+execution is part of the contract. The only credentials EVA forwards are the
+[declared credentials](#declared-credentials) the user entered for that same app.
 
 ### 8. EVA v1 lifecycle and conversation guarantees
 
