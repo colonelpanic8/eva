@@ -672,7 +672,9 @@ Locked-phone reads: `SecretStore`'s AES-GCM key sets neither
 `setUserAuthenticationRequired` nor `setUnlockedDeviceRequired`, so the Keystore can use it
 while the phone is locked. Its preferences file is in credential-encrypted storage, so
 values are readable after the first unlock since boot and not before it. EVA is not
-direct-boot aware either. Verified by reading the key parameters, not on a device.
+direct-boot aware either. An API 36 emulator decrypted with the saved passphrase while
+locked with a PIN, with the screen off and with the keyguard showing (see
+[device verification](operations.md#device-verification)); before-first-unlock was not tested.
 
 ## Android capabilities
 
