@@ -4,6 +4,19 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.70.0] - 2026-10-16
+
+### Added
+
+- Sign in with passwords from a password-manager extension without revealing them:
+  EVA keeps returned passwords and one-time codes in memory and gives the model only
+  handles, which screen control types into fields with every receipt and readback
+  redacted. The first provider is Password Store (EVA).
+- Installed extensions can declare credentials, such as a PGP key passphrase, that you
+  enter under **Extensions > Installed**. EVA stores them encrypted on the phone, sends
+  them only to that extension's signer, and works while the phone is locked after first
+  unlock. Your configuration lists the requirement without the value.
+
 ## [0.69.0] - 2026-10-15
 
 ### Added

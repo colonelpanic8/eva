@@ -1,0 +1,2 @@
+* Added: Sign in with passwords from a password-manager extension without revealing them: EVA keeps returned passwords and one-time codes in memory and gives the model only handles, which screen control types into fields with every receipt and readback redacted. The first provider is Password Store (EVA).
+* ...see CHANGELOG.md for the rest.
