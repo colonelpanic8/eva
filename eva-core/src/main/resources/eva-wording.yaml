@@ -49,7 +49,7 @@ tools:
   device-worker.observe: {"description": "Re-read the screen without acting, e.g. after content finished loading.", "parameters": {}}
   device-worker.launch_app: {"description": "Bring an app to the foreground by Android package name.", "parameters": {"package": "Package name, e.g. com.android.settings.", "activity": "Specific activity, or null for the app's default.", "intent": "A few words: what this action should achieve."}}
   device-worker.activate_element: {"description": "Click a clickable or checkable element (flag c or k).", "parameters": {"element": "Index from the current observation table.", "intent": "A few words: what this action should achieve."}}
-  device-worker.set_text: {"description": "Enter text into an editable element (flag e). The result reports the exact read-back; check it before continuing.", "parameters": {"element": "Index from the current observation table.", "text": "Text to enter.", "replace": "true replaces, false appends.", "intent": "A few words: what this action should achieve."}}
+  device-worker.set_text: {"description": "Enter text into an editable element (flag e). The result reports the exact read-back; check it before continuing. For a password or code the task names as a secret handle (secret:...), pass the handle as secret and leave text null: EVA types the value, which you never see.", "parameters": {"element": "Index from the current observation table.", "text": "Text to enter, or null when secret is given.", "secret": "A secret handle (secret:...) from the task, or null. Never type a handle as text.", "replace": "true replaces, false appends.", "intent": "A few words: what this action should achieve."}}
   device-worker.scroll: {"description": "Scroll a scrollable element (flag s). `down` reveals content further down.", "parameters": {"direction": "Direction the viewport moves.", "element": "Scrollable element index, or null for the main one.", "intent": "A few words: what this action should achieve."}}
   device-worker.back: {"description": "Press the system Back button.", "parameters": {"intent": "A few words: what this action should achieve."}}
   device-worker.home: {"description": "Go to the home screen.", "parameters": {"intent": "A few words: what this action should achieve."}}
@@ -62,7 +62,7 @@ tools:
   device-worker.open_notifications: {"description": "Open the notification shade.", "parameters": {"intent": "A few words: what this action should achieve."}}
   device-worker.ask_user: {"description": "Ask the user one short question and wait for the answer. Use when the request is ambiguous or a needed detail is missing.", "parameters": {"question": "One short question the user can answer by voice."}}
   device-worker.finish: {"description": "End the task. `completed` only when the current screen shows the goal is done. `blocked` when the screen or app prevents progress. `failed` otherwise.", "parameters": {"status": "Outcome.", "summary": "What was done or found, or why not; spoken to the user."}}
-  eva.device.task: {"description": "Run a multi-step task through any app's UI, including apps without a dedicated EVA integration and browser research on interactive or logged-in sites. Uses the phone screen and is slower than a dedicated tool. A few actions you can see how to do, such as a tap, text entry, scroll, Back, or Home, are faster with the direct screen tools. Waits until the task ends. While it runs, change or cancel it with the task's revise and stop tools; other actions, including another task, wait their turn and run after it.", "parameters": {"goal": "The complete device task, including user constraints."}}
+  eva.device.task: {"description": "Run a multi-step task through any app's UI, including apps without a dedicated EVA integration and browser research on interactive or logged-in sites. Uses the phone screen and is slower than a dedicated tool. A few actions you can see how to do, such as a tap, text entry, scroll, Back, or Home, are faster with the direct screen tools. Waits until the task ends. While it runs, change or cancel it with the task's revise and stop tools; other actions, including another task, wait their turn and run after it.", "parameters": {"goal": "The complete device task, including user constraints. Include any secret handle (secret:...) it must type, saying what it is for; the task fills it without seeing the value."}}
   eva.device.task.revise: {"description": "Change the running device task's goal when the user corrects, narrows, or adds to what it is doing. Not for an unrelated request, which should be its own action and runs after the task. Also use it to pass on the user's answer when the task has asked them a question.", "parameters": {"correction": "The user's correction or answer, in their words, with any detail needed to apply it."}}
   eva.device.task.stop: {"description": "Stop the running device task when the user wants it to stop or has changed their mind. Actions queued after it still run. The task's own result reports what it did before stopping."}
 
@@ -253,8 +253,13 @@ tools:
       Replace the entire contents of one numbered editable field from a screen observation. This
       overwrites whatever the field held; it does not insert at the cursor. Give the observation
       reference and element number exactly as they were returned. The result says whether the
-      field reads back the requested text.
+      field reads back the requested text. Give text, or secret to fill a password or code that a
+      tool returned as a handle.
     parameters:
+      text: The text to enter. Omit it when giving secret.
+      secret: >-
+        A secret handle (secret:...) from a password-manager result, instead of text. EVA types its
+        value, which you never see; the result says whether it read back, without showing it.
       quiet: >-
         true when the user will see the text and needs no spoken reply. Delivered text then ends
         your turn silently; a failure is still reported. Leave it false when more steps follow.
@@ -749,6 +754,20 @@ messages:
   skills: "The user's skills (name, description):"
   skill-loaded: "Instructions of the user's skill {name}; follow them for this request:"
   skill-unknown: "No enabled skill is named {name}. Nothing was loaded. Enabled skills: {skills}."
+  secrets-withheld: >-
+    Secret values withheld from you; EVA holds them for this conversation:
+
+    {secrets}
+
+    Fill one only by passing its handle as the secret parameter of eva.device.set_text, or by
+    naming the handle in an eva.device.task goal. Never ask the user to read it aloud.
+  secrets-unsupported: >-
+    The reply included secret values, but this EVA cannot hold them, so they were discarded
+    unseen. Ask the user to enter the credential themselves.
+  secret-unavailable: >-
+    Nothing was typed: that secret handle is not available to EVA. Handles last only for the
+    conversation that looked them up, and are cleared when a new conversation starts or EVA
+    restarts. Look the credential up again with the password manager's tool.
   extension-guidance: >-
     Extension workflows. Each entry below comes from an extension whose tools are available now
     and explains how its tools fit together; tool names match the name in each tool's metadata.
@@ -771,6 +790,9 @@ messages:
   device-worker.extra_call: "Not executed: only one action per turn. Your first tool call ran; look at the new screen before the next."
 
   device-worker.text_verified: "set_text ok; read-back matches exactly."
+  device-worker.secret_mismatch: "set_text with the secret did not read back as the secret; its value stays withheld. Fix the field before continuing."
+  device-worker.secret_unavailable: "Not executed: that secret handle is not available. Do not type it as text. Finish with status \"blocked\" and say the credential must be looked up again."
+  device-worker.input_error: "The device rejected the input: {detail}"
   device-worker.screenshot_attached: "Screenshot attached for this turn only."
 
   background-question: >-

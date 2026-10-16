@@ -391,6 +391,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         val extensions by eva.extensions.settings.collectAsStateWithLifecycle()
+        val extensionCredentialRevision by eva.extensionCredentials.revision.collectAsStateWithLifecycle()
         val plugins by eva.pluginBrowser.state.collectAsStateWithLifecycle()
         val packages by eva.packageSettings.state.collectAsStateWithLifecycle()
         val waits by eva.packageSettings.waits.collectAsStateWithLifecycle()
@@ -445,6 +446,7 @@ class MainActivity : ComponentActivity() {
             skillImport = skillImport,
             plugins = plugins,
             extensions = extensions,
+            extensionCredentials = remember(extensions, extensionCredentialRevision) { eva.extensionCredentialStatuses() },
             packages = packages,
             contentProviders =
                 remember(packages, contentPermissionRevision) {
@@ -568,6 +570,8 @@ class MainActivity : ComponentActivity() {
                 onPluginRemove = eva.pluginBrowser::remove,
                 onSavePackageServer = eva::savePackageServer,
                 onClearPackageServer = eva::clearPackageServer,
+                onSaveExtensionCredential = eva::saveExtensionCredential,
+                onClearExtensionCredential = eva.extensionCredentials::clear,
                 onSaveWait = eva.packageSettings::saveWait,
                 onExtensionEnable = eva.extensions::enable,
                 onExtensionEnableAll = eva.extensions::enableAll,

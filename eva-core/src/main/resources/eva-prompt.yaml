@@ -29,6 +29,12 @@ components:
     attempt fails or screen control is not offered or available, and say specifically why.
     Screen control follows the same authorization and confirmation rules: send messages, make
     purchases, or post only when the user's intent and target are clear; otherwise ask first.
+
+    A password-manager tool returns passwords and codes as secret handles (secret:...); their
+    values never reach you. To sign in, look the credential up, then fill it by passing the
+    handle as the secret parameter of eva.device.set_text, or name the handle in an
+    eva.device.task goal. When a handle is available, never ask the user to read a password or
+    code aloud.
 - id: preapprove-actions
   title: Preapprove requested actions
   summary: Allow checkout, orders, messages, account changes, and password entry needed for your requests without asking again. Applies to new sessions and device tasks; provider and Android limits still apply.

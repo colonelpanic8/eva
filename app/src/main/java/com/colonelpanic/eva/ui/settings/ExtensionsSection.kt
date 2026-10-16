@@ -11,9 +11,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -21,6 +24,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -29,12 +33,16 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.colonelpanic.eva.capability.CallEnding
 import com.colonelpanic.eva.capability.CatalogAdmission
+import com.colonelpanic.eva.capability.extensions.CredentialSpec
 import com.colonelpanic.eva.capability.extensions.Effect
 import com.colonelpanic.eva.capability.extensions.ExtensionSettingsEntry
+import com.colonelpanic.eva.data.ExtensionCredentialSettings
 import kotlinx.serialization.json.JsonObject
 
 @Composable
@@ -195,6 +203,16 @@ private fun ExtensionEntry(
                 }
             }
         }
+        val identity = installed.identity as? com.colonelpanic.eva.capability.extensions.ExtensionIdentity
+        if (identity != null && descriptor != null && descriptor.credentials.isNotEmpty()) {
+            HorizontalDivider(Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
+            descriptor.credentials.forEach { spec ->
+                val id =
+                    com.colonelpanic.eva.data.configuration.EvaConfigurationCodec
+                        .extensionSecretId(identity.packageName, spec.name)
+                ExtensionCredential(spec, state.extensionCredentials[id], entry.key, identity.packageName, actions)
+            }
+        }
         val authorities = configurations.flatMap { it.contentAuthorities }.distinct().filter { it in state.contentProviders }
         if (authorities.isNotEmpty() || configurations.isNotEmpty() || repositoryInstallation != null) {
             HorizontalDivider(Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
@@ -237,6 +255,64 @@ private fun ExtensionEntry(
             ) { Text("Remove extension") }
         }
         folded.forEach { ExtensionEntry(it, emptyList(), state, actions) }
+    }
+}
+
+/** A credential the app asks EVA to hold for it: saved encrypted on this phone and sent only to this app. */
+@Composable
+private fun ExtensionCredential(
+    spec: CredentialSpec,
+    status: ExtensionCredentialSettings.Status?,
+    entryKey: String,
+    packageName: String,
+    actions: SettingsActions,
+) {
+    var value by remember(entryKey, spec.name) { mutableStateOf("") }
+    var error by remember(entryKey, spec.name) { mutableStateOf<String?>(null) }
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(spec.title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+        Text(spec.description, style = MaterialTheme.typography.bodySmall)
+        SettingsNote(
+            when (status) {
+                ExtensionCredentialSettings.Status.SET -> {
+                    "Saved encrypted on this phone and sent only to this app. It's never shown again."
+                }
+
+                ExtensionCredentialSettings.Status.OTHER_SIGNER -> {
+                    "Saved for a differently signed or reinstalled copy of this app, so EVA won't send it. Enter it again."
+                }
+
+                else -> {
+                    "Not set on this phone."
+                }
+            },
+            error = status == ExtensionCredentialSettings.Status.OTHER_SIGNER,
+        )
+        OutlinedTextField(
+            value,
+            { value = it },
+            label = { Text(if (status == ExtensionCredentialSettings.Status.SET) "Replace ${spec.title}" else spec.title) },
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        error?.let { SettingsNote(it, error = true) }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = {
+                error = actions.onSaveExtensionCredential(entryKey, spec.name, value)
+                if (error == null) value = ""
+            }) { Text("Save") }
+            if (status != null && status != ExtensionCredentialSettings.Status.NOT_SET) {
+                TextButton(onClick = {
+                    actions.onClearExtensionCredential(packageName, spec.name)
+                    error = null
+                }) { Text("Clear") }
+            }
+        }
     }
 }
 

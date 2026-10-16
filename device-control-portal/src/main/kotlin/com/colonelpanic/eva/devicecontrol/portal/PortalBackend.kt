@@ -270,23 +270,41 @@ class PortalBackend(
                                         ExecutionStatus.EXECUTED,
                                     )
                                 details =
-                                    SetTextDetails(plan.target.index, false, if (plan.target.password) null else plan.action.text, null)
+                                    SetTextDetails(
+                                        plan.target.index,
+                                        false,
+                                        if (plan.target.password || plan.action.sensitive) null else plan.action.text,
+                                        null,
+                                    )
                             } else {
                                 val input = PrimitivePlanner.input(plan.action, fieldText(screen, field), field.password)
                                 input.moveEnd?.let { send(it) }
+                                var inputError: String? = null
                                 try {
                                     send(input.input)
-                                } catch (_: PortalCommandFailure) {
-                                    // Read-back decides whether text landed.
+                                } catch (error: PortalCommandFailure) {
+                                    // Read-back decides whether text landed; the reason explains a mismatch.
+                                    inputError =
+                                        error.detail.takeIf(String::isNotBlank)?.let {
+                                            val hidden = plan.action.sensitive || plan.target.password || field.password
+                                            if (hidden) it.replace(plan.action.text, "<secret>") else it
+                                        }
                                 }
                                 after =
                                     waitFor(screen, done = { matches(readBack(it, plan.target), input.expected, field.password) }).screen
                                 val actual = readBack(after, plan.target)
                                 val verified = matches(actual, input.expected, field.password)
-                                val redact = plan.target.password || field.password
+                                val redact = plan.target.password || field.password || plan.action.sensitive
                                 val expectedShown = if (redact) null else input.expected
                                 val actualShown = if (redact) null else actual
-                                details = SetTextDetails(plan.target.index, verified, expectedShown, actualShown)
+                                details =
+                                    SetTextDetails(
+                                        plan.target.index,
+                                        verified,
+                                        expectedShown,
+                                        actualShown,
+                                        inputError.takeIf { !verified },
+                                    )
                                 if (!verified) {
                                     failure =
                                         TextMismatch(

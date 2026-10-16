@@ -30,7 +30,8 @@ class DeviceTaskCoordinator(
     private val unavailable: suspend () -> String? = { null },
     private val releaseScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     private val wording: () -> Wording = { Wording.bundled },
-    private val create: () -> TextTaskAgent,
+    /** Builds the agent for a task the thread named by its argument starts. */
+    private val create: (String) -> TextTaskAgent,
 ) : ExecutionBackend {
     private val monitor = Any()
     val lease = DeviceExecutionLease()
@@ -153,7 +154,7 @@ class DeviceTaskCoordinator(
                     return stoppedBeforeDispatch()
                 }
                 try {
-                    create().also {
+                    create(thread).also {
                         admittedOwners[proposal.callId] = turn
                         mutableRunning.value = Running(thread, turn, it, callId = proposal.callId, job = Job())
                     }

@@ -3,7 +3,9 @@ package com.colonelpanic.eva.devicecontrol
 import com.colonelpanic.eva.capability.ExecutionBackend
 import com.colonelpanic.eva.capability.ExecutionOutcome
 import com.colonelpanic.eva.capability.InvocationStatus
+import com.colonelpanic.eva.capability.SecretVault
 import com.colonelpanic.eva.capability.ToolProposal
+import com.colonelpanic.eva.conversation.prompt.Wording
 import com.colonelpanic.eva.devicecontrol.portal.center
 import com.colonelpanic.eva.devicecontrol.proto.Action
 import com.colonelpanic.eva.devicecontrol.proto.ActionResult
@@ -45,6 +47,8 @@ class ScreenActions(
     private val enabled: () -> Boolean,
     private val select: suspend () -> Choice,
     private val elapsedMillis: () -> Long,
+    private val secrets: SecretVault? = null,
+    private val wording: () -> Wording = { Wording.bundled },
 ) {
     /** The backends to use now: [key] identifies their configuration, so a change starts a new session. */
     sealed interface Choice {
@@ -123,15 +127,17 @@ class ScreenActions(
             }
 
             override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome =
-                run(operation, arguments, UUID.randomUUID().toString())
+                run(operation, arguments, UUID.randomUUID().toString(), null)
 
-            override suspend fun execute(proposal: ToolProposal): ExecutionOutcome = run(operation, proposal.arguments, proposal.callId)
+            override suspend fun execute(proposal: ToolProposal): ExecutionOutcome =
+                run(operation, proposal.arguments, proposal.callId, proposal.threadId)
         }
 
     private suspend fun run(
         operation: Operation,
         arguments: Map<String, String>,
         callId: String,
+        threadId: String?,
     ): ExecutionOutcome =
         lock.withLock {
             if (!enabled()) return@withLock ExecutionOutcome(InvocationStatus.NOT_EXECUTED, DISABLED)
@@ -151,7 +157,7 @@ class ScreenActions(
                 when (operation) {
                     Operation.OBSERVE -> observe(current)
                     Operation.NAVIGATE -> navigate(current, arguments, callId)
-                    else -> targeted(current, operation, arguments, callId)
+                    else -> targeted(current, operation, arguments, callId, threadId)
                 }
             } catch (failure: Unreadable) {
                 ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "$UNREADABLE ${failure.message}")
@@ -178,7 +184,7 @@ class ScreenActions(
             }
             val backend = synchronized(this) { session.opened.getOrPut(route.name) { route.create() } }
             try {
-                return Read(backend.observe(), backend)
+                return Read(masked(backend.observe()), backend)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -215,7 +221,7 @@ class ScreenActions(
                 is Home -> "Went to the home screen."
                 else -> "Opened the notification shade."
             }
-        return outcome(session, read.backend, read.backend.perform(action), label)
+        return outcome(session, read.backend, action, read.backend.perform(action), label)
     }
 
     private suspend fun targeted(
@@ -223,6 +229,7 @@ class ScreenActions(
         operation: Operation,
         arguments: Map<String, String>,
         callId: String,
+        threadId: String?,
     ): ExecutionOutcome {
         val recorded =
             consume(session, arguments["observationRef"].orEmpty())
@@ -248,7 +255,17 @@ class ScreenActions(
                     if (!target.editable) {
                         return ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "[${target.index}] ${role(target)} is not a text field.")
                     }
-                    SetText(id, TASK, 0, bound, target.index, arguments["text"].orEmpty()) to "Replaced the text in ${describe(target)}."
+                    val handle = arguments["secret"]
+                    if (handle == null) {
+                        SetText(id, TASK, 0, bound, target.index, arguments["text"].orEmpty()) to
+                            "Replaced the text in ${describe(target)}."
+                    } else {
+                        val secret =
+                            secrets?.resolve(threadId, handle)
+                                ?: return ExecutionOutcome(InvocationStatus.NOT_EXECUTED, wording().message(Wording.SECRET_UNAVAILABLE))
+                        SetText(id, TASK, 0, bound, target.index, secret.value, sensitive = true) to
+                            "Entered the secret ${quote(secret.label)} in ${describe(target)}."
+                    }
                 }
 
                 Operation.PRESS_ENTER -> {
@@ -263,7 +280,7 @@ class ScreenActions(
                     // An element index makes the backend recheck the screen; a bare scroll would not.
                     val target = element ?: mainScrollable(observation)
                     if (target == null) {
-                        val now = recorded.backend.observe()
+                        val now = masked(recorded.backend.observe())
                         if (fingerprint(now) != fingerprint(observation)) {
                             return ExecutionOutcome(
                                 InvocationStatus.NOT_EXECUTED,
@@ -282,7 +299,7 @@ class ScreenActions(
                     error("Unexpected $operation")
                 }
             }
-        return outcome(session, recorded.backend, recorded.backend.perform(action), label)
+        return outcome(session, recorded.backend, action, recorded.backend.perform(action), label)
     }
 
     /**
@@ -317,14 +334,19 @@ class ScreenActions(
     private fun outcome(
         session: Session,
         backend: DeviceBackend,
+        action: Action,
         result: ActionResult,
         label: String,
     ): ExecutionOutcome {
         val after =
-            result.observation?.let { project(session, Read(it, backend)) }
+            result.observation?.let { project(session, Read(masked(it), backend)) }
                 ?: "EVA could not read the screen afterwards; look at it again before continuing."
         val unsettled = if (result.unsettled) " The screen was still changing; look again before relying on it." else ""
-        val readBack = (result.details as? SetTextDetails)?.takeIf { !it.verified }?.let(::mismatch)
+        val readBack =
+            (result.details as? SetTextDetails)?.takeIf { !it.verified }?.let { details ->
+                mismatch(details, (action as? SetText)?.sensitive == true) +
+                    details.inputError?.let { " The device said: ${quote(it)}." }.orEmpty()
+            }
         return when (result.executionStatus) {
             ExecutionStatus.NOT_DISPATCHED -> {
                 ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "Nothing was sent: ${explain(result.error)}\n$after")
@@ -383,7 +405,11 @@ class ScreenActions(
             else -> "the device refused it (${error.javaClass.simpleName})."
         }
 
-    private fun mismatch(details: SetTextDetails): String {
+    private fun mismatch(
+        details: SetTextDetails,
+        sensitive: Boolean,
+    ): String {
+        if (sensitive) return "the field does not read back as the secret. Its value stays withheld."
         val expected = details.expected ?: return "the password field could not be confirmed."
         return "the field reads ${quote(details.actual.orEmpty())} instead of ${quote(expected)}."
     }
@@ -408,6 +434,8 @@ class ScreenActions(
     }
 
     private fun role(element: Element) = element.role.name.lowercase()
+
+    private fun masked(observation: Observation) = secrets?.let { observation.masked(it.scoped(null)) } ?: observation
 
     private fun actionId(callId: String) = "eva-direct-$callId"
 

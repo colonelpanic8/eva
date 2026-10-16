@@ -718,6 +718,7 @@ class EvaConfigurationManager(
                     service.credential?.let { add(SecretReference(it, "http-" + it.substringAfterLast("/"), service.origin)) }
                 }
                 packages.services.forEach { service -> add(SecretReference(service.credential, "http-basic", service.origin)) }
+                app.extensionCredentials.saved().forEach { add(SecretReference(it, EvaConfigurationCodec.EXTENSION_CREDENTIAL_KIND)) }
                 app.messagingSettings.state.value.bridges.forEach { (name, bridge) ->
                     if (app.messagingSettings.bridgeCredential(name) != null) {
                         add(SecretReference(EvaConfigurationCodec.messagingSecretId(name), "http-bearer", bridge.origin))
@@ -987,6 +988,16 @@ class EvaConfigurationManager(
                     val name = reference.id.removePrefix(EvaConfigurationCodec.CALL_SECRET_PREFIX)
                     if (name in missingCallValues) {
                         add("Enter the value of call credential ${reference.label} ($name) under Messaging > Call keypad credentials.")
+                    }
+                    return@forEach
+                }
+                if (reference.kind == EvaConfigurationCodec.EXTENSION_CREDENTIAL_KIND) {
+                    if (!app.extensionCredentials.hasValue(reference.id)) {
+                        val (packageName, name) =
+                            reference.id.removePrefix(EvaConfigurationCodec.EXTENSION_SECRET_PREFIX).let {
+                                it.substringBeforeLast("/") to it.substringAfterLast("/")
+                            }
+                        add("Enter the $name credential of the $packageName extension under Extensions > Installed.")
                     }
                     return@forEach
                 }

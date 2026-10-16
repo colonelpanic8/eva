@@ -2,6 +2,7 @@
 
 package com.colonelpanic.eva.devicecontrol.proto
 
+import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonClassDiscriminator
@@ -17,6 +18,10 @@ data class SetTextDetails(
     val verified: Boolean,
     val expected: String?,
     val actual: String?,
+    /** Why the backend rejected the input, when it said; a mismatch is still decided by read-back. */
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    @SerialName("input_error")
+    val inputError: String? = null,
 ) : ActionDetails()
 
 @Serializable

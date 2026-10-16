@@ -36,6 +36,29 @@ class ExtensionFixtureTest {
     }
 
     @Test
+    fun `secret result fixture decodes with its secrets apart from the structured content`() {
+        val reply = ExtensionProtocol.executeResult(File(docs, "examples/extension-secret-result.json").readText())
+        assertEquals(setOf("password", "otp"), reply.secrets.keys)
+        assertEquals("Current one-time code for github.com/colonelpanic8", reply.secrets.getValue("otp").label)
+        assertEquals(setOf("path", "username", "hasOtp"), reply.outcome.data!!.keys)
+    }
+
+    @Test
+    fun `credential fixtures decode and the delivered arguments match what EVA builds`() {
+        val descriptor = ExtensionProtocol.describe(File(docs, "examples/extension-credential-describe.json").readText()).descriptor!!
+        assertEquals(listOf("pgp_passphrase"), descriptor.credentials.map { it.name })
+        val capability = descriptor.capabilities.single()
+        val arguments = File(docs, "examples/extension-credential-arguments.json").readText()
+        ExtensionProtocol.arguments(capability.inputSchema, arguments, delivered = true)
+        val built =
+            ExtensionProtocol.withCredentials(
+                ExtensionProtocol.encodeArguments(capability.inputSchema, mapOf("path" to "github.com/colonelpanic8")),
+                mapOf("pgp_passphrase" to "correct horse battery staple"),
+            )
+        assertEquals(Json.parseToJsonElement(arguments), Json.parseToJsonElement(built))
+    }
+
+    @Test
     fun `published schemas parse and name the draft they use`() {
         val schemas = File(docs, "schemas").listFiles { file -> file.extension == "json" }.orEmpty()
         assertEquals(

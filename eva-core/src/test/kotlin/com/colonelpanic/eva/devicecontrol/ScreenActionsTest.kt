@@ -1,6 +1,9 @@
 package com.colonelpanic.eva.devicecontrol
 
 import com.colonelpanic.eva.capability.InvocationStatus
+import com.colonelpanic.eva.capability.SecretVault
+import com.colonelpanic.eva.capability.ToolProposal
+import com.colonelpanic.eva.conversation.prompt.Wording
 import com.colonelpanic.eva.devicecontrol.ScreenActions.Choice
 import com.colonelpanic.eva.devicecontrol.ScreenActions.Operation
 import com.colonelpanic.eva.devicecontrol.proto.Action
@@ -24,6 +27,7 @@ import com.colonelpanic.eva.devicecontrol.proto.TextMismatch
 import com.colonelpanic.eva.devicecontrol.proto.kind
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -31,6 +35,7 @@ class ScreenActionsTest {
     private class Phone : DeviceBackend {
         var sequence = 0
         var header = "Header"
+        var field = ""
         var scrollable = false
         val performed = mutableListOf<Action>()
         var next: (Action, Observation) -> ActionResult = { action, after -> result(action, after) }
@@ -47,7 +52,7 @@ class ScreenActionsTest {
                         Element(0, Role.OTHER, bounds = Bounds(0, 0, 1080, 1920), scrollable = scrollable, depth = 0),
                         Element(1, Role.OTHER, bounds = Bounds(0, 100, 1080, 200), clickable = true, depth = 1, parentIndex = 0),
                         Element(2, Role.TEXT, "Battery", bounds = Bounds(40, 120, 400, 180), depth = 2, parentIndex = 1),
-                        Element(3, Role.EDIT_TEXT, "", bounds = Bounds(0, 300, 1080, 400), editable = true, depth = 1, parentIndex = 0),
+                        Element(3, Role.EDIT_TEXT, field, bounds = Bounds(0, 300, 1080, 400), editable = true, depth = 1, parentIndex = 0),
                         Element(4, Role.TEXT, header, bounds = Bounds(0, 0, 1080, 90), depth = 1, parentIndex = 0),
                     ),
             )
@@ -64,7 +69,8 @@ class ScreenActionsTest {
     private val phone = Phone()
     private var choice: Choice = Choice.Ready("portal") { phone }
     private var enabled = true
-    private val actions = ScreenActions({ enabled }, { choice }, { now })
+    private val vault = SecretVault()
+    private val actions = ScreenActions({ enabled }, { choice }, { now }, vault)
 
     private fun call(
         operation: Operation,
@@ -160,6 +166,66 @@ class ScreenActionsTest {
         assertEquals(InvocationStatus.FAILED, outcome.status)
         assertTrue(outcome.message.contains("the field reads \"h\" instead of \"hi\""))
         assertTrue((phone.performed.single() as SetText).replace)
+    }
+
+    private fun inThread(
+        operation: Operation,
+        vararg arguments: Pair<String, String>,
+    ) = runBlocking {
+        actions.backend(operation).execute(ToolProposal("call-$now", "eva.device.set_text", arguments.toMap(), "", "", threadId = "thread"))
+    }
+
+    @Test
+    fun `a secret handle types its value into a plain field without any result repeating it`() {
+        val handle = vault.store("thread", "481516", "Current one-time code for example.com")
+        phone.next = { action, _ ->
+            phone.field = (action as SetText).text
+            result(action, phone.screen())
+        }
+        val ref = reference(inThread(Operation.OBSERVE).message)
+
+        val outcome = inThread(Operation.SET_TEXT, "observationRef" to ref, "node" to "3", "secret" to handle)
+
+        val typed = phone.performed.single() as SetText
+        assertEquals("481516", typed.text)
+        assertTrue(typed.sensitive)
+        assertFalse(typed.toString().contains("481516"))
+        assertEquals(InvocationStatus.COMPLETED, outcome.status)
+        assertTrue(outcome.message.startsWith("Entered the secret \"Current one-time code for example.com\" in [3] edit_text."))
+        assertFalse(outcome.message.contains("481516"))
+        assertTrue(outcome.message.contains(SecretValues.PLACEHOLDER))
+        assertFalse(inThread(Operation.OBSERVE).message.contains("481516"))
+    }
+
+    @Test
+    fun `a secret that does not read back is reported without its value`() {
+        val handle = vault.store("thread", "hunter2-correct-horse", "Password for example.com")
+        phone.next = { action, after ->
+            result(action, after, ok = false, error = TextMismatch(action.actionId, null, 3, null, null))
+                .copy(details = SetTextDetails(3, false, null, null, "these characters cannot be typed"))
+        }
+        val ref = reference(inThread(Operation.OBSERVE).message)
+
+        val outcome = inThread(Operation.SET_TEXT, "observationRef" to ref, "node" to "3", "secret" to handle)
+
+        assertEquals(InvocationStatus.FAILED, outcome.status)
+        assertTrue(outcome.message.contains("does not read back as the secret"))
+        assertTrue(outcome.message.contains("\"these characters cannot be typed\""))
+        assertFalse(outcome.message.contains("hunter2"))
+    }
+
+    @Test
+    fun `an unknown or another conversation's handle sends nothing and says to look it up again`() {
+        val elsewhere = vault.store("other thread", "hunter2-correct-horse", "Password for example.com")
+        listOf(elsewhere, "secret:0123456789abcdef0123456789abcdef").forEach { handle ->
+            val ref = reference(inThread(Operation.OBSERVE).message)
+
+            val outcome = inThread(Operation.SET_TEXT, "observationRef" to ref, "node" to "3", "secret" to handle)
+
+            assertEquals(InvocationStatus.NOT_EXECUTED, outcome.status)
+            assertEquals(Wording.bundled.message(Wording.SECRET_UNAVAILABLE), outcome.message)
+        }
+        assertTrue(phone.performed.isEmpty())
     }
 
     @Test

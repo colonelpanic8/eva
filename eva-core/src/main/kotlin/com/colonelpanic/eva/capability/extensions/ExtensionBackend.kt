@@ -6,10 +6,14 @@ import com.colonelpanic.eva.capability.CapabilitySource
 import com.colonelpanic.eva.capability.ExecutionBackend
 import com.colonelpanic.eva.capability.ExecutionOutcome
 import com.colonelpanic.eva.capability.InvocationStatus
+import com.colonelpanic.eva.capability.SecretVault
 import com.colonelpanic.eva.capability.ToolProposal
+import com.colonelpanic.eva.conversation.prompt.Wording
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.security.MessageDigest
@@ -20,6 +24,9 @@ class ExtensionBackend(
     private val capability: Capability,
     private val connections: ExtensionConnectionManager,
     private val worker: CoroutineDispatcher = Dispatchers.IO,
+    private val secrets: SecretVault? = null,
+    private val wording: () -> Wording = { Wording.bundled },
+    private val credentials: ExtensionCredentialSource = ExtensionCredentialSource.NONE,
 ) : ExecutionBackend {
     val definition =
         CapabilityDefinition(
@@ -48,8 +55,26 @@ class ExtensionBackend(
                         "Extension arguments were rejected. Nothing was submitted.",
                     )
                 }
+            val delivered =
+                when (val provisioned = credentials.values(identity, descriptor.credentials)) {
+                    is CredentialValues.Refused -> {
+                        return@withContext ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "${provisioned.message} Nothing was submitted.")
+                    }
+
+                    is CredentialValues.Ready -> {
+                        try {
+                            ExtensionProtocol.withCredentials(arguments, provisioned.values)
+                        } catch (_: IllegalArgumentException) {
+                            return@withContext ExecutionOutcome(
+                                InvocationStatus.NOT_EXECUTED,
+                                "The arguments and this extension's saved credentials together exceed " +
+                                    "${ExtensionProtocol.ARGUMENT_BYTES} bytes. Nothing was submitted; shorten the request.",
+                            )
+                        }
+                    }
+                }
             val invocation = invocationId(proposal.callId)
-            when (val exchange = connections.execute(identity, invocation, descriptor.revision, capability, arguments)) {
+            when (val exchange = connections.execute(identity, invocation, descriptor.revision, capability, delivered)) {
                 is ExtensionExchange.Unavailable -> {
                     ExecutionOutcome(InvocationStatus.NOT_EXECUTED, exchange.message)
                 }
@@ -68,13 +93,17 @@ class ExtensionBackend(
                             ExtensionProtocol.executeResult(exchange.json, capability.maxResultBytes, capability.outputSchema)
                         }.getOrNull()
                             ?: return@withContext unknown(invocation)
-                    result.outcome.copy(
-                        message =
-                            buildString {
-                                result.reasonCode?.let { append("Reason: ").append(it).append(". ") }
-                                if (result.truncated) append("Provider reports incomplete results. ")
-                                append(result.outcome.message)
-                            },
+                    withheld(
+                        proposal,
+                        result.outcome.copy(
+                            message =
+                                buildString {
+                                    result.reasonCode?.let { append("Reason: ").append(it).append(". ") }
+                                    if (result.truncated) append("Provider reports incomplete results. ")
+                                    append(result.outcome.message)
+                                },
+                        ),
+                        result.secrets,
                     )
                 }
             }
@@ -91,6 +120,41 @@ class ExtensionBackend(
                     .getInstance("SHA-256")
                     .digest(callId.toByteArray(Charsets.UTF_8))
                     .joinToString("") { "%02x".format(it) }
+    }
+
+    /**
+     * Moves a reply's secrets into the vault before the outcome reaches the journal or a model, which
+     * see only handles and labels. Text echoing a value is masked as well.
+     */
+    private fun withheld(
+        proposal: ToolProposal,
+        outcome: ExecutionOutcome,
+        returned: Map<String, ExtensionSecret>,
+    ): ExecutionOutcome {
+        if (returned.isEmpty()) return outcome
+        val vault = secrets ?: return outcome.copy(message = outcome.message + "\n" + wording().message(Wording.SECRETS_UNSUPPORTED))
+        val handles = returned.mapValues { (_, secret) -> vault.store(proposal.threadId, secret.value, secret.label) to secret.label }
+        val listing =
+            handles.entries.joinToString("\n") { (name, entry) -> "- $name: ${entry.first} (${JsonPrimitive(entry.second)})" }
+        val data =
+            JsonObject(
+                (outcome.data?.let { vault.mask(it) as JsonObject } ?: JsonObject(emptyMap())) +
+                    (
+                        "secrets" to
+                            JsonObject(
+                                handles.mapValues { (_, entry) ->
+                                    buildJsonObject {
+                                        put("handle", entry.first)
+                                        put("label", entry.second)
+                                    }
+                                },
+                            )
+                    ),
+            )
+        return outcome.copy(
+            message = vault.mask(outcome.message) + "\n" + wording().message(Wording.SECRETS_WITHHELD).replace("{secrets}", listing),
+            data = data,
+        )
     }
 
     /** A read-only capability changed nothing, so its discarded reply is a plain failure; anything else may have run. */

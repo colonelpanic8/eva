@@ -613,6 +613,69 @@ resumed conversations, and delivered to the model within a result budget equal t
 the extension result limit. See the [extension protocol](extension-protocol.md)
 for concrete identity, schema, waiting, and authorization rules.
 
+### Secret handles
+
+An installed extension can return passwords and one-time codes in a reply's
+[`secrets`](extension-protocol.md#secrets) field: fill, don't reveal.
+`ExtensionBackend` moves each value into `capability/SecretVault.kt` before the
+outcome reaches the dispatcher. The vault is in memory only, with no disk, SQLite,
+trace, or log copy. The journaled message and data, and therefore receipts, history,
+diagnostics exports, and what the model receives, hold only an opaque
+`secret:<32 hex>` handle and the provider's label. The values cannot be retrieved
+through any tool.
+
+Handles are scoped to the thread whose call received them. `eva.device.set_text`
+takes `secret` instead of `text`, and a device task started from that thread gets
+a scoped view of the vault (`SecretValues`), so its worker's `set_text` can take the
+handle the conversation model put in the goal. A handle in task text is only a
+reference, so the goal, revisions, and step history are stored as written. The
+value is resolved at input time into a `SetText` marked `sensitive`. That flag makes
+`PortalBackend` redact the expected and actual text in its read-back and errors,
+whatever kind of field it is, on both the Portal and Shizuku transports. Verification
+reports only match or mismatch. Typing into a password field still goes through the
+virtual key map, and a value with characters the map lacks fails with the helper's
+reason, which reaches the model with any copy of the value masked.
+
+A secret typed into a plain field is visible on screen. Every observation the
+direct tools or the worker hand to a model therefore has each held value of four or
+more characters replaced with `<secret>`. Step descriptions name a secret by label.
+Shorter values are not masked, since masking them would garble ordinary screen text.
+Screenshots are images and are not masked: a worker screenshot of a plain field that
+holds a code shows the code. Password fields show dots.
+
+Handles have no expiry timer. Starting a new conversation (`ThreadController.newThread`)
+clears every thread without running work, and process death clears everything.
+An unknown, cleared, or other thread's handle is refused before input. That is
+`NOT_EXECUTED` for the direct tool, and a `secret_unavailable` refusal for the
+worker; both say to look the credential up again. Restored history keeps its
+handles, which then fail the same way.
+
+### Extension credentials held by EVA
+
+An installed extension can declare up to four `credentials` in its descriptor, such as a
+key passphrase it needs on a locked phone. The extension's entry under **Extensions →
+Installed** shows each one's title, description, and state (not set, set, or saved for
+another signer) with a masked field to set, replace, or clear it. Values are device-local
+authorization: `data/ExtensionCredentialSettings.kt` keeps each in the Keystore-encrypted
+`SecretStore` beside the Android user and signer it was entered for. Only an
+`extension/<package>/<name>` reference reaches the [portable
+configuration](#extension-credentials).
+
+`ExtensionBackend` adds `_credentials` to the arguments only after they are encoded for
+journaling, so the journal, receipts, traces, and the model never see it, and a duplicate
+call returns the journaled record without contacting the provider. A value whose bound
+user or signer no longer matches the installed app is not sent: the call is
+`NOT_EXECUTED` with a message to re-enter it. A provider that rejects a value reports
+`not_configured`, which reaches the user and model as its message.
+
+Locked-phone reads: `SecretStore`'s AES-GCM key sets neither
+`setUserAuthenticationRequired` nor `setUnlockedDeviceRequired`, so the Keystore can use it
+while the phone is locked. Its preferences file is in credential-encrypted storage, so
+values are readable after the first unlock since boot and not before it. EVA is not
+direct-boot aware either. An API 36 emulator decrypted with the saved passphrase while
+locked with a PIN, with the screen off and with the keyguard showing (see
+[device verification](operations.md#device-verification)); before-first-unlock was not tested.
+
 ## Android capabilities
 
 - Declarative `android.content` reads use bounded background `ContentResolver`
@@ -842,7 +905,7 @@ worker. An unresolved primitive effect remains UNKNOWN at terminal task receipt,
 even if later actions succeed. The task uses neither `BudgetedBackend` nor
 `BoundedExecution`, returns no startup handoff, and holds its lease until terminal
 completion/drain. Its one receipt includes task/revision identity, effects, and
-per-step kind, a readable description (password text redacted), the worker's stated
+per-step kind, a readable description (password text redacted, secrets named by label), the worker's stated
 intent, the serving backend, result and observation/model/action timings. Step receipts
 also retain the device-worker initiator, task/leg ID, call ID, and available
 response/output-item IDs, separate from the outer call's initiator. The conversation
@@ -853,7 +916,8 @@ UNKNOWN. Journal recovery never replays a task.
 
 The conversation model can also act on the screen itself, one input per call,
 without the worker: `eva.device.observe`, `tap`, `set_text`, `scroll`, `press_enter`,
-and `navigate` (Back, Home, notification shade). They run through
+and `navigate` (Back, Home, notification shade). `set_text` takes either `text` or a
+[secret handle](#secret-handles). They run through
 `devicecontrol/ScreenActions.kt` on the same `PortalBackend` as tasks, so rechecks,
 settling and text read-back are shared. They use the backends in the same order as
 tasks: each call starts at the preferred backend, and one that is not ready or passes
@@ -2339,6 +2403,21 @@ credentials:
 ```
 
 The value is entered on each device and stored only in the encrypted secret store.
+
+### Extension credentials
+
+A value an installed extension [declares](extension-protocol.md#declared-credentials) is a
+`credentials.required` entry with ID `extension/<package>/<name>`, kind
+`extension-credential`, and no endpoint or label. It is written while this device holds a
+value, and kept from the loaded configuration for other devices until the user clears it
+here. A restore reports each one this device lacks, naming the credential and app:
+
+```yaml
+credentials:
+  required:
+  - id: extension/app.passwordstore.colonelpanic/pgp_passphrase
+    kind: extension-credential
+```
 
 ### Twilio call route
 

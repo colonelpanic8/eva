@@ -132,6 +132,7 @@ class ThreadControllerTest {
         conversationStore: ConversationStore = store,
         accepted: suspend () -> Unit = {},
         textProvider: (String) -> ConversationProvider = { provider },
+        secrets: com.colonelpanic.eva.capability.SecretVault? = null,
     ) = ThreadController(
         registry = registry,
         nowMillis = now,
@@ -154,6 +155,7 @@ class ThreadControllerTest {
         prompt = prompt,
         onBackgroundAnswer = { answers += it },
         onBackgroundAnswerDelivered = { deliveredAnswers += it },
+        secrets = secrets,
     )
 
     @Test
@@ -315,6 +317,45 @@ class ThreadControllerTest {
             assertEquals(TurnStatus.FAILED, store.turns(b.threadId).single().status)
             assertEquals(0, first.closes)
             controller.stopTask(a.taskId)
+            runCurrent()
+        }
+
+    @Test
+    fun `a new conversation forgets idle threads' secrets but keeps those of running work`() =
+        runTest {
+            val gate = CompletableDeferred<Unit>()
+            val blocking =
+                object : ExecutionBackend {
+                    override suspend fun unavailableReason(): String? = null
+
+                    override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome {
+                        gate.await()
+                        return ExecutionOutcome(InvocationStatus.COMPLETED, "Signed in")
+                    }
+                }
+            val registry = CapabilityRegistry(mapOf(action.id to blocking), listOf(action))
+            val vault =
+                com.colonelpanic.eva.capability
+                    .SecretVault()
+            val provider = FakeProvider()
+            val controller = controller(provider, registry = registry, secrets = vault)
+            runCurrent()
+            controller.connect("test")
+            runCurrent()
+            controller.submit("Sign in")
+            runCurrent()
+            provider.call("sign-in", action.id, "place" to "Park")
+            runCurrent()
+            val running = controller.state.value.threadId!!
+            val kept = vault.store(running, "hunter2-correct-horse", "Password")
+            val idle = vault.store("finished thread", "481516", "Code")
+
+            controller.newThread()
+            runCurrent()
+
+            assertEquals("hunter2-correct-horse", vault.resolve(running, kept)?.value)
+            assertNull(vault.resolve("finished thread", idle))
+            gate.complete(Unit)
             runCurrent()
         }
 

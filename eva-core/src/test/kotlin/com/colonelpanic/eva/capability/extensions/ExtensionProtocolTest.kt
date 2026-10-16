@@ -91,6 +91,92 @@ class ExtensionProtocolTest {
         }
         val request = Json.parseToJsonElement(ExtensionProtocol.describeRequest()).jsonObject
         assertEquals(JsonArray(listOf(JsonPrimitive(1))), request["supportedProtocolVersions"])
+        assertEquals(JsonArray(listOf(JsonPrimitive("secrets"), JsonPrimitive("credentials"))), request["features"])
+    }
+
+    @Test
+    fun `declared credentials are bounded unique password entries that belong to the contract digest`() {
+        fun credential(
+            name: String = "passphrase",
+            title: String = "Key passphrase",
+            description: String = "Unlocks the PGP key.",
+            kind: String = "password",
+        ) = """{"name":"$name","title":"$title","description":"$description","kind":"$kind"}"""
+
+        fun declaring(vararg credentials: String) =
+            describe().replace("\"title\":\"Agenda\",", "\"title\":\"Agenda\",\"credentials\":[${credentials.joinToString(",")}],")
+
+        val plain = ExtensionProtocol.describe(describe()).descriptor!!
+        val declared = ExtensionProtocol.describe(declaring(credential(), credential("pin", "PIN", "x".repeat(500)))).descriptor!!
+        assertEquals(
+            listOf(CredentialSpec("passphrase", "Key passphrase", "Unlocks the PGP key."), CredentialSpec("pin", "PIN", "x".repeat(500))),
+            declared.credentials,
+        )
+        assertTrue(plain.credentials.isEmpty())
+        assertNotEquals(plain.digest, declared.digest)
+        ExtensionProtocol.describe(declaring())
+        ExtensionProtocol.describe(declaring(*(1..4).map { credential("c$it") }.toTypedArray()))
+        listOf(
+            declaring(*(1..5).map { credential("c$it") }.toTypedArray()),
+            declaring(credential(), credential()),
+            declaring(credential(name = "Passphrase")),
+            declaring(credential(name = "_passphrase")),
+            declaring(credential(name = "a".repeat(33))),
+            declaring(credential(kind = "token")),
+            declaring(credential(title = "")),
+            declaring(credential(title = "t".repeat(121))),
+            declaring(credential(description = "d".repeat(501))),
+            declaring("""{"name":"passphrase","title":"T","description":"D"}"""),
+            declaring("""{"name":"passphrase","title":"T","description":"D","kind":"password","value":"x"}"""),
+            describe().replace("\"title\":\"Agenda\",", "\"title\":\"Agenda\",\"credentials\":{},"),
+        ).forEach { assertThrows(it, Exception::class.java) { ExtensionProtocol.describe(it) } }
+    }
+
+    @Test
+    fun `a completed reply may carry bounded named secrets and any violation is malformed`() {
+        val envelope = """"protocolVersion":1,"reasonCode":null,"truncated":false,"content":[]"""
+
+        fun reply(
+            secrets: String,
+            status: String = "completed",
+        ) = """{$envelope,"status":"$status","secrets":$secrets}"""
+
+        fun secret(
+            value: String = "hunter2",
+            label: String = "Password for github.com/me",
+        ) = """{"value":${JsonPrimitive(value)},"label":${JsonPrimitive(label)}}"""
+
+        val parsed = ExtensionProtocol.executeResult(reply("""{"password":${secret()},"otp_2":${secret("123456", "Code")}}"""))
+        assertEquals(setOf("password", "otp_2"), parsed.secrets.keys)
+        assertEquals("hunter2", parsed.secrets.getValue("password").value)
+        assertFalse(parsed.secrets.toString().contains("hunter2"))
+        assertEquals(parsed, ExtensionProtocol.executeResult(ExtensionProtocol.encodeResult(parsed)))
+        ExtensionProtocol.executeResult(reply("""{"p":${secret("x".repeat(4096), "l".repeat(120))}}"""))
+
+        val nine = (1..9).joinToString(",", "{", "}") { "\"s$it\":${secret()}" }
+        listOf(
+            reply("""{"password":${secret()}}""", "not_executed"),
+            reply("""{"password":${secret()}}""", "failed"),
+            reply("""{"password":${secret()}}""", "handed_off"),
+            reply("""{"password":${secret()}}""", "unknown"),
+            reply("{}"),
+            reply("null"),
+            reply(nine),
+            reply("""{"Password":${secret()}}"""),
+            reply("""{"1password":${secret()}}"""),
+            reply("""{"pass-word":${secret()}}"""),
+            reply("""{"${"a".repeat(33)}":${secret()}}"""),
+            reply("""{"password":${secret(value = "")}}"""),
+            reply("""{"password":${secret(value = "x".repeat(4097))}}"""),
+            reply("""{"password":${secret(label = "")}}"""),
+            reply("""{"password":${secret(label = "l".repeat(121))}}"""),
+            reply("""{"password":{"value":"hunter2"}}"""),
+            reply("""{"password":{"value":"hunter2","label":"l","hint":"x"}}"""),
+            reply("""{"password":{"value":7,"label":"l"}}"""),
+            reply("""{"password":"hunter2"}"""),
+        ).forEach { assertThrows(it, Exception::class.java) { ExtensionProtocol.executeResult(it) } }
+        val large = reply("""{"p":${secret("x".repeat(4000))}}""")
+        assertThrows(Exception::class.java) { ExtensionProtocol.executeResult(large, maxBytes = large.length - 1) }
     }
 
     @Test

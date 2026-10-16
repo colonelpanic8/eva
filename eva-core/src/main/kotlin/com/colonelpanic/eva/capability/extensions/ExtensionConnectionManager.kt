@@ -117,7 +117,7 @@ class ExtensionConnectionManager(
         capability: Capability,
         arguments: String,
     ): ExtensionExchange {
-        ExtensionProtocol.arguments(capability.inputSchema, arguments)
+        ExtensionProtocol.arguments(capability.inputSchema, arguments, delivered = true)
         require(invocationId.length in 1..256 && invocationId.all { it.code in 1..127 })
         return exchange(
             identity,

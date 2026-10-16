@@ -51,7 +51,16 @@
         "type": "integer"
       },
       "text": {
-        "type": "string"
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "secret": {
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "replace": {
         "type": "boolean"
@@ -63,6 +72,7 @@
     "required": [
       "element",
       "text",
+      "secret",
       "replace",
       "intent"
     ],

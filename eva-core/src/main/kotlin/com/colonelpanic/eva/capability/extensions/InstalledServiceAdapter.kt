@@ -1,5 +1,7 @@
 package com.colonelpanic.eva.capability.extensions
 
+import com.colonelpanic.eva.capability.SecretVault
+import com.colonelpanic.eva.conversation.prompt.Wording
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 
@@ -7,6 +9,9 @@ class InstalledServiceAdapter(
     private val discovery: ExtensionDiscovery,
     private val connections: ExtensionConnectionManager,
     private val worker: CoroutineDispatcher = Dispatchers.IO,
+    private val secrets: SecretVault? = null,
+    private val wording: () -> Wording = { Wording.bundled },
+    private val credentials: ExtensionCredentialSource = ExtensionCredentialSource.NONE,
 ) : CapabilityAdapter {
     override val installed = discovery.installed
     override val ready = discovery.ready
@@ -27,7 +32,7 @@ class InstalledServiceAdapter(
         val identity = extension.identity as? ExtensionIdentity ?: return emptyList()
         val descriptor = extension.descriptor ?: return emptyList()
         return descriptor.capabilities.map { capability ->
-            val backend = ExtensionBackend(identity, descriptor, capability, connections, worker)
+            val backend = ExtensionBackend(identity, descriptor, capability, connections, worker, secrets, wording, credentials)
             CapabilityBinding(capability, backend.definition, backend, "${identity.key}:${descriptor.digest}")
         }
     }
