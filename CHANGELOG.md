@@ -4,17 +4,19 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.69.0] - 2026-10-15
+
 ### Added
 
+- Dictate a task on the phone with system speech recognition: **Dictate task** on
+  Conversations, a launcher shortcut, or the composer microphone for a follow-up or
+  answer. The work runs in the background without connecting and continues after you
+  leave EVA.
 - Dictate a new text-agent task with system speech recognition on Wear OS; browse
   conversations, dictate follow-ups or answers, and stop a selected conversation's work.
 - Keep accepted watch tasks running independently of new requests, navigation, and
   voice attachments. Restore a Conversations list with explicit New conversation
   controls on the phone; preserve history for continuation.
-- Dictate a task on the phone with system speech recognition: **Dictate task** on
-  Conversations, a launcher shortcut, or the composer microphone for a follow-up or
-  answer. The work runs in the background without connecting and continues after you
-  leave EVA.
 
 ## [0.68.1] - 2026-10-15
 

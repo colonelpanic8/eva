@@ -1,0 +1,3 @@
+* Added: Dictate a task on the phone with system speech recognition: **Dictate task** on Conversations, a launcher shortcut, or the composer microphone for a follow-up or answer. The work runs in the background without connecting and continues after you leave EVA.
+* Added: Dictate a new text-agent task with system speech recognition on Wear OS; browse conversations, dictate follow-ups or answers, and stop a selected conversation's work.
+* ...see CHANGELOG.md for the rest.
