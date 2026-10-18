@@ -320,7 +320,7 @@ fun projectHistory(
                 }
 
                 is ThreadItem.TextLeg -> {
-                    HistoryItem.Note(item.task?.let { "Continued in text: $it" } ?: "Continued after the call ended")
+                    HistoryItem.Note(item.task?.let { "Continued in text: $it" } ?: "Continued in text")
                 }
             }
         }

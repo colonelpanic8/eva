@@ -253,7 +253,6 @@ private fun TextLegBlock(
     val status = leg.presentation()
     val actionCount = actions.count { it.question == null }
     val waitingForAnswer = actions.any { it.question?.waiting == true }
-    val task = leg.task ?: "Finish the request after the call ended"
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         contentColor = MaterialTheme.colorScheme.onSurface,
@@ -268,7 +267,13 @@ private fun TextLegBlock(
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Surface(onClick = { toggled = !expanded }, color = Color.Transparent) {
                 Column(
-                    modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 8.dp),
+                    modifier =
+                        Modifier.fillMaxWidth().padding(
+                            start = 12.dp,
+                            end = 12.dp,
+                            top = 8.dp,
+                            bottom = if (expanded) 0.dp else 8.dp,
+                        ),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Row(
@@ -292,14 +297,15 @@ private fun TextLegBlock(
                             color = status.color(),
                         )
                     }
-                    Text(
-                        text = task,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = if (expanded) Int.MAX_VALUE else 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(bottom = if (expanded) 0.dp else 8.dp),
-                    )
+                    leg.task?.let { task ->
+                        Text(
+                            text = task,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = if (expanded) Int.MAX_VALUE else 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
             if (expanded) {

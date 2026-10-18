@@ -77,7 +77,7 @@ data class DeviceStep(
 )
 
 data class TextLegDetails(
-    /** What voice delegated; null when the turn moved to text because its connection ended. */
+    /** What voice delegated; null when the turn moved to text because its connection ended, or began there. */
     val task: String?,
     val instructions: String,
     val historyItems: Int,
