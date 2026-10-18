@@ -3463,21 +3463,16 @@ class ThreadController(
                             catalogOf(assembled.apply(controls + phone.second + wording().describe(ASK_USER)), snapshot.revision)
                                 .copy(excludedTools = phone.first.excluded())
                         tools = ConnectionTools(snapshot, catalog, false)
+                        val prompt =
+                            if (initialRequest) {
+                                null
+                            } else {
+                                brief
+                                    ?: instruction?.let { wording().message(Wording.HANDOFF_INSTRUCTIONS) + "\n" + JsonPrimitive(it) }
+                                    ?: wording().message(Wording.CONTINUATION)
+                            }
                         val instructions =
-                            assembled.instructions + extensionGuidance(snapshot, catalog) +
-                                if (initialRequest) {
-                                    ""
-                                } else {
-                                    "\n\n" +
-                                        (
-                                            brief
-                                                ?: instruction?.let {
-                                                    wording().message(Wording.HANDOFF_INSTRUCTIONS) + "\n" +
-                                                        JsonPrimitive(it)
-                                                }
-                                                ?: wording().message(Wording.CONTINUATION)
-                                        )
-                                }
+                            assembled.instructions + extensionGuidance(snapshot, catalog) + prompt?.let { "\n\n" + it }.orEmpty()
                         val history =
                             projectHistory(
                                 items,
@@ -3495,6 +3490,7 @@ class ThreadController(
                                 instruction,
                                 instructions,
                                 history.size,
+                                prompt,
                             )
                         textLegId = textLeg.id
                         store.append(textLeg)

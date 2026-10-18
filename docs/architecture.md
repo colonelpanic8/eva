@@ -70,12 +70,14 @@ same capability registry, including enabled extensions and a reserved ask-user c
 action claims and receipts. Turn IDs belong to the store rather than a provider's session-local
 counter. The SQLite journal links requests, tool calls, receipts, and responses.
 Each text leg is its own thread item recording the delegated task, the exact
-instructions it was opened with, and how many history items seeded it; the calls
+instructions it was opened with, the leg-specific prompt within them (the handoff
+note, live brief, or continuation note), and how many history items seeded it; the calls
 it proposes carry its ID. Every delegation opens a fresh leg seeded from thread
 history rather than resuming an earlier leg, so the thread stays the one source
 of context. The UI projects these records into grouped turns and session notices,
 and shows each text leg as a collapsible block inside its turn, open while it works,
-holding the leg's own actions and its prompt.
+holding the leg's own actions, its prompt, and, behind a separate toggle, the full
+context it was opened with.
 
 One attachment is live at a time. Selecting or creating a thread during a text
 connection ends the old attachment with a switched-conversations notice and opens

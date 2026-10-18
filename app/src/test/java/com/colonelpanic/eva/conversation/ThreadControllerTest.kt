@@ -52,6 +52,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -2162,6 +2163,13 @@ class ThreadControllerTest {
             advanceUntilIdle()
             assertEquals(listOf("HANDED_OFF"), voice.results.map { it.status })
             assertTrue(background.request.instructions.contains(task))
+            val prompt =
+                controller.state.value.entries
+                    .single { it.textLeg != null }
+                    .textLeg
+                    ?.prompt
+            assertEquals(Wording.bundled.message(Wording.HANDOFF_INSTRUCTIONS) + "\n" + JsonPrimitive(task), prompt)
+            assertTrue(background.request.instructions.endsWith("\n\n" + prompt))
         }
 
     @Test
@@ -3309,7 +3317,13 @@ class ThreadControllerTest {
                     .single { it.textLeg != null }
             assertEquals(turn, leg.parentId)
             assertEquals(
-                TextLegDetails(null, background.request.instructions, background.request.history.size, TurnStatus.ANSWERED),
+                TextLegDetails(
+                    null,
+                    background.request.instructions,
+                    background.request.history.size,
+                    TurnStatus.ANSWERED,
+                    Wording.bundled.message(Wording.CONTINUATION),
+                ),
                 leg.textLeg,
             )
         }
