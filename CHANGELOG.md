@@ -4,6 +4,13 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.70.2] - 2026-10-18
+
+### Fixed
+
+- Dictated and typed background requests no longer say "Finish the request after the
+  call ended" when no call took place.
+
 ## [0.70.1] - 2026-10-18
 
 ### Fixed
