@@ -41,5 +41,10 @@ object DefaultPackages {
             DefaultPackage("android.settings", "packages/settings.json"),
             DefaultPackage("android.clock", "packages/clock.json"),
             DefaultPackage("android.paseo", "packages/paseo.json", requiresProvider = "sh.paseo.assistant"),
+            DefaultPackage(
+                "android.t3code",
+                "packages/t3code.json",
+                requiresProvider = "com.t3tools.t3code.assembly.assistant",
+            ),
         )
 }

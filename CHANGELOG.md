@@ -4,6 +4,17 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Added
+
+- T3 Code Assembly's own EVA extension starts enabled with every action, pinned to its
+  production signer, so EVA can start, steer, stop, organize, rename, configure, and fork
+  T3 Code threads, and answer their approvals and questions, without opening T3 Code,
+  even locked.
+- The T3 Code package is installed and enabled by default once T3 Code Assembly is
+  present, for environment, project, thread, message, and model lookups, live thread
+  status and queues, and every approval and question waiting on you across machines,
+  with links to open threads and draft or send prompts.
+
 ## [0.70.3] - 2026-10-18
 
 ### Fixed

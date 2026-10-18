@@ -1,0 +1,923 @@
+{
+  "formatVersion": 1,
+  "id": "android.t3code",
+  "version": "0.2.0",
+  "title": "T3 Code",
+  "description": "Discover T3 Code environments, projects, and threads; read a thread's recent messages and an environment's models; and open threads or draft or send prompts through T3 Code Assembly links.",
+  "guidance": "For a vague thread description, call list_threads with one distinctive project, branch, or title fragment, then pick a row by its metadata; ask which if several fit. Use a row's id and environmentId together. Name an environment by environmentName, but pass environmentId. Act through T3 Code's installed extension when it is available: it works without opening T3 Code, even locked, and its actions start, steer, stop, organize, rename, configure, and fork threads. For what waits on the user, call list_pending_requests, which covers every environment; read its detail, decisions, or questions out, and answer with respond_to_approval or answer_question only once the user decides. For how a thread is doing, call read_thread_status. Take projectId and environmentId from list_projects, and provider, model, and modelOptions only from list_models. state completed means T3 Code did it; read the receipt's text. accepted, submitted, or waiting_for_host means still working: check with request_status and its invocationId. uncertain means never resend. Otherwise use the links: send_thread_prompt only when the user asked to send, else draft_thread_prompt; new_thread for new work. Never guess or reuse an id from memory. Catalog rows may be stale until T3 Code opens; if nothing matches, try another fragment.",
+  "setup": [
+    "Install T3 Code Assembly and open it at least once: it publishes the environment, project, and thread catalog while it runs, so anything created elsewhere since then is missing until it opens again.",
+    "Message, model, request, status, and queue reads need the environment reachable. T3 Code answers them without being opened, for environments it reaches directly; T3 Connect (relay) environments need T3 Code opened and signed in. An unavailable answer is a notice row.",
+    "To let send_thread_prompt actually send, turn on Settings, Thread behavior, Send prompts from links in T3 Code. With it off T3 Code drafts the prompt instead, and EVA cannot tell the two apart.",
+    "T3 Code's own EVA extension starts and steers threads, answers approvals and questions, and organizes threads without opening T3 Code. EVA enables it for the T3 Code Assembly build, and T3 Code's Let EVA run threads setting starts on. Either can be turned off."
+  ],
+  "androidPackages": [
+    "com.t3tools.t3code.assembly"
+  ],
+  "capabilities": [
+    {
+      "tool": {
+        "name": "list_environments",
+        "title": "List T3 Code environments",
+        "description": "List the machines (environments) T3 Code is paired with: id, name, connected (1 or 0), and status. Name an environment by name, but pass id as environmentId.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "q": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "One case-insensitive fragment matched against the row's names and ids. Not a phrase search."
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "Maximum rows, 1 to 100 (T3 Code defaults to 25)."
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
+        }
+      },
+      "effects": "read",
+      "execution": {
+        "mode": "synchronous",
+        "requiresForeground": false,
+        "maxWaitMillis": 10000
+      },
+      "binding": {
+        "kind": "android.content",
+        "authority": "com.t3tools.t3code.assembly.assistant",
+        "uri": {
+          "base": "content://com.t3tools.t3code.assembly.assistant/environments",
+          "query": {
+            "q": {
+              "argument": "q",
+              "type": "string"
+            },
+            "limit": {
+              "argument": "limit",
+              "type": "integer"
+            }
+          }
+        },
+        "projection": {
+          "id": "string",
+          "name": "string",
+          "connected": "integer",
+          "status": "string"
+        },
+        "maxRows": 100,
+        "maxBytes": 16384
+      }
+    },
+    {
+      "tool": {
+        "name": "list_projects",
+        "title": "List T3 Code projects",
+        "description": "Find the T3 Code project to start new work in. Never guess a projectId. Rows are most recently active first: id, environmentId, environmentName, name, workspaceRoot, and repository (owner/name, empty when unknown). Pass id as projectId with environmentId from the same row. If several fit, ask which using name, repository, and environmentName. Rows come from the catalog T3 Code last published and may be stale.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "environmentId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Only projects in this environment."
+            },
+            "q": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "One case-insensitive fragment matched against the row's names and ids. Not a phrase search."
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "Maximum rows, 1 to 100 (T3 Code defaults to 25)."
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
+        }
+      },
+      "effects": "read",
+      "execution": {
+        "mode": "synchronous",
+        "requiresForeground": false,
+        "maxWaitMillis": 10000
+      },
+      "binding": {
+        "kind": "android.content",
+        "authority": "com.t3tools.t3code.assembly.assistant",
+        "uri": {
+          "base": "content://com.t3tools.t3code.assembly.assistant/projects",
+          "query": {
+            "environmentId": {
+              "argument": "environmentId",
+              "type": "string"
+            },
+            "q": {
+              "argument": "q",
+              "type": "string"
+            },
+            "limit": {
+              "argument": "limit",
+              "type": "integer"
+            }
+          }
+        },
+        "projection": {
+          "id": "string",
+          "environmentId": "string",
+          "environmentName": "string",
+          "name": "string",
+          "workspaceRoot": "string",
+          "repository": "string"
+        },
+        "maxRows": 100,
+        "maxBytes": 16384
+      }
+    },
+    {
+      "tool": {
+        "name": "list_threads",
+        "title": "List T3 Code threads",
+        "description": "Find a T3 Code thread (one coding conversation with an agent) before reading or messaging it. Never guess a threadId. Rows are most recently active first: id, environmentId, environmentName, projectId, projectName, title, branch, worktreePath, provider, model, status (idle, running, needs_input, ...), and lastActivityAt. Archived threads are not listed. Rows come from the catalog T3 Code last published plus threads EVA started since, and may be stale.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "environmentId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Only threads in this environment."
+            },
+            "projectId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Only threads in this project (with its environmentId)."
+            },
+            "q": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "One case-insensitive fragment matched against the row's names and ids. Not a phrase search."
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "Maximum rows, 1 to 100 (T3 Code defaults to 25). Raise it when listing without q."
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
+        }
+      },
+      "effects": "read",
+      "execution": {
+        "mode": "synchronous",
+        "requiresForeground": false,
+        "maxWaitMillis": 10000
+      },
+      "binding": {
+        "kind": "android.content",
+        "authority": "com.t3tools.t3code.assembly.assistant",
+        "uri": {
+          "base": "content://com.t3tools.t3code.assembly.assistant/threads",
+          "query": {
+            "environmentId": {
+              "argument": "environmentId",
+              "type": "string"
+            },
+            "projectId": {
+              "argument": "projectId",
+              "type": "string"
+            },
+            "q": {
+              "argument": "q",
+              "type": "string"
+            },
+            "limit": {
+              "argument": "limit",
+              "type": "integer"
+            }
+          }
+        },
+        "projection": {
+          "id": "string",
+          "environmentId": "string",
+          "environmentName": "string",
+          "projectId": "string",
+          "projectName": "string",
+          "title": "string",
+          "branch": "string",
+          "worktreePath": "string",
+          "provider": "string",
+          "model": "string",
+          "status": "string",
+          "lastActivityAt": "string"
+        },
+        "maxRows": 100,
+        "maxBytes": 16384
+      }
+    },
+    {
+      "tool": {
+        "name": "read_thread_messages",
+        "title": "Read a T3 Code thread",
+        "description": "Read the newest user and assistant messages of one T3 Code thread, most recent first, each clipped to 1,000 characters: id, environmentId, environmentName, threadId, threadTitle, role, createdAt, text. Take threadId and environmentId from the same list_threads row. Needs the environment reachable; T3 Code answers without being opened. A row with role notice explains why messages are unavailable.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "threadId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "The id of a list_threads row."
+            },
+            "environmentId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "environmentId from the same list_threads row."
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "description": "Maximum messages, 1 to 50 (T3 Code defaults to 10)."
+            }
+          },
+          "required": [
+            "threadId"
+          ],
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
+        }
+      },
+      "effects": "read",
+      "execution": {
+        "mode": "synchronous",
+        "requiresForeground": false,
+        "maxWaitMillis": 20000
+      },
+      "binding": {
+        "kind": "android.content",
+        "authority": "com.t3tools.t3code.assembly.assistant",
+        "uri": {
+          "base": "content://com.t3tools.t3code.assembly.assistant/messages",
+          "query": {
+            "threadId": {
+              "argument": "threadId",
+              "type": "string"
+            },
+            "environmentId": {
+              "argument": "environmentId",
+              "type": "string"
+            },
+            "limit": {
+              "argument": "limit",
+              "type": "integer"
+            }
+          }
+        },
+        "projection": {
+          "id": "string",
+          "environmentId": "string",
+          "environmentName": "string",
+          "threadId": "string",
+          "threadTitle": "string",
+          "role": "string",
+          "createdAt": "string",
+          "text": "string"
+        },
+        "maxRows": 50,
+        "maxBytes": 16384
+      }
+    },
+    {
+      "tool": {
+        "name": "list_models",
+        "title": "List T3 Code models",
+        "description": "List the providers and models an environment can start threads with: environmentId, environmentName, provider (pass as provider), providerLabel, status, model (pass as model), modelLabel, isDefault (1 or 0), options (the model's options as id=value choices, such as reasoningEffort=low|medium|high (default medium)), and note. A provider with nothing selectable is one row with an empty model and the reason in note; a row with status notice means the environment could not be reached. Use only these values for provider, model, and modelOptions in start_thread and configure_thread.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "environmentId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Environment ID (environmentId) from a T3 Code catalog row. Pass the ID, never environmentName."
+            },
+            "provider": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Only this provider."
+            },
+            "q": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "One case-insensitive fragment matched against the row's names and ids. Not a phrase search."
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "Maximum rows, 1 to 100 (T3 Code defaults to 25)."
+            }
+          },
+          "required": [
+            "environmentId"
+          ],
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
+        }
+      },
+      "effects": "read",
+      "execution": {
+        "mode": "synchronous",
+        "requiresForeground": false,
+        "maxWaitMillis": 20000
+      },
+      "binding": {
+        "kind": "android.content",
+        "authority": "com.t3tools.t3code.assembly.assistant",
+        "uri": {
+          "base": "content://com.t3tools.t3code.assembly.assistant/models",
+          "query": {
+            "environmentId": {
+              "argument": "environmentId",
+              "type": "string"
+            },
+            "provider": {
+              "argument": "provider",
+              "type": "string"
+            },
+            "q": {
+              "argument": "q",
+              "type": "string"
+            },
+            "limit": {
+              "argument": "limit",
+              "type": "integer"
+            }
+          }
+        },
+        "projection": {
+          "environmentId": "string",
+          "environmentName": "string",
+          "provider": "string",
+          "providerLabel": "string",
+          "status": "string",
+          "model": "string",
+          "modelLabel": "string",
+          "isDefault": "integer",
+          "options": "string",
+          "note": "string"
+        },
+        "maxRows": 100,
+        "maxBytes": 16384
+      }
+    },
+    {
+      "tool": {
+        "name": "list_pending_requests",
+        "title": "List T3 Code approvals and questions",
+        "description": "List what T3 Code threads are waiting on the user for, oldest first: approvals (kind approval) and questions (kind question). Columns: requestId, environmentId, environmentName, threadId, threadTitle, kind, requestKind, createdAt, detail (what the agent wants), decisions (for an approval: the decision values respond_to_approval accepts, each with its label), questions (for a question: each question's id, text, and options), answerable (1 or 0), dismissible (1 or 0). Without environmentId it covers every enabled environment; a row with kind notice names an environment it could not reach. Answer an approval with respond_to_approval and a question with answer_question, passing requestId, threadId, and environmentId from the same row.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "environmentId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Only this environment. Pass the ID, never environmentName."
+            },
+            "threadId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Only this thread: the id of a list_threads row."
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "Maximum rows, 1 to 100 (T3 Code defaults to 25)."
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
+        }
+      },
+      "effects": "read",
+      "execution": {
+        "mode": "synchronous",
+        "requiresForeground": false,
+        "maxWaitMillis": 20000
+      },
+      "binding": {
+        "kind": "android.content",
+        "authority": "com.t3tools.t3code.assembly.assistant",
+        "uri": {
+          "base": "content://com.t3tools.t3code.assembly.assistant/requests",
+          "query": {
+            "environmentId": {
+              "argument": "environmentId",
+              "type": "string"
+            },
+            "threadId": {
+              "argument": "threadId",
+              "type": "string"
+            },
+            "limit": {
+              "argument": "limit",
+              "type": "integer"
+            }
+          }
+        },
+        "projection": {
+          "requestId": "string",
+          "environmentId": "string",
+          "environmentName": "string",
+          "threadId": "string",
+          "threadTitle": "string",
+          "kind": "string",
+          "requestKind": "string",
+          "createdAt": "string",
+          "detail": "string",
+          "decisions": "string",
+          "questions": "string",
+          "answerable": "integer",
+          "dismissible": "integer"
+        },
+        "maxRows": 100,
+        "maxBytes": 16384
+      }
+    },
+    {
+      "tool": {
+        "name": "read_thread_status",
+        "title": "Read a T3 Code thread's status",
+        "description": "Read one T3 Code thread's live state: status (needs_input, running, waiting, idle, and similar), activeRunStatus, queuedCount, pendingApprovals, pendingQuestions, branch, worktreePath, provider, model, modelOptions, runtimeMode, interactionMode, pinned, archived, settled (1 or 0), snoozedUntil (empty unless snoozed), lastActivityAt, lastAssistantMessage (its latest reply, clipped), and note. Fresher than list_threads, which can lag until T3 Code opens. A row with status notice explains why the thread could not be read.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "threadId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "The id of a list_threads row."
+            },
+            "environmentId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "environmentId from the same list_threads row. Pass the ID, never environmentName."
+            }
+          },
+          "required": [
+            "threadId"
+          ],
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
+        }
+      },
+      "effects": "read",
+      "execution": {
+        "mode": "synchronous",
+        "requiresForeground": false,
+        "maxWaitMillis": 20000
+      },
+      "binding": {
+        "kind": "android.content",
+        "authority": "com.t3tools.t3code.assembly.assistant",
+        "uri": {
+          "base": "content://com.t3tools.t3code.assembly.assistant/thread_status",
+          "query": {
+            "threadId": {
+              "argument": "threadId",
+              "type": "string"
+            },
+            "environmentId": {
+              "argument": "environmentId",
+              "type": "string"
+            }
+          }
+        },
+        "projection": {
+          "id": "string",
+          "environmentId": "string",
+          "environmentName": "string",
+          "projectId": "string",
+          "projectName": "string",
+          "title": "string",
+          "status": "string",
+          "activeRunStatus": "string",
+          "queuedCount": "integer",
+          "pendingApprovals": "integer",
+          "pendingQuestions": "integer",
+          "branch": "string",
+          "worktreePath": "string",
+          "provider": "string",
+          "model": "string",
+          "modelOptions": "string",
+          "runtimeMode": "string",
+          "interactionMode": "string",
+          "pinned": "integer",
+          "archived": "integer",
+          "settled": "integer",
+          "snoozedUntil": "string",
+          "lastActivityAt": "string",
+          "lastAssistantMessage": "string",
+          "note": "string"
+        },
+        "maxRows": 1,
+        "maxBytes": 16384
+      }
+    },
+    {
+      "tool": {
+        "name": "list_queued_messages",
+        "title": "List a T3 Code thread's queued messages",
+        "description": "List the messages waiting to send in one T3 Code thread, in send order: runId, environmentId, environmentName, threadId, threadTitle, position, text, held (1 when the queue waits for the user), canSteer (1 when manage_queued_message can steer it into the running turn). Pass runId to manage_queued_message. A row with runId notice explains why the queue could not be read.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "threadId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "The id of a list_threads row."
+            },
+            "environmentId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "environmentId from the same list_threads row. Pass the ID, never environmentName."
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "Maximum rows, 1 to 100 (T3 Code defaults to 25)."
+            }
+          },
+          "required": [
+            "threadId"
+          ],
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false
+        }
+      },
+      "effects": "read",
+      "execution": {
+        "mode": "synchronous",
+        "requiresForeground": false,
+        "maxWaitMillis": 20000
+      },
+      "binding": {
+        "kind": "android.content",
+        "authority": "com.t3tools.t3code.assembly.assistant",
+        "uri": {
+          "base": "content://com.t3tools.t3code.assembly.assistant/queue",
+          "query": {
+            "threadId": {
+              "argument": "threadId",
+              "type": "string"
+            },
+            "environmentId": {
+              "argument": "environmentId",
+              "type": "string"
+            },
+            "limit": {
+              "argument": "limit",
+              "type": "integer"
+            }
+          }
+        },
+        "projection": {
+          "runId": "string",
+          "environmentId": "string",
+          "environmentName": "string",
+          "threadId": "string",
+          "threadTitle": "string",
+          "position": "integer",
+          "text": "string",
+          "held": "integer",
+          "canSteer": "integer"
+        },
+        "maxRows": 100,
+        "maxBytes": 16384
+      }
+    },
+    {
+      "tool": {
+        "name": "new_thread",
+        "title": "Draft a new T3 Code thread",
+        "description": "Foreground fallback for start_thread: open T3 Code's new-thread screen with the prompt drafted for the user to review and send. repo picks the project by its GitHub owner/name; provider and model preselect the model.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "prompt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8000,
+              "description": "Prompt text."
+            },
+            "repo": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "GitHub repository as owner/name, from list_projects' repository column."
+            },
+            "provider": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Provider from list_models."
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Model from list_models, with provider."
+            }
+          },
+          "required": [
+            "prompt"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "effects": "external_handoff",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true
+      },
+      "receipts": {
+        "success": "T3 Code opened a new thread with the prompt drafted; the user still has to send it.",
+        "handlerMissing": "T3 Code Assembly is not installed or cannot open t3code-assembly:// links."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.intent.action.VIEW",
+        "package": "com.t3tools.t3code.assembly",
+        "uri": {
+          "base": "t3code-assembly://new",
+          "query": {
+            "prompt": {
+              "argument": "prompt",
+              "type": "string"
+            },
+            "repo": {
+              "argument": "repo",
+              "type": "string"
+            },
+            "provider": {
+              "argument": "provider",
+              "type": "string"
+            },
+            "model": {
+              "argument": "model",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "open_thread",
+        "title": "Open a T3 Code thread",
+        "description": "Open a thread in T3 Code. Take threadId and environmentId from the same list_threads row.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "environmentId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "environmentId from the list_threads row."
+            },
+            "threadId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "The id of a list_threads row."
+            }
+          },
+          "required": [
+            "environmentId",
+            "threadId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "effects": "external_handoff",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true
+      },
+      "receipts": {
+        "success": "T3 Code opened the thread.",
+        "handlerMissing": "T3 Code Assembly is not installed or cannot open t3code-assembly:// links."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.intent.action.VIEW",
+        "package": "com.t3tools.t3code.assembly",
+        "uri": {
+          "base": "t3code-assembly://threads/{environmentId}/{threadId}",
+          "path": {
+            "environmentId": {
+              "argument": "environmentId",
+              "type": "string"
+            },
+            "threadId": {
+              "argument": "threadId",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "draft_thread_prompt",
+        "title": "Draft a follow-up in a T3 Code thread",
+        "description": "Open a T3 Code thread with the prompt placed in its composer, unsent, for the user to review.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "environmentId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "environmentId from the list_threads row."
+            },
+            "threadId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "The id of a list_threads row."
+            },
+            "prompt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8000,
+              "description": "Prompt text."
+            }
+          },
+          "required": [
+            "environmentId",
+            "threadId",
+            "prompt"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "effects": "external_handoff",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true
+      },
+      "receipts": {
+        "success": "T3 Code opened the thread with the prompt drafted; it was not sent.",
+        "handlerMissing": "T3 Code Assembly is not installed or cannot open t3code-assembly:// links."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.intent.action.VIEW",
+        "package": "com.t3tools.t3code.assembly",
+        "uri": {
+          "base": "t3code-assembly://threads/{environmentId}/{threadId}",
+          "query": {
+            "prompt": {
+              "argument": "prompt",
+              "type": "string"
+            }
+          },
+          "path": {
+            "environmentId": {
+              "argument": "environmentId",
+              "type": "string"
+            },
+            "threadId": {
+              "argument": "threadId",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "tool": {
+        "name": "send_thread_prompt",
+        "title": "Send a follow-up to a T3 Code thread",
+        "description": "Foreground fallback for send_message: open a T3 Code thread and ask T3 Code to send the prompt right away. T3 Code only sends when its setting “Send prompts from links” is on (Settings, Thread behavior); otherwise it drafts the prompt and tells the user why. EVA cannot tell which happened.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "environmentId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "environmentId from the list_threads row."
+            },
+            "threadId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "The id of a list_threads row."
+            },
+            "prompt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8000,
+              "description": "Prompt text."
+            }
+          },
+          "required": [
+            "environmentId",
+            "threadId",
+            "prompt"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "effects": "write",
+      "execution": {
+        "mode": "handoff",
+        "requiresForeground": true
+      },
+      "receipts": {
+        "success": "T3 Code opened the thread and was asked to send the prompt. Delivery depends on its “Send prompts from links” setting and the environment being online; EVA does not verify it.",
+        "handlerMissing": "T3 Code Assembly is not installed or cannot open t3code-assembly:// links."
+      },
+      "binding": {
+        "kind": "android.intent",
+        "action": "android.intent.action.VIEW",
+        "package": "com.t3tools.t3code.assembly",
+        "uri": {
+          "base": "t3code-assembly://threads/{environmentId}/{threadId}",
+          "query": {
+            "prompt": {
+              "argument": "prompt",
+              "type": "string"
+            },
+            "send": {
+              "value": true,
+              "type": "boolean"
+            }
+          },
+          "path": {
+            "environmentId": {
+              "argument": "environmentId",
+              "type": "string"
+            },
+            "threadId": {
+              "argument": "threadId",
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

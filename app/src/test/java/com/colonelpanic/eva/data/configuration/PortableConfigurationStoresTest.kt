@@ -170,7 +170,13 @@ class PortableConfigurationStoresTest {
         val waze = DefaultPackages.all.single { it.id == "android.waze" }
         var present = false
         var installed = emptySet<String>()
-        val settings = PackageSettings(context, readAsset = readAsset, providerPresent = { present }, appInstalled = { it in installed })
+        val settings =
+            PackageSettings(
+                context,
+                readAsset = readAsset,
+                providerPresent = { present && it == paseo.requiresProvider },
+                appInstalled = { it in installed },
+            )
         assertTrue(settings.adoptDefaults().none { it.definition.id == paseo.id || it.definition.id == waze.id })
         assertFalse(paseo.id in settings.appliedDefaults())
         assertFalse(waze.id in settings.appliedDefaults())

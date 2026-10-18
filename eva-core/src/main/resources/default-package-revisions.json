@@ -6,6 +6,7 @@
   "packages/openstreetmap-places.json": "2b7e9b52d325feba747ae0805c4dff20a1d9eadc",
   "packages/paseo.json": "230f60921872a665b0e1859ac797b36821a6038f",
   "packages/settings.json": "2b7e9b52d325feba747ae0805c4dff20a1d9eadc",
+  "packages/t3code.json": "db736bb9d00946cf41e9ca80e9fc7b9212ea07b2",
   "packages/waze.json": "2b7e9b52d325feba747ae0805c4dff20a1d9eadc",
   "packages/web.json": "2b7e9b52d325feba747ae0805c4dff20a1d9eadc"
 }

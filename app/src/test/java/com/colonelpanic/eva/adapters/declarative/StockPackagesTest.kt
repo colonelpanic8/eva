@@ -227,4 +227,23 @@ class StockPackagesTest {
             assertEquals("com.spotify.music", notifications.getStringExtra("android.provider.extra.APP_PACKAGE"))
             assertNull(notifications.data)
         }
+
+    @Test
+    fun `T3 Code links address threads by path and only the send action asks to send`() =
+        runTest {
+            val launched = Launched()
+            val (_, execute) = adopt("android.t3code", launched)
+            val thread = mapOf("environmentId" to "env/1", "threadId" to "th 1")
+            assertEquals(InvocationStatus.HANDED_OFF, execute("open_thread", thread))
+            assertEquals(InvocationStatus.HANDED_OFF, execute("draft_thread_prompt", thread + ("prompt" to "fix & test")))
+            assertEquals(InvocationStatus.HANDED_OFF, execute("send_thread_prompt", thread + ("prompt" to "ship it")))
+            assertEquals(InvocationStatus.NOT_EXECUTED, execute("open_thread", mapOf("threadId" to "th")))
+            val (open, draft, send) = launched.intents
+            assertEquals(3, launched.intents.size)
+            assertEquals("com.t3tools.t3code.assembly", open.`package`)
+            assertEquals("t3code-assembly://threads/env%2F1/th%201", open.dataString)
+            assertEquals("fix & test", draft.data!!.getQueryParameter("prompt"))
+            assertNull(draft.data!!.getQueryParameter("send"))
+            assertEquals("true", send.data!!.getQueryParameter("send"))
+        }
 }

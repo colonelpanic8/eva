@@ -11,6 +11,7 @@ object DefaultProviders {
             "com.colonelpanic.mova" to "905afc8729daa77fff81b20d99b169f919879379a8e7dbe23546e350ed46ad22",
             "sh.paseo.assembly" to "8d229a78b0d7c22086e743c9edc3678b5ed7e9c5388aeb18013729568139b8ee",
             "sh.paseo" to "421698bdca5bb9168c970e24539781509b5aa23fab8ab406a15b3f9c5f04c647",
+            "com.t3tools.t3code.assembly" to "fe0639adc1b8de7665c2d514860532222a660053fac2452aec68b2b37aae0a9b",
             "com.oceanwing.soundcore" to "6286a277fe2f2b0d8b0d5121bed231d150f1baffa6bfa4fe763adc95c6fc0640",
         )
 
