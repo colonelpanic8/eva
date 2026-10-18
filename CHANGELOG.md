@@ -4,6 +4,14 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.70.1] - 2026-10-18
+
+### Fixed
+
+- Typing a request no longer requires **Connect for text** first. Send was disabled
+  until a text session was open; without one, a typed request now runs as a background
+  task in the shown conversation, as dictation does.
+
 ## [0.70.0] - 2026-10-16
 
 ### Added
