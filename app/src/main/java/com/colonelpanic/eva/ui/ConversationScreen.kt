@@ -126,7 +126,11 @@ internal fun ConversationScreen(
     val whispering = whisperTarget != null && draftQuestionId == null
     val canSend =
         draft.isNotBlank() && !state.voiceOnAnotherThread && !storageFailed &&
-            (state.acceptsTextInput || draftQuestionId != null || whispering)
+            (state.acceptsTextInput || draftQuestionId != null || whispering) &&
+            (
+                hasCredential || state.providerStatus != ProviderStatus.DISCONNECTED ||
+                    state.currentQuestion != null || state.deviceTaskActive
+            )
     val listState = rememberLazyListState()
     val groups = remember(state.entries) { groups(state.entries) }
     val inSession = state.voiceMode && state.providerStatus != ProviderStatus.DISCONNECTED

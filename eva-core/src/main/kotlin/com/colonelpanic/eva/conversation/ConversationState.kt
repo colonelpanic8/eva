@@ -39,7 +39,7 @@ data class ConversationState(
         !isLoading && errorMessage == null && !voiceOnAnotherThread &&
             (
                 currentQuestion != null || deviceTaskActive ||
-                    (providerStatus == ProviderStatus.CONNECTED && !voiceMode)
+                    (providerStatus != ProviderStatus.CONNECTING && !voiceMode)
             )
 }
 

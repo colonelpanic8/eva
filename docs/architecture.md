@@ -107,6 +107,10 @@ a voice session and while whispering to a call agent. Recognizer cancellation is
 silent; missing recognition and recognizer errors are shown with the reason. The
 recognizer app records audio, so dictation needs no EVA microphone grant. JVM checks
 cover the shared submission path; phone dictation is not yet device-verified.
+Typed input takes the same path when no text or voice session is attached: Send
+starts a background task on the shown conversation (or steers its running one), so
+typing never requires **Connect for text** first. Send is disabled only when no text
+credential is configured, and the connect area says where to add one.
 
 Typed input while the shown thread's foreground request runs steers that request
 (`ConversationSession.steer`). The Responses session adds it as user input to the

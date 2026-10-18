@@ -212,6 +212,26 @@ class ThreadControllerTest {
         }
 
     @Test
+    fun `typed input without a session runs as a background task on the shown thread`() =
+        runTest {
+            val background = FakeProvider()
+            val controller = controller(FakeProvider(), background = background)
+            runCurrent()
+            controller.newThread()
+            runCurrent()
+            val shown = checkNotNull(controller.state.value.threadId)
+            assertTrue(controller.state.value.acceptsTextInput)
+            controller.submit("Map the park")
+            runCurrent()
+            val turn = store.turns(shown).single()
+            assertEquals(listOf(turn.id), background.responseRequests)
+            assertEquals(shown, controller.state.value.threadId)
+            assertEquals(ProviderStatus.DISCONNECTED, controller.state.value.providerStatus)
+            controller.stopTask(turn.id)
+            runCurrent()
+        }
+
+    @Test
     fun `failed attachment cannot detach a background task still starting on the same thread`() =
         runTest {
             val gate = CompletableDeferred<Unit>()

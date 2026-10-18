@@ -2334,6 +2334,10 @@ class ThreadController(
         }
         if (text.isNotBlank() && reviseDeviceTask(text)) return
         val current = state.value
+        if (session == null && !current.voiceMode && current.providerStatus == ProviderStatus.DISCONNECTED) {
+            submitWithoutSession(text)
+            return
+        }
         val opened = session ?: return
         val threadId = attachedThreadId ?: return
         if (current.isLoading || current.errorMessage != null || threadId != shownThreadId ||
@@ -2349,6 +2353,24 @@ class ThreadController(
             return
         }
         send(text, opened, threadId)
+    }
+
+    /** With no live session, typed input runs as a background task on the shown thread, as dictation does. */
+    private fun submitWithoutSession(text: String) {
+        val current = state.value
+        if (text.isBlank() || current.isLoading || current.errorMessage != null) return
+        mutableState.update { it.copy(providerMessage = null) }
+        scope.launch {
+            try {
+                submitBackground(text, shownOrNewThread())
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                mutableState.update {
+                    it.copy(providerMessage = "Could not start this request: ${error.message ?: error.javaClass.simpleName}")
+                }
+            }
+        }
     }
 
     data class BackgroundSubmission(

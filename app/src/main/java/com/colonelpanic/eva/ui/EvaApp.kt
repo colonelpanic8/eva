@@ -278,7 +278,7 @@ internal fun composerHint(state: ConversationState): String {
         }
 
         state.providerStatus != ProviderStatus.CONNECTED -> {
-            "Connect to type, or tap the microphone to dictate a task."
+            "Type or dictate a task. EVA works on it in the background."
         }
 
         else -> {
