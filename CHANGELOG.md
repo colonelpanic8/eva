@@ -4,6 +4,13 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.70.3] - 2026-10-18
+
+### Fixed
+
+- Opening the keyboard no longer pushes the message field far above it or scrolls the
+  top bar off screen.
+
 ## [0.70.2] - 2026-10-18
 
 ### Fixed

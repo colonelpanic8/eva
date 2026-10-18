@@ -1,0 +1,1 @@
+* Fixed: Opening the keyboard no longer pushes the message field far above it or scrolls the top bar off screen.
