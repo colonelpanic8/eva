@@ -1,0 +1,2 @@
+* Added: T3 Code Assembly's own EVA extension starts enabled with every action, pinned to its production signer, so EVA can start, steer, stop, organize, rename, configure, and fork T3 Code threads, and answer their approvals and questions, without opening T3 Code, even locked.
+* ...see CHANGELOG.md for the rest.

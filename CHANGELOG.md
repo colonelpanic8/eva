@@ -4,6 +4,8 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.71.0] - 2026-10-19
+
 ### Added
 
 - T3 Code Assembly's own EVA extension starts enabled with every action, pinned to its
