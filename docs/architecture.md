@@ -889,19 +889,24 @@ not as EVA's calling UID, because the platform lets only the connecting UID disc
 a leaked connection blocks every later one.
 
 The text-first worker executes one primitive per model turn, asks for missing or
-ambiguous choices, reports scroll progress, restricts reversals, detects repeated
-or unchanged actions and repeated refusals, and bounds steps, active time,
-screenshots and retained context. Append context preserves a cacheable prefix
+ambiguous choices and reports scroll progress. It runs until it finishes, is stopped,
+or encounters an execution/transport failure. There are no step, elapsed-time,
+inference-duration, screenshot, refusal-count, unchanged-screen, repeated-action or
+scroll-reversal cutoffs. Invalid calls and refused actions are returned to the model
+so it can recover. Cancellation and revision still interrupt pending work; uncertain
+outcomes remain uncertain. Retained context is bounded independently of task length.
+Append context preserves a cacheable prefix
 until its screen limit or a revision rebuilds it from the goal, corrections and
 recent step summaries and the last correlated native call/result exchange. Model
 output items are retained for provider reasoning continuity. Scroll previews quote
 up to three 30-codepoint labels; tables retain their 200-element/80-codepoint
-limits. Screenshots are limited model attachments and are not
+limits. Screenshots are model attachments and are not
 journaled. There is no approval, risk classification, evidence gate or injection
 subsystem. A future vision-first agent can implement `TaskAgent` independently.
 
 `eva.device.task` is one native capability admitted and journaled by
-`CapabilityDispatcher`. It counts once against the outer turn's tool budget.
+`CapabilityDispatcher`. It has one journaled invocation regardless of how many
+device steps it takes.
 Primitives execute inside that admitted task under the device lease, rather than
 being independently dispatched. The ordinary failed/unknown-mutation barrier
 remains in `ThreadController`; it does not block recovery attempts inside the
@@ -1545,7 +1550,7 @@ into the uplink, saturating rather than wrapping; with the agent on the floor it
 ### Twilio provider
 
 `TwilioCallProvider` is the engine with `TwilioTransport`, an in-app transport over the
-Twilio Voice Android SDK (6.10.4): a VoIP call from EVA to Twilio, which dials the phone
+Twilio Voice Android SDK (6.10.5): a VoIP call from EVA to Twilio, which dials the phone
 network. It needs no Shizuku, no telephony audio interception and no Telecom call, so it works
 on stock Android and on an emulator. `TwilioAudioDevice` replaces the SDK's microphone and
 speaker with EVA's `SdkAudioPort`; the SDK's own echo cancellation, gain control and noise

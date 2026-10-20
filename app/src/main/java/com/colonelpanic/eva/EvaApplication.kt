@@ -544,13 +544,8 @@ class EvaApplication :
                 ),
             com.colonelpanic.eva.devicecontrol.worker
                 .WorkerSettings(
-                    options.maxSteps,
-                    options.maxMillis,
-                    options.modelTimeoutMillis,
                     options.maxScreens,
                     options.historyLines,
-                    options.maxRefusals,
-                    options.maxScreenshots,
                     options.launchAliases,
                 ),
             secrets = secrets,

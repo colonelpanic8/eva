@@ -14,6 +14,28 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [32], application = Application::class, manifest = Config.NONE)
 class CapabilitySettingsTest {
+    @Test fun obsoleteSavedDeviceTaskLimitsDoNotBreakConfigurationRoundTrip() {
+        val context = RuntimeEnvironment.getApplication()
+        val prefs = context.getSharedPreferences("eva.settings", 0)
+        prefs
+            .edit()
+            .putString(
+                "capabilities.deviceTask",
+                """{"model":"saved-worker","maxSteps":17,"maxMillis":90000,"modelTimeoutMillis":120000,"maxRefusals":4,"maxScreenshots":3}""",
+            ).commit()
+        val settings = CapabilitySettings(context)
+        val expected =
+            com.colonelpanic.eva.data.configuration
+                .DeviceTaskConfiguration(model = "saved-worker")
+        assertEquals(expected, settings.deviceTask)
+        settings.saveDeviceTask(settings.deviceTask)
+        assertEquals(expected, CapabilitySettings(context).deviceTask)
+        val saved = prefs.getString("capabilities.deviceTask", "")!!
+        listOf("maxSteps", "maxMillis", "modelTimeoutMillis", "maxRefusals", "maxScreenshots").forEach {
+            assertFalse(saved.contains(it))
+        }
+    }
+
     @Test fun unsupportedSavedResearchEffortPreservesChoicesAndWarnsUntilSaved() {
         val context = RuntimeEnvironment.getApplication()
         context

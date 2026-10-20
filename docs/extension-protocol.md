@@ -1253,8 +1253,8 @@ echo, a sideband connection to the call; HTTP success alone does not mark a sess
 ready. A sideband that cannot be reached continues the call with a visible notice. See [capability execution](architecture.md#capability-execution) for evidence
 and verification boundaries.
 
-**Bounded multi-action requests.** `ThreadController` admits up to 32 calls per
-turn, including at most 24 reads, and executes them sequentially. Reads and
+**Multi-action requests.** `ThreadController` executes calls sequentially without a
+per-turn call or read quota. Reads and
 mutations may follow earlier tool results without another user message. This
 applies to native and imported tools, including background continuation. Existing
 grants and dispatcher authorization still apply separately to every call. Unknown

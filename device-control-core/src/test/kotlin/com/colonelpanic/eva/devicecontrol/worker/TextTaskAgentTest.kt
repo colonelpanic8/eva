@@ -422,31 +422,101 @@ class TextTaskAgentTest {
             assertTrue(history, history.contains("history_omitted {goal} {revisions} {result} 1"))
         }
 
-    @Test fun repeatedActionStopsBeforeThirdDispatchAndContextAppends() =
+    @Test fun longTaskCanRepeatActionsOnAnUnchangedScreenUntilFinished() =
         runTest {
-            val requests = mutableListOf<WorkerRequest>()
             val phone = phone()
+            var calls = 0
             val agent =
                 TextTaskAgent(
                     phone,
                     WorkerModel {
-                        requests += it
-                        reply("home")
+                        kotlinx.coroutines.delay(130_000)
+                        if (calls++ < 250) reply("home") else finish()
                     },
                     wording,
+                    clock = { testScheduler.currentTime },
                 )
-            val result = agent.run("goal") {}
-            assertEquals("loop_detected", result.summary)
-            assertEquals(2, phone.actions.size)
-            assertEquals(requests[0].messages, requests[1].messages.take(requests[0].messages.size))
+            assertEquals(TaskStatus.COMPLETED, agent.run("goal") {}.status)
+            assertEquals(250, phone.actions.size)
+            assertEquals(251, calls)
+        }
+
+    @Test fun screenshotsAndScrollReversalsHaveNoTaskQuota() =
+        runTest {
+            val phone =
+                phone().apply {
+                    onPerform = { action ->
+                        ActionResult(
+                            action.actionId,
+                            action.kind,
+                            true,
+                            "now",
+                            "now",
+                            screen,
+                            executionStatus = ExecutionStatus.EXECUTED,
+                            details =
+                                if (action is com.colonelpanic.eva.devicecontrol.proto.Screenshot) {
+                                    com.colonelpanic.eva.devicecontrol.proto
+                                        .ScreenshotDetails("o1", 100, 200, "image")
+                                } else {
+                                    null
+                                },
+                        )
+                    }
+                }
+            val calls = ArrayDeque<WorkerReply>()
+            repeat(12) {
+                calls.add(reply("screenshot"))
+                calls.add(reply("scroll", """{"direction":"down","element":null}"""))
+                calls.add(reply("scroll", """{"direction":"up","element":null}"""))
+            }
+            calls.add(finish())
+            val agent = TextTaskAgent(phone, WorkerModel { calls.removeFirst() }, wording)
+            assertEquals(TaskStatus.COMPLETED, agent.run("goal") {}.status)
+            assertEquals(36, phone.actions.size)
+        }
+
+    @Test fun workerCanRecoverAfterRepeatedMissingOrInvalidCallsAndRefusedActions() =
+        runTest {
+            val phone =
+                phone().apply {
+                    onPerform = { action ->
+                        ActionResult(
+                            action.actionId,
+                            action.kind,
+                            false,
+                            "now",
+                            "now",
+                            screen,
+                            executionStatus = ExecutionStatus.NOT_DISPATCHED,
+                        )
+                    }
+                }
+            val calls = ArrayDeque<WorkerReply>()
+            repeat(12) { calls.add(WorkerReply(emptyList())) }
+            repeat(12) { calls.add(reply("invalid")) }
+            repeat(12) { calls.add(reply("home")) }
+            calls.add(finish())
+            val agent = TextTaskAgent(phone, WorkerModel { calls.removeFirst() }, wording)
+            assertEquals(TaskStatus.COMPLETED, agent.run("goal") {}.status)
+            assertEquals(12, phone.actions.size)
+            assertEquals(0, agent.effects)
         }
 
     @Test fun multipleCallsNeverDispatchMultipleActions() =
         runTest {
             val phone = phone()
-            val agent = TextTaskAgent(phone, WorkerModel { WorkerReply(reply("home").calls + reply("back").calls) }, wording)
-            assertEquals(TaskStatus.FAILED, agent.run("goal") {}.status)
-            assertEquals(2, phone.actions.size)
+            var calls = 0
+            val agent =
+                TextTaskAgent(
+                    phone,
+                    WorkerModel {
+                        if (calls++ < 4) WorkerReply(reply("home").calls + reply("back").calls) else finish()
+                    },
+                    wording,
+                )
+            assertEquals(TaskStatus.COMPLETED, agent.run("goal") {}.status)
+            assertEquals(4, phone.actions.size)
             assertTrue(phone.actions.all { it is com.colonelpanic.eva.devicecontrol.proto.Home })
         }
 

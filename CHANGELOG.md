@@ -4,6 +4,16 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.71.1] - 2026-10-20
+
+### Fixed
+
+- Device tasks no longer stop at 30 steps, five minutes, or two minutes of model inference. Removed screenshot quotas and automatic cutoffs for repeated actions, unchanged screens, refusals, missing tool calls, and scroll reversals. Tasks can continue until completion or cancellation, and old configuration files automatically drop the obsolete limits.
+
+### Changed
+
+- Updated Gradle to 9.8.2, Kotlin serialization to 1.12.0, and Twilio Voice Android to 6.10.5 to satisfy release lint checks.
+
 ## [0.71.0] - 2026-10-19
 
 ### Added

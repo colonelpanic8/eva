@@ -37,9 +37,10 @@ class CapabilitySettings(
     private val mutableDeviceTask =
         MutableStateFlow(
             runCatching {
-                kotlinx.serialization.json.Json.decodeFromString<com.colonelpanic.eva.data.configuration.DeviceTaskConfiguration>(
-                    prefs.getString("capabilities.deviceTask", "{}")!!,
-                )
+                kotlinx.serialization.json.Json
+                    .decodeFromString<com.colonelpanic.eva.data.configuration.DeviceTaskConfiguration>(
+                        prefs.getString("capabilities.deviceTask", "{}")!!,
+                    ).withoutLegacyLimits()
             }.getOrDefault(
                 com.colonelpanic.eva.data.configuration
                     .DeviceTaskConfiguration(),
@@ -49,17 +50,18 @@ class CapabilitySettings(
     val deviceTask get() = mutableDeviceTask.value
 
     fun saveDeviceTask(value: com.colonelpanic.eva.data.configuration.DeviceTaskConfiguration) {
+        val current = value.withoutLegacyLimits()
         commit {
             putString(
                 "capabilities.deviceTask",
                 kotlinx.serialization.json.Json.encodeToString(
                     com.colonelpanic.eva.data.configuration.DeviceTaskConfiguration
                         .serializer(),
-                    value,
+                    current,
                 ),
             )
         }
-        mutableDeviceTask.value = value
+        mutableDeviceTask.value = current
         onChanged()
     }
 

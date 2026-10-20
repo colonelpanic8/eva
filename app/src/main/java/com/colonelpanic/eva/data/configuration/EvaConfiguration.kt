@@ -448,7 +448,7 @@ object EvaConfigurationCodec {
         )
 
     fun encode(document: EvaConfigurationDocument): String =
-        yaml.encodeToString(EvaConfigurationDocument.serializer(), canonical(document)).trimEnd() + "\n"
+        yaml.encodeToString(EvaConfigurationDocument.serializer(), canonical(document.withoutDeviceTaskLimits())).trimEnd() + "\n"
 
     fun decode(text: String): EvaConfigurationDocument {
         require(text.toByteArray(Charsets.UTF_8).size <= MAX_FILE_BYTES) { "Configuration file is too large." }
@@ -467,7 +467,17 @@ object EvaConfigurationCodec {
         }
         document.include.forEach(::validateInclude)
         require(document.include.distinct().size == document.include.size) { "An include is listed more than once." }
-        return document.withCallModeInPrompt()
+        return document.withCallModeInPrompt().withoutDeviceTaskLimits()
+    }
+
+    private fun EvaConfigurationDocument.withoutDeviceTaskLimits(): EvaConfigurationDocument {
+        val task = capabilities?.deviceTask ?: return this
+        return copy(
+            capabilities =
+                capabilities.copy(
+                    deviceTask = task.withoutLegacyLimits(),
+                ),
+        )
     }
 
     /**
@@ -1387,13 +1397,14 @@ data class DeviceTaskConfiguration(
     val credential: String = "device/portal",
     val model: String = "gpt-6-sol",
     val reasoningEffort: String = "low",
-    val maxSteps: Int = 30,
-    val maxMillis: Long = 300_000,
-    val modelTimeoutMillis: Long = 120_000,
+    /** Read only: obsolete execution caps are discarded when configuration is decoded. */
+    @SerialName("maxSteps") val legacyMaxSteps: Int? = null,
+    @SerialName("maxMillis") val legacyMaxMillis: Long? = null,
+    @SerialName("modelTimeoutMillis") val legacyModelTimeoutMillis: Long? = null,
     val maxScreens: Int = 6,
     val historyLines: Int = 30,
-    val maxRefusals: Int = 4,
-    val maxScreenshots: Int = 3,
+    @SerialName("maxRefusals") val legacyMaxRefusals: Int? = null,
+    @SerialName("maxScreenshots") val legacyMaxScreenshots: Int? = null,
     val launchAliases: Map<String, List<String>> = com.colonelpanic.eva.devicecontrol.worker.DEFAULT_LAUNCH_ALIASES,
 ) {
     init {
@@ -1402,18 +1413,21 @@ data class DeviceTaskConfiguration(
         }
         require(portalPort in 1..65535 && credential == "device/portal")
         require(model.isNotBlank() && model.length <= 100 && reasoningEffort in setOf("low", "medium", "high"))
-        require(maxSteps in 1..200 && maxMillis in 1..600_000)
         com.colonelpanic.eva.devicecontrol.worker.WorkerSettings(
-            maxSteps,
-            maxMillis,
-            modelTimeoutMillis,
             maxScreens,
             historyLines,
-            maxRefusals,
-            maxScreenshots,
             launchAliases,
         )
     }
+
+    fun withoutLegacyLimits() =
+        copy(
+            legacyMaxSteps = null,
+            legacyMaxMillis = null,
+            legacyModelTimeoutMillis = null,
+            legacyMaxRefusals = null,
+            legacyMaxScreenshots = null,
+        )
 
     companion object {
         val BACKENDS = listOf("portal", "shizuku")

@@ -14,6 +14,45 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConfigurationCompositionTest {
+    @Test
+    fun `obsolete device task limits are discarded without losing other settings`() {
+        val legacy =
+            """
+            format: eva
+            version: 3
+            include: [base.yaml]
+            capabilities:
+              deviceTask:
+                backends: [shizuku]
+                model: custom-worker
+                maxSteps: 17
+                maxMillis: 90000
+                modelTimeoutMillis: 120000
+                maxRefusals: 4
+                maxScreenshots: 3
+                historyLines: 42
+            """.trimIndent()
+        val document = EvaConfigurationCodec.decode(legacy)
+        val expected = DeviceTaskConfiguration(backends = listOf("shizuku"), model = "custom-worker", historyLines = 42)
+        assertEquals(expected, document.capabilities!!.deviceTask)
+        val encoded = EvaConfigurationCodec.encode(document)
+        listOf("maxSteps", "maxMillis", "modelTimeoutMillis", "maxRefusals", "maxScreenshots").forEach {
+            assertFalse(encoded.contains(it))
+        }
+        val resolved =
+            EvaConfigurationCodec
+                .resolve(
+                    reader(
+                        mapOf(
+                            "eva.yaml" to encoded,
+                            "base.yaml" to EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(fullConfiguration())),
+                        ),
+                    ),
+                ).configuration
+        assertEquals(expected, resolved.capabilities.deviceTask)
+        assertEquals(document, EvaConfigurationCodec.decode(encoded))
+    }
+
     @Test fun `Grok settings compose and round trip without changing OpenAI choices`() {
         val original = fullConfiguration()
         val base = EvaConfigurationCodec.complete(original)
@@ -1011,9 +1050,7 @@ class ConfigurationCompositionTest {
                             backends = listOf("shizuku"),
                             portalPort = 8123,
                             model = "worker-test",
-                            maxSteps = 17,
                             launchAliases = mapOf("org.example.app" to listOf("org.example.search")),
-                            maxMillis = 90_000,
                         ),
                 ),
             messaging = EvaConfiguration.Messaging(enabled = true, replies = listOf(MESSAGING_IDENTITY)),

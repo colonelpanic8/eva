@@ -4,7 +4,7 @@
 
 Run project commands through `direnv exec . <command>` or
 `nix develop .#android --command <command>`. The supported baseline is JDK 17,
-Android SDK 37, Gradle 9.8.1, AGP 9.4.1, and Kotlin 2.4.21. AGP supplies built-in
+Android SDK 37, Gradle 9.8.2, AGP 9.4.1, and Kotlin 2.4.21. AGP supplies built-in
 Kotlin; do not add `kotlin-android`. Minimum phone SDK is 23; the Wear OS companion requires API 34 (Wear OS 5).
 
 ```sh
@@ -715,14 +715,15 @@ capabilities:
     credential: device/portal
     model: gpt-6-sol
     reasoningEffort: low
-    maxSteps: 30
-    maxMillis: 300000
-    modelTimeoutMillis: 120000
     maxScreens: 6
     historyLines: 30
-    maxRefusals: 4
-    maxScreenshots: 3
 ```
+
+Device tasks have no execution quotas or task/inference deadlines. Older configuration
+files may still contain `maxSteps`, `maxMillis`, `modelTimeoutMillis`, `maxRefusals`,
+and `maxScreenshots`; these obsolete fields are accepted and discarded on load, and
+are omitted on the next save. `maxScreens` and `historyLines` control context
+retention, not how long a task can run. Stop/revise remain available throughout.
 
 The live task test is opt-in (`evaDeviceEval=true`) and emulator-only. It takes
 `goal`, `case`, optional `answerContains` and `interruptAt` (THINKING or ACTING),

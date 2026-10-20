@@ -75,17 +75,11 @@ object WorkerSchemas {
 }
 
 data class WorkerSettings(
-    val maxSteps: Int = 30,
-    val maxMillis: Long = 300_000,
-    val modelTimeoutMillis: Long = 120_000,
     val maxScreens: Int = 6,
     val historyLines: Int = 30,
-    val maxRefusals: Int = 4,
-    val maxScreenshots: Int = 3,
     val launchAliases: Map<String, List<String>> = DEFAULT_LAUNCH_ALIASES,
 ) {
     init {
-        require(maxSteps in 1..200 && maxMillis in 1..600_000 && modelTimeoutMillis in 1..120_000)
         val packageName = Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+")
         require(
             launchAliases.size <= 50 &&
@@ -93,7 +87,7 @@ data class WorkerSettings(
                     packageName.matches(name) && aliases.size <= 10 && aliases.all { packageName.matches(it) }
                 },
         )
-        require(maxScreens in 1..12 && historyLines in 1..100 && maxRefusals in 1..10 && maxScreenshots in 0..10)
+        require(maxScreens in 1..12 && historyLines in 1..100)
     }
 }
 

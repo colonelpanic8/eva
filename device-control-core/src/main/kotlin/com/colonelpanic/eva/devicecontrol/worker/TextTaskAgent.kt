@@ -31,7 +31,6 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -123,13 +122,6 @@ class TextTaskAgent(
         var seenRevision = -1L
         var observation: Observation? = null
         var observationMillis = 0L
-        var noCall = 0
-        var refused = 0
-        var noChange = 0
-        var screenshots = 0
-        var reversals = 0
-        var lastScroll: ScrollState? = null
-        val repeats = mutableMapOf<String, Int>()
         var messages = mutableListOf<WorkerMessage>()
         var pendingReply: WorkerReply? = null
         var exchange = emptyList<WorkerMessage>()
@@ -137,10 +129,6 @@ class TextTaskAgent(
         var screens = 0
         var note = ""
         var image: String? = null
-        var waited = 0L
-        val begin = clock()
-
-        fun remaining() = settings.maxMillis - (clock() - begin - waited)
 
         fun result(
             status: TaskStatus,
@@ -153,12 +141,11 @@ class TextTaskAgent(
             timing: StepTiming = StepTiming(),
         ) = onProgress(TaskProgress(taskId, revision, step, phase, message, timing))
         try {
-            while (step < settings.maxSteps && remaining() > 0) {
+            while (true) {
+                currentCoroutineContext().ensureActive()
                 if (isStopped) return result(TaskStatus.CANCELLED, "cancelled")
                 if (synchronized(control) { paused }) {
-                    val wait = clock()
                     mailbox.receive()
-                    waited += clock() - wait
                     continue
                 }
                 val rev = revision
@@ -166,7 +153,7 @@ class TextTaskAgent(
                     progress(TaskPhase.OBSERVING)
                     val start = clock()
                     try {
-                        observation = interruptible { withTimeout(remaining()) { backend.observe() } }.masked(secrets)
+                        observation = interruptible { backend.observe() }.masked(secrets)
                     } catch (
                         e: CancellationException,
                     ) {
@@ -183,7 +170,6 @@ class TextTaskAgent(
                     seenRevision = rev
                     messages.clear()
                     screens = 0
-                    lastScroll = null
                 }
                 val before = checkNotNull(observation)
                 pendingReply?.let { previous ->
@@ -246,9 +232,7 @@ class TextTaskAgent(
                 val reply =
                     try {
                         interruptible {
-                            withTimeout(minOf(remaining(), settings.modelTimeoutMillis)) {
-                                model.complete(WorkerRequest(wording.instructions, messages.toList(), wording.tools, "eva-device-$taskId"))
-                            }
+                            model.complete(WorkerRequest(wording.instructions, messages.toList(), wording.tools, "eva-device-$taskId"))
                         }
                     } catch (
                         e: CancellationException,
@@ -278,11 +262,8 @@ class TextTaskAgent(
                             detail = "No action chosen",
                         )
                     note = wording.note("one_call")
-                    noCall++
-                    if (noCall >= 2) return result(TaskStatus.FAILED, "no_tool_call")
                     continue
                 }
-                noCall = 0
                 // Redact secret text in replayed calls as well as progress history.
                 val safeArgs =
                     if (call.name == "set_text" && call.arguments.text("text") != null &&
@@ -320,14 +301,11 @@ class TextTaskAgent(
                             .let { clip(it, MAX_QUESTION) }
                     if (question.isBlank()) {
                         note = wording.note("invalid_call")
-                        refused++
                         continue
                     }
                     steps[steps.lastIndex] = steps.last().copy(result = "asked")
                     progress(TaskPhase.NEEDS_INPUT, question, StepTiming(observationMillis, modelMillis))
-                    val wait = clock()
                     while (!isStopped && revision == rev) mailbox.receive()
-                    waited += clock() - wait
                     val replies = synchronized(control) { revisions.takeLast((revisionNumber - rev).toInt()) }
                     note = wording.note("answer", "reply" to replies.joinToString("\n"))
                     continue
@@ -343,50 +321,19 @@ class TextTaskAgent(
                     steps[steps.lastIndex] = steps.last().copy(result = status.orEmpty())
                     return result(if (status == "completed") TaskStatus.COMPLETED else TaskStatus.FAILED, summary)
                 }
-                val key = call.name + JsonObject(safeArgs.filterKeys { it != "intent" }).toString() + signature(before)
-                if ((repeats[key] ?: 0) >= 2) return result(TaskStatus.FAILED, "loop_detected")
                 var action: Action? = null
                 try {
                     if (call.name != "observe") action = action(call, before, rev)
                 } catch (_: SecretUnavailable) {
                     steps[steps.lastIndex] = steps.last().copy(result = "secret_unavailable")
                     note = wording.note("secret_unavailable")
-                    refused++
-                    if (refused >= settings.maxRefusals) return result(TaskStatus.FAILED, "refusal_limit")
                     continue
                 } catch (
                     _: Exception,
                 ) {
                     note = wording.note("invalid_call")
-                    refused++
-                    if (refused >=
-                        settings.maxRefusals
-                    ) {
-                        return result(TaskStatus.FAILED, "refusal_limit")
-                    }
                     continue
                 }
-                if (action is Scroll) {
-                    val previous = lastScroll
-                    if (previous != null && previous.target == label(before, action.element) &&
-                        opposite(previous.direction) == action.direction
-                    ) {
-                        if (reversals >= 2 || (previous.productive && !previous.found)) {
-                            note = wording.note("scroll_reversal", "previous" to previous.direction.name.lowercase())
-                            refused++
-                            if (refused >= settings.maxRefusals) return result(TaskStatus.FAILED, "refusal_limit")
-                            continue
-                        }
-                        reversals++
-                    }
-                }
-                if (action is Screenshot && screenshots >= settings.maxScreenshots) {
-                    note = wording.note("screenshot_limit")
-                    refused++
-                    if (refused >= settings.maxRefusals) return result(TaskStatus.FAILED, "refusal_limit")
-                    continue
-                }
-                if (remaining() <= 0) return result(TaskStatus.FAILED, "max_time")
                 progress(TaskPhase.ACTING, call.name)
                 val actionStart = clock()
                 var actionResult: ActionResult? = null
@@ -432,17 +379,6 @@ class TextTaskAgent(
                 progress(TaskPhase.PROGRESS, "${call.name}: $outcome", timing)
                 if (isStopped) return result(TaskStatus.CANCELLED, "cancelled")
                 if (revision != rev) continue
-                if (r?.executionStatus != ExecutionStatus.NOT_DISPATCHED) repeats[key] = (repeats[key] ?: 0) + 1
-                refused = if (r?.executionStatus == ExecutionStatus.NOT_DISPATCHED) refused + 1 else 0
-                if (refused >= settings.maxRefusals) return result(TaskStatus.FAILED, "refusal_limit")
-                val after = checkNotNull(observation)
-                if (action != null && action !is Screenshot &&
-                    r?.executionStatus != ExecutionStatus.NOT_DISPATCHED
-                ) {
-                    noChange =
-                        if (signature(before) == signature(after)) noChange + 1 else 0
-                }
-                if (noChange >= 5) return result(TaskStatus.FAILED, "loop_detected")
                 note = wording.note("result", "kind" to call.name, "result" to outcome)
                 if (reply.calls.size > 1) note += "\n" + wording.note("one_call")
                 if (r?.details is SetTextDetails) {
@@ -470,11 +406,11 @@ class TextTaskAgent(
                 }
                 if (r?.details is ScreenshotDetails) {
                     note = wording.note("screenshot_attached")
-                    screenshots++
                     image = (r.details as ScreenshotDetails).png
                     messages.clear()
                 }
                 if (action is Scroll && r?.ok == true) {
+                    val after = checkNotNull(observation)
                     val old = before.elements.map(::identity).toSet()
                     val fresh =
                         after.elements.filter {
@@ -484,18 +420,6 @@ class TextTaskAgent(
                             )
                         }
                     val labels = fresh.map(::elementLabel)
-                    val words = words(goal + synchronized(control) { revisions.joinToString(" ") })
-                    lastScroll =
-                        ScrollState(
-                            action.direction,
-                            label(before, action.element),
-                            labels.isNotEmpty(),
-                            labels.any {
-                                it.split(' ').size <=
-                                    5 &&
-                                    words(it).intersect(words).isNotEmpty()
-                            },
-                        )
                     note +=
                         "\n" +
                         if (labels.isEmpty()) {
@@ -519,11 +443,8 @@ class TextTaskAgent(
                                 "direction" to action.direction.name.lowercase(),
                             )
                         }
-                } else if (action != null && action !is Screenshot) {
-                    lastScroll = null
                 }
             }
-            return result(TaskStatus.FAILED, if (step >= settings.maxSteps) "max_steps" else "max_time")
         } catch (e: CancellationException) {
             currentCoroutineContext().ensureActive()
             return result(if (isStopped) TaskStatus.CANCELLED else TaskStatus.FAILED, if (isStopped) "cancelled" else "timeout")
@@ -671,8 +592,6 @@ class TextTaskAgent(
         }
     }
 
-    private fun signature(o: Observation) = "${o.packageName}/${o.activity}:${o.elements}"
-
     private fun identity(e: Element) = listOf(e.role, e.text, e.contentDescription, e.resourceId, e.checked, e.selected)
 
     private fun elementLabel(element: Element): String =
@@ -689,27 +608,12 @@ class TextTaskAgent(
         index: Int?,
     ) = o.elements.getOrNull(index ?: -1)?.let(::elementLabel) ?: "#$index"
 
-    private fun words(text: String) =
-        Regex("[a-z0-9]+")
-            .findAll(text.lowercase())
-            .map { it.value }
-            .filter { it !in FILLER }
-            .toSet()
-
     private fun edge(d: ScrollDirection) =
         when (d) {
             ScrollDirection.DOWN -> "bottom"
             ScrollDirection.UP -> "top"
             ScrollDirection.LEFT -> "left"
             ScrollDirection.RIGHT -> "right"
-        }
-
-    private fun opposite(d: ScrollDirection) =
-        when (d) {
-            ScrollDirection.DOWN -> ScrollDirection.UP
-            ScrollDirection.UP -> ScrollDirection.DOWN
-            ScrollDirection.LEFT -> ScrollDirection.RIGHT
-            ScrollDirection.RIGHT -> ScrollDirection.LEFT
         }
 
     private fun boundedSummary(summary: String) =
@@ -723,13 +627,6 @@ class TextTaskAgent(
 
     private class SecretUnavailable : Exception(null, null, false, false)
 
-    private data class ScrollState(
-        val direction: ScrollDirection,
-        val target: String,
-        val productive: Boolean,
-        val found: Boolean,
-    )
-
     companion object {
         private const val MAX_ERROR_CHARS = 200
         private const val MAX_REPLAYED_ARGS = 800
@@ -742,11 +639,6 @@ class TextTaskAgent(
         ) = if (value.length <= max) value else value.take(max - 1) + "…"
 
         private const val QUOTED_CHARS = 120
-        private val FILLER =
-            "the and you your for with was are has have this that from not but its will been is on in at of to a an it i my me what when where who which how does did time tell find according page open chrome app screen phone please can"
-                .split(
-                    ' ',
-                ).toSet()
     }
 }
 
