@@ -2444,77 +2444,71 @@ class ThreadControllerTest {
 
     @Test
     fun `concurrent turns serialize mutations and expose uncertain receipts while reads remain available`() =
-        runTest { checkConcurrentMutationGate(InvocationStatus.UNKNOWN) }
+        runTest {
+            val gate = CompletableDeferred<Unit>()
+            registry.replace(
+                mapOf(
+                    action.id to
+                        object : ExecutionBackend {
+                            override suspend fun unavailableReason(): String? = null
 
-    @Test
-    fun `a failed mutation on another active turn also requires verification`() =
-        runTest { checkConcurrentMutationGate(InvocationStatus.FAILED) }
-
-    private suspend fun TestScope.checkConcurrentMutationGate(outcome: InvocationStatus) {
-        val gate = CompletableDeferred<Unit>()
-        registry.replace(
-            mapOf(
-                action.id to
-                    object : ExecutionBackend {
-                        override suspend fun unavailableReason(): String? = null
-
-                        override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome {
-                            executions++
-                            gate.await()
-                            return ExecutionOutcome(outcome, "The park may already be open")
-                        }
-                    },
-                lookup.id to backend { ExecutionOutcome(InvocationStatus.COMPLETED, "Checked park") },
-            ),
-            listOf(action, lookup),
-        )
-        val voice = FakeProvider()
-        val background = FakeProvider(epoch = "background")
-        val controller = controller(voice, background = background, media = { VoiceMedia() })
-        advanceUntilIdle()
-        controller.connectVoice("test")
-        advanceUntilIdle()
-        voice.startVoice("first", "Open the park in the background")
-        voice.call("delegate", ThreadController.DEFER_TO_TEXT.capabilityId, "task" to "Open the park")
-        advanceUntilIdle()
-        background.input = ConversationInput(latestTurn(controller), "")
-        background.call("background-open", action.id, "place" to "Park")
-        runCurrent()
-        voice.startVoice("second", "Open it and check")
-        voice.call("voice-open", action.id, "place" to "Park")
-        voice.call("verify", lookup.id, "query" to "Park")
-        runCurrent()
-        assertEquals(2, executions)
-        assertTrue(voice.results.none { it.call.callId == "voice-open" })
-        assertEquals("COMPLETED", voice.results.last().status)
-        gate.complete(Unit)
-        runCurrent()
-        assertEquals(outcome.name, background.results.single().status)
-        assertEquals("NOT_EXECUTED", voice.results.last().status)
-        assertEquals(2, executions)
-        voice.call("status", ThreadController.BACKGROUND_STATUS.capabilityId)
-        runCurrent()
-        val receipt =
-            voice.results
-                .last()
-                .data!!
-                .getValue("tasks")
-                .jsonArray
-                .single()
-                .jsonObject
-                .getValue("recentReceipts")
-                .jsonArray
-                .single()
-                .jsonObject
-        assertEquals(outcome.name, receipt.getValue("status").jsonPrimitive.content)
-        assertEquals("The park may already be open", receipt.getValue("message").jsonPrimitive.content)
-        assertTrue(
-            receipt
-                .getValue("arguments")
-                .jsonPrimitive.content
-                .contains("Park"),
-        )
-    }
+                            override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome {
+                                executions++
+                                gate.await()
+                                return ExecutionOutcome(InvocationStatus.UNKNOWN, "The park may already be open")
+                            }
+                        },
+                    lookup.id to backend { ExecutionOutcome(InvocationStatus.COMPLETED, "Checked park") },
+                ),
+                listOf(action, lookup),
+            )
+            val voice = FakeProvider()
+            val background = FakeProvider(epoch = "background")
+            val controller = controller(voice, background = background, media = { VoiceMedia() })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            voice.startVoice("first", "Open the park in the background")
+            voice.call("delegate", ThreadController.DEFER_TO_TEXT.capabilityId, "task" to "Open the park")
+            advanceUntilIdle()
+            background.input = ConversationInput(latestTurn(controller), "")
+            background.call("background-open", action.id, "place" to "Park")
+            runCurrent()
+            voice.startVoice("second", "Open it and check")
+            voice.call("voice-open", action.id, "place" to "Park")
+            voice.call("verify", lookup.id, "query" to "Park")
+            runCurrent()
+            assertEquals(2, executions)
+            assertTrue(voice.results.none { it.call.callId == "voice-open" })
+            assertEquals("COMPLETED", voice.results.last().status)
+            gate.complete(Unit)
+            runCurrent()
+            assertEquals("UNKNOWN", background.results.single().status)
+            assertEquals("NOT_EXECUTED", voice.results.last().status)
+            assertEquals(2, executions)
+            voice.call("status", ThreadController.BACKGROUND_STATUS.capabilityId)
+            runCurrent()
+            val receipt =
+                voice.results
+                    .last()
+                    .data!!
+                    .getValue("tasks")
+                    .jsonArray
+                    .single()
+                    .jsonObject
+                    .getValue("recentReceipts")
+                    .jsonArray
+                    .single()
+                    .jsonObject
+            assertEquals("UNKNOWN", receipt.getValue("status").jsonPrimitive.content)
+            assertEquals("The park may already be open", receipt.getValue("message").jsonPrimitive.content)
+            assertTrue(
+                receipt
+                    .getValue("arguments")
+                    .jsonPrimitive.content
+                    .contains("Park"),
+            )
+        }
 
     @Test
     fun `unowned duplicate waits for a dispatching receipt to finish`() =

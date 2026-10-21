@@ -680,10 +680,17 @@ messages:
   announcement-action: >-
     This reply only announces a background task update. No action was executed.
     Ask the user to request the action before using tools.
+  # Read by EVA 0.71 and earlier, which do not fill uncertain-repeat's placeholders.
   mutation-uncertain: >-
     An action in this thread may have changed external state. Check background_status
     for recent receipts and verify the outcome before requesting more changes.
     Nothing was executed.
+  uncertain-repeat: >-
+    Nothing was executed. An earlier {title} ({capability}, call {call_id}, {time}) in this
+    thread ended with an unknown outcome, so it may have changed external state. Before
+    repeating {capability}, check what that action did with a read-only tool, such as
+    background_status, a status tool, or a screen read. Once a read-only check completes,
+    repeating it runs. Other actions are not blocked.
   unowned-action: No request is active to run this action. Nothing was executed.
   turn-stop-requested: Stopped.
   response-failed: The model could not complete this response.

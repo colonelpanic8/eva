@@ -96,7 +96,7 @@ data class Wording(
         const val BACKGROUND_QUESTION_UNRESOLVED = "background-question-unresolved"
         const val BACKGROUND_UPDATE = "background-update"
         const val ANNOUNCEMENT_ACTION = "announcement-action"
-        const val MUTATION_UNCERTAIN = "mutation-uncertain"
+        const val UNCERTAIN_REPEAT = "uncertain-repeat"
         const val INTERRUPTED_RESPONSE_ACTION = "interrupted-response-action"
         const val INCOMPLETE_ACTION = "incomplete-action"
         const val ACTION_QUEUED = "action-queued"

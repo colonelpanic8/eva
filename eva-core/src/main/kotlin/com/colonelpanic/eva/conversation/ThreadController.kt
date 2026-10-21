@@ -83,7 +83,10 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import java.io.IOException
 import java.security.MessageDigest
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Threads are durable; a voice call or text connection is an attachment that comes and goes.
@@ -355,19 +358,61 @@ class ThreadController(
 
     private val mutationLocks = mutableMapOf<String, Mutex>()
 
-    /** Mutations a force stop stopped waiting for, by thread; their effects are uncertain until they return. */
-    private val abandonedMutations = mutableMapOf<String, MutableSet<Job>>()
+    private data class ActionRef(
+        val callId: String,
+        val capabilityId: String,
+        val title: String,
+    )
 
-    private fun abandonedMutationOn(threadId: String) = synchronized(abandonedMutations) { threadId in abandonedMutations }
+    /**
+     * A phone change whose effects are unknown. Repeating its capability waits for a read-only
+     * check proposed after it; other actions are not held back.
+     */
+    private data class UncertainAction(
+        val action: ActionRef,
+        val turnId: String,
+        val atMillis: Long,
+        val sequence: Long,
+        /** A dispatch a force stop stopped waiting for; this outlives its turn until the dispatch returns. */
+        val abandoned: Job? = null,
+    )
+
+    private val uncertainActions = mutableMapOf<String, MutableList<UncertainAction>>()
+
+    /** Orders proposals against uncertain outcomes, so a check proposed before an outcome does not clear it. */
+    private val actionSequence = AtomicLong()
+
+    private fun uncertainAction(
+        threadId: String,
+        capabilityId: String,
+    ) = synchronized(uncertainActions) { uncertainActions[threadId]?.firstOrNull { it.action.capabilityId == capabilityId } }
+
+    private fun recordUncertain(
+        threadId: String,
+        uncertain: UncertainAction,
+    ) = synchronized(uncertainActions) { uncertainActions.getOrPut(threadId) { mutableListOf() } += uncertain }
+
+    private fun clearUncertain(
+        threadId: String,
+        cleared: (UncertainAction) -> Boolean,
+    ) = synchronized(uncertainActions) {
+        val entries = uncertainActions[threadId] ?: return@synchronized
+        entries.removeAll(cleared)
+        if (entries.isEmpty()) uncertainActions -= threadId
+    }
 
     private fun releaseAbandoned(
         threadId: String,
         job: Job,
-    ) = synchronized(abandonedMutations) {
-        val jobs = abandonedMutations[threadId] ?: return@synchronized
-        jobs -= job
-        if (jobs.isEmpty()) abandonedMutations -= threadId
-    }
+    ) = clearUncertain(threadId) { it.abandoned === job }
+
+    private fun uncertainRefusal(uncertain: UncertainAction) =
+        wording()
+            .message(Wording.UNCERTAIN_REPEAT)
+            .replace("{title}", uncertain.action.title)
+            .replace("{capability}", uncertain.action.capabilityId)
+            .replace("{call_id}", uncertain.action.callId)
+            .replace("{time}", Instant.ofEpochMilli(uncertain.atMillis).truncatedTo(ChronoUnit.SECONDS).toString())
 
     private data class VoiceTurn(
         val turnId: String,
@@ -1878,6 +1923,7 @@ class ThreadController(
             return
         }
         if (event.capabilityId == BACKGROUND_STATUS.capabilityId) {
+            clearUncertain(threadId) { true }
             refreshTaskSnapshots()
             val live = taskSnapshots.value.associateBy { it.taskId }
             val items = store.items(threadId, limit = BACKGROUND_STATUS_ITEMS)
@@ -2593,7 +2639,7 @@ class ThreadController(
 
         /** Dispatches serialized on the device lease, which a handoff does not wait for. */
         private val deviceDispatches = mutableSetOf<Job>()
-        private val mutationDispatches = mutableSetOf<Job>()
+        private val mutationDispatches = mutableMapOf<Job, ActionRef>()
 
         /** This request's phone action completed or was handed off, so the request has been served. */
         var actionServiced = false
@@ -2606,7 +2652,6 @@ class ThreadController(
         /** Every call proposed for this turn, so an ending action can tell whether it was proposed alone. */
         private val proposedCalls = mutableListOf<CallIdentity>()
         private val deliveredCalls = mutableSetOf<CallIdentity>()
-        private var mutationUncertain = false
         private var rehomed = false
         private var forceStopReason: String? = null
         private val forceRequested = CompletableDeferred<Unit>()
@@ -2686,6 +2731,8 @@ class ThreadController(
                     }
                 }
             val argumentError = if (arguments.values.any { it == null }) "This action binding requires scalar or list arguments." else null
+            val proposedAt = actionSequence.incrementAndGet()
+            val changesPhone = definition?.readOnly == false && !definition.bookkeeping
             proposedCalls += event.call
             actionCallIds += id
             progress[turnId]?.apply {
@@ -2750,6 +2797,12 @@ class ThreadController(
             suspend fun run() {
                 val rejection =
                     dispatchLock.withLock {
+                        val uncertain =
+                            if (changesPhone && event.capabilityId !in com.colonelpanic.eva.call.CallCapabilities.controls) {
+                                uncertainAction(threadId, event.capabilityId)
+                            } else {
+                                null
+                            }
                         val rejection =
                             when {
                                 !active -> {
@@ -2767,15 +2820,8 @@ class ThreadController(
                                     "This action was not offered in this connection. Nothing was executed."
                                 }
 
-                                !definition.readOnly && !definition.bookkeeping &&
-                                    event.capabilityId !in com.colonelpanic.eva.call.CallCapabilities.controls &&
-                                    (
-                                        tasks.values.any { it.threadId == threadId && it.mutationUncertain } ||
-                                            abandonedMutationOn(
-                                                threadId,
-                                            )
-                                    ) -> {
-                                    wording().message(Wording.MUTATION_UNCERTAIN)
+                                uncertain != null -> {
+                                    uncertainRefusal(uncertain)
                                 }
 
                                 else -> {
@@ -2831,16 +2877,24 @@ class ThreadController(
                     taskProgress(turnId)
                     refreshTaskSnapshots()
                     requestRefresh()
-                    val changesPhone = definition?.readOnly == false && !definition.bookkeeping
                     if (changesPhone &&
                         (result.status == InvocationStatus.COMPLETED || result.status == InvocationStatus.HANDED_OFF)
                     ) {
                         actionServiced = true
                     }
-                    if (changesPhone &&
-                        result.status in setOf(InvocationStatus.UNKNOWN, InvocationStatus.FAILED)
-                    ) {
-                        mutationUncertain = true
+                    if (changesPhone && result.status == InvocationStatus.UNKNOWN) {
+                        recordUncertain(
+                            threadId,
+                            UncertainAction(
+                                ActionRef(id, event.capabilityId, definition?.title ?: event.capabilityId),
+                                turnId,
+                                nowMillis(),
+                                actionSequence.incrementAndGet(),
+                            ),
+                        )
+                    }
+                    if (definition?.readOnly == true && result.status == InvocationStatus.COMPLETED) {
+                        clearUncertain(threadId) { it.sequence < proposedAt }
                     }
                     val succeeded = result.status == InvocationStatus.COMPLETED || result.status == InvocationStatus.HANDED_OFF
                     val ending = context.endings[event.capabilityId].takeIf { succeeded }
@@ -2933,7 +2987,9 @@ class ThreadController(
                 }
             dispatches += job
             if (serializedByDevice) deviceDispatches += job
-            if (definition?.readOnly != true && definition?.bookkeeping != true) mutationDispatches += job
+            if (definition?.readOnly != true && definition?.bookkeeping != true) {
+                mutationDispatches[job] = ActionRef(id, event.capabilityId, definition?.title ?: event.capabilityId)
+            }
         }
 
         /**
@@ -3076,10 +3132,9 @@ class ThreadController(
                     }
                 }
                 if (dispatches.any { !it.isCompleted }) {
-                    val stuck = mutationDispatches.filter { !it.isCompleted }
-                    if (stuck.isNotEmpty()) {
-                        synchronized(abandonedMutations) { abandonedMutations.getOrPut(threadId) { mutableSetOf() } += stuck }
-                        stuck.forEach { job -> job.invokeOnCompletion { releaseAbandoned(threadId, job) } }
+                    mutationDispatches.filterKeys { !it.isCompleted }.forEach { (job, action) ->
+                        recordUncertain(threadId, UncertainAction(action, turnId, nowMillis(), actionSequence.incrementAndGet(), job))
+                        job.invokeOnCompletion { releaseAbandoned(threadId, job) }
                     }
                     dispatcher.abandon(actionCallIds, wording().message(Wording.FORCE_STOP_ABANDONED))
                     progress[turnId]?.lastActionStatus = InvocationStatus.UNKNOWN.name
@@ -3183,6 +3238,7 @@ class ThreadController(
             background = null
             leg = null
             tasks.remove(turnId)
+            clearUncertain(threadId) { it.turnId == turnId && it.abandoned == null }
             val resolved =
                 questions.values
                     .filter { it.evidence.taskId == turnId && !it.evidence.waiting }

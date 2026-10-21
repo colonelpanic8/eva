@@ -4,6 +4,10 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- A failed action no longer stops EVA from making later phone changes in the same conversation. Examples are a device task that only read the screen and a call that ended without accomplishing its goal. Only an action with an unknown outcome holds anything back, and it holds back only a repeat of that same kind of action. The refusal names that action, with its call ID and time. EVA can repeat the action once any read-only check has run, including when you ask it to.
+
 ## [0.71.1] - 2026-10-20
 
 ### Fixed
