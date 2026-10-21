@@ -126,10 +126,12 @@ message instead of dropped silently. A running device task takes typed input as 
 correction first. A call task in the shown thread whose leg has not ended takes typed
 input next, through `submit` and `submitBackground` alike: it goes to the call agent
 as `eva.call.instruct` with OWNER_CONTROL provenance, as the call card's Whisper does,
-and is stored as a user message in the call's turn once delivered; it never steers the
-main model. A pending question still takes typed input before either. Once the leg
-ends, typed input goes to the main turn again. A whisper that is not delivered is
-named in the provider message (or the `submitBackground` error).
+and is stored as an attributed call-control action plus a call transcript item, so it
+is not replayed as an unhandled main-model request. A pending question takes typed
+input first, except that stop/cancel directly cancels a live call. Once the leg
+ends, typed input goes to the main turn again, including when the line ends between
+selection and dispatch. Uncertain delivery keeps its recorded text and is reported
+without an automatic retry.
 
 Several turn tasks can be active in the same
 thread: a delegated text turn and a later foreground voice turn own their calls
@@ -1450,8 +1452,9 @@ rejected with no call placed or no keys sent, saying to look the credential up a
 brief allow-list applies to handles the same way. Keypad values of either kind drop
 spaces and hyphens, so `4111 1111 1111 1111` enters as sixteen digits; any other
 character outside 0–9, `*`, `#` and A–D rejects, naming the credential. Scrubbing an
-echo of a sent value ignores spaces and hyphens between its keys, so a read-back in
-groups is redacted too. JVM tests cover entry, privacy and both rejections through the
+echo of a sent value tolerates repeated whitespace and punctuation between keys and
+English digit words (including "oh" for zero). Patterns are compiled once per value
+for the call. This covers common read-backs, not arbitrary paraphrases or other languages. JVM tests cover entry, privacy and both rejections through the
 coordinator; keypad entry of a held handle is not device-verified.
 
 `ask_owner` reuses ordered, one-shot question records and composer/voice answers,
@@ -1736,7 +1739,11 @@ does not complete is shown in the provider message. Whisper routes the composer 
 `eva.call.instruct` until the owner returns it to EVA. While the leg is up,
 `ThreadController` routes typed input to the call agent even outside Whisper (see
 [threads, turns, and connections](#threads-turns-and-connections)); the composer's
-placeholder and Back to EVA do not yet reflect that.
+placeholder and destination label show that routing automatically. Stop/cancel requests
+cancel the call directly. A line that ends before instruction delivery rejects it, and
+ordinary typed input falls back to the main conversation. Owner controls and their text
+are recorded as attributed action calls and in the call transcript, not as new unhandled
+user requests. Uncertain delivery is reported without retrying the instruction.
 
 The card shows the agent's words as it speaks, whether or not the owner listens in. The
 brain streams `response.output_audio_transcript.delta` as `CallBrainEvent.Caption`s, and
@@ -1830,13 +1837,16 @@ responds only when its seeded transcript ends with such input that no quiet tool
 answered. The voice model, which hears the audio, decides whether a segment needs
 a reply: for noise, hold music, recordings and announcements not waiting for it, it
 calls the quiet `keep_listening` instead of speaking. Quiet results never prompt another
-response, so an idle line cannot loop: `keep_listening` always, `report_phase`
-beside speech or another tool, and a completed `finish` whose response also spoke (on a
-Twilio call, answering that receipt made the agent narrate the outcome aloud; a rejected
-`finish` or one made without speech still prompts a reply). A phase report on its own is answered, since on the
-device the agent reported IVR alone, was never asked to act, and the menu timed out.
-Once a `hang_up` completes the brain requests no further responses, since the agent
-otherwise answered its own `finish` and `hang_up` results by reading the time aloud.
+response, so an idle line cannot loop: `keep_listening` always and `report_phase`
+beside speech or another tool. The coordinator tells each brain, including a replacement,
+when hang-up is under way; no new response starts while queued speech drains and the
+provider hangs up. This also handles concurrent `hang_up` and `finish` calls in either
+order. A premature hang-up request waits for the next valid outcome; a rejected finish
+still prompts correction. Without a hang-up under way, the `finish` receipt prompts the
+agent to answer outstanding questions and confirm critical values, then say goodbye and
+hang up once the conversation is over. This continuation is catalog wording. A phase
+report on its own is answered, since on the device the agent reported IVR alone, was
+never asked to act, and the menu timed out.
 Transcription is recorded for context and evidence but never gates a response. OWNER/MUTED/AGENT_STALLING suppress new inference. Tool continuation
 waits for all withheld results; explicit owner handback requests continuation
 without requiring another remote utterance. Preemption sends `response.cancel`,

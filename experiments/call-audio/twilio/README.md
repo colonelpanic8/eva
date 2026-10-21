@@ -256,3 +256,44 @@ member number and explain that it does not have the ZIP code. Review the receive
 for an audible answer to the ZIP question, no internal bookkeeping narration, a read-back,
 and a brief closing. The recording and receipts are evidence; a completed call alone is
 not a pass. Restore the usual hotline with `setup` afterwards.
+
+### Card-services regression
+
+`scenario-card-services.json` models a card issuer's line. It asks for the 16-digit card
+number by keypad (fake fixture `4111111111111111`, ended by `#` or a 20-second pause) and
+reads back only the last four digits. A menu offers a representative on 0 or by saying
+"representative". The representative asks for the cardholder's full name and billing ZIP
+code by speech, then answers any request with fixed annual-fee facts: 95 dollars billed each
+March, no waiver, a product change to the no-fee Test Cash card that keeps points and account
+history, and no change made on this call. "Is there anything else?" ends the call on the
+usual no/goodbye pattern. A full call is five Gather callbacks plus the answered redirect,
+inside the trial hop limit.
+
+```sh
+direnv exec . experiments/call-audio/twilio/setup \
+  --scenario experiments/call-audio/twilio/scenario-card-services.json --reuse-number +15592493930
+direnv exec . experiments/call-audio/twilio/verify \
+  --scenario experiments/call-audio/twilio/scenario-card-services.json [CA...]
+```
+
+Give EVA the goal of calling Test Card Services and asking about the card's annual fee: what it
+is, whether it can be waived, and the alternatives, without changing anything. The card number,
+the cardholder name Casey Sample and ZIP 90210 come from EVA's own records (a test
+password-store entry and memory), not from the goal.
+
+The scenario's `expect` block declares the regression test. `expect.gathers` maps a Gather
+step to checks: `digits` must equal the received keypad digits, `phrase` must appear in the
+speech ignoring case and punctuation, and `spoken_digits` must appear in the speech's digits
+("9 0 2 1 0" and "nine zero two one zero" both match `90210`). Any receipt at that step can
+satisfy a check. `expect.facts` lists sentences the line speaks verbatim, for a harness to find
+in EVA's outcome; validation rejects a fact no prompt or reply contains, and a check on a step
+that cannot receive that input. A `readback` template on a keypad Gather replaces the "You
+pressed" echo; `{last4}` becomes the last four digits, spaced.
+
+With `--scenario`, `verify` adds `evaluation` to `report.json`: `scenario` (name), `stages`
+(each step in the order the call reached it, with its `prompt`, received `digits` and
+`speech_result`, and `receipt`, false for the last prompt asked when no answer arrived),
+`checks` (`step`, `kind`, `expected`, `received`, `passed`), `facts`, and `passed`. It prints
+each check as PASS or FAIL and exits nonzero when any check fails. Stages after the last
+receipt follow the scenario's transitions; they show what the line went on to say, not proof
+the caller heard it. Restore the usual hotline with `setup` afterwards.

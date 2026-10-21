@@ -103,9 +103,9 @@ class OpenAiCallAgentBrainFactory internal constructor(
  * ending without an outcome. The voice model, which hears the audio, then decides whether to speak
  * or call the quiet `keep_listening`; transcription never gates a reply. Quiet results do not prompt
  * another response, so an idle line (NIST ticks, hold music) cannot loop the agent, and bookkeeping
- * the agent already spoke around (a completed `finish`) does not make it narrate. Nothing new is
- * requested while the remote party is mid-utterance, a response is in flight, tools are pending,
- * the owner holds the floor, or a hang-up has gone through.
+ * the agent already spoke around (a completed `finish` with a hang-up coming) does not make it
+ * narrate. Nothing new is requested while the remote party is mid-utterance, a response is in
+ * flight, tools are pending, the owner holds the floor, or a hang-up has gone through.
  *
  * Event ordering quirks handled here: a response can be created before EVA's request is matched
  * (metadata tokens tie responses to requests, and unmatched ones are cancelled); audio deltas from a
@@ -154,19 +154,6 @@ internal class OpenAiCallAgentBrain(
 
     // Results that should not prompt a reply (keep_listening, a phase report made beside another action).
     private val quietTools = mutableSetOf<String>()
-    private val hangUpTools = mutableSetOf<String>()
-
-    /**
-     * `finish` calls whose response also spoke. Recording the outcome is bookkeeping the other party
-     * never hears, and the agent already addressed them in that response; asking it to reply to the
-     * receipt made it narrate on a Twilio call ("Thank you. The cancellation confirmation number is
-     * 22:34, which I'm treating as 2234..."). So a completed one is quiet. A rejected one still prompts
-     * a reply (the agent must fix its evidence), as does a finish made alone, since the agent has not
-     * yet said anything and someone may be waiting.
-     */
-    private val spokenFinishes = mutableSetOf<String>()
-
-    /** A hang-up went through: anything the agent said next would reach the line until it drops. */
     private var hangingUp = false
     private val finishedTools = mutableSetOf<String>()
     private val responses = mutableMapOf<String, Generation>()
@@ -493,10 +480,6 @@ internal class OpenAiCallAgentBrain(
                     ) {
                         quietTools += callId
                     }
-                    if (definition.capabilityId == CallAgentTools.HANG_UP) hangUpTools += callId
-                    if (definition.capabilityId == CallAgentTools.FINISH && generation.transcripts.values.any { it.isNotBlank() }) {
-                        spokenFinishes += callId
-                    }
                     CallBrainEvent.ToolCall(
                         callId,
                         definition.capabilityId,
@@ -727,9 +710,7 @@ internal class OpenAiCallAgentBrain(
             },
         )
         pendingTools -= callId
-        if (hangUpTools.remove(callId) && outcome.status == InvocationStatus.COMPLETED) hangingUp = true
-        val quietFinish = spokenFinishes.remove(callId) && outcome.status == InvocationStatus.COMPLETED
-        if (!quietTools.remove(callId) && !quietFinish) needsResponse = true
+        if (!quietTools.remove(callId)) needsResponse = true
         pump()
     }
 
@@ -751,6 +732,12 @@ internal class OpenAiCallAgentBrain(
                 if (handback) needsResponse = true
                 pump()
             }
+        }
+
+    override suspend fun setHangUpPending(pending: Boolean) =
+        synchronized(monitor) {
+            hangingUp = pending
+            if (!pending) pump()
         }
 
     override suspend fun cancelOutput() = synchronized(monitor) { cancelGeneration() }

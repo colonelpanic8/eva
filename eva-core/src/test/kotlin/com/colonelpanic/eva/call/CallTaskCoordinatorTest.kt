@@ -473,6 +473,14 @@ class CallTaskCoordinatorTest {
             )
             assertEquals(CallTaskState.WrappingUp, h.state().state)
             assertFalse(result.isCompleted)
+            assertEquals(
+                "Outcome claim recorded with transcript references. " + Wording.bundled.message(Wording.CALL_FINISH_CONNECTED),
+                h
+                    .brain()
+                    .results
+                    .getValue("finish")
+                    .message,
+            )
             h.tool("hang", CallAgentTools.HANG_UP)
             assertEquals(1, h.leg.hangups)
             assertTrue(h.state().legState is LegState.Connected)
@@ -507,13 +515,14 @@ class CallTaskCoordinatorTest {
                 "evidence" to "[\"forty-two minutes\"]",
             )
             assertEquals(1, h.leg.hangups)
-            assertTrue(
+            assertEquals(
+                "Outcome claim recorded with transcript references. Hang-up requested as you asked earlier; " +
+                    "the provider's leg state determines when the call has ended.",
                 h
                     .brain()
                     .results
                     .getValue("finish")
-                    .message
-                    .contains("Hang-up requested"),
+                    .message,
             )
             h.leg.state.value = LegState.Ended(EndCause.LOCAL_HANGUP)
             runCurrent()
@@ -1039,6 +1048,58 @@ class CallTaskCoordinatorTest {
             )
         }
 
+    @Test fun echoedCredentialsAreScrubbedAcrossPunctuationAndSpokenDigits() =
+        runTest {
+            val h = Harness(this)
+            h.start()
+            runCurrent()
+            h.connect()
+            h.tool("keys", CallAgentTools.DTMF, "sequence" to "[\"credential:phone/pin\"]")
+            val readbacks =
+                listOf(
+                    "9081, 7263, 544",
+                    "9081.7263.544",
+                    "9081  7263  544",
+                    "nine zero eight one seven two six three five four four",
+                    "nine oh 81, seven two six three 544",
+                )
+            readbacks.forEachIndexed { index, text ->
+                h.transcript("echo-$index", CallSpeaker.REMOTE, "You entered $text.")
+                assertEquals(
+                    "You entered [credential].",
+                    h
+                        .state()
+                        .transcript
+                        .last()
+                        .text,
+                )
+                assertFalse(
+                    h.journal.records
+                        .toString()
+                        .contains(text),
+                )
+                assertFalse(
+                    h
+                        .brain()
+                        .context
+                        .toString()
+                        .contains(text),
+                )
+            }
+        }
+
+    @Test fun instructionAfterPhysicalDisconnectIsRejectedBeforeEndEventIsProcessed() =
+        runTest {
+            val h = Harness(this)
+            h.start()
+            runCurrent()
+            h.connect()
+            h.leg.state.value = LegState.Ended(EndCause.REMOTE_HANGUP)
+            val result = h.control(CallCapabilities.INSTRUCT, "text" to "Please ask about the fee")
+            assertEquals(InvocationStatus.NOT_EXECUTED, result.status)
+            assertTrue(h.state().transcript.none { it.speaker == CallSpeaker.OWNER_TO_AGENT })
+        }
+
     @Test fun startRejectsAMissingOrNonKeypadCredentialBeforeDialing() =
         runTest {
             val missing = Harness(this, briefCredentials = listOf("bank/pin"))
@@ -1095,7 +1156,7 @@ class CallTaskCoordinatorTest {
             h.start()
             runCurrent()
             h.connect()
-            h.tool("card", CallAgentTools.DTMF, "sequence" to "[\"$handle\",\"#\"]")
+            h.tool("card", CallAgentTools.DTMF, "sequence" to "[\"credential:SECRET:${handle.removePrefix("secret:")}\",\"#\"]")
             h.transcript("echo", CallSpeaker.REMOTE, "You entered $CARD")
 
             assertEquals("4111111111111111#", h.leg.dtmf.joinToString(""))

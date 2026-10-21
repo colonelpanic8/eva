@@ -62,6 +62,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import com.colonelpanic.eva.R
 import com.colonelpanic.eva.call.CallCapabilities
+import com.colonelpanic.eva.call.LegState
 import com.colonelpanic.eva.conversation.ConversationState
 import com.colonelpanic.eva.conversation.ProviderStatus
 import com.colonelpanic.eva.conversation.groups
@@ -123,10 +124,18 @@ internal fun ConversationScreen(
         }
     }
     val storageFailed = state.errorMessage != null
+    val automaticCallTarget =
+        state.entries
+            .lastOrNull {
+                it.callTask?.let { task ->
+                    task.live && task.legState !is LegState.Ended
+                } == true
+            }?.callTask
     val whispering = whisperTarget != null && draftQuestionId == null
+    val routesToCall = draftQuestionId == null && state.currentQuestion == null && (whispering || automaticCallTarget != null)
     val canSend =
         draft.isNotBlank() && !state.voiceOnAnotherThread && !storageFailed &&
-            (state.acceptsTextInput || draftQuestionId != null || whispering) &&
+            (state.acceptsTextInput || draftQuestionId != null || routesToCall) &&
             (
                 hasCredential || state.providerStatus != ProviderStatus.DISCONNECTED ||
                     state.currentQuestion != null || state.deviceTaskActive
@@ -158,6 +167,7 @@ internal fun ConversationScreen(
         if (!canSend) return
         when {
             draftQuestionId != null -> onAnswer(checkNotNull(draftQuestionId), draft.trim())
+            routesToCall && draft.trim().lowercase() in setOf("stop", "cancel", "stop call", "cancel call") -> onSubmit(draft.trim())
             whispering -> onCallControl(checkNotNull(whisperTarget).id, CallCapabilities.INSTRUCT, mapOf("text" to draft.trim()))
             else -> onSubmit(draft.trim())
         }
@@ -212,7 +222,7 @@ internal fun ConversationScreen(
                 state.providerMessage?.let { ProviderMessage(it) }
                 if (state.working) WorkingRow(onStop = onStopTask, progress = state.deviceTaskProgress)
                 if (state.waitingInputs.isNotEmpty()) WaitingInputs(state.waitingInputs)
-                if (whispering) WhisperTarget(onBackToEva = { whisperTaskId = null })
+                if (routesToCall) WhisperTarget()
                 if (!inSession) {
                     ConnectBar(
                         state = state,
@@ -249,7 +259,7 @@ internal fun ConversationScreen(
                                 "This question is no longer current: $draftQuestionText"
                             }
 
-                            whispering -> {
+                            routesToCall -> {
                                 "Only the call agent sees this; the other party does not hear it."
                             }
 
@@ -257,11 +267,11 @@ internal fun ConversationScreen(
                                 composerHint(state)
                             }
                         },
-                    placeholder = if (whispering) "Whisper to the call agent…" else "Ask EVA…",
+                    placeholder = if (routesToCall) "Whisper to the call agent…" else "Ask EVA…",
                     focusRequester = composerFocus,
                     onSend = ::send,
                     onDictate =
-                        if (inSession || whispering) {
+                        if (inSession || routesToCall) {
                             null
                         } else {
                             { onDictate(DictationTarget(state.threadId, state.currentQuestion?.questionId)) }
@@ -380,14 +390,13 @@ private fun Composer(
 }
 
 @Composable
-private fun WhisperTarget(onBackToEva: () -> Unit) {
+private fun WhisperTarget() {
     Surface(color = MaterialTheme.colorScheme.tertiaryContainer, contentColor = MaterialTheme.colorScheme.onTertiaryContainer) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("Whispering to the call agent", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
-            CallButton("Back to EVA", onBackToEva)
         }
     }
 }
