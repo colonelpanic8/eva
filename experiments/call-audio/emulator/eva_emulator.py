@@ -513,6 +513,8 @@ def ask(serial, text):
     connection first ("Connect for text"); the composer says so until it is up.
     """
     launch(serial)
+    tap_text(serial, r"^Open navigation menu$", scroll=False)
+    tap_text(serial, r"^Conversation$", scroll=False)
     # Main keeps past threads in the archive; archiving preserves history and opens a fresh thread.
     tap_text(serial, r"^Conversation options$", scroll=False)
     tap_text(serial, r"^Archive conversation$", scroll=False)
