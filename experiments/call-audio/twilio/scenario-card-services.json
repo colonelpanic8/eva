@@ -1,0 +1,81 @@
+{
+  "name": "Test Card Services",
+  "start": "card",
+  "answer_prompt": "Connecting your test call.",
+  "greeting": "Thanks for calling Test Card Services.",
+  "recording_notice": "This is a recorded test line.",
+  "recording_failure": "Call recording is unavailable. Your keypad and speech responses will still be saved for this test.",
+  "empty_reply": "I did not receive a response.",
+  "voice": "alice",
+  "language": "en-US",
+  "hold_segment_seconds": 12,
+  "expect": {
+    "gathers": {
+      "card": { "digits": "4111111111111111" },
+      "identity": { "phrase": "Casey Sample", "spoken_digits": "90210" }
+    },
+    "facts": [
+      "The annual fee is 95 dollars, billed each March.",
+      "The annual fee cannot be waived.",
+      "You can product change to the Test Cash card, which has no annual fee.",
+      "You keep your points and account history.",
+      "I cannot make that change on this call."
+    ]
+  },
+  "nodes": {
+    "card": {
+      "type": "gather",
+      "input": "dtmf",
+      "timeout": 20,
+      "speechTimeout": 3,
+      "prompt": "Please enter your 16 digit card number, followed by the pound key.",
+      "readback": "Thank you. I found the card ending in {last4}.",
+      "next": "menu",
+      "empty": "end"
+    },
+    "menu": {
+      "type": "gather",
+      "input": "dtmf speech",
+      "numDigits": 1,
+      "timeout": 12,
+      "speechTimeout": 3,
+      "hints": "representative",
+      "prompt": "For a representative, press 0 or say representative.",
+      "next": "identity",
+      "empty": "end"
+    },
+    "identity": {
+      "type": "gather",
+      "input": "speech",
+      "timeout": 15,
+      "speechTimeout": 3,
+      "prompt": "This is the Test Card Services representative. To verify the account, please say the cardholder's full name and the billing ZIP code.",
+      "next": "help",
+      "empty": "end"
+    },
+    "help": {
+      "type": "gather",
+      "input": "speech",
+      "timeout": 15,
+      "speechTimeout": 3,
+      "prompt": "Thank you, the account is verified. How can I help you today?",
+      "reply": "The annual fee is 95 dollars, billed each March. The annual fee cannot be waived. You can product change to the Test Cash card, which has no annual fee. You keep your points and account history. I cannot make that change on this call.",
+      "next": "anything_else",
+      "empty": "end"
+    },
+    "anything_else": {
+      "type": "gather",
+      "input": "speech",
+      "timeout": 12,
+      "speechTimeout": 3,
+      "prompt": "Is there anything else?",
+      "end_pattern": "\\b(no|nope|nothing|all set|that is all|that's all|goodbye)\\b",
+      "next": "help",
+      "empty": "end"
+    },
+    "end": {
+      "type": "end",
+      "prompt": "Thank you for calling Test Card Services. Goodbye."
+    }
+  }
+}

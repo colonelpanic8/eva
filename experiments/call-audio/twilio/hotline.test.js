@@ -269,3 +269,88 @@ test("role-play keeps the ZIP question and confirmation read-back separate", () 
     /<Hangup\/>/,
   );
 });
+
+test("card services reads back only the last four digits and walks to the annual-fee facts", () => {
+  const card = validateScenario(
+    JSON.parse(
+      fs.readFileSync(`${__dirname}/scenario-card-services.json`, "utf8"),
+    ),
+  );
+  const response = (step, input) =>
+    render(
+      card,
+      { step, turn: "0", ...input },
+      new twilio.twiml.VoiceResponse(),
+      base,
+    ).toString();
+  const greeting = render(
+    card,
+    {},
+    new twilio.twiml.VoiceResponse(),
+    base,
+  ).toString();
+  assert.match(greeting, /<Gather input="dtmf"[^>]*step=card&amp;turn=0/);
+  assert.match(greeting, /16 digit card number, followed by the pound key/);
+  const entered = response("card", { Digits: "4111111111111111" });
+  assert.match(entered, /Thank you\. I found the card ending in 1 1 1 1\./);
+  assert.doesNotMatch(entered, /4111|You pressed/);
+  assert.match(entered, /press 0 or say representative/);
+  assert.match(
+    response("menu", { Digits: "0" }),
+    /You pressed 0.*full name and the billing ZIP code/,
+  );
+  assert.match(
+    response("identity", { SpeechResult: "Casey Sample, 90210" }),
+    /I heard: Casey Sample, 90210.*How can I help you today\?/,
+  );
+  assert.match(
+    response("help", { SpeechResult: "Tell me about the annual fee" }),
+    /The annual fee is 95 dollars, billed each March\. The annual fee cannot be waived\..*Is there anything else\?/,
+  );
+  assert.match(
+    response("anything_else", { SpeechResult: "No, that's all" }),
+    /Test Card Services\. Goodbye\.<\/Say><Hangup\/>/,
+  );
+});
+
+test("scenario expectations must name a matching Gather and facts the line speaks", () => {
+  const card = JSON.parse(
+    fs.readFileSync(`${__dirname}/scenario-card-services.json`, "utf8"),
+  );
+  for (const [mutate, message] of [
+    [
+      (s) => {
+        s.expect.gathers.missing = { digits: "1" };
+      },
+      /Invalid expectation digits at missing/,
+    ],
+    [
+      (s) => {
+        s.expect.gathers.identity.digits = "1";
+      },
+      /Invalid expectation digits at identity/,
+    ],
+    [
+      (s) => {
+        s.expect.gathers.card.spoken_digits = "1";
+      },
+      /Invalid expectation spoken_digits at card/,
+    ],
+    [
+      (s) => {
+        s.expect.facts.push("The fee is waived.");
+      },
+      /Fact is never spoken: The fee is waived\./,
+    ],
+    [
+      (s) => {
+        s.nodes.menu.readback = "Ending in {last4}";
+      },
+      /readback needs keypad-only input at menu/,
+    ],
+  ]) {
+    const copy = structuredClone(card);
+    mutate(copy);
+    assert.throws(() => validateScenario(copy), message);
+  }
+});
