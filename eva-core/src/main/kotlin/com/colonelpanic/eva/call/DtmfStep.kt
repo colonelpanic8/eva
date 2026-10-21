@@ -1,11 +1,13 @@
 package com.colonelpanic.eva.call
 
+import com.colonelpanic.eva.capability.SecretVault
 import java.math.RoundingMode
 
 /**
  * One step of a call agent's keypad sequence. The tool takes an array of strings, one step each:
  * keypad keys (`1`, `4417#`), a wait (`wait:1500ms`, `wait:2s`) or a private credential reference
- * (`credential:bank/pin`). Each step is its own item, so no character is both a key and a pause.
+ * (`credential:bank/pin`, or a held secret handle `secret:<hex>` with or without that prefix). Each
+ * step is its own item, so no character is both a key and a pause.
  */
 sealed interface DtmfStep {
     /** Shown in the transcript and receipts; never contains a credential's value. */
@@ -51,6 +53,11 @@ sealed interface DtmfStep {
                         Wait(rounded.toLong())
                     }
 
+                    step.startsWith(SecretVault.PREFIX, ignoreCase = true) -> {
+                        require(step.length > SecretVault.PREFIX.length) { "Step ${index + 1} names no secret." }
+                        Credential(SecretVault.PREFIX + step.substring(SecretVault.PREFIX.length))
+                    }
+
                     step.startsWith(CREDENTIAL, ignoreCase = true) -> {
                         val reference = step.substring(CREDENTIAL.length).trim()
                         require(reference.isNotEmpty()) { "Step ${index + 1} names no credential." }
@@ -64,7 +71,7 @@ sealed interface DtmfStep {
                     else -> {
                         throw IllegalArgumentException(
                             "Step ${index + 1} (\"$raw\") is not keypad keys (0-9 * # A-D), wait:<number>ms or wait:<number>s, " +
-                                "or credential:<reference>.",
+                                "credential:<reference>, or secret:<handle>.",
                         )
                     }
                 }

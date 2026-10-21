@@ -647,6 +647,14 @@ Shorter values are not masked, since masking them would garble ordinary screen t
 Screenshots are images and are not masked: a worker screenshot of a plain field that
 holds a code shows the code. Password fields show dots.
 
+A phone call can enter a handle on the keypad. `eva.call.start` takes handles from its
+own thread in `credentials` beside saved call keypad credentials, and the call agent's
+`dtmf` enters one as a `secret:<hex>` or `credential:secret:<hex>` step (see
+[delegated phone call tasks](#delegated-phone-call-tasks)). The coordinator resolves the
+handle through the vault scoped to the call's thread, at start and again at each
+`dtmf`. A call's turn stays active for the whole call, so its handles outlive
+`newThread`.
+
 Handles have no expiry timer. Starting a new conversation (`ThreadController.newThread`)
 clears every thread without running work, and process death clears everything.
 An unknown, cleared, or other thread's handle is refused before input. That is
@@ -1336,7 +1344,8 @@ Twilio test hotline. Started with the phone locked and its screen off
 and hung up; the dialer's in-call screen lit the display over the lock screen for the
 call, so screen-off operation itself is not shown. No speech detector
 is connected: HOLD stays advisory and the brain keeps listening. Credential DTMF
-resolves the owner's saved call keypad credentials (below).
+resolves the owner's saved call keypad credentials or the thread's held secret
+handles (below).
 
 `CallTaskCoordinator` owns a thread/turn's long-running start action independently
 of the owner's EVA attachment. Separate state machines describe:
@@ -1423,6 +1432,21 @@ Twilio hotline entering it on the account prompt (Gather `Digits="4417"`) while 
 transcript, journal, invocations and logs show only `[credential test/account]`; the
 hotline's spoken read-back of the digits was redacted to `[credential]` too. Android's
 autofill (Bitwarden) offered to handle the masked value field.
+
+A brief's credential can also be a [secret handle](#secret-handles) that a password
+manager extension returned to the same thread, such as a card number. The `secret:`
+prefix tells the two kinds apart; saved references never contain a colon. Start and
+each `dtmf` resolve a handle through the vault scoped to the call's thread, and its
+label in the brief is the extension's label. A handle the thread does not hold
+(unknown, cleared, from another conversation, or lost when EVA's process died) is
+rejected with no call placed or no keys sent, saying to look the credential up again.
+`dtmf` takes a bare `secret:<hex>` step as well as `credential:secret:<hex>`, and the
+brief allow-list applies to handles the same way. Keypad values of either kind drop
+spaces and hyphens, so `4111 1111 1111 1111` enters as sixteen digits; any other
+character outside 0–9, `*`, `#` and A–D rejects, naming the credential. Scrubbing an
+echo of a sent value ignores spaces and hyphens between its keys, so a read-back in
+groups is redacted too. JVM tests cover entry, privacy and both rejections through the
+coordinator; keypad entry of a held handle is not device-verified.
 
 `ask_owner` reuses ordered, one-shot question records and composer/voice answers,
 with connected-call urgency. It withholds the tool result in the same brain while

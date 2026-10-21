@@ -7,6 +7,7 @@ import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.capability.ExecutionOutcome
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.MemoryInvocationRepository
+import com.colonelpanic.eva.capability.SecretVault
 import com.colonelpanic.eva.capability.ToolProposal
 import com.colonelpanic.eva.conversation.prompt.Wording
 import kotlinx.coroutines.CompletableDeferred
@@ -148,6 +149,7 @@ class CallTaskCoordinatorTest {
         val listenInByDefault: Boolean = false,
         val brainGate: CompletableDeferred<Unit>? = null,
         val brainFailureAfterGate: Boolean = false,
+        val vault: SecretVault = SecretVault(),
     ) {
         val saved = mutableMapOf("phone/pin" to PIN)
         val media = Media()
@@ -229,6 +231,7 @@ class CallTaskCoordinatorTest {
                         override suspend fun resolve(reference: String) =
                             saved[reference]?.toCharArray() ?: throw CallCredentialUnavailable("No value is saved for $reference.")
                     },
+                secrets = vault,
                 speechDetector = { if (detectsSpeech) CallSpeechDetector { speech } else null },
                 nowMillis = { 42 },
                 listenInByDefault = { listenInByDefault },
@@ -1084,6 +1087,108 @@ class CallTaskCoordinatorTest {
             assertEquals("No value is saved for phone/pin. No keys were sent.", result.message)
         }
 
+    @Test fun heldSecretHandleIsEnteredOnTheKeypadWhileRecordsShowOnlyItsReference() =
+        runTest {
+            val vault = SecretVault()
+            val handle = vault.store("thread", CARD, "Card number")
+            val h = Harness(this, briefCredentials = listOf(handle), vault = vault)
+            h.start()
+            runCurrent()
+            h.connect()
+            h.tool("card", CallAgentTools.DTMF, "sequence" to "[\"$handle\",\"#\"]")
+            h.transcript("echo", CallSpeaker.REMOTE, "You entered $CARD")
+
+            assertEquals("4111111111111111#", h.leg.dtmf.joinToString(""))
+            assertEquals(
+                listOf(CallCredential(handle, "Card number")),
+                h.opened
+                    .single()
+                    .brief.credentials,
+            )
+            assertEquals(
+                listOf("[credential $handle]", "#"),
+                h
+                    .state()
+                    .transcript
+                    .filter { it.speaker == CallSpeaker.DTMF }
+                    .map { it.text },
+            )
+            assertEquals(
+                "You entered [credential]",
+                h
+                    .state()
+                    .transcript
+                    .single { it.id == "echo" }
+                    .text,
+            )
+            assertEquals(
+                "Sent the whole sequence: [credential $handle], #. Sent as test signalling.",
+                h
+                    .brain()
+                    .results
+                    .getValue("card")
+                    .message,
+            )
+            val records = listOf(h.journal.records, h.invocations.records, h.brain().results, h.brain().context, h.opened).toString()
+            assertFalse(records.contains("4111111111111111"))
+            assertFalse(records.contains(CARD))
+        }
+
+    @Test fun startRejectsAHandleThisConversationDoesNotHold() =
+        runTest {
+            val vault = SecretVault()
+            val elsewhere = vault.store("other-thread", CARD, "Card number")
+            for (handle in listOf(elsewhere, "secret:0123456789abcdef0123456789abcdef")) {
+                val h = Harness(this, briefCredentials = listOf(handle), vault = vault)
+                val refused = h.start()
+                runCurrent()
+                assertEquals(InvocationStatus.NOT_EXECUTED, refused.await().status)
+                assertEquals(
+                    "Credential $handle is not held for this conversation: it was cleared, belongs to another conversation, " +
+                        "or EVA restarted. Look it up again with the password manager's tool. No call was placed.",
+                    refused.await().message,
+                )
+                assertEquals(0, h.placements)
+            }
+        }
+
+    @Test fun keypadRejectsAHandleOutsideTheBriefOrNoLongerHeld() =
+        runTest {
+            val vault = SecretVault()
+            val unlisted = vault.store("thread", CARD, "Card number")
+            val h = Harness(this, vault = vault)
+            h.start()
+            runCurrent()
+            h.connect()
+            h.tool("unlisted", CallAgentTools.DTMF, "sequence" to "[\"credential:$unlisted\"]")
+            assertEquals(
+                "Credential $unlisted is not in this call's brief; this call may enter only phone/pin. No keys were sent.",
+                h
+                    .brain()
+                    .results
+                    .getValue("unlisted")
+                    .message,
+            )
+
+            val held = vault.store("thread", CARD, "Card number")
+            val cleared = Harness(this, briefCredentials = listOf(held), vault = vault)
+            cleared.start()
+            runCurrent()
+            cleared.connect()
+            vault.retain(emptySet())
+            cleared.tool("gone", CallAgentTools.DTMF, "sequence" to "[\"1\",\"$held\"]")
+            assertEquals(
+                "Credential $held is not held for this conversation: it was cleared, belongs to another conversation, " +
+                    "or EVA restarted. Look it up again with the password manager's tool. No keys were sent.",
+                cleared
+                    .brain()
+                    .results
+                    .getValue("gone")
+                    .message,
+            )
+            assertEquals(emptyList<String>(), h.leg.dtmf + cleared.leg.dtmf)
+        }
+
     @Test fun keypadSequenceRunsInOrderWithWaitsAndOneResult() =
         runTest {
             val h = Harness(this)
@@ -1430,5 +1535,6 @@ class CallTaskCoordinatorTest {
     private companion object {
         /** Long enough that no hex ID or fingerprint contains it by chance. */
         const val PIN = "90817263544"
+        const val CARD = "4111 1111 1111 1111"
     }
 }

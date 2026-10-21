@@ -10,7 +10,7 @@ data class CallBrief(
     val disclosures: String,
     /** Exact, owner-approved commitment identifiers. Natural-language mandate interpretation is not authority. */
     val mandate: Set<String>,
-    /** The saved keypad credentials this call may enter, by reference; never their values. */
+    /** The keypad credentials this call may enter, by reference or secret handle; never their values. */
     val credentials: List<CallCredential> = emptyList(),
     /**
      * Who the call agent represents, by name ("Ivan Malison"), so it can introduce itself as calling
@@ -21,7 +21,7 @@ data class CallBrief(
     val onBehalfOf: String? = null,
 )
 
-/** A keypad secret the owner saved for calls, such as an account number; the value stays with the resolver. */
+/** A keypad secret by saved reference (`bank/pin`) or by the call thread's `secret:` handle; never its value. */
 @Serializable
 data class CallCredential(
     val reference: String,

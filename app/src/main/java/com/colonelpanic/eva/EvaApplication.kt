@@ -581,6 +581,7 @@ class EvaApplication :
             scope = scope,
             askOwner = { controller.askCallOwner(it) },
             credentials = callCredentials,
+            secrets = secrets,
             speechDetector = { null },
             wording = { prompts.wording.value },
             listenInByDefault = { capabilities.callAgent.listenInByDefault },
