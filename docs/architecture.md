@@ -123,7 +123,13 @@ as the paired broker that cannot steer, or a submission still starting) waits,
 listed above the composer, and is sent as the next request when the current one
 ends; anything still waiting when the attachment ends is named in the provider
 message instead of dropped silently. A running device task takes typed input as a
-correction first.
+correction first. A call task in the shown thread whose leg has not ended takes typed
+input next, through `submit` and `submitBackground` alike: it goes to the call agent
+as `eva.call.instruct` with OWNER_CONTROL provenance, as the call card's Whisper does,
+and is stored as a user message in the call's turn once delivered; it never steers the
+main model. A pending question still takes typed input before either. Once the leg
+ends, typed input goes to the main turn again. A whisper that is not delivered is
+named in the provider message (or the `submitBackground` error).
 
 Several turn tasks can be active in the same
 thread: a delegated text turn and a later foreground voice turn own their calls
@@ -1727,7 +1733,10 @@ transcript lines it cites. Take over / Hand back, Listen in, Whisper and Hang up
 `ThreadController.callControl`, which proposes the owner capability to the shared
 dispatcher with an OWNER_CONTROL initiator and needs no EVA connection; a control that
 does not complete is shown in the provider message. Whisper routes the composer to
-`eva.call.instruct` until the owner returns it to EVA.
+`eva.call.instruct` until the owner returns it to EVA. While the leg is up,
+`ThreadController` routes typed input to the call agent even outside Whisper (see
+[threads, turns, and connections](#threads-turns-and-connections)); the composer's
+placeholder and Back to EVA do not yet reflect that.
 
 The card shows the agent's words as it speaks, whether or not the owner listens in. The
 brain streams `response.output_audio_transcript.delta` as `CallBrainEvent.Caption`s, and

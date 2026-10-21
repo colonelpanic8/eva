@@ -4,6 +4,7 @@ package com.colonelpanic.eva.call
 
 import com.colonelpanic.eva.capability.CapabilityDispatcher
 import com.colonelpanic.eva.capability.CapabilityRegistry
+import com.colonelpanic.eva.capability.InitiatorKind
 import com.colonelpanic.eva.capability.MemoryInvocationRepository
 import com.colonelpanic.eva.conversation.MemoryConversationStore
 import com.colonelpanic.eva.conversation.QuestionEvidence
@@ -39,6 +40,7 @@ class CallThreadIntegrationTest {
     private class OwnerProvider : ConversationProvider {
         val incoming = Channel<ProviderEvent>(Channel.UNLIMITED)
         val inputs = mutableListOf<ConversationInput>()
+        val steered = mutableListOf<String>()
         var catalogRevision = ""
         var tools = emptyList<com.colonelpanic.eva.providers.ProviderToolDefinition>()
 
@@ -57,6 +59,14 @@ class CallThreadIntegrationTest {
                 override suspend fun requestResponse(request: ResponseRequest) = Unit
 
                 override suspend fun submitToolResult(result: CorrelatedToolResult) = Unit
+
+                override suspend fun steer(
+                    inputId: String,
+                    input: ConversationInput,
+                ): Boolean {
+                    steered += input.text
+                    return true
+                }
 
                 override suspend fun close() {
                     incoming.close()
@@ -328,6 +338,146 @@ class CallThreadIntegrationTest {
             legState.value = LegState.Ended(EndCause.LOCAL_HANGUP)
             runCurrent()
             assertTrue("${calls.tasks.value} ${repository.history()} ${controller.taskSnapshots.value}", hangups > 0)
+        }
+
+    @Test fun typedInputReachesTheCallAgentWhileTheLineIsUpAndTheMainTurnAfter() =
+        runTest {
+            val store = MemoryConversationStore()
+            val repository = MemoryInvocationRepository()
+            val owner = OwnerProvider()
+            val whispered = mutableListOf<CallTranscriptItem>()
+            val legState = MutableStateFlow<LegState>(LegState.Connected(1, AnsweredEvidence.PROVIDER_ASSERTION))
+            val brain =
+                object : CallAgentBrain {
+                    override val events = MutableSharedFlow<CallBrainEvent>()
+
+                    override suspend fun pushRemotePcm(frame: PcmFrame) = Unit
+
+                    override suspend fun appendContext(item: CallTranscriptItem) {
+                        whispered += item
+                    }
+
+                    override suspend fun toolResult(
+                        callId: String,
+                        outcome: com.colonelpanic.eva.capability.ExecutionOutcome,
+                    ) = Unit
+
+                    override suspend fun setFloor(floor: CallFloor) = Unit
+
+                    override suspend fun cancelOutput() = Unit
+
+                    override suspend fun close() = Unit
+                }
+            val provider =
+                object : CallProvider {
+                    override val id = "hosted"
+                    override val traits = CallProviderTraits(CallMediaKind.MODEL_HOSTED, true, false, true, true)
+
+                    override suspend fun unavailableReason(): String? = null
+
+                    override suspend fun reattach(legId: String): CallLeg? = null
+
+                    override suspend fun place(request: PlaceCallRequest): CallLeg =
+                        object : CallLeg {
+                            override val id = request.legId
+                            override val state = legState
+                            override val events = MutableSharedFlow<LegEvent>()
+                            override val media =
+                                object : CallMedia.ModelHosted {
+                                    override val sidebandSessionId = "sip"
+                                }
+
+                            override suspend fun sendDtmf(digits: String) = ""
+
+                            override suspend fun hangUp() = Unit
+
+                            override suspend fun setOwnerMicrophone(toRemote: Boolean) = Unit
+
+                            override suspend fun setOwnerMonitoring(enabled: Boolean) = Unit
+                        }
+                }
+            val calls =
+                CallTaskCoordinator(
+                    CallProviderRegistry(listOf(provider)),
+                    { brain },
+                    ThreadCallTaskJournal(store),
+                    repository,
+                    backgroundScope,
+                    { error("No question is asked") },
+                    object : CallCredentialResolver {
+                        override fun configured() = emptyList<CallCredential>()
+
+                        override suspend fun resolve(reference: String): CharArray = error("No secret expected")
+                    },
+                    { CallSpeechDetector { false } },
+                )
+            val registry = CapabilityRegistry(CallCapabilities.backends(calls), CallCapabilities.definitions)
+            val controller =
+                ThreadController(
+                    registry,
+                    CapabilityDispatcher(registry, repository),
+                    repository,
+                    store,
+                    backgroundScope,
+                    providerFactory = { owner },
+                    callTasks = calls,
+                )
+            runCurrent()
+            controller.connect("")
+            runCurrent()
+            controller.submit("Call the card line")
+            runCurrent()
+            owner.incoming.send(
+                ProviderEvent.ToolCallReady(
+                    CallIdentity(
+                        "owner-epoch",
+                        "owner",
+                        owner.inputs.single().id,
+                        "generation",
+                        "provider-turn",
+                        owner.catalogRevision,
+                        "start",
+                    ),
+                    CallCapabilities.START,
+                    Json
+                        .parseToJsonElement(
+                            """{"number":"+18005550100","goal":"Ask about the fee","briefing":"Context", "disclosures":"Name", "mandate":[]}""",
+                        ).jsonObject,
+                ),
+            )
+            runCurrent()
+            val thread = controller.state.value.threadId!!
+
+            controller.submit("provide the card number")
+            runCurrent()
+            val submission = controller.submitBackground("then ask about the fee", thread)
+            runCurrent()
+
+            val task =
+                calls.tasks.value.values
+                    .single()
+            assertEquals(task.turnId, submission.taskId)
+            assertEquals(
+                listOf("provide the card number", "then ask about the fee"),
+                task.transcript.filter { it.speaker == CallSpeaker.OWNER_TO_AGENT }.map { it.text },
+            )
+            assertEquals(listOf("provide the card number", "then ask about the fee"), whispered.map { it.text })
+            assertEquals(
+                listOf(InitiatorKind.OWNER_CONTROL, InitiatorKind.OWNER_CONTROL),
+                repository.history().filter { it.capabilityId == CallCapabilities.INSTRUCT }.map { it.initiator?.kind },
+            )
+            assertEquals(
+                listOf("Call the card line", "provide the card number", "then ask about the fee"),
+                store.items(thread, Int.MAX_VALUE).filterIsInstance<ThreadItem.UserMessage>().map { it.text },
+            )
+            assertEquals(emptyList<String>(), owner.steered)
+
+            legState.value = LegState.Ended(EndCause.REMOTE_HANGUP)
+            runCurrent()
+            controller.submit("what did they say?")
+            runCurrent()
+            assertEquals(listOf("what did they say?"), owner.steered)
+            assertEquals(2, whispered.count { it.speaker == CallSpeaker.OWNER_TO_AGENT })
         }
 
     @Test fun processRecoveryInterruptsUnansweredCallQuestionAndKeepsExternalTranscriptAsData() =
