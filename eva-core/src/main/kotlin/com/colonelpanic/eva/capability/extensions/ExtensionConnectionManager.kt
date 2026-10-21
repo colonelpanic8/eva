@@ -129,6 +129,21 @@ class ExtensionConnectionManager(
         }
     }
 
+    /** A [ExtensionProtocol.CHECK_CREDENTIAL] request; its random invocation ID is never journaled. */
+    suspend fun check(
+        identity: ExtensionIdentity,
+        revision: String,
+        arguments: String,
+    ): ExtensionExchange =
+        exchange(
+            identity,
+            ExtensionBackend.invocationId(UUID.randomUUID().toString()),
+            ExtensionProtocol.DEFAULT_WAIT_MILLIS,
+            ExtensionProtocol.RESULT_BYTES,
+        ) { connection, id, deadline, callback ->
+            connection.execute(id, revision, ExtensionProtocol.CHECK_CREDENTIAL, arguments, deadline, callback)
+        }
+
     private suspend fun exchange(
         identity: ExtensionIdentity,
         id: String,

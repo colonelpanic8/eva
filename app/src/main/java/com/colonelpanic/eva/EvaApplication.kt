@@ -49,6 +49,7 @@ import com.colonelpanic.eva.capability.extensions.ExtensionDiscovery
 import com.colonelpanic.eva.capability.extensions.ExtensionGrants
 import com.colonelpanic.eva.capability.extensions.ExtensionRuntime
 import com.colonelpanic.eva.capability.extensions.InstalledServiceAdapter
+import com.colonelpanic.eva.capability.extensions.checkCredential
 import com.colonelpanic.eva.conversation.ProviderStatus
 import com.colonelpanic.eva.conversation.ThreadController
 import com.colonelpanic.eva.conversation.TurnWorkHost
@@ -91,6 +92,7 @@ import com.colonelpanic.eva.providers.openai.SubscriptionAccess
 import com.colonelpanic.eva.providers.spotify.SpotifyApi
 import com.colonelpanic.eva.providers.spotify.SpotifyConnect
 import com.colonelpanic.eva.providers.spotify.SpotifyLogin
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -813,34 +815,60 @@ class EvaApplication :
         extensions.settings.value.entries.mapNotNull { entry ->
             val identity = entry.installed.identity as? com.colonelpanic.eva.capability.extensions.ExtensionIdentity
             val descriptor = entry.installed.descriptor
-            if (identity == null || descriptor == null) null else Triple(entry.key, identity, descriptor.credentials)
+            if (identity == null || descriptor == null) null else Triple(entry.key, identity, descriptor)
         }
 
-    fun extensionCredentialStatuses(): Map<String, com.colonelpanic.eva.data.ExtensionCredentialSettings.Status> =
+    fun extensionCredentialStates(): Map<String, com.colonelpanic.eva.data.ExtensionCredentialSettings.State> =
         installedExtensions()
-            .flatMap { (_, identity, credentials) ->
-                credentials.map { spec ->
+            .flatMap { (_, identity, descriptor) ->
+                descriptor.credentials.map { spec ->
                     com.colonelpanic.eva.data.configuration.EvaConfigurationCodec
                         .extensionSecretId(identity.packageName, spec.name) to
-                        extensionCredentials.status(identity, spec.name)
+                        extensionCredentials.state(identity, spec.name)
                 }
             }.toMap()
 
+    /** Saves the value, then has the extension check it when it can. */
     fun saveExtensionCredential(
         entryKey: String,
         name: String,
         value: String,
     ): String? {
-        val (_, identity, credentials) =
+        val (_, identity, descriptor) =
             installedExtensions().find { it.first == entryKey }
                 ?: return "This extension changed or was removed. Reopen Extensions and try again."
-        val spec = credentials.find { it.name == name } ?: return "This extension no longer declares that credential."
-        return try {
-            extensionCredentials.save(identity, spec, value)
-        } catch (error: Exception) {
-            "Could not save ${spec.title} on this phone: ${error.message ?: error.javaClass.simpleName}"
+        val spec = descriptor.credentials.find { it.name == name } ?: return "This extension no longer declares that credential."
+        val error =
+            try {
+                extensionCredentials.save(identity, spec, value)
+            } catch (error: Exception) {
+                "Could not save ${spec.title} on this phone: ${error.message ?: error.javaClass.simpleName}"
+            }
+        if (error == null) checkExtensionCredential(entryKey, name)
+        return error
+    }
+
+    fun checkExtensionCredential(
+        entryKey: String,
+        name: String,
+    ) {
+        val (_, identity, descriptor) = installedExtensions().find { it.first == entryKey } ?: return
+        val spec = descriptor.credentials.find { it.name == name }?.takeIf { it.checkable } ?: return
+        scope.launch {
+            try {
+                extensionCredentials.check(identity, spec) { value ->
+                    extensionConnections.checkCredential(identity, descriptor, spec, value)
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                logExtensionFailure(error)
+            }
         }
     }
+
+    private val extensionConnector by lazy { AndroidExtensionConnector(this) }
+    private val extensionConnections by lazy { ExtensionConnectionManager(extensionConnector, SystemClock::elapsedRealtime) }
 
     fun clearPackageServer(
         id: String,
@@ -860,11 +888,9 @@ class EvaApplication :
                         extensionScope,
                         ::logExtensionFailure,
                     ) {
-                        val connector = AndroidExtensionConnector(this)
-                        val connections = ExtensionConnectionManager(connector, SystemClock::elapsedRealtime)
                         InstalledServiceAdapter(
-                            ExtensionDiscovery(connector::scan, connections, extensionScope, ::logExtensionFailure),
-                            connections,
+                            ExtensionDiscovery(extensionConnector::scan, extensionConnections, extensionScope, ::logExtensionFailure),
+                            extensionConnections,
                             secrets = secrets,
                             wording = { prompts.wording.value },
                             credentials = extensionCredentials,

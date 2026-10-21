@@ -4,7 +4,9 @@ import android.app.Application
 import android.content.Context
 import com.colonelpanic.eva.capability.extensions.CredentialSpec
 import com.colonelpanic.eva.capability.extensions.CredentialValues
+import com.colonelpanic.eva.capability.extensions.CredentialVerdict
 import com.colonelpanic.eva.capability.extensions.ExtensionIdentity
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -104,5 +106,94 @@ class ExtensionCredentialSettingsTest {
         assertTrue(settings.save(vault, passphrase, "")!!.contains("Clear"))
         assertTrue(settings.save(vault, passphrase, "x".repeat(4097))!!.contains("4096"))
         assertTrue(settings.saved().isEmpty())
+    }
+
+    @Test fun aCheckKeepsTheVerdictForTheValueItCheckedUntilTheValueChanges() =
+        runTest {
+            val settings = ExtensionCredentialSettings(context, secrets = secrets, now = { 1_000 })
+            settings.save(vault, passphrase, "wrong horse")
+            val asked = mutableListOf<String>()
+
+            settings.check(vault, passphrase) {
+                asked += it
+                CredentialVerdict.Rejected("That passphrase does not unlock the key.")
+            }
+
+            assertEquals(listOf("wrong horse"), asked)
+            val rejected =
+                ExtensionCredentialSettings.Check(
+                    CredentialVerdict.Rejected("That passphrase does not unlock the key."),
+                    onUse = false,
+                    1_000,
+                )
+            assertEquals(
+                ExtensionCredentialSettings.State(ExtensionCredentialSettings.Status.SET, rejected),
+                settings.state(vault, "passphrase"),
+            )
+            assertEquals(rejected, ExtensionCredentialSettings(context, secrets = secrets).state(vault, "passphrase").check)
+            val stored = context.getSharedPreferences("eva.extension-credentials", 0).all.toString()
+            assertFalse(stored, stored.contains("wrong horse"))
+
+            settings.save(vault, passphrase, "correct horse")
+            assertNull(settings.state(vault, "passphrase").check)
+        }
+
+    @Test fun aValueReplacedDuringTheCheckIsCheckedInTurn() =
+        runTest {
+            val settings = ExtensionCredentialSettings(context, secrets = secrets, now = { 3_000 })
+            settings.save(vault, passphrase, "wrong horse")
+            val asked = mutableListOf<String>()
+
+            settings.check(vault, passphrase) { value ->
+                asked += value
+                if (value == "wrong horse") {
+                    assertTrue(settings.state(vault, "passphrase").checking)
+                    settings.save(vault, passphrase, "correct horse")
+                    settings.check(vault, passphrase) { error("A second check must not start while one runs.") }
+                    CredentialVerdict.Rejected("Wrong.")
+                } else {
+                    CredentialVerdict.Accepted("It unlocks the key.")
+                }
+            }
+
+            assertEquals(listOf("wrong horse", "correct horse"), asked)
+            assertEquals(
+                ExtensionCredentialSettings.State(
+                    ExtensionCredentialSettings.Status.SET,
+                    ExtensionCredentialSettings.Check(CredentialVerdict.Accepted("It unlocks the key."), onUse = false, 3_000),
+                ),
+                settings.state(vault, "passphrase"),
+            )
+        }
+
+    @Test fun aProviderEchoingTheValueHasItMasked() {
+        val settings = ExtensionCredentialSettings(context, secrets = secrets, now = { 4_000 })
+        settings.save(vault, passphrase, "wrong horse")
+
+        settings.rejected(vault, mapOf("passphrase" to "wrong horse"), "\"wrong horse\" does not unlock the key.")
+
+        assertEquals(
+            CredentialVerdict.Rejected("\"[credential]\" does not unlock the key."),
+            settings.state(vault, "passphrase").check?.verdict,
+        )
+        val stored = context.getSharedPreferences("eva.extension-credentials", 0).all.toString()
+        assertFalse(stored, stored.contains("wrong horse"))
+    }
+
+    @Test fun aRejectionOnUseMarksOnlyTheValueThatWasSent() {
+        val settings = ExtensionCredentialSettings(context, secrets = secrets, now = { 2_000 })
+        settings.save(vault, passphrase, "wrong horse")
+
+        settings.rejected(vault, mapOf("passphrase" to "an older value"), "The passphrase saved in EVA is wrong.")
+        assertNull(settings.state(vault, "passphrase").check)
+        settings.rejected(vault, mapOf("passphrase" to "wrong horse"), "The passphrase saved in EVA is wrong.")
+
+        assertEquals(
+            ExtensionCredentialSettings.Check(CredentialVerdict.Rejected("The passphrase saved in EVA is wrong."), onUse = true, 2_000),
+            settings.state(vault, "passphrase").check,
+        )
+        settings.clear("org.example.vault", "passphrase")
+        settings.save(vault, passphrase, "wrong horse")
+        assertNull(settings.state(vault, "passphrase").check)
     }
 }

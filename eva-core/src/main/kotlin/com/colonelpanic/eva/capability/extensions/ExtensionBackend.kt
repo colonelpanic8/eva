@@ -55,23 +55,25 @@ class ExtensionBackend(
                         "Extension arguments were rejected. Nothing was submitted.",
                     )
                 }
-            val delivered =
-                when (val provisioned = credentials.values(identity, descriptor.credentials)) {
+            val provisioned =
+                when (val values = credentials.values(identity, descriptor.credentials)) {
                     is CredentialValues.Refused -> {
-                        return@withContext ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "${provisioned.message} Nothing was submitted.")
+                        return@withContext ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "${values.message} Nothing was submitted.")
                     }
 
                     is CredentialValues.Ready -> {
-                        try {
-                            ExtensionProtocol.withCredentials(arguments, provisioned.values)
-                        } catch (_: IllegalArgumentException) {
-                            return@withContext ExecutionOutcome(
-                                InvocationStatus.NOT_EXECUTED,
-                                "The arguments and this extension's saved credentials together exceed " +
-                                    "${ExtensionProtocol.ARGUMENT_BYTES} bytes. Nothing was submitted; shorten the request.",
-                            )
-                        }
+                        values.values
                     }
+                }
+            val delivered =
+                try {
+                    ExtensionProtocol.withCredentials(arguments, provisioned)
+                } catch (_: IllegalArgumentException) {
+                    return@withContext ExecutionOutcome(
+                        InvocationStatus.NOT_EXECUTED,
+                        "The arguments and this extension's saved credentials together exceed " +
+                            "${ExtensionProtocol.ARGUMENT_BYTES} bytes. Nothing was submitted; shorten the request.",
+                    )
                 }
             val invocation = invocationId(proposal.callId)
             when (val exchange = connections.execute(identity, invocation, descriptor.revision, capability, delivered)) {
@@ -93,6 +95,10 @@ class ExtensionBackend(
                             ExtensionProtocol.executeResult(exchange.json, capability.maxResultBytes, capability.outputSchema)
                         }.getOrNull()
                             ?: return@withContext unknown(invocation)
+                    provisioned
+                        .filterKeys { it in result.rejectedCredentials }
+                        .takeIf { it.isNotEmpty() }
+                        ?.let { rejected -> runCatching { credentials.rejected(identity, rejected, result.outcome.message) } }
                     withheld(
                         proposal,
                         result.outcome.copy(

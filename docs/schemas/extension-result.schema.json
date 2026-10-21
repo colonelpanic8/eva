@@ -47,6 +47,14 @@
         }
       }
     },
+    "rejectedCredentials": {
+      "description": "Declared credentials whose delivered value the provider found wrong during this call; EVA shows each as rejected on use. Sent only when the describe request lists the credential-check feature.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$" }
+    },
     "_meta": { "type": "object" }
   },
   "allOf": [
@@ -65,6 +73,10 @@
     {
       "if": { "required": ["secrets"] },
       "then": { "properties": { "status": { "const": "completed" } } }
+    },
+    {
+      "if": { "required": ["rejectedCredentials"] },
+      "then": { "properties": { "status": { "enum": ["not_executed", "failed"] } } }
     }
   ]
 }

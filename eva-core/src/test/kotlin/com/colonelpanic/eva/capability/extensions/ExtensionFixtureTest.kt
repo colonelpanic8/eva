@@ -56,6 +56,22 @@ class ExtensionFixtureTest {
                 mapOf("pgp_passphrase" to "correct horse battery staple"),
             )
         assertEquals(Json.parseToJsonElement(arguments), Json.parseToJsonElement(built))
+        assertTrue(descriptor.credentials.single().checkable)
+        assertEquals(
+            Json.parseToJsonElement(File(docs, "examples/extension-credential-check-arguments.json").readText()),
+            Json.parseToJsonElement(ExtensionProtocol.checkArguments("pgp_passphrase", "correct horse battery staple")),
+        )
+        assertEquals(
+            CredentialVerdict.Rejected("That passphrase does not unlock the PGP key 0x3A9F12C4. Nothing was decrypted."),
+            ExtensionProtocol.checkResult(File(docs, "examples/extension-credential-check-result.json").readText()),
+        )
+        assertEquals(
+            setOf("pgp_passphrase"),
+            ExtensionProtocol
+                .executeResult(
+                    File(docs, "examples/extension-credential-rejected-result.json").readText(),
+                ).rejectedCredentials,
+        )
     }
 
     @Test

@@ -8,6 +8,8 @@ All notable changes to EVA will be documented here.
 
 - A delegated call can enter a card or account number that a password manager returned in the same conversation, such as Password Store (EVA), on the phone menu's keypad. The model and the call transcript see only the secret's handle and label, never the digits.
 
+- Saving a credential an installed extension declares, such as Password Store's PGP key passphrase, now has the extension check it right away when it supports the new `credential-check` protocol feature. The credential's row says whether the extension accepted it, rejected it and why, or could not check it, and a Check button asks again. A value an extension rejects during a task shows "Rejected on use" with the time and the extension's reason on the same row, until the value is checked again, replaced, or cleared.
+
 ### Fixed
 
 - Redact common punctuated and spoken-digit credential read-backs from delegated-call records.
