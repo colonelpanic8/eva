@@ -10,6 +10,7 @@ All notable changes to EVA will be documented here.
 
 ### Fixed
 
+- After recording a call's outcome, the call agent says goodbye and hangs up instead of leaving the line silent until the other party hangs up.
 - Typing in a conversation while its delegated call is on the line now reaches the call agent as an instruction, instead of waiting for the call to end.
 
 ## [0.71.1] - 2026-10-20
