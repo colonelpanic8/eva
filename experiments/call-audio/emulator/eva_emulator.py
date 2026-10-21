@@ -471,7 +471,9 @@ def signin(args):
         f"Owner: open {url['text'].split(' ')[0] if url else 'the sign-in page'} and enter code {code['text']} (expires in 15 minutes)"
     )
     deadline = time.time() + args.timeout
-    while find(serial, r"^Sign in with ChatGPT$|enter this code", timeout=1):
+    while b'name="chatgpt.tokens"' not in (
+        read_private(serial, PACKAGE, "shared_prefs/eva.secrets.xml") or b""
+    ):
         if time.time() > deadline:
             fail("the code was not approved in time; run signin again for a new code")
         time.sleep(5)
@@ -1070,15 +1072,18 @@ def enable_password_store(serial):
 
 
 def gate_wording(serial):
-    """The uncertain-mutation refusals as EVA Debug words them: its followed copy, else the shipped one."""
+    """Include followed and bundled refusals: missing catalog keys fall back to the APK."""
+    phrases = []
     for text in (
         read_private(serial, PACKAGE, "files/eva-wording.yaml"),
         WORDING.read_bytes(),
     ):
         try:
-            return card_test.gate_phrases((text or b"").decode())
+            phrases.extend(card_test.gate_phrases((text or b"").decode()))
         except ValueError:
             continue
+    if phrases:
+        return list(dict.fromkeys(phrases))
     fail("no eva-wording.yaml defines an uncertain-mutation refusal")
 
 
@@ -1106,6 +1111,8 @@ def card_wait(serial, out, known, timeout):
         if (
             starts
             and not tasks
+            and turns
+            and all(t["status"] != "OPEN" for t in turns)
             and all(i["status"] in ("NOT_EXECUTED", "FAILED") for i in starts)
         ):
             print(f"eva.call.start did not start a call: {starts[-1]['message']}")

@@ -29,7 +29,7 @@
       "timeout": 20,
       "speechTimeout": 3,
       "prompt": "Please enter your 16 digit card number, followed by the pound key.",
-      "readback": "Thank you. I found the card ending in {last4}.",
+      "readback": "For this test only, the card number is four one one one, one one one one, one one one one, one one one one. Thank you.",
       "next": "menu",
       "empty": "end"
     },

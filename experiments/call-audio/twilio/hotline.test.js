@@ -270,7 +270,7 @@ test("role-play keeps the ZIP question and confirmation read-back separate", () 
   );
 });
 
-test("card services reads back only the last four digits and walks to the annual-fee facts", () => {
+test("card services reads back synthetic digits to exercise redaction and walks to the fee facts", () => {
   const card = validateScenario(
     JSON.parse(
       fs.readFileSync(`${__dirname}/scenario-card-services.json`, "utf8"),
@@ -292,7 +292,10 @@ test("card services reads back only the last four digits and walks to the annual
   assert.match(greeting, /<Gather input="dtmf"[^>]*step=card&amp;turn=0/);
   assert.match(greeting, /16 digit card number, followed by the pound key/);
   const entered = response("card", { Digits: "4111111111111111" });
-  assert.match(entered, /Thank you\. I found the card ending in 1 1 1 1\./);
+  assert.match(
+    entered,
+    /four one one one, one one one one, one one one one, one one one one/,
+  );
   assert.doesNotMatch(entered, /4111|You pressed/);
   assert.match(entered, /press 0 or say representative/);
   assert.match(

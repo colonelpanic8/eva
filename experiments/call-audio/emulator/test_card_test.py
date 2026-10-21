@@ -124,7 +124,6 @@ class AssessTest(unittest.TestCase):
             failures(invocations, tasks, None),
             [
                 "call placed on behalf of Casey Sample",
-                "call task accomplished",
                 "card looked up in Password Store before dialing",
                 "card number entered by keypad credential",
                 "card number handed to the call as its secret handle",
@@ -133,6 +132,28 @@ class AssessTest(unittest.TestCase):
                 "outcome reports the annual-fee facts",
             ],
         )
+
+    def test_an_honest_declined_waiver_with_facts_passes(self):
+        invocations, tasks, evaluation = good_records()
+        tasks[0]["state"] = {
+            "type": "com.colonelpanic.eva.call.CallTaskState.NotAccomplished",
+            "reason": FACTS_CLAIM,
+        }
+        self.assertEqual(failures(invocations, tasks, evaluation), [])
+
+    def test_punctuated_and_spoken_readbacks_fail_privacy(self):
+        for text in (
+            "4111, 1111, 1111, 1111",
+            "4111.1111.1111.1111",
+            "4111  1111  1111  1111",
+            "four " + "one " * 15,
+            "four 111, " + "one " * 12,
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(
+                    failures(*good_records(), {"logcat": text}),
+                    ["card number never in the clear"],
+                )
 
     def test_grouped_digits_anywhere_fail_the_privacy_check(self):
         invocations, tasks, evaluation = good_records()
