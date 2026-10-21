@@ -157,8 +157,8 @@ retries an uncertain mutation. Ordinary mutations serialize across turns on the 
 SMS and HTTP actions can proceed while it runs. A mutation waiting for the thread
 lock reports that it is queued after three seconds through a voice lifecycle note
 and the conversation status; acquiring the lock sooner cancels that delayed notice.
-Device-lease waits report their queue status immediately. An UNKNOWN or FAILED mutation in any still-running turn blocks further mutations
-while that turn remains active. Read-only tools remain available for verification.
+Device-lease waits report their queue status immediately. See the
+[uncertain-outcome gate](#uncertain-outcome-gate) for what an UNKNOWN mutation holds back.
 
 Voice offers `eva.session.background_status` (no arguments) and
 `eva.session.background_cancel` (`taskId`). Status lists this thread's background
@@ -294,9 +294,7 @@ requests, handoff tasks, device-task goals or corrections, and receipts record t
 request whole. The model's context window is the only bound: when OpenAI reports
 an overflow, EVA says the request is too long for that model's context, with the
 window size when OpenAI states it.
-An unknown or failed mutation blocks further mutations in that turn because partial
-external effects may exist; read-only verification remains available. Process
-recovery marks interrupted work and never automatically repeats it. The legacy
+Process recovery marks interrupted work and never automatically repeats it. The legacy
 SQLite side-effect reservation column is retained for database compatibility but
 is no longer used for admission.
 
@@ -625,6 +623,32 @@ resumed conversations, and delivered to the model within a result budget equal t
 the extension result limit. See the [extension protocol](extension-protocol.md)
 for concrete identity, schema, waiting, and authorization rules.
 
+### Uncertain-outcome gate
+
+`ThreadController` keeps a per-thread list of phone changes whose effects are
+unknown, so the model does not repeat one blindly. Each entry names the action's
+call ID, capability, title, and time. An entry comes from a non-read-only,
+non-bookkeeping action whose receipt is `UNKNOWN`, or from a mutation a force stop
+stopped waiting for. `FAILED` does not create one: producers report known partial
+work as `FAILED` and unresolved effects as `UNKNOWN`, so a device task that only read
+the screen, or a call that ended NotAccomplished, leaves nothing uncertain.
+
+An entry refuses only a later proposal of the same capability in that thread, as
+`NOT_EXECUTED` with wording (`uncertain-repeat`) that names the entry and says how to
+proceed. Other actions run, and call controls are never held back. An entry clears
+when any of these happens:
+
+- A read-only action proposed after the entry completes in that thread, or voice's
+  `background_status` runs. Checking the outcome clears it, so repeating the action
+  after a check runs, including when the owner asks for it.
+- The turn that recorded it finishes.
+
+A force-stop entry ignores both: the abandoned dispatch may still be acting, and a
+second call start would not queue behind it. Only the dispatch returning clears it.
+
+Questions and answers never clear an entry. Process recovery never repeats an
+uncertain action.
+
 ### Secret handles
 
 An installed extension can return passwords and one-time codes in a reply's
@@ -924,7 +948,7 @@ subsystem. A future vision-first agent can implement `TaskAgent` independently.
 `CapabilityDispatcher`. It has one journaled invocation regardless of how many
 device steps it takes.
 Primitives execute inside that admitted task under the device lease, rather than
-being independently dispatched. The ordinary failed/unknown-mutation barrier
+being independently dispatched. The [uncertain-outcome gate](#uncertain-outcome-gate)
 remains in `ThreadController`; it does not block recovery attempts inside the
 worker. An unresolved primitive effect remains UNKNOWN at terminal task receipt,
 even if later actions succeed. The task uses neither `BudgetedBackend` nor

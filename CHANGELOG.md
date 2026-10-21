@@ -16,6 +16,8 @@ All notable changes to EVA will be documented here.
 - After recording a call's outcome, the call agent says goodbye and hangs up instead of leaving the line silent until the other party hangs up.
 - Typing in a conversation while its delegated call is on the line now reaches the call agent as an instruction, instead of waiting for the call to end.
 
+- A failed action no longer stops EVA from making later phone changes in the same conversation. Examples are a device task that only read the screen and a call that ended without accomplishing its goal. Only an action with an unknown outcome holds anything back, and it holds back only a repeat of that same kind of action. The refusal names that action, with its call ID and time. EVA can repeat the action once any read-only check has run, including when you ask it to.
+
 ## [0.71.1] - 2026-10-20
 
 ### Fixed

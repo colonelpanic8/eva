@@ -1259,9 +1259,10 @@ and verification boundaries.
 per-turn call or read quota. Reads and
 mutations may follow earlier tool results without another user message. This
 applies to native and imported tools, including background continuation. Existing
-grants and dispatcher authorization still apply separately to every call. Unknown
-or failed mutations block further mutations in the same turn; read-only checks
-remain available. No automatic retry or in-turn grant approval is introduced;
+grants and dispatcher authorization still apply separately to every call. A
+mutation with an `UNKNOWN` outcome holds back only a repeat of the same tool until a
+read-only check runs; see the
+[uncertain-outcome gate](architecture.md#uncertain-outcome-gate). No automatic retry or in-turn grant approval is introduced;
 persistent idempotency is the provider's promise under section 9, not EVA's.
 
 Dispatched operations are journaled independently of result delivery, text and

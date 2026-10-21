@@ -676,6 +676,60 @@ class ThreadControllerTest {
         }
 
     @Test
+    fun `a check does not release a call start a force stop is still waiting on`() =
+        runTest {
+            val release = CompletableDeferred<Unit>()
+            val start = action.copy(id = com.colonelpanic.eva.call.CallCapabilities.START, title = "Start call")
+            val hanging =
+                object : ExecutionBackend {
+                    override suspend fun unavailableReason(): String? = null
+
+                    override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome =
+                        withContext(NonCancellable) {
+                            executions++
+                            if (arguments["place"] == "Bank") release.await()
+                            ExecutionOutcome(InvocationStatus.COMPLETED, "Called ${arguments["place"]}")
+                        }
+                }
+            val provider = FakeProvider()
+            val controller =
+                controller(
+                    provider,
+                    registry =
+                        CapabilityRegistry(
+                            mapOf(start.id to hanging, lookup.id to backend { ExecutionOutcome(InvocationStatus.COMPLETED, "Checked") }),
+                            listOf(start, lookup),
+                        ),
+                )
+            advanceUntilIdle()
+            controller.connect("test")
+            advanceUntilIdle()
+            controller.submit("Call the bank")
+            advanceUntilIdle()
+            provider.call("hung", start.id, "place" to "Bank")
+            runCurrent()
+            val task = controller.taskSnapshots.value.single()
+            controller.forceStopTask(task.taskId)
+            controller.forceStopTask(task.taskId)
+            runCurrent()
+
+            controller.submit("Call the bank again")
+            advanceUntilIdle()
+            provider.call("check", lookup.id, "query" to "Bank")
+            advanceUntilIdle()
+            provider.call("again", start.id, "place" to "Bank again")
+            advanceUntilIdle()
+            assertEquals(listOf("COMPLETED", "NOT_EXECUTED"), provider.results.takeLast(2).map { it.status })
+            assertEquals(2, executions)
+            release.complete(Unit)
+            advanceUntilIdle()
+            provider.call("after-return", start.id, "place" to "Bank again")
+            advanceUntilIdle()
+            assertEquals("COMPLETED", provider.results.last().status)
+            assertEquals(3, executions)
+        }
+
+    @Test
     fun `voice acceptance does not wait for promotion and covered turns receive no limit notice`() =
         runTest {
             val voice = FakeProvider()
@@ -1793,6 +1847,78 @@ class ThreadControllerTest {
         }
 
     @Test
+    fun `failed actions with known outcomes do not block later phone changes`() =
+        runTest {
+            val call = action.copy(id = "test.call", title = "Start call")
+            val outcomes = ArrayDeque(listOf(InvocationStatus.FAILED, InvocationStatus.FAILED, InvocationStatus.HANDED_OFF))
+            registry.replace(
+                mapOf(
+                    action.id to backend { ExecutionOutcome(outcomes.removeFirst(), "Done ${it.getValue("place")}") },
+                    call.id to backend { ExecutionOutcome(InvocationStatus.FAILED, "NotAccomplished(reason=Could not verify)") },
+                ),
+                listOf(action, call),
+            )
+            val provider = FakeProvider()
+            val controller = controller(provider)
+            advanceUntilIdle()
+            controller.connect("test")
+            advanceUntilIdle()
+            controller.submit("Prepare and make the call")
+            advanceUntilIdle()
+            provider.call("read-screen", action.id, "place" to "Bank app")
+            advanceUntilIdle()
+            provider.call("call", call.id, "place" to "Bank")
+            advanceUntilIdle()
+            provider.call("retry-screen", action.id, "place" to "Bank app")
+            advanceUntilIdle()
+            provider.call("owner-asked", action.id, "place" to "Card number")
+            advanceUntilIdle()
+            assertEquals(listOf("FAILED", "FAILED", "FAILED", "HANDED_OFF"), provider.results.map { it.status })
+            assertEquals(4, executions)
+        }
+
+    @Test
+    fun `an unknown outcome blocks only repeating that action until a read checks it`() =
+        runTest {
+            val call = action.copy(id = "test.call", title = "Start call")
+            registry.replace(
+                mapOf(
+                    action.id to backend { ExecutionOutcome(InvocationStatus.UNKNOWN, "The task ended with an unresolved device action.") },
+                    call.id to backend { ExecutionOutcome(InvocationStatus.COMPLETED, "Called") },
+                    lookup.id to backend { ExecutionOutcome(InvocationStatus.COMPLETED, "Checked") },
+                ),
+                listOf(action, call, lookup),
+            )
+            val provider = FakeProvider()
+            val controller = controller(provider, now = { 1_792_552_018_000 })
+            advanceUntilIdle()
+            controller.connect("test")
+            advanceUntilIdle()
+            controller.submit("Get the card number, then call")
+            advanceUntilIdle()
+            provider.call("device", action.id, "place" to "Wallet")
+            advanceUntilIdle()
+            provider.call("call", call.id, "place" to "Bank")
+            provider.call("repeat", action.id, "place" to "Wallet again")
+            advanceUntilIdle()
+            assertEquals(listOf("UNKNOWN", "COMPLETED", "NOT_EXECUTED"), provider.results.map { it.status })
+            assertEquals(
+                "Nothing was executed. An earlier Custom action (test.custom, call provider:session:device, " +
+                    "2026-10-21T03:06:58Z) in this thread ended with an unknown outcome, so it may have changed external " +
+                    "state. Before repeating test.custom, check what that action did with a read-only tool, such as " +
+                    "background_status, a status tool, or a screen read. Once a read-only check completes, repeating " +
+                    "it runs. Other actions are not blocked.",
+                provider.results.last().message,
+            )
+            provider.call("check", lookup.id, "query" to "Wallet")
+            advanceUntilIdle()
+            provider.call("verified-repeat", action.id, "place" to "Wallet again")
+            advanceUntilIdle()
+            assertEquals(listOf("COMPLETED", "UNKNOWN"), provider.results.takeLast(2).map { it.status })
+            assertEquals(4, executions)
+        }
+
+    @Test
     fun `connection waits for capabilities before capturing its catalog`() =
         runTest {
             val ready = CompletableDeferred<Unit>()
@@ -2372,77 +2498,71 @@ class ThreadControllerTest {
 
     @Test
     fun `concurrent turns serialize mutations and expose uncertain receipts while reads remain available`() =
-        runTest { checkConcurrentMutationGate(InvocationStatus.UNKNOWN) }
+        runTest {
+            val gate = CompletableDeferred<Unit>()
+            registry.replace(
+                mapOf(
+                    action.id to
+                        object : ExecutionBackend {
+                            override suspend fun unavailableReason(): String? = null
 
-    @Test
-    fun `a failed mutation on another active turn also requires verification`() =
-        runTest { checkConcurrentMutationGate(InvocationStatus.FAILED) }
-
-    private suspend fun TestScope.checkConcurrentMutationGate(outcome: InvocationStatus) {
-        val gate = CompletableDeferred<Unit>()
-        registry.replace(
-            mapOf(
-                action.id to
-                    object : ExecutionBackend {
-                        override suspend fun unavailableReason(): String? = null
-
-                        override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome {
-                            executions++
-                            gate.await()
-                            return ExecutionOutcome(outcome, "The park may already be open")
-                        }
-                    },
-                lookup.id to backend { ExecutionOutcome(InvocationStatus.COMPLETED, "Checked park") },
-            ),
-            listOf(action, lookup),
-        )
-        val voice = FakeProvider()
-        val background = FakeProvider(epoch = "background")
-        val controller = controller(voice, background = background, media = { VoiceMedia() })
-        advanceUntilIdle()
-        controller.connectVoice("test")
-        advanceUntilIdle()
-        voice.startVoice("first", "Open the park in the background")
-        voice.call("delegate", ThreadController.DEFER_TO_TEXT.capabilityId, "task" to "Open the park")
-        advanceUntilIdle()
-        background.input = ConversationInput(latestTurn(controller), "")
-        background.call("background-open", action.id, "place" to "Park")
-        runCurrent()
-        voice.startVoice("second", "Open it and check")
-        voice.call("voice-open", action.id, "place" to "Park")
-        voice.call("verify", lookup.id, "query" to "Park")
-        runCurrent()
-        assertEquals(2, executions)
-        assertTrue(voice.results.none { it.call.callId == "voice-open" })
-        assertEquals("COMPLETED", voice.results.last().status)
-        gate.complete(Unit)
-        runCurrent()
-        assertEquals(outcome.name, background.results.single().status)
-        assertEquals("NOT_EXECUTED", voice.results.last().status)
-        assertEquals(2, executions)
-        voice.call("status", ThreadController.BACKGROUND_STATUS.capabilityId)
-        runCurrent()
-        val receipt =
-            voice.results
-                .last()
-                .data!!
-                .getValue("tasks")
-                .jsonArray
-                .single()
-                .jsonObject
-                .getValue("recentReceipts")
-                .jsonArray
-                .single()
-                .jsonObject
-        assertEquals(outcome.name, receipt.getValue("status").jsonPrimitive.content)
-        assertEquals("The park may already be open", receipt.getValue("message").jsonPrimitive.content)
-        assertTrue(
-            receipt
-                .getValue("arguments")
-                .jsonPrimitive.content
-                .contains("Park"),
-        )
-    }
+                            override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome {
+                                executions++
+                                gate.await()
+                                return ExecutionOutcome(InvocationStatus.UNKNOWN, "The park may already be open")
+                            }
+                        },
+                    lookup.id to backend { ExecutionOutcome(InvocationStatus.COMPLETED, "Checked park") },
+                ),
+                listOf(action, lookup),
+            )
+            val voice = FakeProvider()
+            val background = FakeProvider(epoch = "background")
+            val controller = controller(voice, background = background, media = { VoiceMedia() })
+            advanceUntilIdle()
+            controller.connectVoice("test")
+            advanceUntilIdle()
+            voice.startVoice("first", "Open the park in the background")
+            voice.call("delegate", ThreadController.DEFER_TO_TEXT.capabilityId, "task" to "Open the park")
+            advanceUntilIdle()
+            background.input = ConversationInput(latestTurn(controller), "")
+            background.call("background-open", action.id, "place" to "Park")
+            runCurrent()
+            voice.startVoice("second", "Open it and check")
+            voice.call("voice-open", action.id, "place" to "Park")
+            voice.call("verify", lookup.id, "query" to "Park")
+            runCurrent()
+            assertEquals(2, executions)
+            assertTrue(voice.results.none { it.call.callId == "voice-open" })
+            assertEquals("COMPLETED", voice.results.last().status)
+            gate.complete(Unit)
+            runCurrent()
+            assertEquals("UNKNOWN", background.results.single().status)
+            assertEquals("NOT_EXECUTED", voice.results.last().status)
+            assertEquals(2, executions)
+            voice.call("status", ThreadController.BACKGROUND_STATUS.capabilityId)
+            runCurrent()
+            val receipt =
+                voice.results
+                    .last()
+                    .data!!
+                    .getValue("tasks")
+                    .jsonArray
+                    .single()
+                    .jsonObject
+                    .getValue("recentReceipts")
+                    .jsonArray
+                    .single()
+                    .jsonObject
+            assertEquals("UNKNOWN", receipt.getValue("status").jsonPrimitive.content)
+            assertEquals("The park may already be open", receipt.getValue("message").jsonPrimitive.content)
+            assertTrue(
+                receipt
+                    .getValue("arguments")
+                    .jsonPrimitive.content
+                    .contains("Park"),
+            )
+        }
 
     @Test
     fun `unowned duplicate waits for a dispatching receipt to finish`() =
