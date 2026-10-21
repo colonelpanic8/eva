@@ -101,10 +101,10 @@ The checks, each PASS or FAIL in `checks.txt` and `summary.json` under
   field) ran before `eva.call.start`;
 - `eva.call.start` named `Casey Sample` in `onBehalfOf` and the card number's `secret:` handle in
   `credentials`, and a DTMF transcript item entered that handle;
-- the card number, with or without separators, appears in no EVA database text, logcat or call
+- the card number, including punctuated and English digit-word read-backs, appears in no EVA database text, logcat or call
   transcript;
 - no action was refused by the uncertain-mutation gate (either refusal wording);
-- the call task ended Accomplished with the fee, no-waiver and Test Cash facts in its claim;
+- the call task ended Accomplished or NotAccomplished, reporting the fee, no-waiver and Test Cash facts honestly;
 - the hotline received the digits `4111111111111111` and heard the name and ZIP.
 
 The command exits nonzero on any failure. `card_test.py` holds these rules as pure functions over
@@ -126,3 +126,12 @@ direnv exec . experiments/call-audio/twilio/setup --reuse-number +15592493930  #
 
 Without `--hotline-ready`, `card-test` stops before typing the request and prints what is
 missing, so a run never calls a hotline still serving another scenario.
+
+This fixture does not request an SSN or authorize a product change. Passing it proves an
+inquiry with card/name/ZIP verification, not an account change. The local unit tests
+exercise the verdict; only artifacts from an actual hotline run establish end-to-end behavior.
+
+Release order: ship EVA's secret-handle keypad support before merging eva-instructions #23,
+which followed installations load immediately. Combine #22 and #23 and run `just prompt-sync`
+again before publishing the matching app baseline. Password Store descriptor changes require
+the owner's grant to be renewed; the seeding command does this on the test emulator only.

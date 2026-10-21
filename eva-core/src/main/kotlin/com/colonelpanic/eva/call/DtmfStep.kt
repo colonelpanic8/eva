@@ -61,7 +61,13 @@ sealed interface DtmfStep {
                     step.startsWith(CREDENTIAL, ignoreCase = true) -> {
                         val reference = step.substring(CREDENTIAL.length).trim()
                         require(reference.isNotEmpty()) { "Step ${index + 1} names no credential." }
-                        Credential(reference)
+                        Credential(
+                            if (reference.startsWith(SecretVault.PREFIX, ignoreCase = true)) {
+                                SecretVault.PREFIX + reference.substring(SecretVault.PREFIX.length)
+                            } else {
+                                reference
+                            },
+                        )
                     }
 
                     step.isNotEmpty() && step.uppercase().all { it in KEYS } -> {
