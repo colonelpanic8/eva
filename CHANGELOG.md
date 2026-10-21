@@ -4,6 +4,10 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Saving a credential an installed extension declares, such as Password Store's PGP key passphrase, now has the extension check it right away when it supports the new `credential-check` protocol feature. The credential's row says whether the extension accepted it, rejected it and why, or could not check it, and a Check button asks again. A value an extension rejects during a task shows "Rejected on use" with the time and the extension's reason on the same row, until the value is checked again, replaced, or cleared.
+
 ## [0.71.1] - 2026-10-20
 
 ### Fixed

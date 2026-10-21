@@ -659,7 +659,7 @@ handles, which then fail the same way.
 An installed extension can declare up to four `credentials` in its descriptor, such as a
 key passphrase it needs on a locked phone. The extension's entry under **Extensions →
 Installed** shows each one's title, description, and state (not set, set, or saved for
-another signer) with a masked field to set, replace, or clear it. Values are device-local
+another signer, plus what the provider last said about it) with a masked field to set, replace, or clear it. Values are device-local
 authorization: `data/ExtensionCredentialSettings.kt` keeps each in the Keystore-encrypted
 `SecretStore` beside the Android user and signer it was entered for. Only an
 `extension/<package>/<name>` reference reaches the [portable
@@ -671,6 +671,18 @@ call returns the journaled record without contacting the provider. A value whose
 user or signer no longer matches the installed app is not sent: the call is
 `NOT_EXECUTED` with a message to re-enter it. A provider that rejects a value reports
 `not_configured`, which reaches the user and model as its message.
+
+Saving a value for a credential the provider marks `checkable` also checks it: EVA sends
+the provider-protocol [credential check](extension-protocol.md#checking-a-credential) with
+only that value, outside the dispatcher and journal, like `describe`. The row then says the
+provider confirmed it, rejected it (with the provider's reason and how to fix it), or that
+EVA could not check it and why; **Check** asks again. A reply that names a delivered
+credential in `rejectedCredentials` marks it rejected on use, with the time and the
+provider's text, so a wrong value shows on its row without reading a receipt. These verdicts
+are device-local preferences beside the value, with any copy of the value in the provider's
+text masked. Each is recorded only while the checked or delivered value is still the saved
+one; a value replaced during a check is checked in turn. Saving or clearing the value
+forgets its verdict. A credential that is not `checkable` says EVA finds out on first use.
 
 Locked-phone reads: `SecretStore`'s AES-GCM key sets neither
 `setUserAuthenticationRequired` nor `setUnlockedDeviceRequired`, so the Keystore can use it

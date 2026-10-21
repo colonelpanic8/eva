@@ -1,5 +1,6 @@
 package com.colonelpanic.eva.ui.settings
 
+import android.text.format.DateUtils
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -40,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import com.colonelpanic.eva.capability.CallEnding
 import com.colonelpanic.eva.capability.CatalogAdmission
 import com.colonelpanic.eva.capability.extensions.CredentialSpec
+import com.colonelpanic.eva.capability.extensions.CredentialVerdict
 import com.colonelpanic.eva.capability.extensions.Effect
 import com.colonelpanic.eva.capability.extensions.ExtensionSettingsEntry
 import com.colonelpanic.eva.data.ExtensionCredentialSettings
@@ -210,7 +212,7 @@ private fun ExtensionEntry(
                 val id =
                     com.colonelpanic.eva.data.configuration.EvaConfigurationCodec
                         .extensionSecretId(identity.packageName, spec.name)
-                ExtensionCredential(spec, state.extensionCredentials[id], entry.key, identity.packageName, actions)
+                ExtensionCredential(spec, state.extensionCredentials[id], descriptor.title, entry.key, identity.packageName, actions)
             }
         }
         val authorities = configurations.flatMap { it.contentAuthorities }.distinct().filter { it in state.contentProviders }
@@ -262,35 +264,23 @@ private fun ExtensionEntry(
 @Composable
 private fun ExtensionCredential(
     spec: CredentialSpec,
-    status: ExtensionCredentialSettings.Status?,
+    state: ExtensionCredentialSettings.State?,
+    provider: String,
     entryKey: String,
     packageName: String,
     actions: SettingsActions,
 ) {
     var value by remember(entryKey, spec.name) { mutableStateOf("") }
     var error by remember(entryKey, spec.name) { mutableStateOf<String?>(null) }
+    val status = state?.status ?: ExtensionCredentialSettings.Status.NOT_SET
     Column(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(spec.title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
         Text(spec.description, style = MaterialTheme.typography.bodySmall)
-        SettingsNote(
-            when (status) {
-                ExtensionCredentialSettings.Status.SET -> {
-                    "Saved encrypted on this phone and sent only to this app. It's never shown again."
-                }
-
-                ExtensionCredentialSettings.Status.OTHER_SIGNER -> {
-                    "Saved for a differently signed or reinstalled copy of this app, so EVA won't send it. Enter it again."
-                }
-
-                else -> {
-                    "Not set on this phone."
-                }
-            },
-            error = status == ExtensionCredentialSettings.Status.OTHER_SIGNER,
-        )
+        val (note, isError) = credentialNote(spec, state, provider)
+        SettingsNote(note, error = isError)
         OutlinedTextField(
             value,
             { value = it },
@@ -306,11 +296,76 @@ private fun ExtensionCredential(
                 error = actions.onSaveExtensionCredential(entryKey, spec.name, value)
                 if (error == null) value = ""
             }) { Text("Save") }
-            if (status != null && status != ExtensionCredentialSettings.Status.NOT_SET) {
+            if (status == ExtensionCredentialSettings.Status.SET && spec.checkable) {
+                OutlinedButton(
+                    onClick = { actions.onCheckExtensionCredential(entryKey, spec.name) },
+                    enabled = state?.checking != true,
+                ) { Text(if (state?.check == null) "Check" else "Check again") }
+            }
+            if (status != ExtensionCredentialSettings.Status.NOT_SET) {
                 TextButton(onClick = {
                     actions.onClearExtensionCredential(packageName, spec.name)
                     error = null
                 }) { Text("Clear") }
+            }
+        }
+    }
+}
+
+/** What the row says about the saved value, and whether that is a problem the owner must fix. */
+private fun credentialNote(
+    spec: CredentialSpec,
+    state: ExtensionCredentialSettings.State?,
+    provider: String,
+): Pair<String, Boolean> {
+    val held = "Saved encrypted on this phone and sent only to $provider."
+    val check = state?.check
+    return when {
+        state == null || state.status == ExtensionCredentialSettings.Status.NOT_SET -> {
+            "Not set on this phone." to false
+        }
+
+        state.status == ExtensionCredentialSettings.Status.OTHER_SIGNER -> {
+            "Saved for a differently signed or reinstalled copy of this app, so EVA won't send it. Enter it again." to true
+        }
+
+        state.checking -> {
+            "$held Checking it with $provider…" to false
+        }
+
+        check == null -> {
+            if (spec.checkable) {
+                "$held Not checked yet; tap Check." to false
+            } else {
+                "$held $provider can't check it ahead of time, so EVA finds out on first use." to false
+            }
+        }
+
+        else -> {
+            val ago =
+                if (System.currentTimeMillis() - check.atMillis < DateUtils.MINUTE_IN_MILLIS) {
+                    "just now"
+                } else {
+                    DateUtils.getRelativeTimeSpanString(check.atMillis)
+                }
+            val detail =
+                check.verdict.message
+                    .takeIf { it.isNotBlank() }
+                    ?.let { " $it" }
+                    .orEmpty()
+            when (check.verdict) {
+                is CredentialVerdict.Accepted -> {
+                    "$held $provider confirmed it works ($ago).$detail" to false
+                }
+
+                is CredentialVerdict.Rejected -> {
+                    val heading = if (check.onUse) "Rejected on use ($ago)." else "$provider rejected it ($ago)."
+                    "$heading$detail Enter the correct ${spec.title} and save it again." to true
+                }
+
+                is CredentialVerdict.Unverified -> {
+                    "$held EVA could not check it ($ago).$detail EVA still sends it on use; tap Check again to retry." to true
+                }
             }
         }
     }
