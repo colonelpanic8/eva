@@ -214,6 +214,15 @@ class AssessTest(unittest.TestCase):
 
 
 class RecordsTest(unittest.TestCase):
+    def test_state_only_delta_preserves_the_transcript(self):
+        records = [
+            {"task": {"id": "t", "transcript": [{"text": "hello"}]}},
+            {"transcriptFrom": 1, "task": {"id": "t", "state": {"phase": "IVR"}}},
+        ]
+        task = card_test.fold_tasks([json.dumps(record) for record in records])[0]
+        self.assertEqual(task["transcript"], [{"text": "hello"}])
+        self.assertEqual(task["state"], {"phase": "IVR"})
+
     def test_later_records_extend_the_first_transcript(self):
         first = {
             "task": {

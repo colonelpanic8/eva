@@ -138,12 +138,12 @@ def fold_tasks(notices):
         if not isinstance(record, dict) or not isinstance(record.get("task"), dict):
             continue
         task = dict(record["task"])
+        task.setdefault("transcript", [])
         previous = tasks.get(task["id"])
         if record.get("transcriptFrom", 0) and previous:
             task["transcript"] = (
                 previous["transcript"][: record["transcriptFrom"]] + task["transcript"]
             )
-        task.setdefault("transcript", [])
         tasks[task["id"]] = task
     return list(tasks.values())
 
