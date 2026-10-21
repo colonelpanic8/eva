@@ -1793,6 +1793,78 @@ class ThreadControllerTest {
         }
 
     @Test
+    fun `failed actions with known outcomes do not block later phone changes`() =
+        runTest {
+            val call = action.copy(id = "test.call", title = "Start call")
+            val outcomes = ArrayDeque(listOf(InvocationStatus.FAILED, InvocationStatus.FAILED, InvocationStatus.HANDED_OFF))
+            registry.replace(
+                mapOf(
+                    action.id to backend { ExecutionOutcome(outcomes.removeFirst(), "Done ${it.getValue("place")}") },
+                    call.id to backend { ExecutionOutcome(InvocationStatus.FAILED, "NotAccomplished(reason=Could not verify)") },
+                ),
+                listOf(action, call),
+            )
+            val provider = FakeProvider()
+            val controller = controller(provider)
+            advanceUntilIdle()
+            controller.connect("test")
+            advanceUntilIdle()
+            controller.submit("Prepare and make the call")
+            advanceUntilIdle()
+            provider.call("read-screen", action.id, "place" to "Bank app")
+            advanceUntilIdle()
+            provider.call("call", call.id, "place" to "Bank")
+            advanceUntilIdle()
+            provider.call("retry-screen", action.id, "place" to "Bank app")
+            advanceUntilIdle()
+            provider.call("owner-asked", action.id, "place" to "Card number")
+            advanceUntilIdle()
+            assertEquals(listOf("FAILED", "FAILED", "FAILED", "HANDED_OFF"), provider.results.map { it.status })
+            assertEquals(4, executions)
+        }
+
+    @Test
+    fun `an unknown outcome blocks only repeating that action until a read checks it`() =
+        runTest {
+            val call = action.copy(id = "test.call", title = "Start call")
+            registry.replace(
+                mapOf(
+                    action.id to backend { ExecutionOutcome(InvocationStatus.UNKNOWN, "The task ended with an unresolved device action.") },
+                    call.id to backend { ExecutionOutcome(InvocationStatus.COMPLETED, "Called") },
+                    lookup.id to backend { ExecutionOutcome(InvocationStatus.COMPLETED, "Checked") },
+                ),
+                listOf(action, call, lookup),
+            )
+            val provider = FakeProvider()
+            val controller = controller(provider, now = { 1_792_552_018_000 })
+            advanceUntilIdle()
+            controller.connect("test")
+            advanceUntilIdle()
+            controller.submit("Get the card number, then call")
+            advanceUntilIdle()
+            provider.call("device", action.id, "place" to "Wallet")
+            advanceUntilIdle()
+            provider.call("call", call.id, "place" to "Bank")
+            provider.call("repeat", action.id, "place" to "Wallet again")
+            advanceUntilIdle()
+            assertEquals(listOf("UNKNOWN", "COMPLETED", "NOT_EXECUTED"), provider.results.map { it.status })
+            assertEquals(
+                "Nothing was executed. An earlier Custom action (test.custom, call provider:session:device, " +
+                    "2026-10-21T03:06:58Z) in this thread ended with an unknown outcome, so it may have changed external " +
+                    "state. Before repeating test.custom, check what that action did with a read-only tool, such as " +
+                    "background_status, a status tool, or a screen read. Once a read-only check completes, repeating " +
+                    "it runs. Other actions are not blocked.",
+                provider.results.last().message,
+            )
+            provider.call("check", lookup.id, "query" to "Wallet")
+            advanceUntilIdle()
+            provider.call("verified-repeat", action.id, "place" to "Wallet again")
+            advanceUntilIdle()
+            assertEquals(listOf("COMPLETED", "UNKNOWN"), provider.results.takeLast(2).map { it.status })
+            assertEquals(4, executions)
+        }
+
+    @Test
     fun `connection waits for capabilities before capturing its catalog`() =
         runTest {
             val ready = CompletableDeferred<Unit>()
