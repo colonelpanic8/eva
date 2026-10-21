@@ -4,6 +4,10 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Added
+
+- A delegated call can enter a card or account number that a password manager returned in the same conversation, such as Password Store (EVA), on the phone menu's keypad. The model and the call transcript see only the secret's handle and label, never the digits.
+
 ## [0.71.1] - 2026-10-20
 
 ### Fixed
