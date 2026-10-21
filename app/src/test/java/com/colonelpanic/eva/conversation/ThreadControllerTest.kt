@@ -676,6 +676,60 @@ class ThreadControllerTest {
         }
 
     @Test
+    fun `a check does not release a call start a force stop is still waiting on`() =
+        runTest {
+            val release = CompletableDeferred<Unit>()
+            val start = action.copy(id = com.colonelpanic.eva.call.CallCapabilities.START, title = "Start call")
+            val hanging =
+                object : ExecutionBackend {
+                    override suspend fun unavailableReason(): String? = null
+
+                    override suspend fun execute(arguments: Map<String, String>): ExecutionOutcome =
+                        withContext(NonCancellable) {
+                            executions++
+                            if (arguments["place"] == "Bank") release.await()
+                            ExecutionOutcome(InvocationStatus.COMPLETED, "Called ${arguments["place"]}")
+                        }
+                }
+            val provider = FakeProvider()
+            val controller =
+                controller(
+                    provider,
+                    registry =
+                        CapabilityRegistry(
+                            mapOf(start.id to hanging, lookup.id to backend { ExecutionOutcome(InvocationStatus.COMPLETED, "Checked") }),
+                            listOf(start, lookup),
+                        ),
+                )
+            advanceUntilIdle()
+            controller.connect("test")
+            advanceUntilIdle()
+            controller.submit("Call the bank")
+            advanceUntilIdle()
+            provider.call("hung", start.id, "place" to "Bank")
+            runCurrent()
+            val task = controller.taskSnapshots.value.single()
+            controller.forceStopTask(task.taskId)
+            controller.forceStopTask(task.taskId)
+            runCurrent()
+
+            controller.submit("Call the bank again")
+            advanceUntilIdle()
+            provider.call("check", lookup.id, "query" to "Bank")
+            advanceUntilIdle()
+            provider.call("again", start.id, "place" to "Bank again")
+            advanceUntilIdle()
+            assertEquals(listOf("COMPLETED", "NOT_EXECUTED"), provider.results.takeLast(2).map { it.status })
+            assertEquals(2, executions)
+            release.complete(Unit)
+            advanceUntilIdle()
+            provider.call("after-return", start.id, "place" to "Bank again")
+            advanceUntilIdle()
+            assertEquals("COMPLETED", provider.results.last().status)
+            assertEquals(3, executions)
+        }
+
+    @Test
     fun `voice acceptance does not wait for promotion and covered turns receive no limit notice`() =
         runTest {
             val voice = FakeProvider()

@@ -634,7 +634,9 @@ when any of these happens:
   `background_status` runs. Checking the outcome clears it, so repeating the action
   after a check runs, including when the owner asks for it.
 - The turn that recorded it finishes.
-- For a force-stop entry, the abandoned dispatch returns. This entry outlives its turn.
+
+A force-stop entry ignores both: the abandoned dispatch may still be acting, and a
+second call start would not queue behind it. Only the dispatch returning clears it.
 
 Questions and answers never clear an entry. Process recovery never repeats an
 uncertain action.

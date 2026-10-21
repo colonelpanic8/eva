@@ -373,7 +373,7 @@ class ThreadController(
         val turnId: String,
         val atMillis: Long,
         val sequence: Long,
-        /** A dispatch a force stop stopped waiting for; this outlives its turn until the dispatch returns. */
+        /** A dispatch a force stop stopped waiting for; only its return clears this, since it may still be acting. */
         val abandoned: Job? = null,
     )
 
@@ -1923,7 +1923,7 @@ class ThreadController(
             return
         }
         if (event.capabilityId == BACKGROUND_STATUS.capabilityId) {
-            clearUncertain(threadId) { true }
+            clearUncertain(threadId) { it.abandoned == null }
             refreshTaskSnapshots()
             val live = taskSnapshots.value.associateBy { it.taskId }
             val items = store.items(threadId, limit = BACKGROUND_STATUS_ITEMS)
@@ -2894,7 +2894,7 @@ class ThreadController(
                         )
                     }
                     if (definition?.readOnly == true && result.status == InvocationStatus.COMPLETED) {
-                        clearUncertain(threadId) { it.sequence < proposedAt }
+                        clearUncertain(threadId) { it.abandoned == null && it.sequence < proposedAt }
                     }
                     val succeeded = result.status == InvocationStatus.COMPLETED || result.status == InvocationStatus.HANDED_OFF
                     val ending = context.endings[event.capabilityId].takeIf { succeeded }
