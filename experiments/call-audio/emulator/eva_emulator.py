@@ -515,11 +515,10 @@ def ask(serial, text):
     launch(serial)
     tap_text(serial, r"^Open navigation menu$", scroll=False)
     tap_text(serial, r"^Conversation$", scroll=False)
-    # Main keeps past threads in the archive; archiving preserves history and opens a fresh thread.
     tap_text(serial, r"^Conversation options$", scroll=False)
-    tap_text(serial, r"^Archive conversation$", scroll=False)
+    tap_text(serial, r"^New conversation$", scroll=False)
     # With no existing thread the action is disabled, so dismiss its still-open menu.
-    if find(serial, r"^Archive conversation$", timeout=1) is not None:
+    if find(serial, r"^New conversation$", timeout=1) is not None:
         adb(serial, "shell", "input", "keyevent", "KEYCODE_BACK")
     connect = find(serial, r"^Connect for text$", timeout=3)
     if connect is not None:
