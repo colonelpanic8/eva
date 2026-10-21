@@ -46,11 +46,23 @@ class ExtensionCredentialsTest {
                 extensionCapability,
                 ExtensionConnectionManager(fake) { testScheduler.currentTime },
                 StandardTestDispatcher(testScheduler),
-                credentials = { identity, declared ->
-                    assertEquals(extensionIdentity, identity)
-                    seen = declared
-                    source.values(identity, declared)
-                },
+                credentials =
+                    object : ExtensionCredentialSource {
+                        override fun values(
+                            identity: ExtensionIdentity,
+                            declared: List<CredentialSpec>,
+                        ): CredentialValues {
+                            assertEquals(extensionIdentity, identity)
+                            seen = declared
+                            return source.values(identity, declared)
+                        }
+
+                        override fun rejected(
+                            identity: ExtensionIdentity,
+                            delivered: Map<String, String>,
+                            message: String,
+                        ) = source.rejected(identity, delivered, message)
+                    },
             )
         val registry = CapabilityRegistry(mapOf(backend.definition.id to backend), listOf(backend.definition))
         return CapabilityDispatcher(registry, journal) to registry
@@ -119,4 +131,109 @@ class ExtensionCredentialsTest {
         )
         ExtensionProtocol.arguments(extensionSchema, arguments, delivered = true)
     }
+
+    @Test
+    fun `a rejection names only delivered values and reaches the source, while the journal keeps the provider's message`() =
+        runTest {
+            val rejections = mutableListOf<Pair<Map<String, String>, String>>()
+            val source =
+                object : ExtensionCredentialSource {
+                    override fun values(
+                        identity: ExtensionIdentity,
+                        declared: List<CredentialSpec>,
+                    ) = CredentialValues.Ready(mapOf("passphrase" to "wrong horse"))
+
+                    override fun rejected(
+                        identity: ExtensionIdentity,
+                        delivered: Map<String, String>,
+                        message: String,
+                    ) {
+                        rejections += delivered to message
+                    }
+                }
+            val journal = MemoryInvocationRepository()
+            val (dispatcher, registry) = dispatcher(source, journal)
+            fake.reply =
+                ExtensionProtocol.encodeResult(
+                    ResultReply(
+                        ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "The key passphrase saved in EVA is wrong."),
+                        "not_configured",
+                        false,
+                        rejectedCredentials = setOf("passphrase", "pin"),
+                    ),
+                )
+
+            val record =
+                dispatcher.execute(ToolProposal("call", "extension.example.app.read", emptyMap(), "read", registry.snapshot.revision))
+
+            assertEquals(InvocationStatus.NOT_EXECUTED, record.status)
+            assertEquals(listOf(mapOf("passphrase" to "wrong horse") to "The key passphrase saved in EVA is wrong."), rejections)
+            assertFalse(journal.history().toString().contains("wrong horse"))
+        }
+
+    private val checkable = descriptor.credentials.first().copy(checkable = true)
+
+    private suspend fun TestScope.check(reply: String): CredentialVerdict {
+        fake.reply = reply
+        return ExtensionConnectionManager(fake) { testScheduler.currentTime }
+            .checkCredential(extensionIdentity, descriptor, checkable, "correct horse")
+    }
+
+    @Test
+    fun `a check sends only the credential under test to the reserved capability and returns the provider's verdict`() =
+        runTest {
+            val verdict =
+                check(
+                    ExtensionProtocol.encodeResult(
+                        ResultReply(
+                            ExecutionOutcome(
+                                InvocationStatus.COMPLETED,
+                                "That passphrase does not unlock the key.",
+                                JsonObject(mapOf("verdict" to JsonPrimitive("rejected"))),
+                            ),
+                            null,
+                            false,
+                        ),
+                    ),
+                )
+
+            assertEquals(CredentialVerdict.Rejected("That passphrase does not unlock the key."), verdict)
+            assertEquals(ExtensionProtocol.CHECK_CREDENTIAL, fake.capability)
+            assertEquals(descriptor.revision, fake.revision)
+            assertEquals("""{"_credentials":{"passphrase":"correct horse"}}""", fake.arguments)
+            assertTrue(fake.id.matches(Regex("eva-[0-9a-f]{64}")))
+        }
+
+    @Test
+    fun `a check that cannot reach a verdict says why`() =
+        runTest {
+            assertEquals(
+                CredentialVerdict.Unverified("No PGP key is imported."),
+                check(
+                    ExtensionProtocol.encodeResult(
+                        ResultReply(ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "No PGP key is imported."), "not_configured", false),
+                    ),
+                ),
+            )
+            assertEquals(
+                CredentialVerdict.Unverified("Example answered the check with a reply EVA could not read."),
+                check(ExtensionProtocol.encodeResult(ResultReply(ExecutionOutcome(InvocationStatus.COMPLETED, "ok"), null, false))),
+            )
+            fake.bindFailure = true
+            assertEquals(CredentialVerdict.Unverified("Extension could not be reached. Nothing was submitted."), check(""))
+        }
+
+    @Test
+    fun `a credential the provider cannot check is never sent ahead of use`() =
+        runTest {
+            val verdict =
+                ExtensionConnectionManager(fake) { testScheduler.currentTime }
+                    .checkCredential(extensionIdentity, descriptor, descriptor.credentials.first(), "correct horse")
+
+            assertEquals(
+                CredentialVerdict.Unverified("Example cannot check Key passphrase ahead of time; EVA finds out on first use."),
+                verdict,
+            )
+            assertEquals(0, fake.binds)
+        }
 }

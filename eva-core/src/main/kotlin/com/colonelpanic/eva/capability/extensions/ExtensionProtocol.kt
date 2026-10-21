@@ -36,10 +36,18 @@ object ExtensionProtocol {
     const val CREDENTIALS_KEY = "_credentials"
 
     /**
-     * What EVA advertises with `describe`: `secrets` means it strips and withholds a reply's
-     * `secrets`; `credentials` means it delivers declared credentials in `_credentials`.
+     * The reserved execute capability that asks a provider whether one declared credential's value
+     * works. Tool names cannot contain a dot, so it never collides with a declared tool.
      */
-    val FEATURES = listOf("secrets", "credentials")
+    const val CHECK_CREDENTIAL = "eva.check_credential"
+
+    /**
+     * What EVA advertises with `describe`: `secrets` means it strips and withholds a reply's
+     * `secrets`; `credentials` means it delivers declared credentials in `_credentials`;
+     * `credential-check` means it accepts `checkable` credentials, sends [CHECK_CREDENTIAL], and
+     * reads a reply's `rejectedCredentials`.
+     */
+    val FEATURES = listOf("secrets", "credentials", "credential-check")
     private val SECRET_NAME = Regex("[a-z][a-z0-9_]{0,31}")
     private val NAME = Regex("[A-Za-z_][A-Za-z0-9_]{0,63}")
     private val PROPERTY = Regex("[A-Za-z][A-Za-z0-9_]{0,63}")
@@ -101,7 +109,7 @@ object ExtensionProtocol {
         val root = BoundedJson.parse(payload, maxBytes).obj()
         root.fields(
             setOf("protocolVersion", "status", "reasonCode", "truncated", "content"),
-            setOf("structuredContent", "secrets", "_meta"),
+            setOf("structuredContent", "secrets", "rejectedCredentials", "_meta"),
         )
         val reply = result(root)
         val data = reply.outcome.data
@@ -110,7 +118,43 @@ object ExtensionProtocol {
         }
         val secrets = root["secrets"]?.let(::secrets).orEmpty()
         require(secrets.isEmpty() || reply.outcome.status == InvocationStatus.COMPLETED) { "Only a completed reply may carry secrets" }
-        return reply.copy(secrets = secrets)
+        val rejected = root["rejectedCredentials"]?.let(::rejectedCredentials).orEmpty()
+        require(rejected.isEmpty() || reply.outcome.status in setOf(InvocationStatus.NOT_EXECUTED, InvocationStatus.FAILED)) {
+            "Only a not_executed or failed reply may reject credentials"
+        }
+        return reply.copy(secrets = secrets, rejectedCredentials = rejected)
+    }
+
+    private fun rejectedCredentials(element: JsonElement): Set<String> {
+        val names = (element as? JsonArray ?: error("Expected rejectedCredentials array")).map { it.text(32) }
+        require(names.size in 1..MAX_CREDENTIALS && names.distinct().size == names.size && names.all(SECRET_NAME::matches)) {
+            "rejectedCredentials names 1 to $MAX_CREDENTIALS distinct credentials"
+        }
+        return names.toSet()
+    }
+
+    /** The arguments of a [CHECK_CREDENTIAL] request: only the one credential under test. */
+    fun checkArguments(
+        name: String,
+        value: String,
+    ): String = withCredentials("{}", mapOf(name to value))
+
+    /**
+     * A [CHECK_CREDENTIAL] reply. A completed reply's `structuredContent` is exactly
+     * `{"verdict": "accepted" | "rejected"}`; any other valid status means the provider could not check.
+     */
+    fun checkResult(payload: String): CredentialVerdict {
+        val reply = executeResult(payload)
+        require(reply.secrets.isEmpty() && reply.rejectedCredentials.isEmpty()) { "A check reply carries only its verdict" }
+        val message = reply.outcome.message.trim()
+        if (reply.outcome.status != InvocationStatus.COMPLETED) return CredentialVerdict.Unverified(message)
+        val data = reply.outcome.data ?: error("A completed check reply needs a verdict")
+        data.fields(setOf("verdict"))
+        return when (data.getValue("verdict").text(20)) {
+            "accepted" -> CredentialVerdict.Accepted(message)
+            "rejected" -> CredentialVerdict.Rejected(message)
+            else -> error("Unsupported verdict")
+        }
     }
 
     private fun secrets(element: JsonElement): Map<String, ExtensionSecret> {
@@ -148,6 +192,9 @@ object ExtensionProtocol {
                         ),
                     )
                     reply.outcome.data?.let { put("structuredContent", it) }
+                    if (reply.rejectedCredentials.isNotEmpty()) {
+                        put("rejectedCredentials", JsonArray(reply.rejectedCredentials.map(::JsonPrimitive)))
+                    }
                     if (reply.secrets.isNotEmpty()) {
                         put(
                             "secrets",
@@ -272,10 +319,15 @@ object ExtensionProtocol {
         val parsed =
             entries.map { entry ->
                 val fields = entry.obj()
-                fields.fields(setOf("name", "title", "description", "kind"))
+                fields.fields(setOf("name", "title", "description", "kind"), setOf("checkable"))
                 val name = fields.getValue("name").text(32).also { require(SECRET_NAME.matches(it)) { "Unsupported credential name" } }
                 require(fields["kind"] == JsonPrimitive("password")) { "Unsupported credential kind" }
-                CredentialSpec(name, fields.getValue("title").text(120), fields.getValue("description").text(500))
+                CredentialSpec(
+                    name,
+                    fields.getValue("title").text(120),
+                    fields.getValue("description").text(500),
+                    fields["checkable"]?.boolean() ?: false,
+                )
             }
         require(parsed.map { it.name }.distinct().size == parsed.size) { "Duplicate credential" }
         return parsed
@@ -501,6 +553,8 @@ data class CredentialSpec(
     val name: String,
     val title: String,
     val description: String,
+    /** The provider answers [ExtensionProtocol.CHECK_CREDENTIAL] for it, so EVA can test a value as it is saved. */
+    val checkable: Boolean = false,
 )
 
 data class ResultReply(
@@ -509,6 +563,8 @@ data class ResultReply(
     val truncated: Boolean,
     /** Values a completed reply returned for typing only; [ExtensionBackend] strips them before anything else sees the reply. */
     val secrets: Map<String, ExtensionSecret> = emptyMap(),
+    /** Declared credentials whose delivered value the provider found wrong during this call. */
+    val rejectedCredentials: Set<String> = emptySet(),
 )
 
 class ExtensionSecret(
