@@ -327,7 +327,7 @@ class HotlineTest(unittest.TestCase):
     def test_verify_uses_immediate_sync_when_logs_and_call_events_are_unavailable(self):
         client = FakeVerifyClient()
         args = argparse.Namespace(
-            call_sid=CALL, wait=0, require_events=False, transcript=None
+            call_sid=CALL, wait=0, require_events=False, transcript=None, scenario=None
         )
         with tempfile.TemporaryDirectory(dir=h.HERE / ".cache") as directory:
             with (
@@ -347,9 +347,147 @@ class HotlineTest(unittest.TestCase):
                 any("provisional" in warning for warning in report["warnings"])
             )
 
+    def test_card_services_evaluation_passes_on_spoken_zip_digits_and_lists_the_path(
+        self,
+    ):
+        gathers = [
+            gather("card", 0, digits="4111111111111111"),
+            gather("menu", 1, digits="0"),
+            gather("identity", 2, speech="casey sample, 9 0 2 1 0"),
+            gather("help", 3, speech="What is the annual fee?"),
+            gather("anything_else", 4, speech="No, that's all. Goodbye."),
+        ]
+        result = h.evaluate(h.scenario(CARD_SCENARIO), gathers)
+        self.assertEqual(
+            [(s["step"], s["digits"], s["receipt"]) for s in result["stages"]],
+            [
+                ("card", "4111111111111111", True),
+                ("menu", "0", True),
+                ("identity", None, True),
+                ("help", None, True),
+                ("anything_else", None, True),
+                ("end", None, False),
+            ],
+        )
+        self.assertEqual(
+            result["stages"][-1]["prompt"],
+            "Thank you for calling Test Card Services. Goodbye.",
+        )
+        self.assertEqual(
+            result["checks"],
+            [
+                {
+                    "step": "card",
+                    "kind": "digits",
+                    "expected": "4111111111111111",
+                    "received": ["4111111111111111"],
+                    "passed": True,
+                },
+                {
+                    "step": "identity",
+                    "kind": "phrase",
+                    "expected": "Casey Sample",
+                    "received": ["casey sample, 9 0 2 1 0"],
+                    "passed": True,
+                },
+                {
+                    "step": "identity",
+                    "kind": "spoken_digits",
+                    "expected": "90210",
+                    "received": ["casey sample, 9 0 2 1 0"],
+                    "passed": True,
+                },
+            ],
+        )
+        self.assertEqual(
+            result["facts"][0], "The annual fee is 95 dollars, billed each March."
+        )
+        self.assertTrue(result["passed"])
+
+    def test_card_services_evaluation_fails_wrong_card_misheard_identity_and_early_end(
+        self,
+    ):
+        card = h.scenario(CARD_SCENARIO)
+        wrong = h.evaluate(
+            card,
+            [
+                gather("card", 0, digits="4111111111111112"),
+                gather("menu", 1, speech="representative"),
+                gather("identity", 2, speech="Casey Simple, 90201"),
+            ],
+        )
+        self.assertEqual(
+            [(c["kind"], c["passed"]) for c in wrong["checks"]],
+            [("digits", False), ("phrase", False), ("spoken_digits", False)],
+        )
+        self.assertFalse(wrong["passed"])
+        self.assertEqual(wrong["stages"][-1]["step"], "help")
+        silent = h.evaluate(
+            card, [gather("card", 0, digits="4111111111111111"), gather("menu", 1)]
+        )
+        self.assertEqual([s["step"] for s in silent["stages"]], ["card", "menu", "end"])
+        self.assertEqual(
+            [(c["received"], c["passed"]) for c in silent["checks"]],
+            [(["4111111111111111"], True), ([], False), ([], False)],
+        )
+        with self.assertRaises(h.Failure) as caught:
+            h.evaluate(card, [gather("verification", 0, speech="Ivan")])
+        self.assertEqual(
+            str(caught.exception),
+            "Receipts name steps ['verification'] missing from scenario Test Card Services; pass the deployed scenario",
+        )
+
+    def test_verify_with_scenario_writes_evaluation_and_exits_nonzero_on_a_miss(self):
+        for digits, code in [("4111111111111111", 0), ("4111", 1)]:
+            client = FakeVerifyClient(
+                [
+                    gather("card", 0, digits=digits),
+                    gather("menu", 1, digits="0"),
+                    gather("identity", 2, speech="Casey Sample 90210"),
+                ]
+            )
+            argv = ["hotline.py", "--authenticated", "verify", CALL]
+            argv += ["--scenario", str(CARD_SCENARIO), "--wait", "0"]
+            with (
+                tempfile.TemporaryDirectory(dir=h.HERE / ".cache") as directory,
+                patch.object(h, "BUILD", Path(directory)),
+                patch.object(h, "Client", return_value=client),
+                patch.object(sys, "argv", argv),
+                contextlib.redirect_stdout(io.StringIO()) as output,
+            ):
+                self.assertEqual(h.main(), code)
+                report = json.loads(
+                    (Path(directory) / f"twilio-{CALL}" / "report.json").read_text()
+                )
+            evaluation = report["evaluation"]
+            self.assertEqual(evaluation["passed"], code == 0)
+            self.assertEqual(evaluation["checks"][0]["received"], [digits])
+            self.assertIn(
+                f'  {"PASS" if code == 0 else "FAIL"} card digits="4111111111111111" received=["{digits}"]',
+                output.getvalue(),
+            )
+
+
+CARD_SCENARIO = h.HERE / "scenario-card-services.json"
+
+
+def gather(step, turn, digits=None, speech=None):
+    return {
+        "kind": "gather",
+        "call_sid": CALL,
+        "step": step,
+        "turn": turn,
+        "digits": digits,
+        "speech_result": speech,
+        "confidence": None,
+    }
+
 
 class FakeVerifyClient:
     account = f"{h.API}/Accounts/{SID}"
+
+    def __init__(self, receipts=None):
+        self.receipts = receipts
 
     def request(self, url, method="GET", data=None, binary=False):
         if "/Calls/" in url:
@@ -372,6 +510,8 @@ class FakeVerifyClient:
             return [{"sid": "ZEenv", "unique_name": "test"}]
         if key == "variables":
             return [{"key": "SYNC_SERVICE_SID", "value": "ISsync"}]
+        if key == "items" and self.receipts is not None:
+            return [{"data": receipt} for receipt in self.receipts]
         if key == "items":
             return [
                 {

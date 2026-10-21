@@ -3,6 +3,9 @@ package com.colonelpanic.eva.conversation
 import com.colonelpanic.eva.audio.AudioFocusState
 import com.colonelpanic.eva.audio.RealtimeMediaState
 import com.colonelpanic.eva.audio.VoiceMediaSession
+import com.colonelpanic.eva.call.CallCapabilities
+import com.colonelpanic.eva.call.CallTaskSnapshot
+import com.colonelpanic.eva.call.LegState
 import com.colonelpanic.eva.call.terminal
 import com.colonelpanic.eva.capability.ActionInitiator
 import com.colonelpanic.eva.capability.CallEnding
@@ -2284,39 +2287,74 @@ class ThreadController(
                 ?.value
                 ?.get(taskId)
                 ?.takeIf { it.threadId == threadId } ?: return
-        require(capabilityId in com.colonelpanic.eva.call.CallCapabilities.controls)
+        require(capabilityId in CallCapabilities.controls)
         scope.launch {
-            val record =
-                try {
-                    dispatcher.execute(
-                        ToolProposal(
-                            "owner-control:${UUID.randomUUID()}",
-                            capabilityId,
-                            arguments + ("taskId" to taskId),
-                            "Call card control",
-                            registry.snapshot.revision,
-                            threadId,
-                            task.turnId,
-                            initiator = ActionInitiator(InitiatorKind.OWNER_CONTROL),
-                        ),
-                    )
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (_: Exception) {
-                    null
-                }
-            if (record?.status != InvocationStatus.COMPLETED) {
-                mutableState.update {
-                    it.copy(
-                        providerMessage = record?.message ?: "The call control could not be recorded, so whether it applied is unknown.",
-                    )
-                }
-            }
+            val record = dispatchCallControl(task, capabilityId, arguments)
+            if (record?.status != InvocationStatus.COMPLETED) reportCallControlFailure(record)
         }
     }
 
+    private suspend fun dispatchCallControl(
+        task: CallTaskSnapshot,
+        capabilityId: String,
+        arguments: Map<String, String>,
+        description: String = "Call card control",
+    ): InvocationRecord? =
+        try {
+            val callId = "owner-control:${UUID.randomUUID()}"
+            val initiator = ActionInitiator(InitiatorKind.OWNER_CONTROL)
+            store.append(
+                ThreadItem.ActionCall(
+                    callId,
+                    task.threadId,
+                    task.turnId,
+                    nowMillis(),
+                    callId,
+                    capabilityId,
+                    description,
+                    arguments + ("taskId" to task.id),
+                    initiator = initiator,
+                ),
+            )
+            requestRefresh()
+            dispatcher.execute(
+                ToolProposal(
+                    callId,
+                    capabilityId,
+                    arguments + ("taskId" to task.id),
+                    description,
+                    registry.snapshot.revision,
+                    task.threadId,
+                    task.turnId,
+                    initiator = ActionInitiator(InitiatorKind.OWNER_CONTROL),
+                ),
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        }
+
+    private fun reportCallControlFailure(record: InvocationRecord?) =
+        mutableState.update {
+            it.copy(providerMessage = record?.message ?: "The call control could not be recorded, so whether it applied is unknown.")
+        }
+
+    private fun liveCall(threadId: String?): CallTaskSnapshot? =
+        callTasks
+            ?.tasks
+            ?.value
+            ?.values
+            ?.lastOrNull { it.threadId == threadId && !it.state.terminal && it.legState !is LegState.Ended }
+
+    private suspend fun whisperToCall(
+        call: CallTaskSnapshot,
+        text: String,
+    ): InvocationRecord? = dispatchCallControl(call, CallCapabilities.INSTRUCT, mapOf("text" to text), "Typed to the call agent")
+
     /**
-     * Sends typed input. While a request runs on the attached thread, the input steers it: the model
+     * Sends typed input. While the shown thread's call is still on the line, the input goes to the
+     * call agent. Otherwise, while a request runs on the attached thread, the input steers it: the model
      * reads it at its next step and answers it in the same turn. Input the running response can no
      * longer take waits, visibly, and is sent as the next request when the current one ends.
      */
@@ -2327,12 +2365,45 @@ class ThreadController(
         ) {
             return
         }
+        val activeCall = liveCall(shownThreadId)
+        if (activeCall != null && text.trim().lowercase() in setOf("stop", "cancel", "stop call", "cancel call")) {
+            callControl(activeCall.id, CallCapabilities.CANCEL)
+            return
+        }
         val question = currentQuestion(shownThreadId)
         if (text.isNotBlank() && question != null) {
             submitAnswer(question.evidence.questionId, text)
             return
         }
         if (text.isNotBlank() && reviseDeviceTask(text)) return
+        val call = liveCall(shownThreadId)
+        if (text.isNotBlank() && call != null) {
+            scope.launch {
+                val record = whisperToCall(call, text)
+                when (record?.status) {
+                    InvocationStatus.COMPLETED -> {
+                        Unit
+                    }
+
+                    InvocationStatus.NOT_EXECUTED -> {
+                        if (shownThreadId == call.threadId && session != null && !state.value.voiceMode) {
+                            submitToMain(text)
+                        } else {
+                            submitBackground(text, call.threadId)
+                        }
+                    }
+
+                    else -> {
+                        reportCallControlFailure(record)
+                    }
+                }
+            }
+            return
+        }
+        submitToMain(text)
+    }
+
+    private fun submitToMain(text: String) {
         val current = state.value
         if (session == null && !current.voiceMode && current.providerStatus == ProviderStatus.DISCONNECTED) {
             submitWithoutSession(text)
@@ -2400,6 +2471,15 @@ class ThreadController(
                 return@withLock BackgroundSubmission(threadId, taskId)
             }
             val id = threadId ?: store.createThread(UNTITLED).id
+            val call = liveCall(id)
+            if (call != null && currentQuestion(id) == null) {
+                val stopping = text.trim().lowercase() in setOf("stop", "cancel", "stop call", "cancel call")
+                val record = if (stopping) dispatchCallControl(call, CallCapabilities.CANCEL, emptyMap()) else whisperToCall(call, text)
+                if (record?.status == InvocationStatus.COMPLETED) return@withLock BackgroundSubmission(id, call.turnId)
+                check(record?.status == InvocationStatus.NOT_EXECUTED) {
+                    record?.message ?: "The instruction to the call agent could not be recorded, so whether it reached the call is unknown."
+                }
+            }
             val running = tasks.values.lastOrNull { it.threadId == id && it.active }
             if (running != null) {
                 check(currentQuestion(id) == null) { "Open the pending question and answer it before sending a follow-up." }

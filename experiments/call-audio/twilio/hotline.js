@@ -32,9 +32,12 @@ function validateScenario(scenario) {
       }
       if (!(node.timeout > 0) || !(node.speechTimeout > 0))
         throw new Error(`Invalid timeout ${id}`);
+      if (node.readback !== undefined && node.input !== "dtmf")
+        throw new Error(`readback needs keypad-only input at ${id}`);
     }
     if (node.end_pattern) new RegExp(node.end_pattern, "i");
   }
+  validateExpectations(scenario);
   // Hold nodes execute within one TwiML response, so a hold-only cycle cannot advance.
   for (const id of Object.keys(nodes)) {
     const seen = new Set();
@@ -46,6 +49,30 @@ function validateScenario(scenario) {
     }
   }
   return scenario;
+}
+
+function validateExpectations({ nodes, expect }) {
+  if (!expect) return;
+  for (const [id, checks] of Object.entries(expect.gathers || {})) {
+    const input = nodes[id]?.type === "gather" ? nodes[id].input : "";
+    for (const [kind, value] of Object.entries(checks)) {
+      const source = kind === "digits" ? "dtmf" : "speech";
+      if (
+        !["digits", "phrase", "spoken_digits"].includes(kind) ||
+        typeof value !== "string" ||
+        !value ||
+        !input.includes(source)
+      )
+        throw new Error(`Invalid expectation ${kind} at ${id}`);
+    }
+  }
+  const spoken = Object.values(nodes).map(
+    (node) => `${node.prompt || ""} ${node.reply || ""}`,
+  );
+  for (const fact of expect.facts || []) {
+    if (!fact || !spoken.some((text) => text.includes(fact)))
+      throw new Error(`Fact is never spoken: ${fact}`);
+  }
 }
 
 function receipt(event) {
@@ -92,7 +119,16 @@ function render(scenario, event, response, baseUrl) {
     }
     turn = Number(event.turn) + 1;
     const text = event.SpeechResult || "";
-    if (event.Digits) say(response, `You pressed ${event.Digits}`);
+    if (event.Digits)
+      say(
+        response,
+        node.readback
+          ? node.readback.replace(
+              "{last4}",
+              event.Digits.slice(-4).split("").join(" "),
+            )
+          : `You pressed ${event.Digits}`,
+      );
     else if (text) say(response, `I heard: ${text}`);
     else say(response, scenario.empty_reply);
     const empty = !event.Digits && !text;

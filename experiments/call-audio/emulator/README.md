@@ -63,3 +63,75 @@ The speaker track is what EVA plays on the emulator: the other party throughout 
 call the owner hears them only through EVA), plus the call agent's voice while listen-in is
 on. The default goal follows the hotline scenario: billing, name and account 4417, hold, ask
 for the hours, decline further help.
+
+## Card-services regression
+
+`card-test` replays the incident where EVA called a card company with no cardholder name, no
+card number and no keypad credentials. It seeds a throwaway Password Store (EVA) and an EVA
+memory note, asks EVA in a new conversation to "call my card company ... and see if they'll drop
+the annual fee on my test card", waits for the call task to end, and judges the run from EVA's
+databases, logcat and the hotline's `verify --scenario` evaluation of
+[`scenario-card-services.json`](../twilio/scenario-card-services.json).
+
+Seeding is idempotent and never touches the owner's keys or store:
+
+- A passphrase-less PGP key (`EVA Test Store <eva-test@example.invalid>`) is generated once with
+  its own `GNUPGHOME` under `experiments/call-audio/build/card-test-fixture/` and reused. The entry
+  `cards/test-card-services` holds the fake card `number: 4111 1111 1111 1111`, `zip: 90210` and
+  `name: Casey Sample`, the values the scenario's `expect` block names.
+- The key and entry are written into the debug build of Password Store (EVA)
+  (`app.passwordstore.colonelpanic.debug`) with `run-as`. Its EVA extension decrypts with a
+  passphrase-less key and needs no app setup.
+- EVA Debug keeps a memory note `Cardholder` with the name and billing ZIP.
+- EVA's Extensions screen turns Password Store (EVA) and all of its actions on.
+
+The Password Store APK is a debug build of
+[colonelpanic8/Android-Password-Store](https://github.com/colonelpanic8/Android-Password-Store)
+`eva-extension` with
+[fields as secrets](https://github.com/colonelpanic8/Android-Password-Store/pull/1) and
+[a build-time EVA Debug signer](https://github.com/colonelpanic8/Android-Password-Store/pull/2)
+merged in, built with `./gradlew :app:assembleDebug -PevaDebugCert=<SHA-256 of EVA Debug's
+signing certificate>` and copied to `build/password-store/app-debug.apk` (or passed as `--ps-apk`).
+Without the matching signer, EVA lists the extension as an unauthorized caller.
+
+The checks, each PASS or FAIL in `checks.txt` and `summary.json` under
+`experiments/call-audio/build/card-test-<time>/`:
+
+- `eva.memory.search` and a completed Password Store `get_credential` (requesting the `number`
+  field) ran before `eva.call.start`;
+- `eva.call.start` named `Casey Sample` in `onBehalfOf` and the card number's `secret:` handle in
+  `credentials`, and a DTMF transcript item entered that handle;
+- the card number, including punctuated and English digit-word read-backs, appears in no EVA database text, logcat or call
+  transcript;
+- no action was refused by the uncertain-mutation gate (either refusal wording);
+- the call task ended Accomplished or NotAccomplished, reporting the fee, no-waiver and Test Cash facts honestly;
+- the hotline received the digits `4111111111111111` and heard the name and ZIP.
+
+The command exits nonzero on any failure. `card_test.py` holds these rules as pure functions over
+the collected records; `test_card_test.py` (run by `../twilio/check`) covers them.
+
+Run it from the repository root:
+
+```sh
+just build && just eva-emulator install          # an EVA Debug build with the call-prep changes
+just eva-emulator card-test --seed-only          # seed and grant; places no call
+just eva-emulator signin                         # owner: approve the ChatGPT device code
+just eva-emulator twilio-config                  # from the existing pass entry twilio.com/eva-voice-sdk
+direnv exec . experiments/call-audio/twilio/setup \
+  --scenario experiments/call-audio/twilio/scenario-card-services.json \
+  --reuse-number +15592493930                    # owner: deploy the card scenario
+just eva-emulator card-test --hotline-ready      # one call to the hotline, then the verdict
+direnv exec . experiments/call-audio/twilio/setup --reuse-number +15592493930  # owner: restore
+```
+
+Without `--hotline-ready`, `card-test` stops before typing the request and prints what is
+missing, so a run never calls a hotline still serving another scenario.
+
+This fixture does not request an SSN or authorize a product change. Passing it proves an
+inquiry with card/name/ZIP verification, not an account change. The local unit tests
+exercise the verdict; only artifacts from an actual hotline run establish end-to-end behavior.
+
+Release order: ship EVA's secret-handle keypad support before merging eva-instructions #23,
+which followed installations load immediately. Combine #22 and #23 and run `just prompt-sync`
+again before publishing the matching app baseline. Password Store descriptor changes require
+the owner's grant to be renewed; the seeding command does this on the test emulator only.

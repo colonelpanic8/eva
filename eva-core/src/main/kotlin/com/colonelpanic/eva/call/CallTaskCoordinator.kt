@@ -8,6 +8,7 @@ import com.colonelpanic.eva.capability.ExecutionOutcome
 import com.colonelpanic.eva.capability.InitiatorKind
 import com.colonelpanic.eva.capability.InvocationRepository
 import com.colonelpanic.eva.capability.InvocationStatus
+import com.colonelpanic.eva.capability.SecretVault
 import com.colonelpanic.eva.capability.ToolProposal
 import com.colonelpanic.eva.conversation.prompt.Wording
 import com.colonelpanic.eva.providers.ProviderToolDefinition
@@ -88,6 +89,7 @@ class CallTaskCoordinator(
     private val claimWindowMillis: Long = WRAP_UP_AFTER_END_MILLIS,
     /** Why no call agent could be opened right now; checked before dialing so no call connects to an agent that cannot speak. */
     private val agentUnavailableReason: suspend () -> String? = { null },
+    private val secrets: SecretVault? = null,
 ) : ExecutionBackend {
     private val sessions = java.util.concurrent.ConcurrentHashMap<String, Running>()
     private val recoveryJobs = mutableMapOf<String, Job>()
@@ -143,6 +145,8 @@ class CallTaskCoordinator(
         /** The agent asked to hang up before recording an outcome; `finish` hangs up once it records one. */
         var hangUpAfterFinish = false
 
+        var hangUpIssued = false
+
         /** The leg ended before `finish`; the agent may still record its outcome. */
         var wrappingUpAfterEnd = false
 
@@ -150,7 +154,7 @@ class CallTaskCoordinator(
         var ownerTranscribed = false
 
         // Credential values sent in this call, held only in memory to scrub echoes of them from text.
-        val secrets = mutableSetOf<String>()
+        val redactor = CallCredentialRedactor()
 
         // The agent's own catalog and dispatcher: arguments are scrubbed in prepare(), and execution
         // needs the proposal (for provenance), so the arguments-only entry point refuses.
@@ -173,7 +177,7 @@ class CallTaskCoordinator(
             )
         val dispatcher = CapabilityDispatcher(registry, invocations)
 
-        fun clean(text: String): String = secrets.fold(text) { value, secret -> value.replace(secret, "[credential]") }
+        fun clean(text: String): String = redactor.clean(text)
 
         /** Journal first: if storage fails, the in-memory state never claims what was not recorded. */
         suspend fun save(next: CallTaskSnapshot = snapshot) {
@@ -236,7 +240,7 @@ class CallTaskCoordinator(
             }
         val briefCredentials =
             try {
-                briefCredentials(args["credentials"]?.let(::strings).orEmpty())
+                briefCredentials(thread, args["credentials"]?.let(::strings).orEmpty())
             } catch (error: CallCredentialUnavailable) {
                 return rejected("${error.message} No call was placed.")
             }
@@ -615,6 +619,7 @@ class CallTaskCoordinator(
                         ) {
                             val brain = opened
                             checkNotNull(brain)
+                            brain.setHangUpPending(running.hangUpIssued)
                             brain.setFloor(running.snapshot.floor)
                             running.save(running.snapshot.copy(brain = BrainState.ATTACHED))
                             running.brain = brain
@@ -1029,6 +1034,13 @@ class CallTaskCoordinator(
                                     "not_accomplished" -> CallTaskState.NotAccomplished(args.getValue("summary"))
                                     else -> CallTaskState.Uncertain(args.getValue("summary"))
                                 }
+
+                            fun goodbyeRequest() =
+                                if (running.snapshot.legState is LegState.Connected && !running.hangUpIssued) {
+                                    " " + wording().message(Wording.CALL_FINISH_CONNECTED)
+                                } else {
+                                    ""
+                                }
                             // finish more than once (seen on a Twilio call: again after the other party's "bye"):
                             // the latest claim replaces the earlier one while the task is open, since the call can
                             // still change what happened (a corrected reference number). Repeating the same claim
@@ -1037,7 +1049,8 @@ class CallTaskCoordinator(
                             val previous = running.snapshot.proposedOutcome
                             if (previous == outcome) {
                                 return completed(
-                                    "This outcome claim is already recorded; nothing changed. Call finish again only if the outcome changes.",
+                                    "This outcome claim is already recorded; nothing changed. " +
+                                        "Call finish again only if the outcome changes." + goodbyeRequest(),
                                 )
                             }
                             running.save(running.snapshot.copy(state = CallTaskState.WrappingUp, proposedOutcome = outcome))
@@ -1053,7 +1066,7 @@ class CallTaskCoordinator(
                                         "Outcome claim recorded with transcript references. Hang-up requested as you asked earlier; " +
                                             "the provider's leg state determines when the call has ended."
                                     } else {
-                                        "Outcome claim recorded with transcript references. The call remains active until the provider observes its end."
+                                        "Outcome claim recorded with transcript references." + goodbyeRequest()
                                     },
                                 buildJsonObject {
                                     put(
@@ -1088,8 +1101,11 @@ class CallTaskCoordinator(
      * was cleared, as a barge-in or takeover does). Runs outside the task lock so remote audio, captions
      * and owner controls stay live meanwhile; an owner cancel hangs up directly and is never delayed.
      */
-    private fun hangUpAfterSpeech(running: Running) {
+    private suspend fun hangUpAfterSpeech(running: Running) {
+        if (running.hangUpIssued) return
         val leg = checkNotNull(running.leg)
+        running.hangUpIssued = true
+        running.brain?.setHangUpPending(true)
         running.work.launch {
             guardLeg(running) {
                 (leg.media as? CallMedia.LocalPcm)?.awaitAgentAudioPlayed()
@@ -1164,7 +1180,7 @@ class CallTaskCoordinator(
             }
         // Credential values: resolved only here, only for references this call's brief was given (so
         // remote speech cannot steer the agent into another saved secret), all before the first key
-        // goes out, and wiped in finally. They exist as text only in [Running.secrets], for scrubbing.
+        // goes out, and wiped in finally. They exist as text only in [Running.redactor], for scrubbing.
         val values = mutableMapOf<String, CharArray>()
         try {
             val allowed =
@@ -1177,7 +1193,7 @@ class CallTaskCoordinator(
                 }
                 values[reference] =
                     try {
-                        keypadValue(reference)
+                        keypadValue(running.snapshot.threadId, reference).keys
                     } catch (error: CallCredentialUnavailable) {
                         return rejected("${error.message} No keys were sent.")
                     }
@@ -1195,7 +1211,7 @@ class CallTaskCoordinator(
             }
             running.lock.withLock {
                 if (running.snapshot.state.terminal) return rejected("The call has ended. No keys were sent.")
-                running.secrets += values.values.map(::String)
+                values.values.forEach { running.redactor.remember(String(it)) }
             }
             val leg = checkNotNull(running.leg)
             val done = mutableListOf<String>()
@@ -1251,33 +1267,69 @@ class CallTaskCoordinator(
      * The credentials a new call may enter, each resolved and checked once so a missing or unusable
      * value fails before dialing rather than at the keypad.
      */
-    private suspend fun briefCredentials(references: List<String>): List<CallCredential> {
+    private suspend fun briefCredentials(
+        threadId: String,
+        references: List<String>,
+    ): List<CallCredential> {
         if (references.isEmpty()) return emptyList()
-        val labels = credentials.configured().associate { it.reference to it.label }
+        val labels by lazy { credentials.configured().associate { it.reference to it.label } }
         return references.distinct().map { reference ->
-            keypadValue(reference).fill('\u0000')
-            CallCredential(reference, labels[reference] ?: reference)
+            keypadValue(threadId, reference).use { CallCredential(reference, it.label ?: labels[reference] ?: reference) }
         }
     }
 
-    /** Throws [CallCredentialUnavailable] with a message that never holds the value. */
-    private suspend fun keypadValue(reference: String): CharArray {
-        val value =
-            try {
-                credentials.resolve(reference)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: CallCredentialUnavailable) {
-                throw error
-            } catch (_: Exception) {
-                throw CallCredentialUnavailable("Credential $reference could not be read.")
-            }
-        if (value.isEmpty() || value.any { it.uppercaseChar() !in DtmfStep.KEYS }) {
-            value.fill('\u0000')
-            throw CallCredentialUnavailable("Credential $reference is not keypad keys; the owner must re-enter it as digits, * or #.")
-        }
-        return value
+    private class KeypadValue(
+        val keys: CharArray,
+        /** The vault's label, for a held secret. */
+        val label: String?,
+    ) : AutoCloseable {
+        override fun close() = keys.fill('\u0000')
     }
+
+    /** Throws [CallCredentialUnavailable] with a message that never holds the value. */
+    private suspend fun keypadValue(
+        threadId: String,
+        reference: String,
+    ): KeypadValue {
+        val held = reference.startsWith(SecretVault.PREFIX)
+        val (raw, label) =
+            if (held) {
+                val secret =
+                    secrets?.resolve(threadId, reference)
+                        ?: throw CallCredentialUnavailable(
+                            "Credential $reference is not held for this conversation: it was cleared, belongs to another " +
+                                "conversation, or EVA restarted. Look it up again with the password manager's tool.",
+                        )
+                secret.value.toCharArray() to secret.label
+            } else {
+                savedValue(reference) to null
+            }
+        val keys = raw.filter { it !in KEY_SEPARATORS }.toCharArray()
+        raw.fill('\u0000')
+        if (keys.isEmpty() || keys.any { it.uppercaseChar() !in DtmfStep.KEYS }) {
+            keys.fill('\u0000')
+            throw CallCredentialUnavailable(
+                if (held) {
+                    "Credential $reference (\"$label\") held for this conversation is not keypad keys; use a field that holds " +
+                        "only digits, * or #."
+                } else {
+                    "Credential $reference is not keypad keys; the owner must re-enter it as digits, * or #."
+                },
+            )
+        }
+        return KeypadValue(keys, label)
+    }
+
+    private suspend fun savedValue(reference: String): CharArray =
+        try {
+            credentials.resolve(reference)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: CallCredentialUnavailable) {
+            throw error
+        } catch (_: Exception) {
+            throw CallCredentialUnavailable("Credential $reference could not be read.")
+        }
 
     /** Why a keypad sequence must stop before its next step, or null to continue. */
     private fun dtmfStopReason(running: Running): String? {
@@ -1376,6 +1428,11 @@ class CallTaskCoordinator(
             if (running.snapshot.state.terminal) return rejected("The call task has ended.")
             when (proposal.capabilityId) {
                 CallCapabilities.INSTRUCT -> {
+                    if (running.snapshot.legState is LegState.Ended || running.leg?.state?.value is LegState.Ended ||
+                        running.hangUpIssued || running.cancelled
+                    ) {
+                        return rejected("The call is ending or has ended; the instruction was not delivered.")
+                    }
                     running
                         .append(
                             proposal.callId,
@@ -1502,6 +1559,9 @@ class CallTaskCoordinator(
     )
 
     companion object {
+        /** Grouping in a stored card number ("4111 1111 ...") or an echo of it; not keys. */
+        private const val KEY_SEPARATORS = " -"
+
         /** How long the agent has to record an outcome after the leg ended without one. */
         const val WRAP_UP_AFTER_END_MILLIS = 30_000L
 

@@ -123,7 +123,15 @@ as the paired broker that cannot steer, or a submission still starting) waits,
 listed above the composer, and is sent as the next request when the current one
 ends; anything still waiting when the attachment ends is named in the provider
 message instead of dropped silently. A running device task takes typed input as a
-correction first.
+correction first. A call task in the shown thread whose leg has not ended takes typed
+input next, through `submit` and `submitBackground` alike: it goes to the call agent
+as `eva.call.instruct` with OWNER_CONTROL provenance, as the call card's Whisper does,
+and is stored as an attributed call-control action plus a call transcript item, so it
+is not replayed as an unhandled main-model request. A pending question takes typed
+input first, except that stop/cancel directly cancels a live call. Once the leg
+ends, typed input goes to the main turn again, including when the line ends between
+selection and dispatch. Uncertain delivery keeps its recorded text and is reported
+without an automatic retry.
 
 Several turn tasks can be active in the same
 thread: a delegated text turn and a later foreground voice turn own their calls
@@ -646,6 +654,14 @@ more characters replaced with `<secret>`. Step descriptions name a secret by lab
 Shorter values are not masked, since masking them would garble ordinary screen text.
 Screenshots are images and are not masked: a worker screenshot of a plain field that
 holds a code shows the code. Password fields show dots.
+
+A phone call can enter a handle on the keypad. `eva.call.start` takes handles from its
+own thread in `credentials` beside saved call keypad credentials, and the call agent's
+`dtmf` enters one as a `secret:<hex>` or `credential:secret:<hex>` step (see
+[delegated phone call tasks](#delegated-phone-call-tasks)). The coordinator resolves the
+handle through the vault scoped to the call's thread, at start and again at each
+`dtmf`. A call's turn stays active for the whole call, so its handles outlive
+`newThread`.
 
 Handles have no expiry timer. Starting a new conversation (`ThreadController.newThread`)
 clears every thread without running work, and process death clears everything.
@@ -1336,7 +1352,8 @@ Twilio test hotline. Started with the phone locked and its screen off
 and hung up; the dialer's in-call screen lit the display over the lock screen for the
 call, so screen-off operation itself is not shown. No speech detector
 is connected: HOLD stays advisory and the brain keeps listening. Credential DTMF
-resolves the owner's saved call keypad credentials (below).
+resolves the owner's saved call keypad credentials or the thread's held secret
+handles (below).
 
 `CallTaskCoordinator` owns a thread/turn's long-running start action independently
 of the owner's EVA attachment. Separate state machines describe:
@@ -1423,6 +1440,22 @@ Twilio hotline entering it on the account prompt (Gather `Digits="4417"`) while 
 transcript, journal, invocations and logs show only `[credential test/account]`; the
 hotline's spoken read-back of the digits was redacted to `[credential]` too. Android's
 autofill (Bitwarden) offered to handle the masked value field.
+
+A brief's credential can also be a [secret handle](#secret-handles) that a password
+manager extension returned to the same thread, such as a card number. The `secret:`
+prefix tells the two kinds apart; saved references never contain a colon. Start and
+each `dtmf` resolve a handle through the vault scoped to the call's thread, and its
+label in the brief is the extension's label. A handle the thread does not hold
+(unknown, cleared, from another conversation, or lost when EVA's process died) is
+rejected with no call placed or no keys sent, saying to look the credential up again.
+`dtmf` takes a bare `secret:<hex>` step as well as `credential:secret:<hex>`, and the
+brief allow-list applies to handles the same way. Keypad values of either kind drop
+spaces and hyphens, so `4111 1111 1111 1111` enters as sixteen digits; any other
+character outside 0–9, `*`, `#` and A–D rejects, naming the credential. Scrubbing an
+echo of a sent value tolerates repeated whitespace and punctuation between keys and
+English digit words (including "oh" for zero). Patterns are compiled once per value
+for the call. This covers common read-backs, not arbitrary paraphrases or other languages. JVM tests cover entry, privacy and both rejections through the
+coordinator; keypad entry of a held handle is not device-verified.
 
 `ask_owner` reuses ordered, one-shot question records and composer/voice answers,
 with connected-call urgency. It withholds the tool result in the same brain while
@@ -1703,7 +1736,14 @@ transcript lines it cites. Take over / Hand back, Listen in, Whisper and Hang up
 `ThreadController.callControl`, which proposes the owner capability to the shared
 dispatcher with an OWNER_CONTROL initiator and needs no EVA connection; a control that
 does not complete is shown in the provider message. Whisper routes the composer to
-`eva.call.instruct` until the owner returns it to EVA.
+`eva.call.instruct` until the owner returns it to EVA. While the leg is up,
+`ThreadController` routes typed input to the call agent even outside Whisper (see
+[threads, turns, and connections](#threads-turns-and-connections)); the composer's
+placeholder and destination label show that routing automatically. Stop/cancel requests
+cancel the call directly. A line that ends before instruction delivery rejects it, and
+ordinary typed input falls back to the main conversation. Owner controls and their text
+are recorded as attributed action calls and in the call transcript, not as new unhandled
+user requests. Uncertain delivery is reported without retrying the instruction.
 
 The card shows the agent's words as it speaks, whether or not the owner listens in. The
 brain streams `response.output_audio_transcript.delta` as `CallBrainEvent.Caption`s, and
@@ -1797,13 +1837,16 @@ responds only when its seeded transcript ends with such input that no quiet tool
 answered. The voice model, which hears the audio, decides whether a segment needs
 a reply: for noise, hold music, recordings and announcements not waiting for it, it
 calls the quiet `keep_listening` instead of speaking. Quiet results never prompt another
-response, so an idle line cannot loop: `keep_listening` always, `report_phase`
-beside speech or another tool, and a completed `finish` whose response also spoke (on a
-Twilio call, answering that receipt made the agent narrate the outcome aloud; a rejected
-`finish` or one made without speech still prompts a reply). A phase report on its own is answered, since on the
-device the agent reported IVR alone, was never asked to act, and the menu timed out.
-Once a `hang_up` completes the brain requests no further responses, since the agent
-otherwise answered its own `finish` and `hang_up` results by reading the time aloud.
+response, so an idle line cannot loop: `keep_listening` always and `report_phase`
+beside speech or another tool. The coordinator tells each brain, including a replacement,
+when hang-up is under way; no new response starts while queued speech drains and the
+provider hangs up. This also handles concurrent `hang_up` and `finish` calls in either
+order. A premature hang-up request waits for the next valid outcome; a rejected finish
+still prompts correction. Without a hang-up under way, the `finish` receipt prompts the
+agent to answer outstanding questions and confirm critical values, then say goodbye and
+hang up once the conversation is over. This continuation is catalog wording. A phase
+report on its own is answered, since on the device the agent reported IVR alone, was
+never asked to act, and the menu timed out.
 Transcription is recorded for context and evidence but never gates a response. OWNER/MUTED/AGENT_STALLING suppress new inference. Tool continuation
 waits for all withheld results; explicit owner handback requests continuation
 without requiring another remote utterance. Preemption sends `response.cancel`,

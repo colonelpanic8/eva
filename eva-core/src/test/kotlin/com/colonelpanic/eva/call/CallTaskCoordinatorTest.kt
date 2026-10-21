@@ -7,6 +7,7 @@ import com.colonelpanic.eva.capability.CapabilityRegistry
 import com.colonelpanic.eva.capability.ExecutionOutcome
 import com.colonelpanic.eva.capability.InvocationStatus
 import com.colonelpanic.eva.capability.MemoryInvocationRepository
+import com.colonelpanic.eva.capability.SecretVault
 import com.colonelpanic.eva.capability.ToolProposal
 import com.colonelpanic.eva.conversation.prompt.Wording
 import kotlinx.coroutines.CompletableDeferred
@@ -148,6 +149,7 @@ class CallTaskCoordinatorTest {
         val listenInByDefault: Boolean = false,
         val brainGate: CompletableDeferred<Unit>? = null,
         val brainFailureAfterGate: Boolean = false,
+        val vault: SecretVault = SecretVault(),
     ) {
         val saved = mutableMapOf("phone/pin" to PIN)
         val media = Media()
@@ -229,6 +231,7 @@ class CallTaskCoordinatorTest {
                         override suspend fun resolve(reference: String) =
                             saved[reference]?.toCharArray() ?: throw CallCredentialUnavailable("No value is saved for $reference.")
                     },
+                secrets = vault,
                 speechDetector = { if (detectsSpeech) CallSpeechDetector { speech } else null },
                 nowMillis = { 42 },
                 listenInByDefault = { listenInByDefault },
@@ -470,6 +473,14 @@ class CallTaskCoordinatorTest {
             )
             assertEquals(CallTaskState.WrappingUp, h.state().state)
             assertFalse(result.isCompleted)
+            assertEquals(
+                "Outcome claim recorded with transcript references. " + Wording.bundled.message(Wording.CALL_FINISH_CONNECTED),
+                h
+                    .brain()
+                    .results
+                    .getValue("finish")
+                    .message,
+            )
             h.tool("hang", CallAgentTools.HANG_UP)
             assertEquals(1, h.leg.hangups)
             assertTrue(h.state().legState is LegState.Connected)
@@ -504,13 +515,14 @@ class CallTaskCoordinatorTest {
                 "evidence" to "[\"forty-two minutes\"]",
             )
             assertEquals(1, h.leg.hangups)
-            assertTrue(
+            assertEquals(
+                "Outcome claim recorded with transcript references. Hang-up requested as you asked earlier; " +
+                    "the provider's leg state determines when the call has ended.",
                 h
                     .brain()
                     .results
                     .getValue("finish")
-                    .message
-                    .contains("Hang-up requested"),
+                    .message,
             )
             h.leg.state.value = LegState.Ended(EndCause.LOCAL_HANGUP)
             runCurrent()
@@ -1036,6 +1048,58 @@ class CallTaskCoordinatorTest {
             )
         }
 
+    @Test fun echoedCredentialsAreScrubbedAcrossPunctuationAndSpokenDigits() =
+        runTest {
+            val h = Harness(this)
+            h.start()
+            runCurrent()
+            h.connect()
+            h.tool("keys", CallAgentTools.DTMF, "sequence" to "[\"credential:phone/pin\"]")
+            val readbacks =
+                listOf(
+                    "9081, 7263, 544",
+                    "9081.7263.544",
+                    "9081  7263  544",
+                    "nine zero eight one seven two six three five four four",
+                    "nine oh 81, seven two six three 544",
+                )
+            readbacks.forEachIndexed { index, text ->
+                h.transcript("echo-$index", CallSpeaker.REMOTE, "You entered $text.")
+                assertEquals(
+                    "You entered [credential].",
+                    h
+                        .state()
+                        .transcript
+                        .last()
+                        .text,
+                )
+                assertFalse(
+                    h.journal.records
+                        .toString()
+                        .contains(text),
+                )
+                assertFalse(
+                    h
+                        .brain()
+                        .context
+                        .toString()
+                        .contains(text),
+                )
+            }
+        }
+
+    @Test fun instructionAfterPhysicalDisconnectIsRejectedBeforeEndEventIsProcessed() =
+        runTest {
+            val h = Harness(this)
+            h.start()
+            runCurrent()
+            h.connect()
+            h.leg.state.value = LegState.Ended(EndCause.REMOTE_HANGUP)
+            val result = h.control(CallCapabilities.INSTRUCT, "text" to "Please ask about the fee")
+            assertEquals(InvocationStatus.NOT_EXECUTED, result.status)
+            assertTrue(h.state().transcript.none { it.speaker == CallSpeaker.OWNER_TO_AGENT })
+        }
+
     @Test fun startRejectsAMissingOrNonKeypadCredentialBeforeDialing() =
         runTest {
             val missing = Harness(this, briefCredentials = listOf("bank/pin"))
@@ -1082,6 +1146,108 @@ class CallTaskCoordinatorTest {
             val result = removed.brain().results.getValue("gone")
             assertEquals(InvocationStatus.NOT_EXECUTED, result.status)
             assertEquals("No value is saved for phone/pin. No keys were sent.", result.message)
+        }
+
+    @Test fun heldSecretHandleIsEnteredOnTheKeypadWhileRecordsShowOnlyItsReference() =
+        runTest {
+            val vault = SecretVault()
+            val handle = vault.store("thread", CARD, "Card number")
+            val h = Harness(this, briefCredentials = listOf(handle), vault = vault)
+            h.start()
+            runCurrent()
+            h.connect()
+            h.tool("card", CallAgentTools.DTMF, "sequence" to "[\"credential:SECRET:${handle.removePrefix("secret:")}\",\"#\"]")
+            h.transcript("echo", CallSpeaker.REMOTE, "You entered $CARD")
+
+            assertEquals("4111111111111111#", h.leg.dtmf.joinToString(""))
+            assertEquals(
+                listOf(CallCredential(handle, "Card number")),
+                h.opened
+                    .single()
+                    .brief.credentials,
+            )
+            assertEquals(
+                listOf("[credential $handle]", "#"),
+                h
+                    .state()
+                    .transcript
+                    .filter { it.speaker == CallSpeaker.DTMF }
+                    .map { it.text },
+            )
+            assertEquals(
+                "You entered [credential]",
+                h
+                    .state()
+                    .transcript
+                    .single { it.id == "echo" }
+                    .text,
+            )
+            assertEquals(
+                "Sent the whole sequence: [credential $handle], #. Sent as test signalling.",
+                h
+                    .brain()
+                    .results
+                    .getValue("card")
+                    .message,
+            )
+            val records = listOf(h.journal.records, h.invocations.records, h.brain().results, h.brain().context, h.opened).toString()
+            assertFalse(records.contains("4111111111111111"))
+            assertFalse(records.contains(CARD))
+        }
+
+    @Test fun startRejectsAHandleThisConversationDoesNotHold() =
+        runTest {
+            val vault = SecretVault()
+            val elsewhere = vault.store("other-thread", CARD, "Card number")
+            for (handle in listOf(elsewhere, "secret:0123456789abcdef0123456789abcdef")) {
+                val h = Harness(this, briefCredentials = listOf(handle), vault = vault)
+                val refused = h.start()
+                runCurrent()
+                assertEquals(InvocationStatus.NOT_EXECUTED, refused.await().status)
+                assertEquals(
+                    "Credential $handle is not held for this conversation: it was cleared, belongs to another conversation, " +
+                        "or EVA restarted. Look it up again with the password manager's tool. No call was placed.",
+                    refused.await().message,
+                )
+                assertEquals(0, h.placements)
+            }
+        }
+
+    @Test fun keypadRejectsAHandleOutsideTheBriefOrNoLongerHeld() =
+        runTest {
+            val vault = SecretVault()
+            val unlisted = vault.store("thread", CARD, "Card number")
+            val h = Harness(this, vault = vault)
+            h.start()
+            runCurrent()
+            h.connect()
+            h.tool("unlisted", CallAgentTools.DTMF, "sequence" to "[\"credential:$unlisted\"]")
+            assertEquals(
+                "Credential $unlisted is not in this call's brief; this call may enter only phone/pin. No keys were sent.",
+                h
+                    .brain()
+                    .results
+                    .getValue("unlisted")
+                    .message,
+            )
+
+            val held = vault.store("thread", CARD, "Card number")
+            val cleared = Harness(this, briefCredentials = listOf(held), vault = vault)
+            cleared.start()
+            runCurrent()
+            cleared.connect()
+            vault.retain(emptySet())
+            cleared.tool("gone", CallAgentTools.DTMF, "sequence" to "[\"1\",\"$held\"]")
+            assertEquals(
+                "Credential $held is not held for this conversation: it was cleared, belongs to another conversation, " +
+                    "or EVA restarted. Look it up again with the password manager's tool. No keys were sent.",
+                cleared
+                    .brain()
+                    .results
+                    .getValue("gone")
+                    .message,
+            )
+            assertEquals(emptyList<String>(), h.leg.dtmf + cleared.leg.dtmf)
         }
 
     @Test fun keypadSequenceRunsInOrderWithWaitsAndOneResult() =
@@ -1430,5 +1596,6 @@ class CallTaskCoordinatorTest {
     private companion object {
         /** Long enough that no hex ID or fingerprint contains it by chance. */
         const val PIN = "90817263544"
+        const val CARD = "4111 1111 1111 1111"
     }
 }

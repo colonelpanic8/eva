@@ -1109,9 +1109,11 @@ What EVA guarantees once a reply is accepted:
   handle, and quoted label. The structured data gains
   `"secrets": {name: {"handle", "label"}}`, replacing any provider field of that name.
 - The model uses a handle only through the `secret` parameter of
-  `eva.device.set_text`, or by naming it in an `eva.device.task` goal for the
-  task's `set_text`. EVA resolves the handle when typing; the value leaves the
-  process only as input to the screen-control backend.
+  `eva.device.set_text`, by naming it in an `eva.device.task` goal for the
+  task's `set_text`, or by naming it in `eva.call.start`'s `credentials` so the
+  call agent can enter it on the keypad. EVA resolves the handle when typing or
+  pressing keys; the value leaves the process only as input to the screen-control
+  backend or as keypad tones on the call.
 - A handle is valid in the conversation thread that received it and in the device
   tasks that thread starts. It has no timer. Starting a new conversation clears every
   thread without running work, and process death clears everything. An unknown or
