@@ -33,6 +33,9 @@ interface CallAgentBrain {
     /** For hosted media this must also stop server-side speech and disable automatic replies. */
     suspend fun setFloor(floor: CallFloor)
 
+    /** Stops new responses while the coordinator drains speech and hangs up. */
+    suspend fun setHangUpPending(pending: Boolean) = Unit
+
     suspend fun cancelOutput()
 
     /** The leg ended with no outcome recorded; [note] asks the agent to record one. No audio follows. */

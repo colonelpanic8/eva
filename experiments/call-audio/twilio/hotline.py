@@ -834,6 +834,7 @@ def iso_call_time(value):
 
 
 def verify(client, args):
+    expected = scenario(args.scenario) if args.scenario else None
     selected = number(client)
     service, environment = deployment(client)
     calls_url = f"{client.account}/Calls.json"
@@ -970,6 +971,8 @@ def verify(client, args):
         "recordings": artifacts,
         "warnings": list(dict.fromkeys(warnings)),
     }
+    if expected:
+        report["evaluation"] = evaluate(expected, gathers)
     (out / "report.json").write_text(json.dumps(report, indent=2) + "\n")
     # Keep only this call's receipts, not unrelated account logs or credential-bearing data.
     (out / "gathers.jsonl").write_text("".join(json.dumps(g) + "\n" for g in gathers))
@@ -995,6 +998,22 @@ def verify(client, args):
             print(
                 f"  Recording failed: Twilio code={receipt.get('error_code')} HTTP={receipt.get('status')}"
             )
+    evaluation = report.get("evaluation")
+    if evaluation:
+        print(
+            "  Stages: "
+            + " > ".join(
+                f"{s['step']}{'' if s['receipt'] else ' (no receipt)'}"
+                for s in evaluation["stages"]
+            )
+        )
+        for c in evaluation["checks"]:
+            print(
+                f"  {'PASS' if c['passed'] else 'FAIL'} {c['step']} {c['kind']}={json.dumps(c['expected'])} received={json.dumps(c['received'])}"
+            )
+        print(
+            f"  Scenario {evaluation['scenario']}: {'PASS' if evaluation['passed'] else 'FAIL'}"
+        )
     print(f"Artifacts: {out}")
     if args.transcript:
         compare(args.transcript, report)
@@ -1005,31 +1024,116 @@ def normalized(text):
     return " ".join(re.findall(r"[a-z0-9]+", text.lower()))
 
 
+DIGIT_WORDS = [
+    "zero",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+]
+
+
+def spoken_digits(text):
+    words = re.sub(
+        r"\b(" + "|".join(DIGIT_WORDS) + r")\b",
+        lambda m: str(DIGIT_WORDS.index(m[0])),
+        normalized(text),
+    )
+    return re.sub(r"\D", "", words)
+
+
 def verification_matches(report):
     verification = " ".join(
         g.get("speech_result") or ""
         for g in report["gathers"]
         if g["step"] == "verification"
     )
-    words = normalized(verification)
-    digits = [
-        "zero",
-        "one",
-        "two",
-        "three",
-        "four",
-        "five",
-        "six",
-        "seven",
-        "eight",
-        "nine",
-    ]
-    number_words = re.sub(
-        r"\b(" + "|".join(digits) + r")\b", lambda m: str(digits.index(m[0])), words
-    )
     return {
-        "name": "ivan malison" in words,
-        "account": "4417" in number_words.replace(" ", ""),
+        "name": "ivan malison" in normalized(verification),
+        "account": "4417" in spoken_digits(verification),
+    }
+
+
+CHECKS = {
+    "digits": lambda expected, g: g.get("digits") == expected,
+    "phrase": lambda expected, g: (
+        normalized(expected) in normalized(g.get("speech_result") or "")
+    ),
+    "spoken_digits": lambda expected, g: (
+        expected in spoken_digits(g.get("speech_result") or "")
+    ),
+}
+
+
+def reached_stages(data, gathers):
+    nodes = data["nodes"]
+    unknown = sorted({g["step"] for g in gathers} - nodes.keys())
+    if unknown:
+        raise Failure(
+            f"Receipts name steps {unknown} missing from scenario {data['name']}; pass the deployed scenario"
+        )
+
+    def stage(step, gather=None):
+        node = nodes[step]
+        return {
+            "step": step,
+            "prompt": node.get("prompt") or node.get("interjection"),
+            "digits": (gather or {}).get("digits"),
+            "speech_result": (gather or {}).get("speech_result"),
+            "receipt": gather is not None,
+        }
+
+    stages = []
+    step = data["start"]
+    for gather in [*gathers, None]:
+        while nodes[step]["type"] == "hold":
+            stages.append(stage(step))
+            step = nodes[step]["next"]
+        if gather is None:
+            break
+        node = nodes[gather["step"]]
+        stages.append(stage(gather["step"], gather))
+        text = gather.get("speech_result") or ""
+        if not gather.get("digits") and not text:
+            step = node["empty"]
+        elif node.get("end_pattern") and re.search(
+            node["end_pattern"], text, re.IGNORECASE
+        ):
+            step = "end"
+        else:
+            step = node["next"]
+    stages.append(stage(step))
+    return stages
+
+
+def evaluate(data, gathers):
+    stages = reached_stages(data, gathers)
+    expect = data.get("expect", {})
+    checks = []
+    for step, expected in expect.get("gathers", {}).items():
+        received = [g for g in gathers if g["step"] == step]
+        for kind, value in expected.items():
+            field = "digits" if kind == "digits" else "speech_result"
+            checks.append(
+                {
+                    "step": step,
+                    "kind": kind,
+                    "expected": value,
+                    "received": [g.get(field) for g in received],
+                    "passed": any(CHECKS[kind](value, g) for g in received),
+                }
+            )
+    return {
+        "scenario": data["name"],
+        "stages": stages,
+        "checks": checks,
+        "facts": expect.get("facts", []),
+        "passed": all(c["passed"] for c in checks),
     }
 
 
@@ -1386,6 +1490,11 @@ def parser():
         "--transcript", type=Path, help="call_agent.py transcript.jsonl for comparison"
     )
     verify_parser.add_argument(
+        "--scenario",
+        type=Path,
+        help="the deployed scenario; judges its expect block and fails on a miss",
+    )
+    verify_parser.add_argument(
         "--require-events",
         action="store_true",
         help="wait for complete Call Events rather than immediate Function logs",
@@ -1416,6 +1525,7 @@ def parser():
     e2e_parser = commands.add_parser(
         "e2e", help="check Pixel idle, run ONE short test call, verify uplink"
     )
+    e2e_parser.set_defaults(scenario=None)
     e2e_parser.add_argument(
         "--serial", default=os.environ.get("ANDROID_SERIAL", SERIAL)
     )
@@ -1490,6 +1600,7 @@ def main():
                 1
                 if not report["gathers"]
                 or any(g.get("kind") == "gather_deferred" for g in report["gathers"])
+                or not report.get("evaluation", {"passed": True})["passed"]
                 else 0
             )
         else:

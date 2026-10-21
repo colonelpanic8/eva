@@ -154,7 +154,7 @@ class CallTaskCoordinator(
         var ownerTranscribed = false
 
         // Credential values sent in this call, held only in memory to scrub echoes of them from text.
-        val secrets = mutableSetOf<String>()
+        val redactor = CallCredentialRedactor()
 
         // The agent's own catalog and dispatcher: arguments are scrubbed in prepare(), and execution
         // needs the proposal (for provenance), so the arguments-only entry point refuses.
@@ -177,10 +177,7 @@ class CallTaskCoordinator(
             )
         val dispatcher = CapabilityDispatcher(registry, invocations)
 
-        fun clean(text: String): String =
-            secrets.fold(text) { value, secret ->
-                value.replace(Regex(secret.map { Regex.escape(it.toString()) }.joinToString("[$KEY_SEPARATORS]?")), "[credential]")
-            }
+        fun clean(text: String): String = redactor.clean(text)
 
         /** Journal first: if storage fails, the in-memory state never claims what was not recorded. */
         suspend fun save(next: CallTaskSnapshot = snapshot) {
@@ -622,6 +619,7 @@ class CallTaskCoordinator(
                         ) {
                             val brain = opened
                             checkNotNull(brain)
+                            brain.setHangUpPending(running.hangUpIssued)
                             brain.setFloor(running.snapshot.floor)
                             running.save(running.snapshot.copy(brain = BrainState.ATTACHED))
                             running.brain = brain
@@ -1039,8 +1037,7 @@ class CallTaskCoordinator(
 
                             fun goodbyeRequest() =
                                 if (running.snapshot.legState is LegState.Connected && !running.hangUpIssued) {
-                                    " The call is still connected. If you have not said goodbye, say a brief goodbye to the other " +
-                                        "party now, then call hang_up. Never mention the outcome or this record aloud."
+                                    " " + wording().message(Wording.CALL_FINISH_CONNECTED)
                                 } else {
                                     ""
                                 }
@@ -1104,9 +1101,11 @@ class CallTaskCoordinator(
      * was cleared, as a barge-in or takeover does). Runs outside the task lock so remote audio, captions
      * and owner controls stay live meanwhile; an owner cancel hangs up directly and is never delayed.
      */
-    private fun hangUpAfterSpeech(running: Running) {
+    private suspend fun hangUpAfterSpeech(running: Running) {
+        if (running.hangUpIssued) return
         val leg = checkNotNull(running.leg)
         running.hangUpIssued = true
+        running.brain?.setHangUpPending(true)
         running.work.launch {
             guardLeg(running) {
                 (leg.media as? CallMedia.LocalPcm)?.awaitAgentAudioPlayed()
@@ -1181,7 +1180,7 @@ class CallTaskCoordinator(
             }
         // Credential values: resolved only here, only for references this call's brief was given (so
         // remote speech cannot steer the agent into another saved secret), all before the first key
-        // goes out, and wiped in finally. They exist as text only in [Running.secrets], for scrubbing.
+        // goes out, and wiped in finally. They exist as text only in [Running.redactor], for scrubbing.
         val values = mutableMapOf<String, CharArray>()
         try {
             val allowed =
@@ -1212,7 +1211,7 @@ class CallTaskCoordinator(
             }
             running.lock.withLock {
                 if (running.snapshot.state.terminal) return rejected("The call has ended. No keys were sent.")
-                running.secrets += values.values.map(::String)
+                values.values.forEach { running.redactor.remember(String(it)) }
             }
             val leg = checkNotNull(running.leg)
             val done = mutableListOf<String>()
@@ -1429,6 +1428,11 @@ class CallTaskCoordinator(
             if (running.snapshot.state.terminal) return rejected("The call task has ended.")
             when (proposal.capabilityId) {
                 CallCapabilities.INSTRUCT -> {
+                    if (running.snapshot.legState is LegState.Ended || running.leg?.state?.value is LegState.Ended ||
+                        running.hangUpIssued || running.cancelled
+                    ) {
+                        return rejected("The call is ending or has ended; the instruction was not delivered.")
+                    }
                     running
                         .append(
                             proposal.callId,

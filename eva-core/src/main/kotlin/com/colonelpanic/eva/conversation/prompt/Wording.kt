@@ -52,6 +52,7 @@ data class Wording(
         const val CALL_AGENT_INSTRUCTIONS = "call-agent-instructions"
         const val CALL_OWNER_URGENT = "call-owner-urgent"
         const val CALL_OWNER_UNTRANSCRIBED = "call-owner-untranscribed"
+        const val CALL_FINISH_CONNECTED = "call-finish-connected"
         const val CALL_ENDED_BEFORE_FINISH = "call-ended-before-finish"
         const val CONTINUATION = "continuation"
         const val HANG_UP_DEFERRED = "hang-up-deferred"

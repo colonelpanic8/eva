@@ -611,6 +611,7 @@ class OpenAiCallAgentBrainTest {
                 )
                 socket.server("""{"type":"response.done","response":{"id":"$response","status":"completed","output":[]}}""")
                 runCurrent()
+                if (status == InvocationStatus.COMPLETED) brain.setHangUpPending(true)
                 brain.toolResult(call, ExecutionOutcome(status, "hang-up"))
                 runCurrent()
             }
@@ -682,6 +683,7 @@ class OpenAiCallAgentBrainTest {
             brain.toolResult("hang_early", ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "Call finish now; EVA hangs up after it."))
             runCurrent()
             assertEquals(5, socket.events("response.create").size)
+            brain.setHangUpPending(true)
             finish("resp_5", "call_then_hang", "Thanks, goodbye.", InvocationStatus.COMPLETED)
             assertEquals(5, socket.events("response.create").size)
             finish("resp_6", "call_goodbye", "Thank you, goodbye.", InvocationStatus.COMPLETED, hangsUp = true)

@@ -354,8 +354,8 @@ tools:
       password manager. Pass numbers that a phone menu takes on the keypad in credentials, and put
       what the call agent may say aloud in briefing and disclosures. If something the call cannot
       succeed without is still missing, such as which account it is about or the account holder's
-      name, ask the user before calling rather than calling without it. Do not script how the call
-      agent introduces itself; it already knows.
+      name, ask the user before calling rather than calling without it. Pass the account holder's
+      name in onBehalfOf; let the call agent choose its introduction.
       The call runs in the background as a card in this conversation, where the
       user follows the transcript and can listen in, whisper or take over; say so briefly when you
       start it. A cellular call takes the phone's audio, which ends a voice conversation with you;
@@ -535,6 +535,10 @@ messages:
   call-owner-untranscribed: >-
     The owner had the floor and spoke to the other party directly. EVA has no transcript of what
     the owner said. Continue from what the other party says next, and ask the owner if you need it.
+  call-finish-connected: >-
+    The call is still connected. Answer any outstanding question and confirm critical values.
+    Once the conversation is over, say a brief goodbye if you have not already, then call hang_up.
+    Never mention this record or your internal steps aloud.
   call-ended-before-finish: >-
     The call ended ({cause}) before you recorded an outcome. You can no longer speak or press keys.
     Call finish now with an honest outcome and evidence from this call's transcript, and call no other tool.
@@ -554,8 +558,8 @@ messages:
     are talking to an AI, a bot or a recording, never deny it: say briefly and honestly that you are
     an AI assistant calling on that person's behalf, then continue with the task.
     Never stay silent when the other party asks you something or asks you to do something, even if
-    you cannot answer: say briefly that you don't have that information or aren't able to share it,
-    and when it matters to the goal, offer to check and use ask_owner. If you are unsure whether you
+    you cannot answer: when it matters to the goal, say "one moment, please" and use ask_owner.
+    If it is outside the task or you still cannot answer after checking, explain that briefly. If you are unsure whether you
     were addressed, answer briefly. Once they agree or answer, do not repeat your request or its
     details; acknowledge briefly and move to the next step.
     When the other party needs something you do not have to verify the account or to continue,
@@ -578,8 +582,9 @@ messages:
     Never hang up or finish only because nothing useful has been said yet. Use the keypad or say the
     option when a menu waits for a choice. A phone menu is a recording and cannot understand
     explanations: when it asks for a number that callBrief.credentials holds, enter it with dtmf;
-    when it asks for something you do not have, press or say its option for a representative, such
-    as 0 or "representative", instead of talking to it.
+    when it asks for something you do not have, use ask_owner for the missing detail or a takeover.
+    If the owner cannot supply it, use the menu's offered option for a representative, such as
+    0 or "representative". Do not invent a menu option or speak explanations to the recording.
     When the other party can answer, read back critical values they give you, such as
     confirmation or reference numbers, amounts, dates, times and spellings, exactly as you heard it,
     numbers digit by digit (for example "two, two, three, four"), and get their confirmation. If a
@@ -705,10 +710,17 @@ messages:
   announcement-action: >-
     This reply only announces a background task update. No action was executed.
     Ask the user to request the action before using tools.
+  # Read by EVA 0.71 and earlier, which do not fill uncertain-repeat's placeholders.
   mutation-uncertain: >-
     An action in this thread may have changed external state. Check background_status
     for recent receipts and verify the outcome before requesting more changes.
     Nothing was executed.
+  uncertain-repeat: >-
+    Nothing was executed. An earlier {title} ({capability}, call {call_id}, {time}) in this
+    thread ended with an unknown outcome, so it may have changed external state. Before
+    repeating {capability}, check what that action did with a read-only tool, such as
+    background_status, a status tool, or a screen read. Once a read-only check completes,
+    repeating it runs. Other actions are not blocked.
   unowned-action: No request is active to run this action. Nothing was executed.
   turn-stop-requested: Stopped.
   response-failed: The model could not complete this response.
