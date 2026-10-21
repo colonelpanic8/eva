@@ -19,6 +19,7 @@ node --check "$here/dial.js"
 node --test "$here/hotline.test.js" "$here/dial.test.js"
 python3 -m py_compile "$here"/*.py "$here"/../emulator/*.py
 python3 -m unittest discover -s "$here" -p 'test_*.py'
+python3 -m unittest discover -s "$here/../emulator" -p 'test_*.py'
 "$here/setup" --help >/dev/null
 "$here/verify" --help >/dev/null
 "$here/e2e" --help >/dev/null
