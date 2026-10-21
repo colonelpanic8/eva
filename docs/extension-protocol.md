@@ -809,7 +809,8 @@ call ID. The journal claims a call ID once, so the ID is stable for one invocati
 and never names two; it is not a credential. Providers may key persistent
 idempotency on it (see [durable writes](#9-durable-writes-receipt-states-and-locked-devices))
 but must accept any v1-valid ID. `capability` is the descriptor's
-local tool name, not its EVA-qualified ID. Each request receives at most one
+local tool name, not its EVA-qualified ID, or the reserved
+[`eva.check_credential`](#checking-a-credential). Each request receives at most one
 terminal callback. There is no streaming, progress, accepted-job response,
 cancellation method, or callback-initiated execution. EVA ignores duplicate,
 unknown-ID, wrong-provider, and already-expired callbacks.
@@ -817,7 +818,7 @@ unknown-ID, wrong-provider, and already-expired callbacks.
 `requestJson` tells the provider what EVA speaks:
 
 ```json
-{"protocolVersion": 1, "supportedProtocolVersions": [1], "features": ["secrets", "credentials"]}
+{"protocolVersion": 1, "supportedProtocolVersions": [1], "features": ["secrets", "credentials", "credential-check"]}
 ```
 
 `features` lists the optional v1 behavior EVA implements. A provider ignores feature names
@@ -828,6 +829,13 @@ so use a field only when the request lists its feature:
   tools that return secrets only with it.
 - `credentials`: EVA accepts a descriptor's [`credentials`](#declared-credentials) and
   delivers provisioned values in `_credentials`.
+- `credential-check`: EVA accepts `checkable` on a declared credential, sends the
+  [credential check](#checking-a-credential) request, and reads an execute reply's
+  [`rejectedCredentials`](#rejected-credentials).
+
+A provider that needs to know at execute time which features the describing EVA spoke can
+give each feature combination its own `descriptorRevision`; the execute request's
+`expectedRevision` then names it.
 
 A provider answers with a descriptor whose `protocolVersion` is one EVA listed.
 Future EVA versions extend the list; a provider that only knows a version EVA no
@@ -966,13 +974,16 @@ optional top-level `credentials` array (see
   "name": "pgp_passphrase",
   "title": "PGP key passphrase",
   "description": "Unlocks your PGP key so the app can decrypt entries while the phone is locked.",
-  "kind": "password"
+  "kind": "password",
+  "checkable": true
 }]
 ```
 
 At most four entries, each exactly `name` (`[a-z][a-z0-9_]{0,31}`, unique), `title`
 (1–120 code points), `description` (1–500 code points), and `kind`, which is `password`
-in v1. Anything else makes the descriptor malformed. The array is part of the descriptor
+in v1, plus an optional boolean `checkable` (with `credential-check` only) saying the
+provider answers a [credential check](#checking-a-credential) for it. Anything else makes
+the descriptor malformed. The array is part of the descriptor
 and so of its digest. Declaring, renaming, or removing a credential is a contract change
 that needs renewed enablement.
 
@@ -1014,6 +1025,39 @@ EVA guarantees:
 - The portable configuration lists `extension/<package>/<name>` of kind
   `extension-credential` in `credentials.required`, never the value. A restore on another
   device reports that the value needs entering there.
+
+#### Checking a credential
+
+When the user saves a value for a `checkable` credential, or taps **Check** beside it, EVA
+asks the provider whether the value works before any tool needs it. The check is an
+`execute` call with:
+
+- `capability` set to the reserved `eva.check_credential`. Tool names cannot contain a dot,
+  so it never names a declared tool.
+- `expectedRevision` set to the descriptor's revision, and a fresh `eva-` invocation ID
+  that EVA never journals.
+- arguments holding only `_credentials`, with exactly the one credential under test (see
+  [`extension-credential-check-arguments.json`](examples/extension-credential-check-arguments.json)):
+
+```json
+{"_credentials": {"pgp_passphrase": "…"}}
+```
+
+The provider tests the value the narrowest way it can, such as unlocking a key, without
+reading user data or changing anything, and replies with the execute envelope (see
+[`extension-credential-check-result.json`](examples/extension-credential-check-result.json)):
+
+- `completed` with `structuredContent` exactly `{"verdict": "accepted"}` or
+  `{"verdict": "rejected"}`, and text saying why, which the user sees.
+- Any other valid status, normally `not_executed` with a reason, when it cannot check,
+  for example because no key is imported yet. Its text says what is missing.
+
+A reply that breaks these rules, a timeout, or a busy provider leaves the value saved and
+marked unchecked, with the reason. The check is not a tool call: the model never sees it,
+and nothing about it reaches the journal, receipts or traces. The verdict is device-local
+state beside the value; saving or clearing the value forgets it. A provider whose
+credentials are not `checkable` keeps working, and EVA tells the user it cannot check the
+value before first use.
 
 ### 5. Execute callback, statuses, and reasons
 
@@ -1098,6 +1142,28 @@ malformed reply: `unknown`, nothing kept):
   `structuredContent` and is not checked against `outputSchema`.
 - Keep values out of `content` and `structuredContent`. EVA masks any copy of a
   value it finds there, but that is a backstop, not the channel.
+
+#### Rejected credentials
+
+With `credential-check`, a `not_executed` or `failed` reply may add `rejectedCredentials`:
+1–4 distinct declared credential names whose delivered value the provider found wrong (see
+[`extension-credential-rejected-result.json`](examples/extension-credential-rejected-result.json)):
+
+```json
+{
+  "protocolVersion": 1,
+  "status": "not_executed",
+  "reasonCode": "not_configured",
+  "truncated": false,
+  "content": [{"type": "text", "text": "The PGP key passphrase saved in EVA is wrong; update it in EVA's settings for Password Store. Nothing was decrypted."}],
+  "rejectedCredentials": ["pgp_passphrase"]
+}
+```
+
+EVA marks each named value that it delivered in this call, and that is still the saved
+value, as rejected on use, with the time and the reply's text, on its settings row. The mark stays until the value is checked again, replaced, or cleared.
+Names EVA did not deliver are ignored. The reply reaches the model and journal as usual;
+only the names are extra. Any other status carrying the field makes the reply malformed.
 
 What EVA guarantees once a reply is accepted:
 
@@ -1259,9 +1325,10 @@ and verification boundaries.
 per-turn call or read quota. Reads and
 mutations may follow earlier tool results without another user message. This
 applies to native and imported tools, including background continuation. Existing
-grants and dispatcher authorization still apply separately to every call. Unknown
-or failed mutations block further mutations in the same turn; read-only checks
-remain available. No automatic retry or in-turn grant approval is introduced;
+grants and dispatcher authorization still apply separately to every call. A
+mutation with an `UNKNOWN` outcome holds back only a repeat of the same tool until a
+read-only check runs; see the
+[uncertain-outcome gate](architecture.md#uncertain-outcome-gate). No automatic retry or in-turn grant approval is introduced;
 persistent idempotency is the provider's promise under section 9, not EVA's.
 
 Dispatched operations are journaled independently of result delivery, text and

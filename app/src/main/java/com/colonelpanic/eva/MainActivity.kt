@@ -446,7 +446,7 @@ class MainActivity : ComponentActivity() {
             skillImport = skillImport,
             plugins = plugins,
             extensions = extensions,
-            extensionCredentials = remember(extensions, extensionCredentialRevision) { eva.extensionCredentialStatuses() },
+            extensionCredentials = remember(extensions, extensionCredentialRevision) { eva.extensionCredentialStates() },
             packages = packages,
             contentProviders =
                 remember(packages, contentPermissionRevision) {
@@ -572,6 +572,7 @@ class MainActivity : ComponentActivity() {
                 onClearPackageServer = eva::clearPackageServer,
                 onSaveExtensionCredential = eva::saveExtensionCredential,
                 onClearExtensionCredential = eva.extensionCredentials::clear,
+                onCheckExtensionCredential = eva::checkExtensionCredential,
                 onSaveWait = eva.packageSettings::saveWait,
                 onExtensionEnable = eva.extensions::enable,
                 onExtensionEnableAll = eva.extensions::enableAll,

@@ -44,7 +44,11 @@
         "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$", "description": "Unique within the descriptor; the key under _credentials." },
         "title": { "type": "string", "minLength": 1, "maxLength": 120 },
         "description": { "type": "string", "minLength": 1, "maxLength": 500 },
-        "kind": { "const": "password" }
+        "kind": { "const": "password" },
+        "checkable": {
+          "type": "boolean",
+          "description": "The provider answers EVA's eva.check_credential request for this credential, so EVA can check a value when it is saved. Sent only when the describe request lists the credential-check feature."
+        }
       }
     },
     "capability": {

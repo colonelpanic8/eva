@@ -28,6 +28,7 @@ internal class FakeExtensionConnector :
     var deadline = 0L
     var revision: String? = null
     var arguments: String? = null
+    var capability: String? = null
 
     override suspend fun connect(
         identity: ExtensionIdentity,
@@ -66,6 +67,7 @@ internal class FakeExtensionConnector :
     ) {
         this.revision = revision
         this.arguments = arguments
+        this.capability = capability
         describe(id, "", deadline, callback)
     }
 

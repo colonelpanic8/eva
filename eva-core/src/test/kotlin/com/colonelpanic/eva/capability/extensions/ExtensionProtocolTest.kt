@@ -91,7 +91,10 @@ class ExtensionProtocolTest {
         }
         val request = Json.parseToJsonElement(ExtensionProtocol.describeRequest()).jsonObject
         assertEquals(JsonArray(listOf(JsonPrimitive(1))), request["supportedProtocolVersions"])
-        assertEquals(JsonArray(listOf(JsonPrimitive("secrets"), JsonPrimitive("credentials"))), request["features"])
+        assertEquals(
+            JsonArray(listOf("secrets", "credentials", "credential-check").map(::JsonPrimitive)),
+            request["features"],
+        )
     }
 
     @Test
@@ -101,7 +104,8 @@ class ExtensionProtocolTest {
             title: String = "Key passphrase",
             description: String = "Unlocks the PGP key.",
             kind: String = "password",
-        ) = """{"name":"$name","title":"$title","description":"$description","kind":"$kind"}"""
+            extra: String = "",
+        ) = """{"name":"$name","title":"$title","description":"$description","kind":"$kind"$extra}"""
 
         fun declaring(vararg credentials: String) =
             describe().replace("\"title\":\"Agenda\",", "\"title\":\"Agenda\",\"credentials\":[${credentials.joinToString(",")}],")
@@ -114,6 +118,10 @@ class ExtensionProtocolTest {
         )
         assertTrue(plain.credentials.isEmpty())
         assertNotEquals(plain.digest, declared.digest)
+        assertEquals(
+            listOf(CredentialSpec("passphrase", "Key passphrase", "Unlocks the PGP key.", checkable = true)),
+            ExtensionProtocol.describe(declaring(credential(extra = ",\"checkable\":true"))).descriptor!!.credentials,
+        )
         ExtensionProtocol.describe(declaring())
         ExtensionProtocol.describe(declaring(*(1..4).map { credential("c$it") }.toTypedArray()))
         listOf(
@@ -128,6 +136,7 @@ class ExtensionProtocolTest {
             declaring(credential(description = "d".repeat(501))),
             declaring("""{"name":"passphrase","title":"T","description":"D"}"""),
             declaring("""{"name":"passphrase","title":"T","description":"D","kind":"password","value":"x"}"""),
+            declaring(credential(extra = ",\"checkable\":\"yes\"")),
             describe().replace("\"title\":\"Agenda\",", "\"title\":\"Agenda\",\"credentials\":{},"),
         ).forEach { assertThrows(it, Exception::class.java) { ExtensionProtocol.describe(it) } }
     }
@@ -371,5 +380,68 @@ class ExtensionProtocolTest {
         assertEquals("Busy", reply.result.outcome.message)
         assertThrows(Exception::class.java) { ExtensionProtocol.describe(describe().replace("\"truncated\":false", "\"truncated\":true")) }
         assertTrue(reply.result.outcome.status == InvocationStatus.NOT_EXECUTED)
+    }
+
+    @Test
+    fun `a failed call may name the delivered credentials it rejected and nothing else may`() {
+        val envelope = """"protocolVersion":1,"truncated":false,"content":[{"type":"text","text":"Wrong passphrase."}]"""
+
+        fun reply(
+            rejected: String,
+            status: String = "not_executed",
+            reason: String = "\"not_configured\"",
+        ) = """{$envelope,"status":"$status","reasonCode":$reason,"rejectedCredentials":$rejected}"""
+
+        val parsed = ExtensionProtocol.executeResult(reply("""["passphrase","pin"]"""))
+        assertEquals(setOf("passphrase", "pin"), parsed.rejectedCredentials)
+        assertEquals(parsed, ExtensionProtocol.executeResult(ExtensionProtocol.encodeResult(parsed)))
+        assertEquals(
+            setOf("passphrase"),
+            ExtensionProtocol.executeResult(reply("""["passphrase"]""", "failed", "null")).rejectedCredentials,
+        )
+        listOf(
+            reply("""["passphrase"]""", "completed", "null"),
+            reply("""["passphrase"]""", "unknown", "null"),
+            reply("[]"),
+            reply("""["passphrase","passphrase"]"""),
+            reply("""["Passphrase"]"""),
+            reply("""["a","b","c","d","e"]"""),
+            reply("\"passphrase\""),
+        ).forEach { assertThrows(it, Exception::class.java) { ExtensionProtocol.executeResult(it) } }
+    }
+
+    @Test
+    fun `a check reply is a verdict, or an explanation of why the provider could not check`() {
+        fun reply(
+            status: String,
+            text: String,
+            tail: String = "",
+        ) = """{"protocolVersion":1,"status":"$status","reasonCode":${if (status == "completed") "null" else "\"not_configured\""},""" +
+            """"truncated":false,"content":[{"type":"text","text":"$text"}]$tail}"""
+
+        assertEquals(
+            CredentialVerdict.Accepted("It unlocks the key."),
+            ExtensionProtocol.checkResult(reply("completed", "It unlocks the key.", ""","structuredContent":{"verdict":"accepted"}""")),
+        )
+        assertEquals(
+            CredentialVerdict.Rejected("It does not unlock the key."),
+            ExtensionProtocol.checkResult(
+                reply("completed", "It does not unlock the key.", ""","structuredContent":{"verdict":"rejected"}"""),
+            ),
+        )
+        assertEquals(
+            CredentialVerdict.Unverified("No key is imported."),
+            ExtensionProtocol.checkResult(reply("not_executed", "No key is imported.")),
+        )
+        assertEquals(
+            """{"_credentials":{"passphrase":"correct horse"}}""",
+            ExtensionProtocol.checkArguments("passphrase", "correct horse"),
+        )
+        listOf(
+            reply("completed", "ok"),
+            reply("completed", "ok", ""","structuredContent":{"verdict":"maybe"}"""),
+            reply("completed", "ok", ""","structuredContent":{"verdict":"accepted","note":"x"}"""),
+            reply("not_executed", "no", ""","rejectedCredentials":["passphrase"]"""),
+        ).forEach { assertThrows(it, Exception::class.java) { ExtensionProtocol.checkResult(it) } }
     }
 }

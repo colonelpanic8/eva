@@ -4,17 +4,27 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.71.2] - 2026-10-20
+
 ### Added
 
 - A delegated call can enter a card or account number that a password manager returned in the same conversation, such as Password Store (EVA), on the phone menu's keypad. The model and the call transcript see only the secret's handle and label, never the digits.
+
+- Saving a credential an installed extension declares, such as Password Store's PGP key passphrase, now has the extension check it right away when it supports the new `credential-check` protocol feature. The credential's row says whether the extension accepted it, rejected it and why, or could not check it, and a Check button asks again. A value an extension rejects during a task shows "Rejected on use" with the time and the extension's reason on the same row, until the value is checked again, replaced, or cleared.
 
 ### Fixed
 
 - Redact common punctuated and spoken-digit credential read-backs from delegated-call records.
 - Keep hang-up state with the call coordinator so concurrent finish/hang-up tools and replacement brains do not produce extra replies.
 - Preserve typed call controls as attributed actions, route rejected instructions to the main conversation, and show the call destination in the composer.
-- After recording a call's outcome, the call agent says goodbye and hangs up instead of leaving the line silent until the other party hangs up.
+- After recording a call's outcome while connected, prompt the call agent to finish the conversation and hang up. A queued hang-up waits for the outcome and any speech already playing.
 - Typing in a conversation while its delegated call is on the line now reaches the call agent as an instruction, instead of waiting for the call to end.
+
+- A failed action no longer stops EVA from making later phone changes in the same conversation. Examples are a device task that only read the screen and a call that ended without accomplishing its goal. Only an action with an unknown outcome holds anything back, and it holds back only a repeat of that same kind of action. The refusal names that action, with its call ID and time. EVA can repeat the action once any read-only check has run, including when you ask it to.
+
+### Known limitations
+
+- Delegated calls remain unreliable at conversational verification. A recorded synthetic card-services call delivered the card number correctly, but narrated an intention to provide the name and ZIP instead of saying them, and omitted the fee amount and alternative card from its outcome. SSN verification and completing a product change have not been verified.
 
 ## [0.71.1] - 2026-10-20
 
