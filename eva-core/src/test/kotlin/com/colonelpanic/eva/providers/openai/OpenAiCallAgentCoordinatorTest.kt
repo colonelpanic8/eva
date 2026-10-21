@@ -141,6 +141,42 @@ class OpenAiCallAgentCoordinatorTest {
         }
     }
 
+    @Test fun finishAndHangUpInEitherOrderDoNotRequestAnotherResponse() =
+        runTest {
+            for (hangFirst in listOf(true, false)) {
+                val h = Harness(this)
+                h.launch()
+                runCurrent()
+                val socket = h.wire.sockets.single()
+                h.wire.committed(socket)
+                socket.server(CallBrainSocket.fixture("conversation.item.input_audio_transcription.completed"))
+                socket.created()
+                val tools =
+                    listOf(
+                        """{"type":"function_call","call_id":"finish","name":"eva_tool_5","arguments":"{\"outcome\":\"not_accomplished\",\"summary\":\"Fee waiver declined\",\"evidence\":[]}"}""",
+                        """{"type":"function_call","call_id":"hang","name":"eva_tool_4","arguments":"{}"}""",
+                    )
+                val output = (if (hangFirst) tools.reversed() else tools).joinToString(",")
+                socket.server(
+                    Json
+                        .parseToJsonElement(
+                            """{"type":"response.done","response":{"id":"resp_1","status":"completed","output":[$output]}}""",
+                        ).jsonObject,
+                )
+                runCurrent()
+                assertEquals(1, h.hangups)
+                assertEquals(1, socket.events("response.create").size)
+                socket.disconnect()
+                runCurrent()
+                val replacement = h.wire.sockets.last()
+                h.wire.committed(replacement)
+                runCurrent()
+                assertEquals(0, replacement.events("response.create").size)
+                h.state.value = LegState.Ended(EndCause.LOCAL_HANGUP)
+                runCurrent()
+            }
+        }
+
     @Test fun realBrainToolDispatchAndDisconnectReplaceOnlyTheBrainWithReceiptsReseeded() =
         runTest {
             val h = Harness(this)

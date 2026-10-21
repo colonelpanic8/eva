@@ -2301,9 +2301,25 @@ class ThreadController(
         description: String = "Call card control",
     ): InvocationRecord? =
         try {
+            val callId = "owner-control:${UUID.randomUUID()}"
+            val initiator = ActionInitiator(InitiatorKind.OWNER_CONTROL)
+            store.append(
+                ThreadItem.ActionCall(
+                    callId,
+                    task.threadId,
+                    task.turnId,
+                    nowMillis(),
+                    callId,
+                    capabilityId,
+                    description,
+                    arguments + ("taskId" to task.id),
+                    initiator = initiator,
+                ),
+            )
+            requestRefresh()
             dispatcher.execute(
                 ToolProposal(
-                    "owner-control:${UUID.randomUUID()}",
+                    callId,
                     capabilityId,
                     arguments + ("taskId" to task.id),
                     description,
@@ -2334,14 +2350,7 @@ class ThreadController(
     private suspend fun whisperToCall(
         call: CallTaskSnapshot,
         text: String,
-    ): InvocationRecord? {
-        val record = dispatchCallControl(call, CallCapabilities.INSTRUCT, mapOf("text" to text), "Typed to the call agent")
-        if (record?.status == InvocationStatus.COMPLETED) {
-            store.append(ThreadItem.UserMessage(UUID.randomUUID().toString(), call.threadId, call.turnId, nowMillis(), text, false))
-            requestRefresh()
-        }
-        return record
-    }
+    ): InvocationRecord? = dispatchCallControl(call, CallCapabilities.INSTRUCT, mapOf("text" to text), "Typed to the call agent")
 
     /**
      * Sends typed input. While the shown thread's call is still on the line, the input goes to the
@@ -2356,6 +2365,11 @@ class ThreadController(
         ) {
             return
         }
+        val activeCall = liveCall(shownThreadId)
+        if (activeCall != null && text.trim().lowercase() in setOf("stop", "cancel", "stop call", "cancel call")) {
+            callControl(activeCall.id, CallCapabilities.CANCEL)
+            return
+        }
         val question = currentQuestion(shownThreadId)
         if (text.isNotBlank() && question != null) {
             submitAnswer(question.evidence.questionId, text)
@@ -2366,10 +2380,30 @@ class ThreadController(
         if (text.isNotBlank() && call != null) {
             scope.launch {
                 val record = whisperToCall(call, text)
-                if (record?.status != InvocationStatus.COMPLETED) reportCallControlFailure(record)
+                when (record?.status) {
+                    InvocationStatus.COMPLETED -> {
+                        Unit
+                    }
+
+                    InvocationStatus.NOT_EXECUTED -> {
+                        if (shownThreadId == call.threadId && session != null && !state.value.voiceMode) {
+                            submitToMain(text)
+                        } else {
+                            submitBackground(text, call.threadId)
+                        }
+                    }
+
+                    else -> {
+                        reportCallControlFailure(record)
+                    }
+                }
             }
             return
         }
+        submitToMain(text)
+    }
+
+    private fun submitToMain(text: String) {
         val current = state.value
         if (session == null && !current.voiceMode && current.providerStatus == ProviderStatus.DISCONNECTED) {
             submitWithoutSession(text)
@@ -2439,11 +2473,12 @@ class ThreadController(
             val id = threadId ?: store.createThread(UNTITLED).id
             val call = liveCall(id)
             if (call != null && currentQuestion(id) == null) {
-                val record = whisperToCall(call, text)
-                check(record?.status == InvocationStatus.COMPLETED) {
+                val stopping = text.trim().lowercase() in setOf("stop", "cancel", "stop call", "cancel call")
+                val record = if (stopping) dispatchCallControl(call, CallCapabilities.CANCEL, emptyMap()) else whisperToCall(call, text)
+                if (record?.status == InvocationStatus.COMPLETED) return@withLock BackgroundSubmission(id, call.turnId)
+                check(record?.status == InvocationStatus.NOT_EXECUTED) {
                     record?.message ?: "The instruction to the call agent could not be recorded, so whether it reached the call is unknown."
                 }
-                return@withLock BackgroundSubmission(id, call.turnId)
             }
             val running = tasks.values.lastOrNull { it.threadId == id && it.active }
             if (running != null) {

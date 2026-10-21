@@ -10,6 +10,9 @@ All notable changes to EVA will be documented here.
 
 ### Fixed
 
+- Redact common punctuated and spoken-digit credential read-backs from delegated-call records.
+- Keep hang-up state with the call coordinator so concurrent finish/hang-up tools and replacement brains do not produce extra replies.
+- Preserve typed call controls as attributed actions, route rejected instructions to the main conversation, and show the call destination in the composer.
 - After recording a call's outcome, the call agent says goodbye and hangs up instead of leaving the line silent until the other party hangs up.
 - Typing in a conversation while its delegated call is on the line now reaches the call agent as an instruction, instead of waiting for the call to end.
 
