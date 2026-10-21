@@ -1831,9 +1831,16 @@ answered. The voice model, which hears the audio, decides whether a segment need
 a reply: for noise, hold music, recordings and announcements not waiting for it, it
 calls the quiet `keep_listening` instead of speaking. Quiet results never prompt another
 response, so an idle line cannot loop: `keep_listening` always, `report_phase`
-beside speech or another tool, and a completed `finish` whose response also spoke (on a
-Twilio call, answering that receipt made the agent narrate the outcome aloud; a rejected
-`finish` or one made without speech still prompts a reply). A phase report on its own is answered, since on the
+beside speech or another tool, and a completed `finish` whose response also spoke once the
+agent has called `hang_up` (on a Twilio call, answering that receipt made the agent narrate
+the outcome aloud). The agent's `hang_up` may be in the same response or an earlier one the
+coordinator refused for lack of an outcome, which the next `finish` carries out. A spoken
+`finish` with no hang-up coming prompts a reply: on a card-services call the agent said
+"Let me respond briefly and wrap this up", finished, and the line sat silent for over half a minute
+until the representative hung up. While the leg is connected and no hang-up is under way,
+the `finish` receipt tells the agent to say a brief goodbye if it has not, then call
+`hang_up`, and never to mention the outcome or the record aloud. A rejected `finish` or
+one made without speech still prompts a reply. A phase report on its own is answered, since on the
 device the agent reported IVR alone, was never asked to act, and the menu timed out.
 Once a `hang_up` completes the brain requests no further responses, since the agent
 otherwise answered its own `finish` and `hang_up` results by reading the time aloud.

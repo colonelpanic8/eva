@@ -145,6 +145,8 @@ class CallTaskCoordinator(
         /** The agent asked to hang up before recording an outcome; `finish` hangs up once it records one. */
         var hangUpAfterFinish = false
 
+        var hangUpIssued = false
+
         /** The leg ended before `finish`; the agent may still record its outcome. */
         var wrappingUpAfterEnd = false
 
@@ -1034,6 +1036,14 @@ class CallTaskCoordinator(
                                     "not_accomplished" -> CallTaskState.NotAccomplished(args.getValue("summary"))
                                     else -> CallTaskState.Uncertain(args.getValue("summary"))
                                 }
+
+                            fun goodbyeRequest() =
+                                if (running.snapshot.legState is LegState.Connected && !running.hangUpIssued) {
+                                    " The call is still connected. If you have not said goodbye, say a brief goodbye to the other " +
+                                        "party now, then call hang_up. Never mention the outcome or this record aloud."
+                                } else {
+                                    ""
+                                }
                             // finish more than once (seen on a Twilio call: again after the other party's "bye"):
                             // the latest claim replaces the earlier one while the task is open, since the call can
                             // still change what happened (a corrected reference number). Repeating the same claim
@@ -1042,7 +1052,8 @@ class CallTaskCoordinator(
                             val previous = running.snapshot.proposedOutcome
                             if (previous == outcome) {
                                 return completed(
-                                    "This outcome claim is already recorded; nothing changed. Call finish again only if the outcome changes.",
+                                    "This outcome claim is already recorded; nothing changed. " +
+                                        "Call finish again only if the outcome changes." + goodbyeRequest(),
                                 )
                             }
                             running.save(running.snapshot.copy(state = CallTaskState.WrappingUp, proposedOutcome = outcome))
@@ -1058,7 +1069,7 @@ class CallTaskCoordinator(
                                         "Outcome claim recorded with transcript references. Hang-up requested as you asked earlier; " +
                                             "the provider's leg state determines when the call has ended."
                                     } else {
-                                        "Outcome claim recorded with transcript references. The call remains active until the provider observes its end."
+                                        "Outcome claim recorded with transcript references." + goodbyeRequest()
                                     },
                                 buildJsonObject {
                                     put(
@@ -1095,6 +1106,7 @@ class CallTaskCoordinator(
      */
     private fun hangUpAfterSpeech(running: Running) {
         val leg = checkNotNull(running.leg)
+        running.hangUpIssued = true
         running.work.launch {
             guardLeg(running) {
                 (leg.media as? CallMedia.LocalPcm)?.awaitAgentAudioPlayed()

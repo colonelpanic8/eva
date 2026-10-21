@@ -103,9 +103,9 @@ class OpenAiCallAgentBrainFactory internal constructor(
  * ending without an outcome. The voice model, which hears the audio, then decides whether to speak
  * or call the quiet `keep_listening`; transcription never gates a reply. Quiet results do not prompt
  * another response, so an idle line (NIST ticks, hold music) cannot loop the agent, and bookkeeping
- * the agent already spoke around (a completed `finish`) does not make it narrate. Nothing new is
- * requested while the remote party is mid-utterance, a response is in flight, tools are pending,
- * the owner holds the floor, or a hang-up has gone through.
+ * the agent already spoke around (a completed `finish` with a hang-up coming) does not make it
+ * narrate. Nothing new is requested while the remote party is mid-utterance, a response is in
+ * flight, tools are pending, the owner holds the floor, or a hang-up has gone through.
  *
  * Event ordering quirks handled here: a response can be created before EVA's request is matched
  * (metadata tokens tie responses to requests, and unmatched ones are cancelled); audio deltas from a
@@ -160,11 +160,15 @@ internal class OpenAiCallAgentBrain(
      * `finish` calls whose response also spoke. Recording the outcome is bookkeeping the other party
      * never hears, and the agent already addressed them in that response; asking it to reply to the
      * receipt made it narrate on a Twilio call ("Thank you. The cancellation confirmation number is
-     * 22:34, which I'm treating as 2234..."). So a completed one is quiet. A rejected one still prompts
-     * a reply (the agent must fix its evidence), as does a finish made alone, since the agent has not
-     * yet said anything and someone may be waiting.
+     * 22:34, which I'm treating as 2234..."). So a completed one is quiet once a hang-up is coming
+     * ([hangUpRequested]); without one the line went silent, so its receipt is answered. A rejected one
+     * prompts a reply (the agent must fix its evidence), as does a finish made alone, since the agent
+     * has not yet said anything and someone may be waiting.
      */
     private val spokenFinishes = mutableSetOf<String>()
+
+    /** The agent called `hang_up`; one refused for lack of an outcome goes through with the next `finish`. */
+    private var hangUpRequested = false
 
     /** A hang-up went through: anything the agent said next would reach the line until it drops. */
     private var hangingUp = false
@@ -493,7 +497,10 @@ internal class OpenAiCallAgentBrain(
                     ) {
                         quietTools += callId
                     }
-                    if (definition.capabilityId == CallAgentTools.HANG_UP) hangUpTools += callId
+                    if (definition.capabilityId == CallAgentTools.HANG_UP) {
+                        hangUpTools += callId
+                        hangUpRequested = true
+                    }
                     if (definition.capabilityId == CallAgentTools.FINISH && generation.transcripts.values.any { it.isNotBlank() }) {
                         spokenFinishes += callId
                     }
@@ -728,7 +735,8 @@ internal class OpenAiCallAgentBrain(
         )
         pendingTools -= callId
         if (hangUpTools.remove(callId) && outcome.status == InvocationStatus.COMPLETED) hangingUp = true
-        val quietFinish = spokenFinishes.remove(callId) && outcome.status == InvocationStatus.COMPLETED
+        val quietFinish =
+            spokenFinishes.remove(callId) && outcome.status == InvocationStatus.COMPLETED && hangUpRequested
         if (!quietTools.remove(callId) && !quietFinish) needsResponse = true
         pump()
     }

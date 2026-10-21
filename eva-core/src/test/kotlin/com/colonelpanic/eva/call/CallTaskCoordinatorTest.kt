@@ -473,6 +473,15 @@ class CallTaskCoordinatorTest {
             )
             assertEquals(CallTaskState.WrappingUp, h.state().state)
             assertFalse(result.isCompleted)
+            assertEquals(
+                "Outcome claim recorded with transcript references. The call is still connected. If you have not said goodbye, " +
+                    "say a brief goodbye to the other party now, then call hang_up. Never mention the outcome or this record aloud.",
+                h
+                    .brain()
+                    .results
+                    .getValue("finish")
+                    .message,
+            )
             h.tool("hang", CallAgentTools.HANG_UP)
             assertEquals(1, h.leg.hangups)
             assertTrue(h.state().legState is LegState.Connected)
@@ -507,13 +516,14 @@ class CallTaskCoordinatorTest {
                 "evidence" to "[\"forty-two minutes\"]",
             )
             assertEquals(1, h.leg.hangups)
-            assertTrue(
+            assertEquals(
+                "Outcome claim recorded with transcript references. Hang-up requested as you asked earlier; " +
+                    "the provider's leg state determines when the call has ended.",
                 h
                     .brain()
                     .results
                     .getValue("finish")
-                    .message
-                    .contains("Hang-up requested"),
+                    .message,
             )
             h.leg.state.value = LegState.Ended(EndCause.LOCAL_HANGUP)
             runCurrent()

@@ -623,9 +623,8 @@ class OpenAiCallAgentBrainTest {
             assertEquals(2, socket.events("response.create").size)
         }
 
-    @Test fun aFinishSpokenAroundIsQuietUnlessRejectedButAFinishAloneIsAnswered() =
+    @Test fun aSpokenFinishIsQuietOnlyBesideAHangUpAndOtherwiseAnswered() =
         runTest {
-            // On a Twilio call the agent answered its own finish receipt by narrating the outcome aloud.
             val h = CallBrainHarness(this)
             val brain = h.open()
             val socket = h.sockets.single()
@@ -633,12 +632,14 @@ class OpenAiCallAgentBrainTest {
             runCurrent()
             brain.setFloor(CallFloor.AGENT)
             val finish = CallAgentTools.definitions.indexOfFirst { it.id == CallAgentTools.FINISH }
+            val hangUp = CallAgentTools.definitions.indexOfFirst { it.id == CallAgentTools.HANG_UP }
 
             suspend fun finish(
                 response: String,
                 call: String,
                 speech: String?,
                 status: InvocationStatus,
+                hangsUp: Boolean = false,
             ) {
                 socket.created(response)
                 speech?.let {
@@ -651,6 +652,12 @@ class OpenAiCallAgentBrainTest {
                         """"name":"eva_tool_$finish",""" +
                         """"arguments":"{\"outcome\":\"accomplished\",\"summary\":\"s\",\"evidence\":[\"x\"]}"}""",
                 )
+                if (hangsUp) {
+                    socket.server(
+                        """{"type":"response.function_call_arguments.done","response_id":"$response","call_id":"hang_$call",""" +
+                            """"name":"eva_tool_$hangUp","arguments":"{}"}""",
+                    )
+                }
                 socket.server("""{"type":"response.done","response":{"id":"$response","status":"completed","output":[]}}""")
                 runCurrent()
                 brain.toolResult(call, ExecutionOutcome(status, "receipt"))
@@ -662,14 +669,25 @@ class OpenAiCallAgentBrainTest {
             assertEquals(1, socket.events("response.create").size)
             finish("resp_1", "call_rejected", "Thank you, goodbye.", InvocationStatus.NOT_EXECUTED)
             assertEquals(2, socket.events("response.create").size)
-            finish("resp_2", "call_spoken", "Thank you, goodbye.", InvocationStatus.COMPLETED)
-            assertEquals(2, socket.events("response.create").size)
-            socket.server(JsonObject(CallBrainSocket.fixture("input_audio_buffer.committed") + ("item_id" to JsonPrimitive("remote_bye"))))
-            socket.server("""{"type":"conversation.item.input_audio_transcription.completed","item_id":"remote_bye","transcript":"Bye."}""")
-            runCurrent()
+            finish("resp_2", "call_spoken", "Understood, thanks.", InvocationStatus.COMPLETED)
             assertEquals(3, socket.events("response.create").size)
             finish("resp_3", "call_alone", null, InvocationStatus.COMPLETED)
             assertEquals(4, socket.events("response.create").size)
+            socket.created("resp_4")
+            socket.server(
+                """{"type":"response.function_call_arguments.done","response_id":"resp_4","call_id":"hang_early","name":"eva_tool_$hangUp","arguments":"{}"}""",
+            )
+            socket.server("""{"type":"response.done","response":{"id":"resp_4","status":"completed","output":[]}}""")
+            runCurrent()
+            brain.toolResult("hang_early", ExecutionOutcome(InvocationStatus.NOT_EXECUTED, "Call finish now; EVA hangs up after it."))
+            runCurrent()
+            assertEquals(5, socket.events("response.create").size)
+            finish("resp_5", "call_then_hang", "Thanks, goodbye.", InvocationStatus.COMPLETED)
+            assertEquals(5, socket.events("response.create").size)
+            finish("resp_6", "call_goodbye", "Thank you, goodbye.", InvocationStatus.COMPLETED, hangsUp = true)
+            brain.toolResult("hang_call_goodbye", ExecutionOutcome(InvocationStatus.COMPLETED, "Hang-up requested."))
+            runCurrent()
+            assertEquals(5, socket.events("response.create").size)
         }
 
     @Test fun agentWordsStreamAsLiveCaptionsThatAreFinalizedOrMarkedCutOff() =
