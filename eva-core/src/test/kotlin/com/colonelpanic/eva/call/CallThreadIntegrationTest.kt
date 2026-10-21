@@ -340,7 +340,11 @@ class CallThreadIntegrationTest {
             assertTrue("${calls.tasks.value} ${repository.history()} ${controller.taskSnapshots.value}", hangups > 0)
         }
 
-    @Test fun typedInputReachesTheCallAgentWhileTheLineIsUpAndTheMainTurnAfter() =
+    @Test fun typedInputReachesTheCallAgentWhileTheLineIsUpAndTheMainTurnAfter() = typedCallScenario(cancel = false)
+
+    @Test fun typedStopCancelsTheCallInsteadOfWhispering() = typedCallScenario(cancel = true)
+
+    private fun typedCallScenario(cancel: Boolean) =
         runTest {
             val store = MemoryConversationStore()
             val repository = MemoryInvocationRepository()
@@ -467,16 +471,33 @@ class CallThreadIntegrationTest {
                 repository.history().filter { it.capabilityId == CallCapabilities.INSTRUCT }.map { it.initiator?.kind },
             )
             assertEquals(
-                listOf("Call the card line", "provide the card number", "then ask about the fee"),
+                listOf("Call the card line"),
                 store.items(thread, Int.MAX_VALUE).filterIsInstance<ThreadItem.UserMessage>().map { it.text },
             )
             assertEquals(emptyList<String>(), owner.steered)
+            assertEquals(
+                listOf("provide the card number", "then ask about the fee"),
+                store
+                    .items(thread, Int.MAX_VALUE)
+                    .filterIsInstance<ThreadItem.ActionCall>()
+                    .filter { it.capabilityId == CallCapabilities.INSTRUCT }
+                    .map { it.arguments.getValue("text") },
+            )
 
-            legState.value = LegState.Ended(EndCause.REMOTE_HANGUP)
-            runCurrent()
-            controller.submit("what did they say?")
-            runCurrent()
-            assertEquals(listOf("what did they say?"), owner.steered)
+            if (cancel) {
+                controller.submit("stop")
+                runCurrent()
+                assertEquals(1, repository.history().count { it.capabilityId == CallCapabilities.CANCEL })
+                assertEquals(emptyList<String>(), owner.steered)
+                legState.value = LegState.Ended(EndCause.LOCAL_HANGUP)
+                runCurrent()
+            } else {
+                // Selection sees the old task snapshot, but delivery sees the physical disconnect.
+                legState.value = LegState.Ended(EndCause.REMOTE_HANGUP)
+                controller.submit("what did they say?")
+                runCurrent()
+                assertEquals(listOf("what did they say?"), owner.steered)
+            }
             assertEquals(2, whispered.count { it.speaker == CallSpeaker.OWNER_TO_AGENT })
         }
 
