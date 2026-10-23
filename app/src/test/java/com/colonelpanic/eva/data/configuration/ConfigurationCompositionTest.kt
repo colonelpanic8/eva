@@ -361,7 +361,7 @@ class ConfigurationCompositionTest {
             com.colonelpanic.eva.call
                 .CallAgentTuning()
         val base = fullConfiguration()
-        val tuned = defaults.copy(vadThreshold = 0.75, vadSilenceMillis = 1_200)
+        val tuned = defaults.copy(vadThreshold = 0.75, vadSilenceMillis = 1_200, voice = "cedar")
         val expected = base.copy(capabilities = base.capabilities.copy(callAgent = tuned))
         val baseDocument = EvaConfigurationCodec.complete(base)
         val encoded = EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(expected))
@@ -382,7 +382,10 @@ class ConfigurationCompositionTest {
                 ).configuration.capabilities.callAgent,
         )
         val override = EvaConfigurationCodec.overrides(expected, baseDocument, listOf("base.yaml"))
-        assertEquals(CapabilitiesPatch(callAgent = CallAgentPatch(vadThreshold = 0.75, vadSilenceMillis = 1_200)), override.capabilities)
+        assertEquals(
+            CapabilitiesPatch(callAgent = CallAgentPatch(vadThreshold = 0.75, vadSilenceMillis = 1_200, voice = "cedar")),
+            override.capabilities,
+        )
         val silenceOnly =
             EvaConfigurationDocument(
                 include = listOf("base.yaml"),
@@ -400,7 +403,13 @@ class ConfigurationCompositionTest {
                     ),
                 ).configuration.capabilities.callAgent,
         )
-        for (invalid in listOf("vadThreshold: 1.5", "vadThreshold: -0.1", "vadSilenceMillis: -1", "vadPrefixPaddingMillis: -5")) {
+        for (invalid in listOf(
+            "vadThreshold: 1.5",
+            "vadThreshold: -0.1",
+            "vadSilenceMillis: -1",
+            "vadPrefixPaddingMillis: -5",
+            "voice: ' '",
+        )) {
             val error =
                 assertThrows(IllegalArgumentException::class.java) {
                     EvaConfigurationCodec.decode("format: eva\nversion: 3\ncapabilities:\n  callAgent:\n    $invalid\n")

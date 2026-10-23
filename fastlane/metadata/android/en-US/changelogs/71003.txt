@@ -1,0 +1,3 @@
+* Added: Choose the phone call agent's voice in Settings. The selection is included in portable configuration and applies when the next call agent connects.
+* Changed: The call agent is instructed to open with the purpose of the call, without an unsolicited introduction as an assistant or as calling on someone else's behalf. It must answer identity questions truthfully and must not claim to be the account holder.
+* ...see CHANGELOG.md for the rest.

@@ -98,6 +98,7 @@ data class EvaConfigurationDocument(
     val vadSilenceMillis: Int? = null,
     val listenInByDefault: Boolean? = null,
     val whatsAppEnabled: Boolean? = null,
+    val voice: String? = null,
 ) {
     init {
         materialize()
@@ -112,6 +113,7 @@ data class EvaConfigurationDocument(
                 vadSilenceMillis ?: defaults.vadSilenceMillis,
                 listenInByDefault ?: defaults.listenInByDefault,
                 whatsAppEnabled ?: defaults.whatsAppEnabled,
+                voice ?: defaults.voice,
             )
         } catch (error: IllegalArgumentException) {
             throw IllegalArgumentException("capabilities.callAgent: ${error.message}", error)
@@ -667,6 +669,8 @@ object EvaConfigurationCodec {
                         .takeIf { it != base?.capabilities?.callAgent?.listenInByDefault },
                     current.capabilities.callAgent.whatsAppEnabled
                         .takeIf { it != base?.capabilities?.callAgent?.whatsAppEnabled },
+                    current.capabilities.callAgent.voice
+                        .takeIf { it != base?.capabilities?.callAgent?.voice },
                 ).nonEmpty(),
                 current.capabilities.twilioCalls.takeIf { it != base?.capabilities?.twilioCalls },
             ).nonEmpty(),
@@ -1141,6 +1145,7 @@ object EvaConfigurationCodec {
                     override.capabilities?.callAgent?.vadSilenceMillis ?: base.capabilities?.callAgent?.vadSilenceMillis,
                     override.capabilities?.callAgent?.listenInByDefault ?: base.capabilities?.callAgent?.listenInByDefault,
                     override.capabilities?.callAgent?.whatsAppEnabled ?: base.capabilities?.callAgent?.whatsAppEnabled,
+                    override.capabilities?.callAgent?.voice ?: base.capabilities?.callAgent?.voice,
                 ).nonEmpty(),
                 override.capabilities?.twilioCalls ?: base.capabilities?.twilioCalls,
             ).nonEmpty(),
@@ -1227,7 +1232,7 @@ object EvaConfigurationCodec {
     private fun CallAgentPatch.nonEmpty() =
         takeIf {
             vadThreshold != null || vadPrefixPaddingMillis != null || vadSilenceMillis != null || listenInByDefault != null ||
-                whatsAppEnabled != null
+                whatsAppEnabled != null || voice != null
         }
 
     private fun WebResearchPatch.nonEmpty() = takeIf { enabled != null || model != null || effort != null || timeoutSeconds != null }

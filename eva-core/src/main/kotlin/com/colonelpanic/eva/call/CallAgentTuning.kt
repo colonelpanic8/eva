@@ -25,8 +25,10 @@ data class CallAgentTuning(
     val vadSilenceMillis: Int = 800,
     val listenInByDefault: Boolean = false,
     val whatsAppEnabled: Boolean = false,
+    val voice: String = "marin",
 ) {
     init {
+        require(voice.isNotBlank()) { "Call agent voice must not be blank." }
         require(vadThreshold in 0.0..1.0) { "Call agent VAD threshold must be between 0.0 and 1.0 (got $vadThreshold)." }
         require(vadPrefixPaddingMillis >= 0) {
             "Call agent VAD prefix padding must not be negative (got $vadPrefixPaddingMillis ms)."

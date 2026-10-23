@@ -53,17 +53,15 @@ import java.util.concurrent.TimeUnit
 class OpenAiCallAgentBrainFactory internal constructor(
     private val access: suspend () -> OpenAiAccess,
     private val model: () -> String,
-    private val voice: String,
     private val tuning: () -> CallAgentTuning = { CallAgentTuning() },
     private val connect: (Request, WebSocketListener) -> WebSocket,
 ) : CallAgentBrainFactory {
     constructor(
         access: suspend () -> OpenAiAccess,
         model: () -> String = { OpenAiModels.REALTIME },
-        voice: String = "marin",
         tuning: () -> CallAgentTuning = { CallAgentTuning() },
         client: OkHttpClient = OkHttpClient.Builder().readTimeout(0, TimeUnit.MILLISECONDS).build(),
-    ) : this(access, model, voice, tuning, client::newWebSocket)
+    ) : this(access, model, tuning, client::newWebSocket)
 
     override suspend fun open(request: CallBrainRequest): CallAgentBrain {
         require(
@@ -78,7 +76,7 @@ class OpenAiCallAgentBrainFactory internal constructor(
                 .addQueryParameter("model", model())
                 .build()
         val authorized = auth.authorize(Request.Builder().url(url)).build()
-        val brain = OpenAiCallAgentBrain(request, voice, tuning())
+        val brain = OpenAiCallAgentBrain(request, tuning())
         try {
             brain.connect(authorized, connect)
             brain.ready.await()
@@ -118,7 +116,6 @@ class OpenAiCallAgentBrainFactory internal constructor(
  */
 internal class OpenAiCallAgentBrain(
     private val request: CallBrainRequest,
-    private val voice: String,
     private val tuning: CallAgentTuning,
 ) : CallAgentBrain {
     private val monitor = Any()
@@ -577,7 +574,7 @@ internal class OpenAiCallAgentBrain(
                                 "output",
                                 buildJsonObject {
                                     put("format", pcmFormat())
-                                    put("voice", voice)
+                                    put("voice", tuning.voice)
                                 },
                             )
                         },

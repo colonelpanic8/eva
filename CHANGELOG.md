@@ -4,6 +4,21 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.71.3] - 2026-10-22
+
+### Added
+
+- Choose the phone call agent's voice in Settings. The selection is included in portable configuration and applies when the next call agent connects.
+
+### Changed
+
+- The call agent is instructed to open with the purpose of the call, without an unsolicited introduction as an assistant or as calling on someone else's behalf. It must answer identity questions truthfully and must not claim to be the account holder.
+- Update OkHttp to 5.5.1 to satisfy the required dependency lint check.
+
+### Known limitations
+
+- These voice and introduction changes do not resolve the conversational verification and incomplete call outcomes reported in 0.71.2. Completing a card product change remains unverified.
+
 ## [0.71.2] - 2026-10-20
 
 ### Added
