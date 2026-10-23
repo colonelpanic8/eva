@@ -238,7 +238,7 @@ private fun ActionBranch(content: @Composable () -> Unit) {
 
 /**
  * Work a separate text model did for the turn: what it was asked, the actions it ran, and on
- * request the exact instructions it was opened with. Open while it works unless toggled.
+ * request the prompt written for it or the full context it was opened with. Open while it works unless toggled.
  */
 @Composable
 private fun TextLegBlock(
@@ -250,6 +250,7 @@ private fun TextLegBlock(
     var toggled by rememberSaveable(entry.id) { mutableStateOf<Boolean?>(null) }
     val expanded = toggled ?: (leg.status == TurnStatus.OPEN)
     var showPrompt by rememberSaveable(entry.id + ":prompt") { mutableStateOf(false) }
+    var showContext by rememberSaveable(entry.id + ":context") { mutableStateOf(false) }
     val status = leg.presentation()
     val actionCount = actions.count { it.question == null }
     val waitingForAnswer = actions.any { it.question?.waiting == true }
@@ -316,30 +317,50 @@ private fun TextLegBlock(
                         }
                     }
                 }
-                Surface(onClick = { showPrompt = !showPrompt }, color = Color.Transparent) {
-                    Text(
-                        text = if (showPrompt) "Hide prompt" else "Show prompt",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                leg.prompt?.let { prompt ->
+                    PromptToggle(showPrompt, "prompt") { showPrompt = !showPrompt }
+                    if (showPrompt) PromptText(prompt = prompt)
+                }
+                PromptToggle(showContext, "full context") { showContext = !showContext }
+                if (showContext) {
+                    PromptText(
+                        label = "Instructions, followed by the last ${leg.historyItems} conversation items:",
+                        prompt = leg.instructions,
                     )
                 }
-                if (showPrompt) {
-                    Column(
-                        modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 10.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        DetailText("Instructions, followed by the last ${leg.historyItems} conversation items:")
-                        SelectionContainer {
-                            Text(
-                                text = leg.instructions,
-                                style = MaterialTheme.typography.bodySmall,
-                                fontFamily = FontFamily.Monospace,
-                            )
-                        }
-                    }
-                }
             }
+        }
+    }
+}
+
+@Composable
+private fun PromptToggle(
+    shown: Boolean,
+    what: String,
+    onToggle: () -> Unit,
+) {
+    Surface(onClick = onToggle, color = Color.Transparent) {
+        Text(
+            text = if (shown) "Hide $what" else "Show $what",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+        )
+    }
+}
+
+@Composable
+private fun PromptText(
+    prompt: String,
+    label: String? = null,
+) {
+    Column(
+        modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        label?.let { DetailText(it) }
+        SelectionContainer {
+            Text(text = prompt, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
         }
     }
 }

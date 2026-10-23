@@ -82,6 +82,8 @@ data class TextLegDetails(
     val instructions: String,
     val historyItems: Int,
     val status: TurnStatus,
+    /** What this leg was asked, apart from the stock [instructions] around it; null when it had nothing of its own. */
+    val prompt: String? = null,
 )
 
 /** One turn and what ran inside it, in arrival order; a text leg holds its own actions. */

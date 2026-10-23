@@ -314,6 +314,7 @@ class SqliteConversationStore(
                     put("text", task)
                     put("instructions", instructions)
                     put("history_items", historyItems)
+                    put("prompt", prompt)
                 }
 
                 is ThreadItem.Notice -> {
@@ -382,7 +383,16 @@ class SqliteConversationStore(
             }
 
             TEXT_LEG -> {
-                ThreadItem.TextLeg(id, threadId, turnId, createdAt, nullableString("text"), string("instructions"), int("history_items"))
+                ThreadItem.TextLeg(
+                    id,
+                    threadId,
+                    turnId,
+                    createdAt,
+                    nullableString("text"),
+                    string("instructions"),
+                    int("history_items"),
+                    nullableString("prompt"),
+                )
             }
 
             NOTICE -> {

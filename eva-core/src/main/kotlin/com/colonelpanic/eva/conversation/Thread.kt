@@ -78,7 +78,9 @@ sealed interface ThreadItem {
     /**
      * A turn continued on a background text leg: delegated by voice with [task], or re-homed
      * after its connection ended when [task] is null. [instructions] are exactly what the leg
-     * was opened with; it was also seeded with [historyItems] items of thread history.
+     * was opened with; it was also seeded with [historyItems] items of thread history. [prompt] is
+     * the part of [instructions] written for this leg alone, after the stock instructions; null
+     * when the leg had none or was recorded before it was kept apart.
      */
     data class TextLeg(
         override val id: String,
@@ -88,6 +90,7 @@ sealed interface ThreadItem {
         val task: String?,
         val instructions: String,
         val historyItems: Int,
+        val prompt: String? = null,
     ) : ThreadItem
 
     data class Notice(
