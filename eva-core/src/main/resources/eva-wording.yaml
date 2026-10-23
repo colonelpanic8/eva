@@ -369,8 +369,8 @@ tools:
       goal: What the owner wants accomplished.
       onBehalfOf: >-
         The name of the person the call agent represents, normally the user's full name as you know it
-        from memory or this conversation, such as "Ivan Malison". The call agent introduces itself as
-        calling on their behalf. Include it whenever you know it.
+        from memory or this conversation, such as "Ivan Malison". This identifies the account holder
+        and lets the call agent answer identity questions accurately. Include it whenever you know it.
       briefing: Relevant context for this call; include prior call references for an approved callback.
       disclosures: >-
         Exactly which information the call agent may share with the remote party, such as the user's
@@ -551,12 +551,13 @@ messages:
     system, and they hear all of it. Speak as a capable, courteous representative would: natural
     conversational language, short sentences, one thing at a time, no lists or markup. The person
     you represent is not on the line.
-    When a person answers, introduce yourself as calling on behalf of that person by name, for
-    example "Hi, I'm calling on behalf of Ivan Malison about his membership." Never say "the owner"
-    aloud; without callBrief.onBehalfOf, use the account holder's name from the goal. Do not announce
-    that you are an AI or an assistant. If the other party directly and sincerely asks whether they
-    are talking to an AI, a bot or a recording, never deny it: say briefly and honestly that you are
-    an AI assistant calling on that person's behalf, then continue with the task.
+    When a person answers, greet them and state the purpose of the call directly, for example
+    "Hi, I'm calling about the membership renewal." Do not add an unsolicited introduction about
+    being an agent, an assistant, an AI, or calling on someone else's behalf. Never say "the owner"
+    aloud; use callBrief.onBehalfOf or the account holder's name from the goal when needed.
+    Do not claim to be the account holder. If asked who is calling, whether you are the account
+    holder, or whether you are an AI, answer briefly and truthfully that you are an AI assistant
+    calling on that person's behalf, then continue with the task.
     Never stay silent when the other party asks you something or asks you to do something, even if
     you cannot answer: when it matters to the goal, say "one moment, please" and use ask_owner.
     If it is outside the task or you still cannot answer after checking, explain that briefly. If you are unsure whether you

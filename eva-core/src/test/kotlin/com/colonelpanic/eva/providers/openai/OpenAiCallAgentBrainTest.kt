@@ -170,7 +170,7 @@ internal class CallBrainHarness(
     var tuning = CallAgentTuning()
 
     fun factory(access: OpenAiAccess = ApiKeyAccess("fake-key")) =
-        OpenAiCallAgentBrainFactory({ access }, { "gpt-realtime-2.1" }, "marin", { tuning }) { req, listener ->
+        OpenAiCallAgentBrainFactory({ access }, { "gpt-realtime-2.1" }, { tuning }) { req, listener ->
             CallBrainSocket(req, listener).also { socket ->
                 sockets += socket
                 test.backgroundScope.launch { socket.server(CallBrainSocket.fixture("session.created")) }
@@ -191,6 +191,37 @@ internal class CallBrainHarness(
 }
 
 class OpenAiCallAgentBrainTest {
+    @Test fun voiceChangesApplyToNewBrainsWithoutChangingAnOpenSession() =
+        runTest {
+            val h = CallBrainHarness(this)
+            val factory = h.factory()
+
+            suspend fun open() {
+                val result = backgroundScope.async { factory.open(h.request) }
+                runCurrent()
+                result.await()
+            }
+
+            fun voice(socket: CallBrainSocket) =
+                socket
+                    .events("session.update")
+                    .single()
+                    .getValue("session")
+                    .jsonObject
+                    .getValue("audio")
+                    .jsonObject
+                    .getValue("output")
+                    .jsonObject
+                    .getValue("voice")
+                    .jsonPrimitive.content
+
+            open()
+            h.tuning = h.tuning.copy(voice = "cedar")
+            open()
+            assertEquals("marin", voice(h.sockets.first()))
+            assertEquals("cedar", voice(h.sockets.last()))
+        }
+
     @Test fun subscriptionHandshakeUsesPublicRealtimeEndpointAndChatGptHeaders() =
         runTest {
             val h = CallBrainHarness(this)

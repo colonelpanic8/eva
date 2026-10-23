@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.colonelpanic.eva.ui.ModelPicker
 import kotlin.math.roundToInt
 
 @Composable
@@ -30,6 +31,15 @@ internal fun CallAgentSection(
 ) {
     val tuning = state.callAgent
     SettingsSection("Phone call agent") {
+        SettingsBlock {
+            ModelPicker(
+                "Call voice",
+                tuning.voice,
+                listOf("alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse", "marin", "cedar"),
+                "marin",
+            ) { actions.onCallAgentChange(tuning.copy(voice = it.ifBlank { "marin" })) }
+            SettingsNote("Applies when the next phone call agent connects.")
+        }
         CallReadinessCheck(state, actions)
         SettingsSwitchRow(
             title = "WhatsApp calling (unverified)",

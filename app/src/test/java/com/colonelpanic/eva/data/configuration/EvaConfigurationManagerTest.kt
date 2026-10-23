@@ -289,7 +289,12 @@ class EvaConfigurationManagerTest {
                             stallPeriodSeconds = 420,
                             callAgent =
                                 com.colonelpanic.eva.call
-                                    .CallAgentTuning(vadThreshold = 0.7, vadPrefixPaddingMillis = 200, vadSilenceMillis = 1_000),
+                                    .CallAgentTuning(
+                                        vadThreshold = 0.7,
+                                        vadPrefixPaddingMillis = 200,
+                                        vadSilenceMillis = 1_000,
+                                        voice = "cedar",
+                                    ),
                             webResearch =
                                 com.colonelpanic.eva.web.WebResearchConfiguration(
                                     enabled = false,

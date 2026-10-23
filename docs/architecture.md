@@ -1424,21 +1424,25 @@ owner catalog or memory. Mandates are exact owner-approved commitment identifier
 anything outside that set becomes an owner question requiring the exact answer
 `approved`. Disclosures and calling `commit` before binding speech are instructions:
 core cannot inspect arbitrary generated audio for agreements. A production brain
-must honor these controls. All stock instructions/descriptions live in
-`eva-wording.yaml`; the local additions still need upstreaming to the instruction
-catalog before publication.
+must honor these controls. All stock instructions/descriptions live in the instruction
+catalog's `eva-wording.yaml`, with a byte-identical bundled baseline.
 
-The agent introduces itself as calling on behalf of `callBrief.onBehalfOf`, the person it
-represents by name. EVA keeps no profile of its owner, so `eva.call.start` takes an optional
+The agent opens with a greeting and the purpose of the call, without volunteering that it
+is an assistant or calling on someone else's behalf. EVA keeps no profile of its owner, so `eva.call.start` takes an optional
 `onBehalfOf` that the main agent fills from what it knows (memory, the conversation); without
 it the instructions use the account holder's name from the goal and never say "the owner"
-aloud. By deliberate invariant the agent does not announce up front that it is an AI, but
-when the other party sincerely asks it never denies it: it answers briefly and honestly and
-continues (`CallAgentInstructionsTest` checks the shipped wording). It never speaks about its
+aloud. The agent must not claim to be the account holder. When asked who is calling or
+whether it is the account holder or an AI, it answers briefly and honestly that it is an
+AI assistant calling on that person's behalf. It is instructed never to speak about its
 own tools, steps or state; everything it says is addressed to the other party, it answers
 every direct question or request (saying it does not have or cannot share something rather
 than staying silent), reads back critical values before finishing, and never reads out the
 owner's whispers or answers.
+
+The call voice is configured by `capabilities.callAgent.voice` and the **Call voice**
+picker under **Phone call agent**. It defaults to `marin` and participates in configuration
+composition, export, and restore. A new brain reads the current setting; changing it does
+not change a session that is already connected.
 
 `dtmf` takes one ordered `sequence` of string steps so an IVR entry needs no model
 turn between keys: keys (`"1"`, `"4417#"`), waits (`"wait:2s"`, `"wait:1500ms"`) and
