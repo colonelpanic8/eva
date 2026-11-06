@@ -4,6 +4,8 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.72.0] - 2026-11-05
+
 ### Added
 
 - Actions can list the details you settle before they run. When one you did not state is
