@@ -52,6 +52,8 @@ A capability object contains:
   later version adds fields for them rather than reserving names now.
 - A format-specific execution part: `binding` for declarative packages, `result`
   for installed-app services.
+- Optional `confirmation`: which parameters the user settles before a call runs.
+  See [Confirmation](#confirmation).
 - Optional `_meta`: an object EVA digests into the contract but does not
   interpret. Any other unknown field is rejected. `_meta` is the only place for
   vendor or future-version data.
@@ -75,6 +77,47 @@ patterns, formats, or defaults. Optional means omitted, not null.
 object; properties may be scalars, arrays (up to 4,096 items), or nested objects
 to eight levels, and objects may set `additionalProperties: true`. A result whose
 structured content violates a declared output schema is malformed.
+
+### Confirmation
+
+A capability with several consequential parameters can list them so EVA settles them
+with the user instead of running whatever the model guessed. Capabilities without the
+block behave as before.
+
+```json
+"confirmation": {
+  "level": "unresolved",
+  "readout": "Start {model} on {environmentId}",
+  "parameters": {
+    "environmentId": {"resolve": "confirm", "label": "Host", "choicesFrom": "list_environments"},
+    "prompt": {"resolve": "ask"}
+  }
+}
+```
+
+- `parameters` (required, 1–64): input schema property name to `resolve` (`confirm`:
+  the model may propose a value; `ask`: the user gives it), optional `label` (up to 60
+  characters), and optional `choicesFrom`, a tool name the model can call for valid
+  values. EVA does not call it.
+- `level`: `never`, `unresolved` (default), or `always`. The user's `tools` setting
+  overrides it.
+- `readout`: up to 500 characters; `{parameter}` takes the resolved value. Without it,
+  EVA lists the title and each argument.
+
+EVA offers such a tool to the model with two extra arguments that never reach the
+provider: `_stated`, the parameters the user said or chose, and `_confirm`, a readback
+token. Before validation EVA fills the user's saved defaults for omitted parameters.
+Under `unresolved`, a call holds while a listed parameter is neither stated nor
+defaulted; under `always`, every call holds. A held call is journaled `NOT_EXECUTED`
+with `reason: confirmation_required`, the readout, the resolved arguments, each
+unresolved parameter with its proposal, schema `enum` choices and `choicesFrom`, and a
+token bound to the capability and resolved arguments. The model reads it back and,
+once the user agrees, repeats the call with that token; a changed call is read back
+again. This settles details with the user and is not an authorization boundary;
+grants still decide what may run.
+
+Installed-app providers emit `confirmation` only when EVA's describe request lists
+the `confirmation` feature.
 
 ### Results
 
@@ -818,11 +861,11 @@ unknown-ID, wrong-provider, and already-expired callbacks.
 `requestJson` tells the provider what EVA speaks:
 
 ```json
-{"protocolVersion": 1, "supportedProtocolVersions": [1], "features": ["secrets", "credentials", "credential-check"]}
+{"protocolVersion": 1, "supportedProtocolVersions": [1], "features": ["secrets", "credentials", "credential-check", "confirmation"]}
 ```
 
 `features` lists the optional v1 behavior EVA implements. A provider ignores feature names
-it does not know. An older EVA omits `features` and rejects either field below as malformed,
+it does not know. An older EVA omits `features` and rejects the fields below as malformed,
 so use a field only when the request lists its feature:
 
 - `secrets`: EVA strips and withholds a reply's [`secrets`](#secrets) field. Advertise
@@ -832,6 +875,7 @@ so use a field only when the request lists its feature:
 - `credential-check`: EVA accepts `checkable` on a declared credential, sends the
   [credential check](#checking-a-credential) request, and reads an execute reply's
   [`rejectedCredentials`](#rejected-credentials).
+- `confirmation`: EVA accepts a capability's [`confirmation`](#confirmation) block.
 
 A provider that needs to know at execute time which features the describing EVA spoke can
 give each feature combination its own `descriptorRevision`; the execute request's

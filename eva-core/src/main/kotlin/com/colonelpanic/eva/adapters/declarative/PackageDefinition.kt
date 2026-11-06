@@ -1,6 +1,7 @@
 package com.colonelpanic.eva.adapters.declarative
 
 import com.colonelpanic.eva.capability.ExecutionSemantics
+import com.colonelpanic.eva.capability.ToolConfirmation
 import com.colonelpanic.eva.capability.extensions.Effect
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -54,6 +55,7 @@ data class PackageCapability(
     val receipts: ReceiptText = ReceiptText(),
     val outputSchema: JsonObject? = null,
     val annotations: JsonObject? = null,
+    val confirmation: ToolConfirmation? = null,
 )
 
 data class ReceiptText(

@@ -79,9 +79,10 @@ object PackageCodec {
     }
 
     private fun capability(root: JsonObject): PackageCapability {
-        root.fields(setOf("tool", "binding", "execution"), setOf("effects", "validators", "receipts", "_meta"))
+        root.fields(setOf("tool", "binding", "execution"), setOf("effects", "validators", "receipts", "confirmation", "_meta"))
         root["_meta"]?.obj()
         val tool = ExtensionProtocol.tool(root.getValue("tool").obj())
+        val confirmation = root["confirmation"]?.let { ExtensionProtocol.confirmation(it, tool.inputSchema) }
         val name = tool.name
         val schema = tool.inputSchema
         val properties = schema.getValue("properties").obj()
@@ -153,6 +154,7 @@ object PackageCodec {
             receipts,
             tool.outputSchema,
             tool.annotations,
+            confirmation,
         )
     }
 

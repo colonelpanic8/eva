@@ -117,6 +117,7 @@ class ThreadController(
     private val voiceKeywords: suspend () -> List<String> = { emptyList() },
     /** The user's per-action overrides of whether a successful action ends the voice call. */
     private val callEndings: () -> Map<String, CallEnding> = { emptyMap() },
+    private val confirmations: com.colonelpanic.eva.capability.ConfirmationGate? = null,
     /** Configured messaging bridges, service name to label, named to the model on the shared messaging tools. */
     private val messagingBridges: () -> Map<String, String> = { emptyMap() },
     /** Enabled skills, named to the model on the skill tool. */
@@ -547,7 +548,8 @@ class ThreadController(
             selection.admitted.map { definition ->
                 val tool = ProviderToolDefinition(definition.id, definition.title, definition.modelDescription(), definition.inputSchema)
                 // An extension's own words are untrusted data; only EVA's tools take followed wording.
-                if (definition.source == null) wording().describe(tool) else tool
+                val described = if (definition.source == null) wording().describe(tool) else tool
+                confirmations?.offer(described, definition) ?: described
             }
     }
 

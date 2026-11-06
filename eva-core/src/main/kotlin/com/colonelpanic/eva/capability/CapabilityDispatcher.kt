@@ -20,6 +20,7 @@ class CapabilityDispatcher(
     private val nowMillis: () -> Long = System::currentTimeMillis,
     /** Sees what a backend threw; the journal and the model only learn that the outcome is unknown. */
     private val onBackendFailure: (String, Exception) -> Unit = { _, _ -> },
+    private val confirmations: ConfirmationGate? = null,
 ) {
     private val submissions = CallLocks()
     private val outcomeLocks = CallLocks()
@@ -61,13 +62,16 @@ class CapabilityDispatcher(
         rejection: String? = null,
     ): InvocationRecord =
         submissions.withLock(proposal.callId) {
-            var snapshot = proposal.copy(arguments = Collections.unmodifiableMap(proposal.arguments.toMap()))
             if (proposal.callId.isBlank() || proposal.callId.length > 256) {
                 throw ProposalRejectedException("The request has invalid metadata. No app was opened.")
             }
             val catalog = registry.snapshot
-            val validationError = rejection ?: catalog.validationError(snapshot)
             val definition = catalog.takeIf { it.revision == proposal.catalogRevision }?.definitions?.get(proposal.capabilityId)
+            val review = confirmations?.review(proposal, definition)
+            var snapshot = (review?.proposal ?: proposal).let { it.copy(arguments = Collections.unmodifiableMap(it.arguments.toMap())) }
+            val schemaError = rejection ?: catalog.validationError(snapshot)
+            val hold = (review as? ConfirmationGate.Review.Hold)?.takeIf { schemaError == null }
+            val validationError = schemaError ?: hold?.message
             if (validationError == null) snapshot = checkNotNull(catalog.resolve(snapshot)).prepare(snapshot)
             val initial =
                 InvocationRecord(
@@ -93,6 +97,7 @@ class CapabilityDispatcher(
                     threadId = proposal.threadId,
                     turnId = proposal.turnId,
                     initiator = proposal.initiator,
+                    data = hold?.data,
                 )
             val claim = journal { repository.claim(initial) }
 
@@ -112,7 +117,11 @@ class CapabilityDispatcher(
                 throw ConflictingCallException()
             }
             if (!claim.isNew) trace("tool.duplicate", "status" to claim.record.status)
-            if (validationError != null && claim.isNew) trace("tool.rejected", "status" to claim.record.status, "reason" to validationError)
+            if (hold != null && claim.isNew) {
+                trace("tool.held", "status" to claim.record.status)
+            } else if (validationError != null && claim.isNew) {
+                trace("tool.rejected", "status" to claim.record.status, "reason" to validationError)
+            }
             if (!claim.isNew || validationError != null) return@withLock claim.record
 
             var phase = InvocationStatus.CLAIMED

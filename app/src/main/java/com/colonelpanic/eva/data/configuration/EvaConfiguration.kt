@@ -11,6 +11,7 @@ import com.colonelpanic.eva.adapters.declarative.PluginRepository
 import com.colonelpanic.eva.adapters.declarative.httpBindings
 import com.colonelpanic.eva.call.CallAgentTuning
 import com.colonelpanic.eva.capability.CallEnding
+import com.colonelpanic.eva.capability.ConfirmLevel
 import com.colonelpanic.eva.conversation.prompt.PromptComponent
 import com.colonelpanic.eva.conversation.prompt.PromptConfig
 import com.colonelpanic.eva.conversation.prompt.PromptDefaults
@@ -49,6 +50,7 @@ data class EvaConfigurationDocument(
     val diagnostics: DiagnosticsPatch? = null,
     val skills: SkillsPatch? = null,
     val wearGesture: WearGesturePatch? = null,
+    val tools: Map<String, ToolPatch>? = null,
 ) {
     companion object {
         const val FORMAT = "eva"
@@ -281,6 +283,12 @@ data class RepositorySkill(
     val openai: String? = null,
 )
 
+/** One capability's confirmation level and default arguments, keyed by capability ID under `tools`. */
+@Serializable data class ToolPatch(
+    val confirm: String? = null,
+    val defaults: Map<String, String>? = null,
+)
+
 @Serializable data class DiagnosticsPatch(
     /** Adds speech, transcript-length, and other high-volume events to EVA's lifecycle trace. */
     val verboseLogging: Boolean? = null,
@@ -303,6 +311,7 @@ data class EvaConfiguration(
     val diagnostics: Diagnostics = Diagnostics(),
     val skills: Skills = Skills(),
     val wearGesture: WearGestureConfiguration = WearGestureConfiguration(),
+    val tools: Map<String, ToolPatch> = emptyMap(),
 ) {
     data class Models(
         val text: String,
@@ -622,6 +631,7 @@ object EvaConfigurationCodec {
         base: EvaConfigurationDocument?,
     ) = EvaConfigurationDocument(
         wearGesture = WearGesturePatch.diff(current.wearGesture, base?.wearGesture),
+        tools = current.tools.takeIf { it != base?.tools.orEmpty() },
         models =
             ModelsPatch(
                 current.models.text.takeIf { it != base?.models?.text },
@@ -721,6 +731,7 @@ object EvaConfigurationCodec {
     private fun EvaConfigurationDocument.materialize(): EvaConfiguration =
         EvaConfiguration(
             wearGesture = wearGesture?.materialize() ?: WearGestureConfiguration(),
+            tools = tools.orEmpty(),
             models =
                 EvaConfiguration.Models(
                     requireNotNull(models?.text) { "models.text is missing." },
@@ -1042,7 +1053,20 @@ object EvaConfigurationCodec {
         require(skillNames.distinct().size == skillNames.size) { "Two installed skills share a name." }
         require(skills.disabled.all(Skill::isName)) { "skills.disabled lists an invalid skill name." }
         require(skills.disabled.distinct().size == skills.disabled.size) { "Duplicate disabled skill." }
+        require(tools.size <= MAX_TOOL_ENTRIES) { "At most $MAX_TOOL_ENTRIES tools may be configured." }
+        tools.forEach { (id, tool) ->
+            require(id.isNotBlank() && id.length <= 200 && id.none(Char::isWhitespace)) { "Invalid capability ID in tools." }
+            tool.confirm?.let {
+                require(ConfirmLevel.of(it) != null) { "tools.$id.confirm must be never, unresolved, or always." }
+            }
+            require(tool.defaults.orEmpty().size <= 64) { "tools.$id.defaults lists at most 64 parameters." }
+            tool.defaults.orEmpty().forEach { (name, value) ->
+                require(TOOL_PARAMETER.matches(name)) { "tools.$id.defaults names an invalid parameter: $name." }
+                require(value.length <= 65_536) { "tools.$id.defaults.$name is too long." }
+            }
+        }
         return copy(
+            tools = tools.mapValues { (_, tool) -> tool.copy(defaults = tool.defaults?.toSortedMap()) }.toSortedMap(),
             voice = voice.copy(endCallAfter = voice.endCallAfter.toSortedMap()),
             packages =
                 packages.copy(
@@ -1098,6 +1122,7 @@ object EvaConfigurationCodec {
             credentials = document.credentials?.copy(required = document.credentials.required?.sortedBy { it.id }),
             remembered = document.remembered?.copy(chosenNumbers = document.remembered.chosenNumbers?.toSortedMap()),
             device = document.device?.copy(authorizations = document.device.authorizations?.sorted()),
+            tools = document.tools?.mapValues { (_, tool) -> tool.copy(defaults = tool.defaults?.toSortedMap()) }?.toSortedMap(),
             skills =
                 document.skills?.copy(
                     installed = document.skills.installed?.sortedBy { it.name },
@@ -1110,6 +1135,7 @@ object EvaConfigurationCodec {
         override: EvaConfigurationDocument,
     ) = EvaConfigurationDocument(
         wearGesture = override.wearGesture?.over(base.wearGesture) ?: base.wearGesture,
+        tools = override.tools ?: base.tools,
         models =
             ModelsPatch(
                 override.models?.text ?: base.models?.text,
@@ -1301,6 +1327,8 @@ object EvaConfigurationCodec {
     private val MESSAGING_SECRET = Regex("messaging/[a-z][a-z0-9-]{0,63}/bearer")
     private val SERVICE_NAME = Regex("[a-z][a-z0-9-]{0,63}")
     private const val MAX_MESSAGING_BRIDGES = 16
+    private const val MAX_TOOL_ENTRIES = 256
+    private val TOOL_PARAMETER = Regex("[A-Za-z][A-Za-z0-9_]{0,63}")
 
     /** Service names the shared messaging tools already give a meaning. */
     val RESERVED_MESSAGING_SERVICES = setOf("sms", "notifications")

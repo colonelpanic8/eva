@@ -75,6 +75,7 @@
           "additionalProperties": false,
           "properties": { "maxBytes": { "type": "integer", "minimum": 1, "maximum": 16384 } }
         },
+        "confirmation": { "$ref": "tool.schema.json#/$defs/confirmation" },
         "_meta": { "type": "object" }
       }
     }

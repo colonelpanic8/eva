@@ -4,7 +4,7 @@
 
 Run project commands through `direnv exec . <command>` or
 `nix develop .#android --command <command>`. The supported baseline is JDK 17,
-Android SDK 37, Gradle 9.8.2, AGP 9.4.1, and Kotlin 2.4.21. AGP supplies built-in
+Android SDK 37, Gradle 9.8.2, AGP 9.5.1, and Kotlin 2.4.21. AGP supplies built-in
 Kotlin; do not add `kotlin-android`. Minimum phone SDK is 23; the Wear OS companion requires API 34 (Wear OS 5).
 
 ```sh

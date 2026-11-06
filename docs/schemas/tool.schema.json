@@ -27,6 +27,32 @@
   },
   "$defs": {
     "description": { "type": "string", "maxLength": 2000 },
+    "confirmation": {
+      "type": "object",
+      "description": "Parameters the user settles before a call runs. EVA fills the user's saved defaults, then reads the call back while a listed parameter was neither stated by the user nor defaulted. Omitted means calls run as proposed.",
+      "required": ["parameters"],
+      "additionalProperties": false,
+      "properties": {
+        "level": { "enum": ["never", "unresolved", "always"], "description": "Unresolved when omitted. The user may override it." },
+        "readout": { "type": "string", "minLength": 1, "maxLength": 500, "description": "How the call is read back; {parameter} placeholders take the resolved values." },
+        "parameters": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 64,
+          "description": "Input schema property name to how it is settled.",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["resolve"],
+            "additionalProperties": false,
+            "properties": {
+              "resolve": { "enum": ["confirm", "ask"], "description": "confirm: the model may propose a value; ask: the user gives it." },
+              "label": { "type": "string", "minLength": 1, "maxLength": 60 },
+              "choicesFrom": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$", "description": "A tool that lists valid values; a hint for the model." }
+            }
+          }
+        }
+      }
+    },
     "scalar": {
       "type": "object",
       "required": ["type"],

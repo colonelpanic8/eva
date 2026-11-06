@@ -328,6 +328,20 @@ tools:
       Delete a remembered note, kept or learned, only when the user asks. Use the exact name
       returned by memory search. This removes the note, not prior conversations or action
       history containing it.
+  eva.tools.preferences:
+    description: >-
+      Save, change, or clear an action's default arguments and how often EVA reads its calls back
+      before running them, only when the user asks to keep a choice for next time. EVA fills saved
+      defaults for parameters a call omits. Use the action ID from that action's description or
+      from a confirmation_required result. Calling with only capabilityId reports the saved
+      defaults without changing them.
+    parameters:
+      capabilityId: The action's ID, such as one named in its description or a confirmation_required result.
+      defaults: Parameter name to the value to use when a call omits it. Values use the action's own format.
+      clear: Parameter names whose saved defaults to remove.
+      confirm: >-
+        never runs calls without reading them back; unresolved reads back only when a listed detail
+        is unsettled; always reads back every call; declared returns to the action's own setting.
   eva.skills.use:
     description: >-
       Load one of the user's skills: instructions they wrote for a kind of request. When a
@@ -792,6 +806,32 @@ messages:
   skills: "The user's skills (name, description):"
   skill-loaded: "Instructions of the user's skill {name}; follow them for this request:"
   skill-unknown: "No enabled skill is named {name}. Nothing was loaded. Enabled skills: {skills}."
+  confirmation-required: >-
+    Not run yet: this is a readback, not a failure. The user has not settled some details of this
+    call. Read it back in natural words, naming hosts, projects, and models by their names rather
+    than IDs, and let the user confirm or change it in one exchange:
+
+    {readout}
+
+    For each unresolved parameter, say the proposed value or offer its choices; for resolve ask,
+    ask instead of proposing. When the user agrees, call the tool again with exactly this result's
+    arguments, _confirm set to {token}, and _stated naming what the user said. If they change
+    something, call again with the changed arguments and _stated naming them, without _confirm. If
+    you cannot speak with the user directly, as in a background task, ask with
+    eva.session.ask_user first. Never pass _confirm without the user's agreement.
+  confirmation-note: >-
+    EVA reads this action back to the user before it runs while details they care about are
+    unsettled, and fills the user's saved defaults for parameters you omit. List in _stated the
+    parameters whose values the user said or explicitly chose; leave out values you inferred. You
+    may call it as soon as the user describes the task: a confirmation_required result is a
+    readback to finish with the user, not an error. When the user wants a value or a confirmation
+    habit kept for next time, save it with the set-defaults tool under action ID {id}.
+  confirmation-stated: >-
+    Names of the parameters whose values the user said or explicitly chose in this conversation.
+    Leave out values you inferred or picked yourself.
+  confirmation-token: >-
+    Only after the user agreed to a readback: the token from that confirmation_required result,
+    sent with the same arguments.
   secrets-withheld: >-
     Secret values withheld from you; EVA holds them for this conversation:
 
