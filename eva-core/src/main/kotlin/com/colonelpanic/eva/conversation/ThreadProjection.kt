@@ -126,7 +126,7 @@ fun projectEntries(
                         item.task.orEmpty(),
                         if (status == TurnStatus.OPEN) EntryStatus.PENDING else EntryStatus.ANSWER,
                         parentId = turnId,
-                        textLeg = TextLegDetails(item.task, item.instructions, item.historyItems, status),
+                        textLeg = TextLegDetails(item.task, item.instructions, item.historyItems, status, item.prompt),
                     )
             }
 

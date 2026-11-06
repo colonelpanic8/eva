@@ -108,13 +108,14 @@ class JournalDatabase(
     }
 
     companion object {
-        const val VERSION = 9
+        const val VERSION = 10
         private val ADDED_ITEM_COLUMNS =
             linkedMapOf(
                 "leg_id" to "TEXT",
                 "instructions" to "TEXT",
                 "history_items" to "INTEGER",
                 "initiator_json" to "TEXT",
+                "prompt" to "TEXT",
             )
     }
 }
