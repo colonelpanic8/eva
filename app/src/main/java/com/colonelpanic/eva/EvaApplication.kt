@@ -165,6 +165,14 @@ class EvaApplication :
             .PhoneWearCompanion(this, scope)
     }
     val diagnostics by lazy { DiagnosticsSettings(this, configuration::onLocalChange) }
+    val toolSettings by lazy {
+        com.colonelpanic.eva.data
+            .ToolSettings(this, configuration::onLocalChange)
+    }
+    val confirmations by lazy {
+        com.colonelpanic.eva.capability
+            .ConfirmationGate(toolSettings::preferences) { prompts.wording.value }
+    }
     val capabilities by lazy { CapabilitySettings(this, configuration::onLocalChange, configuration::onCredentialChange) }
     val prompts by lazy { PromptStore(this, onChanged = configuration::onLocalChange) }
     val chatGpt by lazy {
@@ -597,7 +605,7 @@ class EvaApplication :
         )
     }
 
-    val registry by lazy {
+    val registry: CapabilityRegistry by lazy {
         CapabilityRegistry(
             buildMap {
                 put(CapabilityRegistry.DEVICE_TASK, deviceTasks)
@@ -616,6 +624,11 @@ class EvaApplication :
                 putAll(
                     com.colonelpanic.eva.capability.MemoryCapabilities
                         .backends(memories),
+                )
+                put(
+                    com.colonelpanic.eva.capability.ToolPreferenceCapabilities.SET,
+                    com.colonelpanic.eva.capability.ToolPreferenceCapabilities
+                        .backend(toolSettings) { registry.snapshot.definitions },
                 )
                 put(
                     com.colonelpanic.eva.capability.SkillCapabilities.USE,
@@ -1020,7 +1033,7 @@ class EvaApplication :
                     EvaTrace.info("tool.backend_threw", "capability" to capability, "error" to error.javaClass.simpleName)
                 }, executeAdmitted = { proposal, backend ->
                     deviceTasks.executeAdmitted(proposal, backend, backend.usesDeviceUi(proposal))
-                }),
+                }, confirmations = confirmations),
             deviceTasks = deviceTasks,
             callTasks = callTasks,
             secrets = secrets,
@@ -1093,6 +1106,7 @@ class EvaApplication :
                     .mapValues { it.value.label }
             },
             callEndings = { settings.callEndings.value },
+            confirmations = confirmations,
             skills = skills::enabled,
             hiddenCapabilities = ::switchedOffCapabilities,
             prompt = { prompts.load() },

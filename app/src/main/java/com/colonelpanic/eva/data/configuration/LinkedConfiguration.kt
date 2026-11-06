@@ -212,4 +212,5 @@ private fun differingGroups(
         "diagnostics" to (a.diagnostics == b.diagnostics),
         "skills" to (a.skills == b.skills),
         "wearGesture" to (a.wearGesture == b.wearGesture),
+        "tools" to (a.tools == b.tools),
     ).filterNot { it.second }.map { it.first }

@@ -46,6 +46,7 @@
             "handlerMissing": { "type": "string", "minLength": 1, "maxLength": 1000 }
           }
         },
+        "confirmation": { "$ref": "tool.schema.json#/$defs/confirmation" },
         "_meta": { "type": "object" }
       }
     },

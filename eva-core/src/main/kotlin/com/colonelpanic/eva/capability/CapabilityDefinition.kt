@@ -23,6 +23,8 @@ data class CapabilityDefinition(
     val bookkeeping: Boolean = false,
     /** The declared default; the user's configuration may override it per action. */
     val endsVoiceCall: CallEnding = CallEnding.NEVER,
+    /** Which parameters the user settles before the call runs; null keeps today's behavior. */
+    val confirmation: ToolConfirmation? = null,
 )
 
 /** A tool EVA defines itself; what it says to the model comes from [Wording]. */

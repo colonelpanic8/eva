@@ -224,6 +224,43 @@ class ConfigurationCompositionTest {
     }
 
     @Test
+    fun `tool confirmation and defaults round trip from YAML, inherit, and reject unknown levels`() {
+        val yaml =
+            """
+            format: eva
+            version: 4
+            include: [base.yaml]
+            tools:
+              extension.com.t3tools.t3code.assembly.start_thread:
+                confirm: always
+                defaults:
+                  workspace: worktree
+                  modelOptions: effort=high
+            """.trimIndent()
+        val base = fullConfiguration()
+        val files = mapOf("eva.yaml" to yaml, "base.yaml" to EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(base)))
+        val resolved = EvaConfigurationCodec.resolve(reader(files)).configuration
+        val expected =
+            mapOf(
+                "extension.com.t3tools.t3code.assembly.start_thread" to
+                    ToolPatch("always", mapOf("modelOptions" to "effort=high", "workspace" to "worktree")),
+            )
+        assertEquals(expected, resolved.tools)
+        val complete = EvaConfigurationCodec.encode(EvaConfigurationCodec.complete(resolved))
+        assertEquals(resolved, EvaConfigurationCodec.resolve(reader(mapOf("eva.yaml" to complete))).configuration)
+        assertEquals(
+            emptyMap<String, ToolPatch>(),
+            EvaConfigurationCodec
+                .resolve(
+                    reader(files - "eva.yaml" + ("eva.yaml" to files.getValue("base.yaml"))),
+                ).configuration.tools,
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            EvaConfigurationCodec.resolve(reader(files + ("eva.yaml" to yaml.replace("confirm: always", "confirm: sometimes"))))
+        }
+    }
+
+    @Test
     fun `web research settings round trip compose and default for older configurations`() {
         val defaults =
             com.colonelpanic.eva.web

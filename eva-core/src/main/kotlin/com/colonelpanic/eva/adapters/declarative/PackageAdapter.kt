@@ -59,6 +59,7 @@ class PackageAdapter(
                                 capability.outputSchema,
                                 capability.annotations,
                                 capability.execution.endsVoiceCall,
+                                capability.confirmation,
                             )
                         },
                         definition.digest,
@@ -100,6 +101,7 @@ class PackageAdapter(
                     CapabilitySource(item.identity.instanceId, item.definition.title),
                     item.definition.guidance,
                     endsVoiceCall = capability.execution.endsVoiceCall,
+                    confirmation = capability.confirmation,
                 ),
                 BudgetedBackend(
                     item.identity.instanceId,

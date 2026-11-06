@@ -2,8 +2,12 @@ package com.colonelpanic.eva.capability.extensions
 
 import com.colonelpanic.eva.capability.BoundedJson
 import com.colonelpanic.eva.capability.CallEnding
+import com.colonelpanic.eva.capability.ConfirmLevel
+import com.colonelpanic.eva.capability.ConfirmedParameter
 import com.colonelpanic.eva.capability.ExecutionOutcome
 import com.colonelpanic.eva.capability.InvocationStatus
+import com.colonelpanic.eva.capability.ParameterResolve
+import com.colonelpanic.eva.capability.ToolConfirmation
 import com.colonelpanic.eva.capability.ToolSchema
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -45,11 +49,14 @@ object ExtensionProtocol {
      * What EVA advertises with `describe`: `secrets` means it strips and withholds a reply's
      * `secrets`; `credentials` means it delivers declared credentials in `_credentials`;
      * `credential-check` means it accepts `checkable` credentials, sends [CHECK_CREDENTIAL], and
-     * reads a reply's `rejectedCredentials`.
+     * reads a reply's `rejectedCredentials`; `confirmation` means it accepts a capability's
+     * `confirmation` block.
      */
-    val FEATURES = listOf("secrets", "credentials", "credential-check")
+    val FEATURES = listOf("secrets", "credentials", "credential-check", "confirmation")
     private val SECRET_NAME = Regex("[a-z][a-z0-9_]{0,31}")
     private val NAME = Regex("[A-Za-z_][A-Za-z0-9_]{0,63}")
+    private const val MAX_READOUT = 500
+    private const val MAX_LABEL = 60
     private val PROPERTY = Regex("[A-Za-z][A-Za-z0-9_]{0,63}")
     private val REVISION = Regex("[A-Za-z0-9._:-]{1,128}")
     private val SAFE_INTEGER = BigDecimal("9007199254740991")
@@ -350,9 +357,10 @@ object ExtensionProtocol {
     }
 
     private fun capability(root: JsonObject): Capability {
-        root.fields(setOf("tool", "effects", "execution", "result"), setOf("_meta"))
+        root.fields(setOf("tool", "effects", "execution", "result"), setOf("confirmation", "_meta"))
         root.meta()
         val tool = tool(root.getValue("tool").obj())
+        val confirmation = root["confirmation"]?.let { confirmation(it, tool.inputSchema) }
         val effect = effect(root.getValue("effects").text(20))
         tool.annotations?.let { checkAnnotations(it, effect) }
         val execution = root.getValue("execution").obj()
@@ -381,7 +389,34 @@ object ExtensionProtocol {
             tool.outputSchema,
             tool.annotations,
             execution["endsVoiceCall"]?.let(::callEnding) ?: CallEnding.NEVER,
+            confirmation,
         )
+    }
+
+    /** Shared with the declarative codec: which of [inputSchema]'s parameters the user settles before a call runs. */
+    fun confirmation(
+        element: JsonElement,
+        inputSchema: JsonObject,
+    ): ToolConfirmation {
+        val root = element.obj()
+        root.fields(setOf("parameters"), setOf("level", "readout"))
+        val properties = inputSchema.getValue("properties").obj()
+        val level = root["level"]?.let { ConfirmLevel.of(it.text(20)) ?: error("Unsupported confirmation level") }
+        val readout = root["readout"]?.text(MAX_READOUT)
+        val declared = root.getValue("parameters").obj()
+        require(declared.size in 1..ToolSchema.MAX_INPUT_ITEMS) { "Confirmation lists 1 to 64 parameters" }
+        val parameters =
+            declared.mapValues { (name, value) ->
+                require(name in properties) { "Confirmation names an undeclared parameter" }
+                val entry = value.obj()
+                entry.fields(setOf("resolve"), setOf("label", "choicesFrom"))
+                ConfirmedParameter(
+                    ParameterResolve.of(entry.getValue("resolve").text(20)) ?: error("Unsupported resolve"),
+                    entry["label"]?.text(MAX_LABEL),
+                    entry["choicesFrom"]?.text(64)?.also { require(NAME.matches(it)) },
+                )
+            }
+        return ToolConfirmation(LinkedHashMap(parameters), level ?: ConfirmLevel.UNRESOLVED, readout)
     }
 
     /** Shared with the declarative codec: `never`, `after_reply`, or `immediately`. */
@@ -536,6 +571,7 @@ data class Capability(
     val outputSchema: JsonObject? = null,
     val annotations: JsonObject? = null,
     val endsVoiceCall: CallEnding = CallEnding.NEVER,
+    val confirmation: ToolConfirmation? = null,
 )
 
 data class Descriptor(

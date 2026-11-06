@@ -1,6 +1,7 @@
 package com.colonelpanic.eva.adapters.declarative
 
 import com.colonelpanic.eva.capability.CallEnding
+import com.colonelpanic.eva.capability.ConfirmLevel
 import com.colonelpanic.eva.capability.ExecutionMode
 import com.colonelpanic.eva.capability.ExecutionSemantics
 import com.colonelpanic.eva.capability.InteractionMode
@@ -69,6 +70,26 @@ class PackageCodecTest {
             packageJson(contentBinding, mode = "synchronous", foreground = false)
                 .replace("\"maxWaitMillis\":30000", "\"maxWaitMillis\":30000,\"requiresUnlock\":true")
         assertThrows(Exception::class.java) { PackageCodec.decode(content) }
+    }
+
+    @Test
+    fun `a capability may list parameters the user confirms before it runs`() {
+        val plain = PackageCodec.decode(packageJson(intentBinding))
+        assertEquals(null, plain.capabilities.single().confirmation)
+        val confirming =
+            packageJson(intentBinding).replace(
+                "\"binding\":",
+                "\"confirmation\":{\"level\":\"always\",\"readout\":\"Capture {title}\",\"parameters\":{\"title\":{\"resolve\":\"confirm\"}}},\"binding\":",
+            )
+        val confirmation =
+            PackageCodec
+                .decode(confirming)
+                .capabilities
+                .single()
+                .confirmation!!
+        assertEquals(ConfirmLevel.ALWAYS, confirmation.level)
+        assertEquals("Capture {title}", confirmation.readout)
+        assertThrows(Exception::class.java) { PackageCodec.decode(confirming.replace("\"title\":{\"resolve\"", "\"note\":{\"resolve\"")) }
     }
 
     @Test

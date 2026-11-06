@@ -649,6 +649,33 @@ second call start would not queue behind it. Only the dispatch returning clears 
 Questions and answers never clear an entry. Process recovery never repeats an
 uncertain action.
 
+### Call confirmation and defaults
+
+A capability can declare `confirmation`, listing the parameters the user settles before
+a call runs ([protocol](extension-protocol.md#confirmation)). The user's `tools`
+configuration can override its level (`never`, `unresolved`, `always`) and save default
+arguments for any capability. `ConfirmationGate` runs inside `CapabilityDispatcher.execute`
+for every initiator, before schema validation:
+
+1. It strips the model-only `_stated` and `_confirm` arguments and fills saved defaults
+   for omitted parameters that the schema declares.
+2. A token matching the capability and resolved arguments, or level `never`, runs the
+   call. Under `unresolved` a call also runs when every listed parameter was stated or
+   defaulted.
+3. Otherwise the call is journaled `NOT_EXECUTED` with `confirmation_required` data: the
+   readout, resolved arguments, unresolved parameters with proposals and choices, the
+   capability ID, and the token. No receipt state is added.
+
+`ThreadController.phoneTools` offers opted-in tools with the two control arguments and
+the `confirmation-note` wording, which names the capability ID. The model reads the call
+back, conversationally or through `eva.session.ask_user` from a background leg, and
+repeats it with the token once the user agrees. The token is a SHA-256 prefix of the
+capability ID and resolved arguments, so a changed call is read back again. Gating is a
+conversation aid, not authorization. `eva.tools.preferences` saves, changes, or clears
+defaults and the level when the user asks, writing the same `tools` configuration.
+Defaults naming parameters a schema lacks are ignored and listed as `ignoredDefaults`
+in a readback.
+
 ### Secret handles
 
 An installed extension can return passwords and one-time codes in a reply's
@@ -2341,6 +2368,7 @@ The schema separates these groups:
 | `device` | Desired device authorizations to check on the destination |
 | `wearGesture` | Watch enablement, axis, rates, timing, angular excursion, dominance and acceleration rejection thresholds |
 | `skills` | `installed`: exact `SKILL.md` and `openai.yaml` text with the address it came from; `disabled`: names switched off. Skill folders in the repository are read in place, not listed here |
+| `tools` | Capability ID to `confirm` (`never`, `unresolved`, `always`; overrides the capability's declaration) and `defaults` (parameter name to the value used when a call omits it) |
 
 An `include` list composes relative files under the selected folder. Includes are
 applied in order and the including file overrides them. Scalar settings merge by

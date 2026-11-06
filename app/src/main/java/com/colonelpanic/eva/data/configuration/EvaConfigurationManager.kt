@@ -808,6 +808,7 @@ class EvaConfigurationManager(
             diagnostics = EvaConfiguration.Diagnostics(app.diagnostics.verboseLogging),
             wearGesture = app.wearGestureSettings.value,
             skills = app.skills.portable(),
+            tools = app.toolSettings.value,
         )
     }
 
@@ -947,6 +948,7 @@ class EvaConfigurationManager(
         app.appearance.saveDynamicColor(configuration.appearance.dynamicColor)
         app.diagnostics.saveVerboseLogging(configuration.diagnostics.verboseLogging)
         app.wearGestureSettings.save(configuration.wearGesture)
+        app.toolSettings.save(configuration.tools)
         app.skills.replace(configuration.skills)
         app.capabilities.saveScreenControl(configuration.capabilities.screenControl)
         app.capabilities.saveDeviceTask(configuration.capabilities.deviceTask)
@@ -1164,6 +1166,7 @@ class EvaConfigurationManager(
         attempt("appearance") { app.appearance.saveDynamicColor(before.appearance.dynamicColor) }
         attempt("diagnostics") { app.diagnostics.saveVerboseLogging(before.diagnostics.verboseLogging) }
         attempt("watch gesture") { app.wearGestureSettings.save(before.wearGesture) }
+        attempt("tools") { app.toolSettings.save(before.tools) }
         attempt("skills") { app.skills.replace(before.skills) }
         attempt("capabilities") {
             app.capabilities.saveScreenControl(before.capabilities.screenControl)

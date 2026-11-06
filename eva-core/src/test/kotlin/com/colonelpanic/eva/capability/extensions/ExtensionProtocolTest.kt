@@ -2,8 +2,11 @@ package com.colonelpanic.eva.capability.extensions
 
 import com.colonelpanic.eva.capability.BoundedJson
 import com.colonelpanic.eva.capability.CallEnding
+import com.colonelpanic.eva.capability.ConfirmLevel
+import com.colonelpanic.eva.capability.ConfirmedParameter
 import com.colonelpanic.eva.capability.ExecutionOutcome
 import com.colonelpanic.eva.capability.InvocationStatus
+import com.colonelpanic.eva.capability.ParameterResolve
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -92,7 +95,7 @@ class ExtensionProtocolTest {
         val request = Json.parseToJsonElement(ExtensionProtocol.describeRequest()).jsonObject
         assertEquals(JsonArray(listOf(JsonPrimitive(1))), request["supportedProtocolVersions"])
         assertEquals(
-            JsonArray(listOf("secrets", "credentials", "credential-check").map(::JsonPrimitive)),
+            JsonArray(listOf("secrets", "credentials", "credential-check", "confirmation").map(::JsonPrimitive)),
             request["features"],
         )
     }
@@ -186,6 +189,43 @@ class ExtensionProtocolTest {
         ).forEach { assertThrows(it, Exception::class.java) { ExtensionProtocol.executeResult(it) } }
         val large = reply("""{"p":${secret("x".repeat(4000))}}""")
         assertThrows(Exception::class.java) { ExtensionProtocol.executeResult(large, maxBytes = large.length - 1) }
+    }
+
+    @Test
+    fun `an optional confirmation block names schema parameters and rejects anything else`() {
+        val plain =
+            ExtensionProtocol
+                .describe(describe())
+                .descriptor!!
+                .capabilities
+                .single()
+        assertEquals(null, plain.confirmation)
+
+        fun withConfirmation(block: String) =
+            describe(capability.replace("\"effects\":\"read\",", "\"effects\":\"read\",\"confirmation\":$block,"))
+        val parsed =
+            ExtensionProtocol
+                .describe(
+                    withConfirmation(
+                        """{"parameters":{"limit":{"resolve":"confirm","label":"Count","choicesFrom":"list_limits"},"query":{"resolve":"ask"}}}""",
+                    ),
+                ).descriptor!!
+                .capabilities
+                .single()
+                .confirmation!!
+        assertEquals(ConfirmLevel.UNRESOLVED, parsed.level)
+        assertEquals(listOf("limit", "query"), parsed.parameters.keys.toList())
+        assertEquals(ConfirmedParameter(ParameterResolve.CONFIRM, "Count", "list_limits"), parsed.parameters["limit"])
+        assertEquals(ConfirmedParameter(ParameterResolve.ASK), parsed.parameters["query"])
+        listOf(
+            """{"parameters":{}}""",
+            """{"parameters":{"missing":{"resolve":"confirm"}}}""",
+            """{"parameters":{"query":{"resolve":"maybe"}}}""",
+            """{"parameters":{"query":{"resolve":"ask","hint":"x"}}}""",
+            """{"parameters":{"query":{"resolve":"ask"}},"level":"sometimes"}""",
+            """{"parameters":{"query":{"resolve":"ask","choicesFrom":"not a tool"}}}""",
+            """{"parameters":{"query":{"resolve":"ask"}},"extra":true}""",
+        ).forEach { block -> assertThrows(block, Exception::class.java) { ExtensionProtocol.describe(withConfirmation(block)) } }
     }
 
     @Test

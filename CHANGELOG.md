@@ -4,6 +4,16 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Actions can list the details you settle before they run. When one you did not state is
+  missing from your saved defaults, EVA reads the call back (host, model, effort, workspace)
+  and lets you confirm or change it in the same conversation, so you can describe the work
+  first and fill in the details after. T3 Code's start-thread action uses it.
+- Ask EVA to keep a choice for next time ("use Opus at high effort by default") and it
+  saves it as that action's default in your portable configuration, under `tools`, along
+  with how often the action is read back (`never`, `unresolved`, `always`).
+
 ## [0.71.3] - 2026-10-22
 
 ### Added

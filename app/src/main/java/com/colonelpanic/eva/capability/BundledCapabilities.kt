@@ -349,7 +349,8 @@ object BundledCapabilities {
             ),
         ) + com.colonelpanic.eva.call.CallCapabilities.definitions + MemoryCapabilities.definitions +
             com.colonelpanic.eva.web.WebResearchBackend.definition +
-            SkillCapabilities.definition
+            SkillCapabilities.definition +
+            com.colonelpanic.eva.capability.ToolPreferenceCapabilities.definition
 
     private fun List<String>.quoted() = joinToString(",", "[", "]") { "\"$it\"" }
 
