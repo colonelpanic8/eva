@@ -4,6 +4,8 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+## [0.72.1] - 2026-11-07
+
 ### Fixed
 
 - EVA's status bar icon is now a clear EVA profile instead of a clipped white blob. All
