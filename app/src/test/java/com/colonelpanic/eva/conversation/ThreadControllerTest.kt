@@ -133,12 +133,13 @@ class ThreadControllerTest {
         accepted: suspend () -> Unit = {},
         textProvider: (String) -> ConversationProvider = { provider },
         secrets: com.colonelpanic.eva.capability.SecretVault? = null,
+        confirmations: com.colonelpanic.eva.capability.ConfirmationGate? = null,
     ) = ThreadController(
         registry = registry,
         nowMillis = now,
         onWorkAccepted = accepted,
         deviceTasks = deviceTasks,
-        dispatcher = CapabilityDispatcher(registry, repository),
+        dispatcher = CapabilityDispatcher(registry, repository, confirmations = confirmations),
         repository = repository,
         store = conversationStore,
         scope = liveScope(),
@@ -156,6 +157,7 @@ class ThreadControllerTest {
         onBackgroundAnswer = { answers += it },
         onBackgroundAnswerDelivered = { deliveredAnswers += it },
         secrets = secrets,
+        confirmations = confirmations,
     )
 
     @Test
@@ -1611,6 +1613,104 @@ class ThreadControllerTest {
             advanceUntilIdle()
             assertEquals("FAILED", voice.results.last().status)
             assertTrue(voice.results.last().respond)
+        }
+
+    @Test
+    fun `a confirmed call carrying the offered control arguments is held and then runs`() =
+        runTest {
+            val confirmed =
+                action.copy(
+                    confirmation =
+                        com.colonelpanic.eva.capability.ToolConfirmation(
+                            mapOf(
+                                "place" to
+                                    com.colonelpanic.eva.capability.ConfirmedParameter(
+                                        com.colonelpanic.eva.capability.ParameterResolve.CONFIRM,
+                                    ),
+                            ),
+                            com.colonelpanic.eva.capability.ConfirmLevel.ALWAYS,
+                        ),
+                )
+            val registry =
+                CapabilityRegistry(
+                    mapOf(confirmed.id to backend { ExecutionOutcome(InvocationStatus.COMPLETED, "Opened ${it.getValue("place")}") }),
+                    listOf(confirmed),
+                )
+            val provider = FakeProvider()
+            val controller =
+                controller(
+                    provider,
+                    registry = registry,
+                    confirmations =
+                        com.colonelpanic.eva.capability
+                            .ConfirmationGate(),
+                )
+            advanceUntilIdle()
+            controller.connect("test")
+            advanceUntilIdle()
+            controller.submit("Open the park")
+            advanceUntilIdle()
+            val offered =
+                provider.request.catalog.tools
+                    .single { it.capabilityId == confirmed.id }
+                    .inputSchema
+                    .getValue("properties")
+                    .jsonObject
+            assertTrue("_stated" in offered && "_confirm" in offered)
+
+            suspend fun call(
+                id: String,
+                arguments: kotlinx.serialization.json.JsonObject,
+            ) = provider.channel.send(
+                ProviderEvent.ToolCallReady(
+                    CallIdentity(
+                        provider.connectionEpoch,
+                        "session",
+                        provider.input.id,
+                        provider.input.id,
+                        "turn",
+                        provider.request.catalog.revision,
+                        id,
+                    ),
+                    confirmed.id,
+                    arguments,
+                ),
+            )
+            call(
+                "held",
+                buildJsonObject {
+                    put("place", "Park")
+                    put("_stated", kotlinx.serialization.json.JsonArray(listOf(kotlinx.serialization.json.JsonPrimitive("place"))))
+                },
+            )
+            advanceUntilIdle()
+            val held = provider.results.single()
+            assertEquals("NOT_EXECUTED", held.status)
+            val data = checkNotNull(held.data) { held.message }
+            assertEquals("confirmation_required", data.getValue("reason").jsonPrimitive.content)
+            assertEquals(0, executions)
+            val token = data.getValue("_confirm").jsonPrimitive.content
+            call(
+                "confirmed",
+                buildJsonObject {
+                    put("place", "Park")
+                    put("_stated", kotlinx.serialization.json.JsonArray(listOf(kotlinx.serialization.json.JsonPrimitive("place"))))
+                    put("_confirm", token)
+                },
+            )
+            advanceUntilIdle()
+            assertEquals("COMPLETED", provider.results.last().status)
+            assertEquals(1, executions)
+            call(
+                "unoffered",
+                buildJsonObject {
+                    put("place", "Park")
+                    put("_extra", "x")
+                },
+            )
+            advanceUntilIdle()
+            assertEquals("NOT_EXECUTED", provider.results.last().status)
+            assertEquals(1, executions)
         }
 
     // ---- text ----

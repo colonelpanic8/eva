@@ -2885,6 +2885,8 @@ class ThreadController(
                             } else {
                                 null
                             }
+                        // The offered schema adds confirmation controls the dispatcher strips before its own check.
+                        val offered = context.catalog.tools.find { it.capabilityId == event.capabilityId }
                         val rejection =
                             when {
                                 !active -> {
@@ -2895,10 +2897,7 @@ class ThreadController(
                                     wording().message(Wording.ANNOUNCEMENT_ACTION)
                                 }
 
-                                event.call.catalogRevision != context.catalog.revision || definition == null ||
-                                    context.catalog.tools.none {
-                                        it.capabilityId == event.capabilityId
-                                    } -> {
+                                event.call.catalogRevision != context.catalog.revision || definition == null || offered == null -> {
                                     "This action was not offered in this connection. Nothing was executed."
                                 }
 
@@ -2907,7 +2906,7 @@ class ThreadController(
                                 }
 
                                 else -> {
-                                    ToolSchema.error(definition.inputSchema, event.arguments)
+                                    ToolSchema.error(offered.inputSchema, event.arguments)
                                 }
                             }
                         store.append(

@@ -4,6 +4,13 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- A call that carried `_stated` or `_confirm`, including the confirmed follow-up to a
+  readback, was refused as not matching the action's schema, so actions that ask for
+  confirmation (T3 Code's start-thread) could never run. Schema refusals now name the
+  argument that failed.
+
 ## [0.72.1] - 2026-11-07
 
 ### Fixed

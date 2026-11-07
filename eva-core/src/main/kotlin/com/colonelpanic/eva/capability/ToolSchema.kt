@@ -18,6 +18,8 @@ import kotlinx.serialization.json.intOrNull
 object ToolSchema {
     const val MAX_INPUT_ITEMS = 64
     const val MAX_OUTPUT_ITEMS = 4096
+    private const val MISMATCH = "Arguments do not match this action's schema."
+    private const val NOT_ALLOWED = "Argument is not an allowed value."
     val scalarTypes = setOf("string", "integer", "number", "boolean")
 
     /**
@@ -140,12 +142,23 @@ object ToolSchema {
                         val properties = schema["properties"] as? JsonObject ?: return "Invalid schema."
                         val required = schema["required"] as? JsonArray ?: return "Invalid schema."
                         val open = schema["additionalProperties"] == JsonPrimitive(true)
-                        value is JsonObject && (open || value.keys.all { it in properties }) &&
-                            required.all { (it as JsonPrimitive).content in value } &&
-                            value.all { (key, child) ->
-                                val property = properties[key] as? JsonObject
-                                property == null || error(property, child, depth + 1) == null
+                        if (value !is JsonObject) return MISMATCH
+                        value.keys.firstOrNull { !open && it !in properties }?.let {
+                            return "$MISMATCH `$it` is not one of its parameters."
+                        }
+                        required.map { (it as JsonPrimitive).content }.firstOrNull { it !in value }?.let {
+                            return "$MISMATCH `$it` is required."
+                        }
+                        value.forEach { (key, child) ->
+                            val property = properties[key] as? JsonObject ?: return@forEach
+                            val problem = error(property, child, depth + 1) ?: return@forEach
+                            val type = (property["type"] as? JsonPrimitive)?.contentOrNull
+                            return when (problem) {
+                                NOT_ALLOWED -> "`$key` is not an allowed value."
+                                else -> "$MISMATCH `$key` must be of type $type."
                             }
+                        }
+                        true
                     }
                 }
 
@@ -177,9 +190,9 @@ object ToolSchema {
                     false
                 }
             }
-        if (!valid) return "Arguments do not match this action's schema."
+        if (!valid) return MISMATCH
         val values = schema["enum"] as? JsonArray
-        return if (values != null && value !in values) "Argument is not an allowed value." else null
+        return if (values != null && value !in values) NOT_ALLOWED else null
     }
 
     private fun bound(
