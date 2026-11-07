@@ -231,7 +231,7 @@ class ConfigurationCompositionTest {
             version: 4
             include: [base.yaml]
             tools:
-              extension.com.t3tools.t3code.assembly.start_thread:
+              extension.com.example.tasks.start_task:
                 confirm: always
                 defaults:
                   workspace: worktree
@@ -242,7 +242,7 @@ class ConfigurationCompositionTest {
         val resolved = EvaConfigurationCodec.resolve(reader(files)).configuration
         val expected =
             mapOf(
-                "extension.com.t3tools.t3code.assembly.start_thread" to
+                "extension.com.example.tasks.start_task" to
                     ToolPatch("always", mapOf("modelOptions" to "effort=high", "workspace" to "worktree")),
             )
         assertEquals(expected, resolved.tools)

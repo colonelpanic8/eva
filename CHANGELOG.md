@@ -4,6 +4,13 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Removed
+
+- EVA no longer ships or auto-installs a T3 Code package, and no longer enables T3 Code's
+  own extension without asking. T3 Code's extension still appears under Extensions,
+  where you turn it on and configure it. Remove an installed T3 Code package there to
+  drop its link-based actions.
+
 ### Fixed
 
 - A call that carried `_stated` or `_confirm`, including the confirmed follow-up to a
