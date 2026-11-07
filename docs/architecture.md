@@ -667,7 +667,9 @@ for every initiator, before schema validation:
    capability ID, and the token. No receipt state is added.
 
 `ThreadController.phoneTools` offers opted-in tools with the two control arguments and
-the `confirmation-note` wording, which names the capability ID. The model reads the call
+the `confirmation-note` wording, which names the capability ID. A model's call is checked
+against that offered schema; the dispatcher checks the stripped, resolved arguments
+against the capability's own. The model reads the call
 back, conversationally or through `eva.session.ask_user` from a background leg, and
 repeats it with the token once the user agrees. The token is a SHA-256 prefix of the
 capability ID and resolved arguments, so a changed call is read back again. Gating is a
