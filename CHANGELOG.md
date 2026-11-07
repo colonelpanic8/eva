@@ -4,6 +4,13 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Two actions for the same extension, or a fifth action while four run, no longer fail
+  at once with "Extension is busy". The later one waits its turn within its own wait
+  budget and runs; it is refused, with nothing submitted, only if that budget runs out
+  first.
+
 ### Removed
 
 - EVA no longer ships or auto-installs a T3 Code package, and no longer enables T3 Code's

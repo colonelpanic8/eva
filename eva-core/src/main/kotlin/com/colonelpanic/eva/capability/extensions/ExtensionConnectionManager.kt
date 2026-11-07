@@ -98,7 +98,7 @@ sealed interface ExtensionExchange {
     ) : ExtensionExchange
 }
 
-/** One in-flight transaction per package; no queue and no automatic retry. */
+/** One in-flight transaction per package; a later one waits its turn within its own duration. No automatic retry. */
 class ExtensionConnectionManager(
     private val connector: ExtensionConnector,
     private val elapsedMillis: () -> Long,
@@ -152,7 +152,8 @@ class ExtensionConnectionManager(
         submit: (ExtensionConnection, String, Long, (Int, String, String) -> Unit) -> Unit,
     ): ExtensionExchange {
         val lock = locks.getOrPut("${identity.user}:${identity.packageName}") { Mutex() }
-        if (!lock.tryLock()) return ExtensionExchange.Unavailable("Extension is busy. Nothing was submitted.")
+        withTimeoutOrNull(duration) { lock.lock() }
+            ?: return ExtensionExchange.Unavailable("Extension stayed busy for the whole wait. Nothing was submitted.")
         val reply = CompletableDeferred<ExtensionExchange>()
         var connection: ExtensionConnection? = null
         var submitted = false

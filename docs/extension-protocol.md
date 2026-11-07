@@ -348,8 +348,9 @@ Receipts record all layers, the chosen layer, and any clamp. Voice gets a brief
 displayed or spoken waiting cue halfway through the effective budget. An expired
 submitted action reports unknown, not failed or known still-running.
 
-Four calls may run globally, one per extension instance, with busy refusal rather
-than queuing. Interruption is not undo. No uncertain write is retried. Thread
+Four calls may run globally, one per extension instance. A later call waits its turn
+within its own wait budget; only if the budget runs out first is it refused as busy,
+with nothing submitted. Interruption is not undo. No uncertain write is retried. Thread
 lifetime and background continuation are described in [Architecture](architecture.md).
 
 
