@@ -10,6 +10,9 @@ All notable changes to EVA will be documented here.
   own extension without asking. T3 Code's extension still appears under Extensions,
   where you turn it on and configure it. Remove an installed T3 Code package there to
   drop its link-based actions.
+- Soundcore Actions' extension no longer starts enabled without asking; turn it on under
+  Extensions. Its own extension already covers the Soundcore package's wind reduction
+  action, so remove that package there too.
 
 ### Fixed
 
