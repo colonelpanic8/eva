@@ -62,8 +62,16 @@ for truthful outcomes and keeping secrets out of shareable files and logs.
   package wording) belongs in
   `colonelpanic8/eva-instructions` or `colonelpanic8/eva-extensions`, and tuning belongs
   in the portable configuration, so it can change without a release. Code keeps
-  semantics, validation, and safety bounds; a shipped copy of catalog data is
-  byte-identical to the catalog and is only the offline baseline.
+  semantics, validation, and safety bounds; a shipped copy of instruction catalog
+  data is byte-identical to the catalog and is only the offline baseline.
+- Never put a package for a specific app in this repository: no app package JSON
+  under `app/src/main/assets/packages/`, no new `DefaultPackages` entries. App packages
+  live only in `colonelpanic8/eva-extensions`. The remaining shipped copies are legacy;
+  remove, never add.
+- An app that ships its own installed extension owns its EVA integration in that app's
+  repository. EVA keeps no package, package query, signer pin, or code for it, and
+  `eva-extensions` keeps no package for it; it appears in Extensions through generic
+  discovery, where the user enables and configures it.
 - Work on a locked phone wherever Android allows. Prefer routes that need no
   Activity (platform APIs from EVA's process, installed extension services) over
   intent handoffs, and name the locked-device limits honestly. See
@@ -100,9 +108,9 @@ Both use the same package names. Paths below are relative to those roots:
 | Codex-format skills and the skill tool | `skills/`, `capability/SkillCapabilities.kt`, `data/SkillSettings.kt`, `ui/settings/SkillsScreen.kt` |
 | App navigation and settings | `ui/EvaApp.kt`, `ui/settings/`, `ui/prompt/` |
 
-- Declarative package catalog: `colonelpanic8/eva-extensions`. Shipped defaults are
-  byte-identical catalog copies under `app/src/main/assets/packages/`, listed in
-  `adapters/declarative/DefaultPackages.kt`; update both repositories together.
+- Declarative package catalog: `colonelpanic8/eva-extensions`, the only home for app
+  packages. The legacy shipped copies under `app/src/main/assets/packages/`, listed in
+  `adapters/declarative/DefaultPackages.kt`, may only shrink.
 - Instruction catalog: `colonelpanic8/eva-instructions`. The shipped stock prompt and
   tool wording are byte-identical copies at `eva-core/src/main/resources/eva-prompt.yaml` and
   `eva-wording.yaml`; change wording in the catalog first, then `just prompt-sync`.
