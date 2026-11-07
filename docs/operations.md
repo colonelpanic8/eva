@@ -4,7 +4,7 @@
 
 Run project commands through `direnv exec . <command>` or
 `nix develop .#android --command <command>`. The supported baseline is JDK 17,
-Android SDK 37, Gradle 9.8.2, AGP 9.5.1, and Kotlin 2.4.21. AGP supplies built-in
+Android SDK 37, Gradle 9.9.0, AGP 9.5.1, and Kotlin 2.4.21. AGP supplies built-in
 Kotlin; do not add `kotlin-android`. Minimum phone SDK is 23; the Wear OS companion requires API 34 (Wear OS 5).
 
 ```sh
@@ -28,8 +28,9 @@ Debug app: `com.colonelpanic.eva.debug`; production: `com.colonelpanic.eva`.
 Specify `adb -s DEVICE` when multiple devices are connected. Do not replace a
 user's production install merely to run a development test.
 
-`just icons` regenerates Android, F-Droid, and repository icons from the canonical
-source at `assets/branding/eva-face-profile-v8-teal-hair-blue-face.svg`.
+`just icons` regenerates Android, F-Droid, and repository icons, including the
+notification small icon `ic_stat_eva`, from the canonical source at
+`assets/branding/eva-face-profile-v8-teal-hair-blue-face.svg`.
 `just fdroid-changelogs` derives fastlane changelogs from `CHANGELOG.md`.
 Experiment-local commands belong in the
 [voice harness](../experiments/voice-poc/README.md) and

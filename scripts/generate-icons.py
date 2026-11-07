@@ -9,6 +9,13 @@ import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from shapely import affinity
+from shapely.geometry import MultiPolygon, Polygon
+from shapely.geometry.polygon import orient
+from shapely.ops import unary_union
+from svgelements import Matrix
+from svgelements import Path as SvgPath
+
 
 SVG_NS = "http://www.w3.org/2000/svg"
 ANDROID_NS = "http://schemas.android.com/apk/res/android"
@@ -18,6 +25,18 @@ ANDROID = f"{{{ANDROID_NS}}}"
 BACKGROUND = "#F5F0E6"
 ANDROID_SAFE_SCALE = 0.8
 MONOCHROME_PATH_IDS = {"path2", "path3", "path4"}
+
+# Status bar glyph, in source path units unless noted. The streak becomes a gap
+# between hair and face, and the eye is widened so both survive at ~17dp.
+STATUS_FACE_ID = "path2"
+STATUS_HAIR_ID = "path3"
+STATUS_STREAK_ID = "path4"
+STATUS_EYE_ID = "path6"
+STATUS_STREAK_GAP = 44.0
+STATUS_EYE_GROWTH = 10.0
+STATUS_PADDING_DP = 1.0
+STATUS_SIMPLIFY_DP = 0.015
+STATUS_MIN_AREA_DP = 0.05
 
 ROOT_TRANSFORM = re.compile(
     r"translate\(\s*([-\d.]+)[, ]+([-\d.]+)\s*\)\s*"
@@ -170,6 +189,94 @@ def android_vector(mark: ET.Element, *, monochrome: bool) -> ET.Element:
     return root
 
 
+def path_shape(source_path: ET.Element) -> Polygon:
+    path = SvgPath(source_path.attrib["d"])
+    transform = source_path.get("transform")
+    if transform:
+        path = path * Matrix(transform)
+    path.reify()
+    rings = []
+    for subpath in path.as_subpaths():
+        segment = SvgPath(subpath)
+        count = max(64, int(segment.length(error=1e-2) / 2))
+        points = [segment.point(index / count) for index in range(count + 1)]
+        if len(points) >= 3:
+            rings.append(Polygon([(point.x, point.y) for point in points]).buffer(0))
+    if not rings:
+        raise ValueError(f"path {source_path.get('id')!r} has no closed subpaths")
+    rings.sort(key=lambda ring: -ring.area)
+    shape = rings[0]
+    for ring in rings[1:]:
+        if shape.contains(ring.representative_point()):
+            shape = shape.difference(ring)
+        else:
+            shape = shape.union(ring)
+    return shape
+
+
+def path_data(polygons: list[Polygon]) -> str:
+    def coordinate(value: float) -> str:
+        text = f"{value:.2f}".rstrip("0").rstrip(".")
+        text = text.replace("-0.", "-.") if text.startswith("-0.") else text
+        return text[1:] if text.startswith("0.") else text or "0"
+
+    def ring(coordinates) -> str:
+        points = list(coordinates)[:-1]
+        start_x, start_y = points[0]
+        data = f"M{coordinate(start_x)},{coordinate(start_y)}"
+        previous_x, previous_y = start_x, start_y
+        for x, y in points[1:]:
+            data += f"l{coordinate(x - previous_x)},{coordinate(y - previous_y)}"
+            previous_x, previous_y = x, y
+        return data + "z"
+
+    return "".join(
+        ring(polygon.exterior.coords) + "".join(ring(hole.coords) for hole in polygon.interiors)
+        for polygon in polygons
+    )
+
+
+def status_vector(mark: ET.Element) -> ET.Element:
+    paths = {path.get("id"): path for path in mark.findall(f"{SVG}path")}
+    face = path_shape(paths[STATUS_FACE_ID])
+    face = Polygon(face.exterior)
+    hair = path_shape(paths[STATUS_HAIR_ID])
+    streak = path_shape(paths[STATUS_STREAK_ID])
+    eye = path_shape(paths[STATUS_EYE_ID])
+    glyph = (
+        unary_union([face, hair, streak])
+        .difference(streak.buffer(STATUS_STREAK_GAP / 2, join_style=1))
+        .difference(eye.buffer(STATUS_EYE_GROWTH, join_style=1))
+        .buffer(0)
+    )
+    min_x, min_y, max_x, max_y = glyph.bounds
+    scale = (24 - 2 * STATUS_PADDING_DP) / max(max_x - min_x, max_y - min_y)
+    glyph = affinity.translate(glyph, -(min_x + max_x) / 2, -(min_y + max_y) / 2)
+    glyph = affinity.scale(glyph, scale, scale, origin=(0, 0))
+    glyph = affinity.translate(glyph, 12, 12)
+    glyph = glyph.simplify(STATUS_SIMPLIFY_DP, preserve_topology=True)
+    polygons = list(glyph.geoms) if isinstance(glyph, MultiPolygon) else [glyph]
+    polygons = [orient(polygon, 1.0) for polygon in polygons if polygon.area > STATUS_MIN_AREA_DP]
+    root = ET.Element(
+        "vector",
+        {
+            f"{ANDROID}width": "24dp",
+            f"{ANDROID}height": "24dp",
+            f"{ANDROID}viewportWidth": "24",
+            f"{ANDROID}viewportHeight": "24",
+        },
+    )
+    ET.SubElement(
+        root,
+        "path",
+        {
+            f"{ANDROID}fillColor": "#FFFFFFFF",
+            f"{ANDROID}pathData": path_data(polygons),
+        },
+    )
+    return root
+
+
 def render_png(source: Path, destination: Path, size: int = 512) -> None:
     inkscape = shutil.which("inkscape")
     if not inkscape:
@@ -240,6 +347,10 @@ def main() -> None:
     write_xml(
         repository / "app/src/main/res/drawable/ic_launcher_monochrome.xml",
         android_vector(mark, monochrome=True),
+    )
+    write_xml(
+        repository / "app/src/main/res/drawable/ic_stat_eva.xml",
+        status_vector(mark),
     )
     render_png(fdroid_svg, repository / "fdroid/icon.png")
     render_png(fdroid_svg, repository / "eva-desktop/src/main/resources/eva-icon.png", size=128)

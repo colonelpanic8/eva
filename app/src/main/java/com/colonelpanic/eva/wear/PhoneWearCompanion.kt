@@ -306,7 +306,7 @@ class PhoneWearCompanion(
                     app,
                     CHANNEL,
                 ).setSmallIcon(
-                    R.drawable.ic_mic,
+                    R.drawable.ic_stat_eva,
                 ).setContentTitle(
                     "EVA watch gesture needs attention",
                 ).setContentText(

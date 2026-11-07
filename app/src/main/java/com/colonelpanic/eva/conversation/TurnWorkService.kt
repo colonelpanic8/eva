@@ -15,6 +15,7 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.colonelpanic.eva.ForegroundServiceGate
 import com.colonelpanic.eva.MainActivity
+import com.colonelpanic.eva.R
 import com.colonelpanic.eva.audio.VoiceSessionService
 import com.colonelpanic.eva.diagnostics.EvaTrace
 import kotlinx.coroutines.flow.first
@@ -302,7 +303,7 @@ object WorkNotifications {
         val notification =
             NotificationCompat
                 .Builder(context, WORK_CHANNEL)
-                .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                .setSmallIcon(R.drawable.ic_stat_eva)
                 .setContentTitle("Background work restricted by Android")
                 .setOnlyAlertOnce(true)
                 .setContentText(reason)
@@ -354,7 +355,7 @@ object WorkNotifications {
         val (title, details) = text
         return NotificationCompat
             .Builder(context, WORK_CHANNEL)
-            .setSmallIcon(android.R.drawable.ic_popup_sync)
+            .setSmallIcon(R.drawable.ic_stat_eva)
             .setContentTitle(title)
             .setContentText(details)
             .setStyle(NotificationCompat.BigTextStyle().bigText(details))
@@ -408,7 +409,7 @@ object WorkNotifications {
         val notification: Notification =
             NotificationCompat
                 .Builder(context, WORK_CHANNEL)
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setSmallIcon(R.drawable.ic_stat_eva)
                 .setContentTitle(
                     if (answer.status ==
                         TurnStatus.ANSWERED
