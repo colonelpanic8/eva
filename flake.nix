@@ -57,7 +57,10 @@
           inkscape
           jdk17
           just
-          python3
+          (python3.withPackages (ps: [
+            ps.shapely
+            ps.svgelements
+          ]))
         ];
         ANDROID_HOME = androidHome;
         ANDROID_SDK_ROOT = androidHome;

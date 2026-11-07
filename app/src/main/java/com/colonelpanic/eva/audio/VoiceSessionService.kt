@@ -15,6 +15,7 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.colonelpanic.eva.ForegroundServiceGate
 import com.colonelpanic.eva.MainActivity
+import com.colonelpanic.eva.R
 import com.colonelpanic.eva.adapters.android.CurrentLocationBackend
 import com.colonelpanic.eva.diagnostics.EvaTrace
 import kotlinx.coroutines.CoroutineScope
@@ -182,7 +183,7 @@ class VoiceSessionService : Service() {
             )
         return NotificationCompat
             .Builder(this, CHANNEL)
-            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setSmallIcon(R.drawable.ic_stat_eva)
             .setContentTitle(if (status.question == null) "EVA is listening" else "EVA needs your answer")
             .setContentText(content.text)
             .setOngoing(true)

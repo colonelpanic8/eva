@@ -4,6 +4,12 @@ All notable changes to EVA will be documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- EVA's status bar icon is now a clear EVA profile instead of a clipped white blob. All
+  EVA notifications share one purpose-built small icon, so Android's grouped summary
+  shows it too instead of falling back to the cropped launcher icon.
+
 ## [0.72.0] - 2026-11-05
 
 ### Added
