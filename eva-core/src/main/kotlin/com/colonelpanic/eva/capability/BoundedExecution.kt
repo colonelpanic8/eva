@@ -1,19 +1,29 @@
 package com.colonelpanic.eva.capability
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.ConcurrentHashMap
 
-/** App-owned work survives a disconnected conversation; late replies have a separate routing seam. */
+/**
+ * App-owned work survives a disconnected conversation; late replies have a separate routing seam.
+ * One action runs per instance and four at once; a call waits its turn within its own wait budget
+ * and is refused, unsubmitted, only if the budget runs out first.
+ */
 class BoundedExecution(
     private val scope: CoroutineScope,
     private val onLateResult: (ToolProposal, ExecutionOutcome) -> Unit = { _, _ -> },
 ) {
-    private val active = mutableSetOf<String>()
+    private val instances = ConcurrentHashMap<String, Mutex>()
+    private val slots = Semaphore(MAX_ACTIVE)
 
     suspend fun execute(
         instance: String,
@@ -21,24 +31,8 @@ class BoundedExecution(
         budget: WaitBudget,
         operation: suspend (ToolProposal) -> ExecutionOutcome,
     ): ExecutionOutcome {
-        val admitted =
-            synchronized(active) {
-                if (active.size >= 4 || instance in active) false else active.add(instance)
-            }
-        if (!admitted) {
-            return ExecutionOutcome(
-                InvocationStatus.NOT_EXECUTED,
-                "This extension is busy, or EVA has four actions in progress. Nothing was submitted. ${budget.receipt()}",
-            )
-        }
-        val work =
-            scope.async {
-                try {
-                    operation(proposal.copy(waitBudget = budget))
-                } finally {
-                    synchronized(active) { active.remove(instance) }
-                }
-            }
+        val turn = instances.getOrPut(instance) { Mutex() }
+        var work: Deferred<ExecutionOutcome>? = null
         return coroutineScope {
             val cue =
                 launch {
@@ -48,12 +42,39 @@ class BoundedExecution(
                     }
                 }
             try {
-                val result = withTimeoutOrNull(budget.effectiveMillis) { work.await() }
+                val result =
+                    withTimeoutOrNull(budget.effectiveMillis) {
+                        turn.lock()
+                        try {
+                            slots.acquire()
+                        } catch (error: Throwable) {
+                            turn.unlock()
+                            throw error
+                        }
+                        val admitted =
+                            scope.async(start = CoroutineStart.ATOMIC) {
+                                try {
+                                    operation(proposal.copy(waitBudget = budget))
+                                } finally {
+                                    slots.release()
+                                    turn.unlock()
+                                }
+                            }
+                        work = admitted
+                        admitted.await()
+                    }
+                val submitted = work
                 if (result != null) {
                     result
+                } else if (submitted == null) {
+                    ExecutionOutcome(
+                        InvocationStatus.NOT_EXECUTED,
+                        "This extension, or EVA's four concurrent actions, stayed busy for the whole wait. " +
+                            "Nothing was submitted. ${budget.receipt()}",
+                    )
                 } else {
                     scope.launch {
-                        runCatching { work.await() }.getOrNull()?.let { onLateResult(proposal, it) }
+                        runCatching { submitted.await() }.getOrNull()?.let { onLateResult(proposal, it) }
                     }
                     ExecutionOutcome(
                         InvocationStatus.UNKNOWN,
@@ -66,6 +87,8 @@ class BoundedExecution(
         }
     }
 }
+
+private const val MAX_ACTIVE = 4
 
 class BudgetedBackend(
     private val instance: String,

@@ -132,18 +132,21 @@ class ExtensionConnectionTest {
         }
 
     @Test
-    fun `concurrency is bounded per package and cancellation releases it`() =
+    fun `a package's second transaction waits its turn and cancellation releases it`() =
         runTest {
             val fake = FakeExtensionConnector()
             val manager = ExtensionConnectionManager(fake) { testScheduler.currentTime }
             val pending = async { manager.describe(extensionIdentity) }
             runCurrent()
-            assertTrue(manager.describe(extensionIdentity) is ExtensionExchange.Unavailable)
+            val queued = async { manager.describe(extensionIdentity) }
+            runCurrent()
             assertEquals(1, fake.binds)
+            fake.reply = "ok"
             pending.cancel()
             pending.join()
-            fake.reply = "ok"
-            assertEquals(ExtensionExchange.Reply("ok"), manager.describe(extensionIdentity))
+            runCurrent()
+            assertEquals(ExtensionExchange.Reply("ok"), queued.await())
+            assertEquals(2, fake.binds)
             assertEquals(ExtensionProtocol.describeRequest(), fake.request)
         }
 
